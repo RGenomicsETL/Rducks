@@ -73,8 +73,25 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 ## Exceptions and side effects
 
 Set `exception_handling = "return_null"` to turn callback errors into
-SQL `NULL`. Set `side_effects = TRUE` for callbacks with counters,
-randomness, I/O, or mutation so DuckDB reruns the function for each row.
+SQL `NULL`.
+
+``` r
+reg_error_null <- rducks_register(
+  con,
+  name = "r_error_null",
+  fun = function(x) stop("boom"),
+  args = "i32",
+  returns = "i32",
+  exception_handling = "return_null"
+)
+
+dbGetQuery(con, "SELECT r_error_null(1::INTEGER) AS x")
+#>    x
+#> 1 NA
+```
+
+Set `side_effects = TRUE` for callbacks with counters, randomness, I/O,
+or mutation so DuckDB reruns the function for each row.
 
 ``` r
 counter <- local({
