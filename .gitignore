@@ -1,0 +1,13 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.o
+*.so
+*.dll
+*.dylib
+*.duckdb_extension
+*.tar.gz
+*.Rcheck
+build/
+.DS_Store

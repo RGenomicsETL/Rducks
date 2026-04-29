@@ -1,0 +1,9 @@
+^\.git$
+^\.github$
+^Rducks\.Rproj$
+^.*\.Rproj$
+^\.Rproj\.user$
+^build$
+^docs/.*\.dot$
+^Makefile$
+^AGENTS\.md$

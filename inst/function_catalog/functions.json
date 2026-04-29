@@ -1,0 +1,22 @@
+[
+  {
+    "name": "rducks_register",
+    "kind": "r-wrapper",
+    "category": "registration",
+    "signature": "rducks_register(con, name, fun, args, returns, mode)",
+    "returns": "rducks_registration",
+    "description": "Create metadata and callback state for an R UDF registration. Native DuckDB registration is staged behind the loaded extension.",
+    "since": "0.0.0.9000",
+    "experimental": true
+  },
+  {
+    "name": "rducks_pump",
+    "kind": "r-wrapper/native",
+    "category": "callback-runtime",
+    "signature": "rducks_pump()",
+    "returns": "integer",
+    "description": "Drain pending main-thread callback requests. The initial scaffold returns zero until the DuckDB extension queue is wired in.",
+    "since": "0.0.0.9000",
+    "experimental": true
+  }
+]
