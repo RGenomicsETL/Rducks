@@ -2,7 +2,8 @@ Package: Rducks
 Title: Register R User-Defined Functions in DuckDB
 Version: 0.0.0.9000
 Authors@R: c(
-    person("Sounkou", "Toure", email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+    person(given = "Sounkou Mahamane", family = "Toure",
+    email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
   )
 Description: Experimental R package and DuckDB extension bridge for registering
     R functions as DuckDB user-defined functions. The package is designed around
