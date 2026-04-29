@@ -52,12 +52,33 @@ typedef enum rducks_exception_handling {
     RDUCKS_EXCEPTION_RETURN_NULL = 1
 } rducks_exception_handling_t;
 
+typedef enum rducks_type_kind {
+    RDUCKS_KIND_SCALAR = 0,
+    RDUCKS_KIND_LIST,
+    RDUCKS_KIND_ARRAY,
+    RDUCKS_KIND_STRUCT,
+    RDUCKS_KIND_MAP
+} rducks_type_kind_t;
+
+typedef struct rducks_type_desc {
+    rducks_type_kind_t kind;
+    rducks_type_id_t scalar;
+    struct rducks_type_desc *child;
+    struct rducks_type_desc *key;
+    struct rducks_type_desc *value;
+    idx_t array_size;
+    size_t field_count;
+    char **field_names;
+    struct rducks_type_desc **field_types;
+} rducks_type_desc_t;
+
 typedef struct rducks_r_scalar_meta {
     SEXP fun;
     rducks_scalar_wrapper_fn_t wrapper;
     size_t arity;
-    rducks_type_id_t *args;
+    struct rducks_type_desc **args;
     size_t *arg_sizes;
+    struct rducks_type_desc *return_desc;
     rducks_type_id_t returns;
     size_t return_size;
     rducks_null_handling_t null_handling;
@@ -271,6 +292,272 @@ static duckdb_logical_type rducks_create_logical_type_for_id(rducks_type_id_t ty
     return duckdb_create_logical_type(duckdb_type_id);
 }
 
+static char *rducks_strdup_len(const char *x, size_t len) {
+    char *out = (char *)malloc(len + 1U);
+    if (!out) return NULL;
+    memcpy(out, x, len);
+    out[len] = '\0';
+    return out;
+}
+
+static char *rducks_strdup_trimmed_len(const char *x, size_t len) {
+    while (len > 0 && (*x == ' ' || *x == '\t' || *x == '\n' || *x == '\r')) {
+        x++;
+        len--;
+    }
+    while (len > 0 && (x[len - 1U] == ' ' || x[len - 1U] == '\t' || x[len - 1U] == '\n' || x[len - 1U] == '\r')) {
+        len--;
+    }
+    return rducks_strdup_len(x, len);
+}
+
+static int rducks_is_wrapped_by_angle(const char *x, const char *prefix, const char **inner, size_t *inner_len) {
+    size_t prefix_len = strlen(prefix);
+    size_t len;
+    int depth = 0;
+    if (strncmp(x, prefix, prefix_len) != 0 || x[prefix_len] != '<') return 0;
+    len = strlen(x);
+    if (len <= prefix_len + 2U || x[len - 1U] != '>') return 0;
+    for (size_t i = prefix_len + 1U; i < len - 1U; i++) {
+        if (x[i] == '<') depth++;
+        else if (x[i] == '>') {
+            if (depth == 0) return 0;
+            depth--;
+        }
+    }
+    if (depth != 0) return 0;
+    *inner = x + prefix_len + 1U;
+    *inner_len = len - prefix_len - 2U;
+    return 1;
+}
+
+static const char *rducks_find_top_level_char_len(const char *x, size_t len, char target) {
+    int angle = 0;
+    int square = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (x[i] == '<') angle++;
+        else if (x[i] == '>') { if (angle > 0) angle--; }
+        else if (x[i] == '[') square++;
+        else if (x[i] == ']') { if (square > 0) square--; }
+        else if (x[i] == target && angle == 0 && square == 0) return x + i;
+    }
+    return NULL;
+}
+
+static const char *rducks_find_array_suffix(const char *x) {
+    size_t len = strlen(x);
+    int angle = 0;
+    if (len < 2 || x[len - 1U] != ']') return NULL;
+    for (size_t i = len; i > 0; --i) {
+        char ch = x[i - 1U];
+        if (ch == '>') angle++;
+        else if (ch == '<') { if (angle > 0) angle--; }
+        else if (ch == '[' && angle == 0) return x + i - 1U;
+    }
+    return NULL;
+}
+
+static void rducks_type_desc_destroy(rducks_type_desc_t *desc) {
+    if (!desc) return;
+    rducks_type_desc_destroy(desc->child);
+    rducks_type_desc_destroy(desc->key);
+    rducks_type_desc_destroy(desc->value);
+    if (desc->field_names) {
+        for (size_t i = 0; i < desc->field_count; i++) free(desc->field_names[i]);
+        free(desc->field_names);
+    }
+    if (desc->field_types) {
+        for (size_t i = 0; i < desc->field_count; i++) rducks_type_desc_destroy(desc->field_types[i]);
+        free(desc->field_types);
+    }
+    free(desc);
+}
+
+static rducks_type_desc_t *rducks_type_desc_new(rducks_type_kind_t kind) {
+    rducks_type_desc_t *desc = (rducks_type_desc_t *)calloc(1, sizeof(rducks_type_desc_t));
+    if (desc) desc->kind = kind;
+    return desc;
+}
+
+static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **out, char *err, size_t err_cap);
+
+static int rducks_parse_type_desc_len(const char *text, size_t len, rducks_type_desc_t **out, char *err, size_t err_cap) {
+    char *copy = rducks_strdup_trimmed_len(text, len);
+    int ok;
+    if (!copy) {
+        snprintf(err, err_cap, "out of memory");
+        return 0;
+    }
+    ok = rducks_parse_type_desc_text(copy, out, err, err_cap);
+    free(copy);
+    return ok;
+}
+
+static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **out, char *err, size_t err_cap) {
+    const char *inner = NULL;
+    size_t inner_len = 0;
+    const char *suffix;
+    rducks_type_desc_t *desc = NULL;
+    if (!text || !out) return 0;
+    *out = NULL;
+
+    if (rducks_is_wrapped_by_angle(text, "list", &inner, &inner_len)) {
+        desc = rducks_type_desc_new(RDUCKS_KIND_LIST);
+        if (!desc || !rducks_parse_type_desc_len(inner, inner_len, &desc->child, err, err_cap)) goto fail;
+        *out = desc;
+        return 1;
+    }
+    if (rducks_is_wrapped_by_angle(text, "map", &inner, &inner_len)) {
+        const char *sep = rducks_find_top_level_char_len(inner, inner_len, ';');
+        if (!sep) sep = rducks_find_top_level_char_len(inner, inner_len, ',');
+        if (!sep) {
+            snprintf(err, err_cap, "map type must be map<key;value>");
+            return 0;
+        }
+        desc = rducks_type_desc_new(RDUCKS_KIND_MAP);
+        if (!desc || !rducks_parse_type_desc_len(inner, (size_t)(sep - inner), &desc->key, err, err_cap) ||
+            !rducks_parse_type_desc_len(sep + 1, inner_len - (size_t)(sep - inner) - 1U, &desc->value, err, err_cap)) goto fail;
+        *out = desc;
+        return 1;
+    }
+    if (rducks_is_wrapped_by_angle(text, "struct", &inner, &inner_len)) {
+        size_t count = 0, cap = 0;
+        const char *cursor = inner;
+        size_t remain = inner_len;
+        desc = rducks_type_desc_new(RDUCKS_KIND_STRUCT);
+        if (!desc) goto oom;
+        while (remain > 0) {
+            const char *sep = rducks_find_top_level_char_len(cursor, remain, ';');
+            size_t part_len = sep ? (size_t)(sep - cursor) : remain;
+            const char *colon = rducks_find_top_level_char_len(cursor, part_len, ':');
+            if (!colon) {
+                snprintf(err, err_cap, "struct fields must be name:type");
+                goto fail;
+            }
+            if (count == cap) {
+                size_t new_cap = cap == 0 ? 4U : cap * 2U;
+                char **new_names;
+                rducks_type_desc_t **new_types;
+                if (new_cap <= cap) goto oom;
+                new_names = (char **)realloc(desc->field_names, sizeof(char *) * new_cap);
+                if (!new_names) goto oom;
+                desc->field_names = new_names;
+                new_types = (rducks_type_desc_t **)realloc(desc->field_types, sizeof(rducks_type_desc_t *) * new_cap);
+                if (!new_types) goto oom;
+                desc->field_types = new_types;
+                for (size_t j = cap; j < new_cap; j++) {
+                    desc->field_names[j] = NULL;
+                    desc->field_types[j] = NULL;
+                }
+                cap = new_cap;
+            }
+            desc->field_names[count] = rducks_strdup_trimmed_len(cursor, (size_t)(colon - cursor));
+            if (!desc->field_names[count]) goto oom;
+            if (!rducks_parse_type_desc_len(colon + 1, part_len - (size_t)(colon - cursor) - 1U, &desc->field_types[count], err, err_cap)) goto fail;
+            count++;
+            desc->field_count = count;
+            if (!sep) break;
+            cursor = sep + 1;
+            remain = inner_len - (size_t)(cursor - inner);
+        }
+        if (desc->field_count == 0) {
+            snprintf(err, err_cap, "struct type must contain at least one field");
+            goto fail;
+        }
+        *out = desc;
+        return 1;
+    }
+    suffix = rducks_find_array_suffix(text);
+    if (suffix) {
+        size_t prefix_len = (size_t)(suffix - text);
+        size_t len = strlen(text);
+        size_t bracket_len = len - prefix_len - 2U;
+        desc = rducks_type_desc_new(bracket_len == 0 ? RDUCKS_KIND_LIST : RDUCKS_KIND_ARRAY);
+        if (!desc || !rducks_parse_type_desc_len(text, prefix_len, &desc->child, err, err_cap)) goto fail;
+        if (bracket_len > 0) {
+            char *ntext = rducks_strdup_len(suffix + 1, bracket_len);
+            char *endp = NULL;
+            unsigned long long nval;
+            if (!ntext) goto oom;
+            nval = strtoull(ntext, &endp, 10);
+            if (!endp || *endp != '\0' || nval == 0 || nval > (unsigned long long)UINT64_MAX) {
+                free(ntext);
+                snprintf(err, err_cap, "invalid array size");
+                goto fail;
+            }
+            desc->array_size = (idx_t)nval;
+            free(ntext);
+        }
+        *out = desc;
+        return 1;
+    }
+    {
+        rducks_type_id_t scalar = rducks_type_from_token(text);
+        if (scalar == RDUCKS_TYPE_INVALID) {
+            snprintf(err, err_cap, "unsupported Rducks type: %s", text);
+            return 0;
+        }
+        desc = rducks_type_desc_new(RDUCKS_KIND_SCALAR);
+        if (!desc) goto oom;
+        desc->scalar = scalar;
+        *out = desc;
+        return 1;
+    }
+
+oom:
+    snprintf(err, err_cap, "out of memory");
+fail:
+    rducks_type_desc_destroy(desc);
+    return 0;
+}
+
+static duckdb_logical_type rducks_create_logical_type_for_desc(const rducks_type_desc_t *desc) {
+    if (!desc) return NULL;
+    if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_create_logical_type_for_id(desc->scalar);
+    if (desc->kind == RDUCKS_KIND_LIST) {
+        duckdb_logical_type child = rducks_create_logical_type_for_desc(desc->child);
+        duckdb_logical_type out;
+        if (!child) return NULL;
+        out = duckdb_create_list_type(child);
+        duckdb_destroy_logical_type(&child);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        duckdb_logical_type child = rducks_create_logical_type_for_desc(desc->child);
+        duckdb_logical_type out;
+        if (!child || desc->array_size == 0) return NULL;
+        out = duckdb_create_array_type(child, desc->array_size);
+        duckdb_destroy_logical_type(&child);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        duckdb_logical_type key = rducks_create_logical_type_for_desc(desc->key);
+        duckdb_logical_type value = rducks_create_logical_type_for_desc(desc->value);
+        duckdb_logical_type out = NULL;
+        if (key && value) out = duckdb_create_map_type(key, value);
+        if (key) duckdb_destroy_logical_type(&key);
+        if (value) duckdb_destroy_logical_type(&value);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        duckdb_logical_type *types;
+        duckdb_logical_type out = NULL;
+        if (desc->field_count == 0 || desc->field_count > (SIZE_MAX / sizeof(duckdb_logical_type))) return NULL;
+        types = (duckdb_logical_type *)calloc(desc->field_count, sizeof(duckdb_logical_type));
+        if (!types) return NULL;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            types[i] = rducks_create_logical_type_for_desc(desc->field_types[i]);
+            if (!types[i]) goto cleanup;
+        }
+        out = duckdb_create_struct_type(types, (const char **)desc->field_names, (idx_t)desc->field_count);
+cleanup:
+        for (size_t i = 0; i < desc->field_count; i++) if (types[i]) duckdb_destroy_logical_type(&types[i]);
+        free(types);
+        return out;
+    }
+    return NULL;
+}
+
 static int rducks_parse_null_handling(const char *text, rducks_null_handling_t *out, char *err, size_t err_cap) {
     char token[32];
     size_t len;
@@ -340,10 +627,10 @@ static int rducks_parse_exception_handling(const char *text, rducks_exception_ha
     return 0;
 }
 
-static int rducks_parse_type_list(const char *text, rducks_type_id_t **out, size_t *out_count, char *err, size_t err_cap) {
+static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, size_t *out_count, char *err, size_t err_cap) {
     char *copy;
     char *cursor;
-    rducks_type_id_t *items = NULL;
+    rducks_type_desc_t **items = NULL;
     size_t count = 0;
     size_t capacity = 0;
     if (!text || !out || !out_count) {
@@ -352,9 +639,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_id_t **out, size
     }
     *out = NULL;
     *out_count = 0;
-    if (text[0] == '\0') {
-        return 1;
-    }
+    if (text[0] == '\0') return 1;
     copy = (char *)malloc(strlen(text) + 1U);
     if (!copy) {
         snprintf(err, err_cap, "out of memory");
@@ -362,34 +647,38 @@ static int rducks_parse_type_list(const char *text, rducks_type_id_t **out, size
     }
     strcpy(copy, text);
     cursor = copy;
-    while (cursor) {
-        char *next = strchr(cursor, ',');
-        char *token;
-        rducks_type_id_t type;
+    while (cursor && *cursor) {
+        char *next;
+        size_t part_len;
+        rducks_type_desc_t *desc = NULL;
+        next = (char *)rducks_find_top_level_char_len(cursor, strlen(cursor), ',');
         if (next) {
             *next = '\0';
             next++;
         }
-        token = rducks_trim_ascii(cursor);
-        type = rducks_type_from_token(token);
-        if (type == RDUCKS_TYPE_INVALID) {
-            snprintf(err, err_cap, "unsupported Rducks argument type: %s", token);
+        part_len = strlen(cursor);
+        if (!rducks_parse_type_desc_len(cursor, part_len, &desc, err, err_cap)) {
+            for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
             free(items);
             free(copy);
             return 0;
         }
         if (count == capacity) {
             size_t new_capacity = capacity == 0U ? 4U : capacity * 2U;
-            rducks_type_id_t *new_items;
-            if (new_capacity <= capacity || new_capacity > (SIZE_MAX / sizeof(rducks_type_id_t))) {
+            rducks_type_desc_t **new_items;
+            if (new_capacity <= capacity || new_capacity > (SIZE_MAX / sizeof(rducks_type_desc_t *))) {
                 snprintf(err, err_cap, "UDF argument list is too large to allocate");
+                rducks_type_desc_destroy(desc);
+                for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
                 free(items);
                 free(copy);
                 return 0;
             }
-            new_items = (rducks_type_id_t *)realloc(items, sizeof(rducks_type_id_t) * new_capacity);
+            new_items = (rducks_type_desc_t **)realloc(items, sizeof(rducks_type_desc_t *) * new_capacity);
             if (!new_items) {
                 snprintf(err, err_cap, "out of memory");
+                rducks_type_desc_destroy(desc);
+                for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
                 free(items);
                 free(copy);
                 return 0;
@@ -397,7 +686,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_id_t **out, size
             items = new_items;
             capacity = new_capacity;
         }
-        items[count++] = type;
+        items[count++] = desc;
         cursor = next;
     }
     free(copy);
@@ -414,8 +703,12 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
     if (meta->fun != R_NilValue) {
         R_ReleaseObject(meta->fun);
     }
+    if (meta->args) {
+        for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
+    }
     free(meta->args);
     free(meta->arg_sizes);
+    rducks_type_desc_destroy(meta->return_desc);
     free(meta);
 }
 
@@ -441,43 +734,203 @@ static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk i
     }
 }
 
-static int rducks_prepare_arg(rducks_type_id_t type, duckdb_vector vector, idx_t row, bool *is_null, void **arg_ptr,
-                              void **arg_alloc) {
+static SEXP rducks_build_scalar_sexp(rducks_type_id_t type, duckdb_vector vector, idx_t row) {
     uint64_t *validity = duckdb_vector_get_validity(vector);
     uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
-    size_t size = rducks_type_size(type);
+    if (validity && !duckdb_validity_row_is_valid(validity, row)) {
+        switch (type) {
+        case RDUCKS_TYPE_BOOL:
+            return Rf_ScalarLogical(NA_LOGICAL);
+        case RDUCKS_TYPE_I8:
+        case RDUCKS_TYPE_U8:
+        case RDUCKS_TYPE_I16:
+        case RDUCKS_TYPE_U16:
+        case RDUCKS_TYPE_I32:
+            return Rf_ScalarInteger(NA_INTEGER);
+        case RDUCKS_TYPE_VARCHAR:
+            return Rf_ScalarString(NA_STRING);
+        default:
+            return Rf_ScalarReal(NA_REAL);
+        }
+    }
+    switch (type) {
+    case RDUCKS_TYPE_BOOL:
+        return Rf_ScalarLogical(((bool *)data)[row] ? TRUE : FALSE);
+    case RDUCKS_TYPE_I8:
+        return Rf_ScalarInteger((int)((int8_t *)data)[row]);
+    case RDUCKS_TYPE_U8:
+        return Rf_ScalarInteger((int)((uint8_t *)data)[row]);
+    case RDUCKS_TYPE_I16:
+        return Rf_ScalarInteger((int)((int16_t *)data)[row]);
+    case RDUCKS_TYPE_U16:
+        return Rf_ScalarInteger((int)((uint16_t *)data)[row]);
+    case RDUCKS_TYPE_I32:
+        return Rf_ScalarInteger((int)((int32_t *)data)[row]);
+    case RDUCKS_TYPE_U32:
+        return Rf_ScalarReal((double)((uint32_t *)data)[row]);
+    case RDUCKS_TYPE_I64:
+        return Rf_ScalarReal((double)((int64_t *)data)[row]);
+    case RDUCKS_TYPE_U64:
+        return Rf_ScalarReal((double)((uint64_t *)data)[row]);
+    case RDUCKS_TYPE_F32:
+        return Rf_ScalarReal((double)((float *)data)[row]);
+    case RDUCKS_TYPE_F64:
+        return Rf_ScalarReal(((double *)data)[row]);
+    case RDUCKS_TYPE_VARCHAR: {
+        duckdb_string_t *strings = (duckdb_string_t *)data;
+        uint32_t len = duckdb_string_t_length(strings[row]);
+        const char *str = duckdb_string_t_data(&strings[row]);
+        return Rf_ScalarString(Rf_mkCharLenCE(str, (int)len, CE_UTF8));
+    }
+    case RDUCKS_TYPE_BLOB: {
+        duckdb_string_t *strings = (duckdb_string_t *)data;
+        uint32_t len = duckdb_string_t_length(strings[row]);
+        const char *bytes = duckdb_string_t_data(&strings[row]);
+        SEXP out = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)len));
+        if (len > 0) memcpy(RAW(out), bytes, (size_t)len);
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_DATE: {
+        duckdb_date *dates = (duckdb_date *)data;
+        SEXP out = PROTECT(Rf_ScalarReal((double)dates[row].days));
+        SEXP cls = PROTECT(Rf_mkString("Date"));
+        Rf_classgets(out, cls);
+        UNPROTECT(2);
+        return out;
+    }
+    case RDUCKS_TYPE_TIME: {
+        duckdb_time *times = (duckdb_time *)data;
+        return Rf_ScalarReal((double)times[row].micros / 1000000.0);
+    }
+    case RDUCKS_TYPE_TIMESTAMP: {
+        duckdb_timestamp *timestamps = (duckdb_timestamp *)data;
+        SEXP out = PROTECT(Rf_ScalarReal((double)timestamps[row].micros / 1000000.0));
+        SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+        SET_STRING_ELT(cls, 0, Rf_mkChar("POSIXct"));
+        SET_STRING_ELT(cls, 1, Rf_mkChar("POSIXt"));
+        Rf_classgets(out, cls);
+        UNPROTECT(2);
+        return out;
+    }
+    default:
+        return R_NilValue;
+    }
+}
+
+static SEXP rducks_build_sexp_from_desc(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row) {
+    uint64_t *validity;
+    if (!desc) return R_NilValue;
+    validity = duckdb_vector_get_validity(vector);
+    if (validity && !duckdb_validity_row_is_valid(validity, row)) return R_NilValue;
+    if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_build_scalar_sexp(desc->scalar, vector, row);
+    if (desc->kind == RDUCKS_KIND_LIST) {
+        duckdb_list_entry *entries = (duckdb_list_entry *)duckdb_vector_get_data(vector);
+        duckdb_vector child = duckdb_list_vector_get_child(vector);
+        idx_t len = (idx_t)entries[row].length;
+        idx_t offset = (idx_t)entries[row].offset;
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)len));
+        for (idx_t i = 0; i < len; i++) {
+            SEXP elt = rducks_build_sexp_from_desc(desc->child, child, offset + i);
+            SET_VECTOR_ELT(out, (R_xlen_t)i, elt);
+        }
+        UNPROTECT(1);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        duckdb_vector child = duckdb_array_vector_get_child(vector);
+        idx_t len = desc->array_size;
+        idx_t offset = row * len;
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)len));
+        for (idx_t i = 0; i < len; i++) {
+            SEXP elt = rducks_build_sexp_from_desc(desc->child, child, offset + i);
+            SET_VECTOR_ELT(out, (R_xlen_t)i, elt);
+        }
+        UNPROTECT(1);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)desc->field_count));
+        SEXP names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)desc->field_count));
+        for (size_t i = 0; i < desc->field_count; i++) {
+            duckdb_vector child = duckdb_struct_vector_get_child(vector, (idx_t)i);
+            SEXP elt = rducks_build_sexp_from_desc(desc->field_types[i], child, row);
+            SET_VECTOR_ELT(out, (R_xlen_t)i, elt);
+            SET_STRING_ELT(names, (R_xlen_t)i, Rf_mkChar(desc->field_names[i]));
+        }
+        Rf_setAttrib(out, R_NamesSymbol, names);
+        UNPROTECT(2);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        duckdb_list_entry *entries = (duckdb_list_entry *)duckdb_vector_get_data(vector);
+        duckdb_vector child = duckdb_list_vector_get_child(vector);
+        duckdb_vector key_vec = duckdb_struct_vector_get_child(child, 0);
+        duckdb_vector val_vec = duckdb_struct_vector_get_child(child, 1);
+        idx_t len = (idx_t)entries[row].length;
+        idx_t offset = (idx_t)entries[row].offset;
+        SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+        SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+        SEXP keys = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)len));
+        SEXP values = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)len));
+        SET_STRING_ELT(names, 0, Rf_mkChar("keys"));
+        SET_STRING_ELT(names, 1, Rf_mkChar("values"));
+        for (idx_t i = 0; i < len; i++) {
+            SET_VECTOR_ELT(keys, (R_xlen_t)i, rducks_build_sexp_from_desc(desc->key, key_vec, offset + i));
+            SET_VECTOR_ELT(values, (R_xlen_t)i, rducks_build_sexp_from_desc(desc->value, val_vec, offset + i));
+        }
+        SET_VECTOR_ELT(out, 0, keys);
+        SET_VECTOR_ELT(out, 1, values);
+        Rf_setAttrib(out, R_NamesSymbol, names);
+        UNPROTECT(4);
+        return out;
+    }
+    return R_NilValue;
+}
+
+static int rducks_prepare_arg(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row, bool *is_null,
+                              void **arg_ptr, void **arg_alloc, int *arg_protect_count) {
+    uint64_t *validity = duckdb_vector_get_validity(vector);
+    uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
+    size_t size;
     *is_null = false;
     *arg_ptr = NULL;
     *arg_alloc = NULL;
     if (validity && !duckdb_validity_row_is_valid(validity, row)) {
         *is_null = true;
+        if (desc && desc->kind != RDUCKS_KIND_SCALAR) {
+            *arg_ptr = (void *)R_NilValue;
+        }
         return 1;
     }
-    if (type == RDUCKS_TYPE_VARCHAR) {
+    if (!desc) return 0;
+    if (desc->kind != RDUCKS_KIND_SCALAR) {
+        SEXP value = rducks_build_sexp_from_desc(desc, vector, row);
+        PROTECT(value);
+        (*arg_protect_count)++;
+        *arg_ptr = (void *)value;
+        return 1;
+    }
+    if (desc->scalar == RDUCKS_TYPE_VARCHAR) {
         duckdb_string_t *strings = (duckdb_string_t *)data;
         char *copy = rducks_copy_duckdb_string(&strings[row]);
-        if (!copy) {
-            return 0;
-        }
+        if (!copy) return 0;
         *arg_alloc = copy;
         *arg_ptr = (void *)arg_alloc;
         return 1;
     }
-    if (type == RDUCKS_TYPE_BLOB) {
+    if (desc->scalar == RDUCKS_TYPE_BLOB) {
         duckdb_string_t *strings = (duckdb_string_t *)data;
         rducks_blob_t *blob = (rducks_blob_t *)malloc(sizeof(rducks_blob_t));
-        if (!blob) {
-            return 0;
-        }
+        if (!blob) return 0;
         blob->len = (uint64_t)duckdb_string_t_length(strings[row]);
         blob->ptr = (const uint8_t *)duckdb_string_t_data(&strings[row]);
         *arg_alloc = blob;
         *arg_ptr = (void *)blob;
         return 1;
     }
-    if (size == 0U) {
-        return 0;
-    }
+    size = rducks_type_size(desc->scalar);
+    if (size == 0U) return 0;
     *arg_ptr = (void *)(data + ((size_t)row * size));
     return 1;
 }
@@ -552,6 +1005,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
         uint8_t out_value[32];
         bool out_is_null = false;
         int ok = 1;
+        int arg_protect_count = 0;
         if (meta->return_size > sizeof(out_value)) {
             free(arg_ptrs);
             free(arg_is_null);
@@ -564,7 +1018,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
             for (size_t col = 0; col < meta->arity; col++) {
                 duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
                 if (!rducks_prepare_arg(meta->args[col], vector, row, &arg_is_null[col], &arg_ptrs[col],
-                                        &arg_allocs[col])) {
+                                        &arg_allocs[col], &arg_protect_count)) {
                     ok = 0;
                     break;
                 }
@@ -576,6 +1030,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
                     free(arg_allocs[col]);
                 }
             }
+            if (arg_protect_count) UNPROTECT(arg_protect_count);
             free(arg_ptrs);
             free(arg_is_null);
             free(arg_allocs);
@@ -597,6 +1052,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
                         free(arg_allocs[col]);
                     }
                 }
+                if (arg_protect_count) UNPROTECT(arg_protect_count);
                 continue;
             }
         }
@@ -609,6 +1065,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
                         free(arg_allocs[col]);
                     }
                 }
+                if (arg_protect_count) UNPROTECT(arg_protect_count);
                 continue;
             }
             if (arg_allocs) {
@@ -616,6 +1073,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
                     free(arg_allocs[col]);
                 }
             }
+            if (arg_protect_count) UNPROTECT(arg_protect_count);
             free(arg_ptrs);
             free(arg_is_null);
             free(arg_allocs);
@@ -628,6 +1086,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
                 free(arg_allocs[col]);
             }
         }
+        if (arg_protect_count) UNPROTECT(arg_protect_count);
     }
 
     free(arg_ptrs);
@@ -639,7 +1098,8 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_p
                                      const char *return_spec, const char *null_handling_spec,
                                      const char *exception_handling_spec, bool side_effects, char *err,
                                      size_t err_cap) {
-    rducks_type_id_t *arg_types = NULL;
+    rducks_type_desc_t **arg_descs = NULL;
+    rducks_type_desc_t *return_desc = NULL;
     size_t arity = 0;
     rducks_type_id_t return_type;
     rducks_null_handling_t null_handling;
@@ -652,26 +1112,37 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_p
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
         return false;
     }
-    if (!rducks_parse_type_list(args_spec, &arg_types, &arity, err, err_cap)) {
+    if (!rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
         return false;
     }
-    return_type = rducks_type_from_token(return_spec);
-    if (return_type == RDUCKS_TYPE_INVALID) {
-        snprintf(err, err_cap, "unsupported Rducks return type: %s", return_spec ? return_spec : "<null>");
-        free(arg_types);
+    if (!rducks_parse_type_desc_text(return_spec, &return_desc, err, err_cap)) {
+        for (size_t i = 0; i < arity; i++) rducks_type_desc_destroy(arg_descs[i]);
+        free(arg_descs);
         return false;
     }
+    if (return_desc->kind != RDUCKS_KIND_SCALAR) {
+        snprintf(err, err_cap, "composite return types are not implemented yet");
+        for (size_t i = 0; i < arity; i++) rducks_type_desc_destroy(arg_descs[i]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
+        return false;
+    }
+    return_type = return_desc->scalar;
     if (!rducks_parse_null_handling(null_handling_spec, &null_handling, err, err_cap)) {
-        free(arg_types);
+        for (size_t i = 0; i < arity; i++) rducks_type_desc_destroy(arg_descs[i]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
         return false;
     }
     if (!rducks_parse_exception_handling(exception_handling_spec, &exception_handling, err, err_cap)) {
-        free(arg_types);
+        for (size_t i = 0; i < arity; i++) rducks_type_desc_destroy(arg_descs[i]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
         return false;
     }
 
     fn = duckdb_create_scalar_function();
-    return_logical_type = rducks_create_logical_type_for_id(return_type);
+    return_logical_type = rducks_create_logical_type_for_desc(return_desc);
     if (!fn || !return_logical_type) {
         snprintf(err, err_cap, "failed to allocate DuckDB scalar function for Rducks UDF");
         if (fn) {
@@ -680,18 +1151,22 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_p
         if (return_logical_type) {
             duckdb_destroy_logical_type(&return_logical_type);
         }
-        free(arg_types);
+        for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
         return false;
     }
 
     duckdb_scalar_function_set_name(fn, name);
     for (size_t i = 0; i < arity; i++) {
-        duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_id(arg_types[i]);
+        duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
         if (!arg_logical_type) {
             snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
             duckdb_destroy_scalar_function(&fn);
             duckdb_destroy_logical_type(&return_logical_type);
-            free(arg_types);
+            for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
             return false;
         }
         duckdb_scalar_function_add_parameter(fn, arg_logical_type);
@@ -703,14 +1178,18 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_p
         snprintf(err, err_cap, "out of memory");
         duckdb_destroy_scalar_function(&fn);
         duckdb_destroy_logical_type(&return_logical_type);
-        free(arg_types);
+        for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
         return false;
     }
     meta->fun = R_NilValue;
     meta->wrapper = (rducks_scalar_wrapper_fn_t)wrapper_ptr;
     meta->arity = arity;
-    meta->args = arg_types;
-    arg_types = NULL;
+    meta->args = arg_descs;
+    arg_descs = NULL;
+    meta->return_desc = return_desc;
+    return_desc = NULL;
     meta->returns = return_type;
     meta->return_size = rducks_type_size(return_type);
     meta->null_handling = null_handling;
@@ -726,7 +1205,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_p
         }
     }
     for (size_t i = 0; i < arity; i++) {
-        meta->arg_sizes[i] = rducks_type_size(meta->args[i]);
+        meta->arg_sizes[i] = (meta->args[i] && meta->args[i]->kind == RDUCKS_KIND_SCALAR) ? rducks_type_size(meta->args[i]->scalar) : 0U;
     }
     meta->fun = fun;
     R_PreserveObject(fun);

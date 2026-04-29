@@ -10,21 +10,20 @@ that wrapper on a DuckDB connection.
 
 ## Current scope
 
-Implemented now:
+Rducks currently builds `rducks.duckdb_extension` at install time, loads
+it into DuckDB with `rducks_enable()`, and registers row-oriented scalar
+R UDFs with `rducks_register()`. The implemented scalar input/output
+type set is `bool`, `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`,
+`u64`, `f32`, `f64`, `varchar`, `blob`, `date`, `time`, and `timestamp`.
+Composite inputs are accepted as `list<type>`, `type[]`, `type[N]`,
+`struct<name:type;...>`, and `map<key;value>`. Registration also
+supports `null_handling`, `exception_handling`, and `side_effects`
+controls.
 
-- install-time build of `rducks.duckdb_extension`
-- `rducks_enable()` to load the extension into a DuckDB connection
-- `rducks_register()` for row-oriented scalar R UDFs
-- scalar types: `bool`, `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`,
-  `u64`, `f32`, `f64`, `varchar`, `blob`, `date`, `time`, and
-  `timestamp`
-- `null_handling`, `exception_handling`, and `side_effects` controls
-
-Current constraint:
-
-- direct R callbacks require single-thread DuckDB execution, so call
-  `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
-  before registering R UDFs.
+Composite return types are not implemented yet. Direct R callbacks
+require single-thread DuckDB execution, so call
+`rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
+before registering R UDFs.
 
 ## Example
 
@@ -52,6 +51,43 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 `u32`, `i64`, and `u64` are passed through R numeric (`double`),
 matching the DuckDB R package’s default type mapping. Values beyond
 `2^53` cannot be exactly represented as R doubles.
+
+<details>
+<summary>
+Argument values passed to R callbacks
+</summary>
+
+The table is produced by the exported `rducks_argument_type_mapping()`
+helper. With `null_handling = "default"`, any top-level SQL `NULL` input
+makes DuckDB return SQL `NULL` without calling the R callback. The
+`SQL NULL in callback` column below applies when
+`null_handling = "special"`. Nested SQL `NULL` values inside composite
+inputs are represented as R `NULL`.
+
+     rducks_type             duckdb_sql                   r_value_passed_to_fun          sql_null_in_callback notes                              
+     bool                    BOOLEAN                      logical(1)                     NA                                                      
+     i8                      TINYINT                      integer(1)                     NA_integer_                                             
+     u8                      UTINYINT                     integer(1)                     NA_integer_                                             
+     i16                     SMALLINT                     integer(1)                     NA_integer_                                             
+     u16                     USMALLINT                    integer(1)                     NA_integer_                                             
+     i32                     INTEGER                      integer(1)                     NA_integer_                                             
+     u32                     UINTEGER                     numeric(1)                     NA_real_             R double                           
+     i64                     BIGINT                       numeric(1)                     NA_real_             R double; exact only up to 2^53    
+     u64                     UBIGINT                      numeric(1)                     NA_real_             R double; exact only up to 2^53    
+     f32                     FLOAT                        numeric(1)                     NA_real_             widened to R double                
+     f64                     DOUBLE                       numeric(1)                     NA_real_                                                
+     varchar                 VARCHAR                      character(1)                   NA_character_        string copied into R               
+     blob                    BLOB                         raw vector                     NULL                 bytes copied into R                
+     date                    DATE                         Date scalar                    NA_real_ (unclassed) days since 1970-01-01              
+     time                    TIME                         numeric(1) seconds             NA_real_             microseconds converted to seconds  
+     timestamp               TIMESTAMP                    POSIXct scalar                 NA_real_ (unclassed) microseconds converted to seconds  
+     list<i32>               INTEGER[]                    list of element values         NULL                 recursive element mapping          
+     i32[]                   INTEGER[]                    list of element values         NULL                 same as list<type>                 
+     i32[3]                  INTEGER[3]                   list of length 3               NULL                 fixed-size array                   
+     struct<a:i32;b:varchar> STRUCT(a INTEGER, b VARCHAR) named list of fields           NULL                 recursive field mapping            
+     map<varchar;i32>        MAP(VARCHAR, INTEGER)        list(keys = ..., values = ...) NULL                 keys and values are recursive lists
+
+</details>
 
 ## NULL handling
 

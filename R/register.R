@@ -9,16 +9,22 @@ rducks_keep_compiled_wrapper <- function(compiled) {
 }
 
 rducks_warn_type_mapping <- function(spec) {
-  numeric_integer <- intersect(unique(c(spec$args, spec$returns)), c("u32", "i64", "u64"))
+  mapping <- rducks_argument_type_mapping(unique(c(spec$args, spec$returns)))
+  numeric_integer <- mapping$rducks_type[mapping$uses_r_double_for_integer]
   if (length(numeric_integer)) {
     warning(
       "Rducks maps ", paste(numeric_integer, collapse = ", "),
-      " through R numeric (double); integer precision is exact only up to 2^53",
+      " through R numeric (double); i64/u64 values beyond 2^53 cannot be represented exactly",
       call. = FALSE
     )
   }
-  if ("f32" %in% unique(c(spec$args, spec$returns))) {
-    warning("Rducks maps f32 through R numeric (double) on the R side", call. = FALSE)
+  float_double <- mapping$rducks_type[mapping$uses_r_double_for_float]
+  if (length(float_double)) {
+    warning(
+      "Rducks maps ", paste(float_double, collapse = ", "),
+      " through R numeric (double) on the R side",
+      call. = FALSE
+    )
   }
   invisible(NULL)
 }

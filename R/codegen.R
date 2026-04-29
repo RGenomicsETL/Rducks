@@ -18,6 +18,7 @@ rducks_udf_spec <- function(name, fun, args, returns, mode = c("compiled")) {
   }
   args <- rducks_types_normalize(args)
   returns <- rducks_type_normalize(returns)
+  argument_type_mapping <- rducks_argument_type_mapping(args)
   structure(
     list(
       name = name,
@@ -25,7 +26,8 @@ rducks_udf_spec <- function(name, fun, args, returns, mode = c("compiled")) {
       args = args,
       returns = returns,
       mode = mode,
-      signature = rducks_duckdb_signature(name, args, returns)
+      signature = rducks_duckdb_signature(name, args, returns),
+      argument_type_mapping = argument_type_mapping
     ),
     class = "rducks_udf_spec"
   )
@@ -57,7 +59,20 @@ rducks_codegen_hash <- function(x) {
   sprintf("%08x", as.integer(h))
 }
 
-rducks_c_arg_expr <- function(token, index) {
+rducks_c_arg_expr <- function(arg_mapping, index) {
+  if (is.character(arg_mapping)) {
+    arg_mapping <- rducks_argument_type_mapping(arg_mapping)
+  }
+  if (!is.data.frame(arg_mapping) || nrow(arg_mapping) != 1L) {
+    stop("arg_mapping must be a one-row argument type mapping", call. = FALSE)
+  }
+  token <- arg_mapping$rducks_type[[1L]]
+  if (!identical(arg_mapping$argument_kind[[1L]], "scalar")) {
+    return(sprintf(
+      "arg_values[%d] = PROTECT(arg_is_null[%d] ? R_NilValue : (SEXP)args[%d]);\n  protect_count++;",
+      index, index, index
+    ))
+  }
   protect_line <- sprintf("  protect_count++;")
   simple <- function(expr) {
     sprintf("arg_values[%d] = PROTECT(%s);\n%s", index, expr, protect_line)
@@ -318,13 +333,20 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
   if (!inherits(spec, "rducks_udf_spec")) {
     stop("spec must be a rducks_udf_spec", call. = FALSE)
   }
+  if (rducks_type_is_composite(spec$returns)) {
+    stop("composite return types are not implemented yet", call. = FALSE)
+  }
   key <- c(spec$name, spec$args, spec$returns)
   hash <- rducks_codegen_hash(key)
   symbol <- symbol %||% paste0("rducks_wrap_", rducks_c_identifier(spec$name), "_", hash)
   n_args <- length(spec$args)
 
+  arg_mapping <- spec$argument_type_mapping %||% rducks_argument_type_mapping(spec$args)
+  if (!identical(arg_mapping$rducks_type, spec$args)) {
+    arg_mapping <- rducks_argument_type_mapping(spec$args)
+  }
   arg_lines <- if (n_args) {
-    unlist(Map(rducks_c_arg_expr, spec$args, seq_len(n_args) - 1L), use.names = FALSE)
+    vapply(seq_len(n_args), function(i) rducks_c_arg_expr(arg_mapping[i, , drop = FALSE], i - 1L), character(1))
   } else {
     character()
   }

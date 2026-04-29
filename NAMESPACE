@@ -2,6 +2,7 @@
 
 S3method(print,rducks_registration)
 S3method(print,rducks_udf_spec)
+export(rducks_argument_type_mapping)
 export(rducks_arrow_udf_spec)
 export(rducks_callback)
 export(rducks_callback_close)
