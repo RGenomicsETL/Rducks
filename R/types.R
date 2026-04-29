@@ -1,26 +1,56 @@
 rducks_scalar_types <- local({
   table <- list(
-    bool = list(c = "int", duckdb = "BOOLEAN", r = "logical"),
+    bool = list(c = "bool", duckdb = "BOOLEAN", r = "logical"),
+    i8 = list(c = "int8_t", duckdb = "TINYINT", r = "integer"),
+    u8 = list(c = "uint8_t", duckdb = "UTINYINT", r = "integer"),
+    i16 = list(c = "int16_t", duckdb = "SMALLINT", r = "integer"),
+    u16 = list(c = "uint16_t", duckdb = "USMALLINT", r = "integer"),
     i32 = list(c = "int32_t", duckdb = "INTEGER", r = "integer"),
+    u32 = list(c = "uint32_t", duckdb = "UINTEGER", r = "numeric"),
     i64 = list(c = "int64_t", duckdb = "BIGINT", r = "numeric"),
+    u64 = list(c = "uint64_t", duckdb = "UBIGINT", r = "numeric"),
     f32 = list(c = "float", duckdb = "FLOAT", r = "numeric"),
     f64 = list(c = "double", duckdb = "DOUBLE", r = "numeric"),
-    varchar = list(c = "const char *", duckdb = "VARCHAR", r = "character")
+    varchar = list(c = "const char *", duckdb = "VARCHAR", r = "character"),
+    blob = list(c = "rducks_blob_t", duckdb = "BLOB", r = "raw"),
+    date = list(c = "rducks_date_t", duckdb = "DATE", r = "Date"),
+    time = list(c = "rducks_time_t", duckdb = "TIME", r = "numeric"),
+    timestamp = list(c = "rducks_timestamp_t", duckdb = "TIMESTAMP", r = "POSIXct")
   )
   aliases <- c(
     logical = "bool",
     boolean = "bool",
+    tinyint = "i8",
+    int8 = "i8",
+    byte = "i8",
+    utinyint = "u8",
+    uint8 = "u8",
+    unsigned_byte = "u8",
+    smallint = "i16",
+    int16 = "i16",
+    usmallint = "u16",
+    uint16 = "u16",
     int = "i32",
     integer = "i32",
     int32 = "i32",
+    uint = "u32",
+    uint32 = "u32",
+    uinteger = "u32",
     int64 = "i64",
+    bigint = "i64",
+    uint64 = "u64",
+    ubigint = "u64",
     float = "f32",
     double = "f64",
     numeric = "f64",
     real = "f64",
     string = "varchar",
     character = "varchar",
-    cstring = "varchar"
+    cstring = "varchar",
+    raw = "blob",
+    binary = "blob",
+    posixct = "timestamp",
+    datetime = "timestamp"
   )
   list(table = table, aliases = aliases)
 })

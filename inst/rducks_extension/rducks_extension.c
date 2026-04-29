@@ -17,12 +17,27 @@ DUCKDB_EXTENSION_EXTERN
 typedef enum rducks_type_id {
     RDUCKS_TYPE_INVALID = 0,
     RDUCKS_TYPE_BOOL,
+    RDUCKS_TYPE_I8,
+    RDUCKS_TYPE_U8,
+    RDUCKS_TYPE_I16,
+    RDUCKS_TYPE_U16,
     RDUCKS_TYPE_I32,
+    RDUCKS_TYPE_U32,
     RDUCKS_TYPE_I64,
+    RDUCKS_TYPE_U64,
     RDUCKS_TYPE_F32,
     RDUCKS_TYPE_F64,
-    RDUCKS_TYPE_VARCHAR
+    RDUCKS_TYPE_VARCHAR,
+    RDUCKS_TYPE_BLOB,
+    RDUCKS_TYPE_DATE,
+    RDUCKS_TYPE_TIME,
+    RDUCKS_TYPE_TIMESTAMP
 } rducks_type_id_t;
+
+typedef struct rducks_blob {
+    const uint8_t *ptr;
+    uint64_t len;
+} rducks_blob_t;
 
 typedef bool (*rducks_scalar_wrapper_fn_t)(SEXP fun, void **args, const bool *arg_is_null, void *out_value,
                                            bool *out_is_null);
@@ -116,12 +131,33 @@ static rducks_type_id_t rducks_type_from_token(const char *raw_token) {
     if (strcmp(token, "bool") == 0 || strcmp(token, "logical") == 0 || strcmp(token, "boolean") == 0) {
         return RDUCKS_TYPE_BOOL;
     }
+    if (strcmp(token, "i8") == 0 || strcmp(token, "int8") == 0 || strcmp(token, "tinyint") == 0 ||
+        strcmp(token, "byte") == 0) {
+        return RDUCKS_TYPE_I8;
+    }
+    if (strcmp(token, "u8") == 0 || strcmp(token, "uint8") == 0 || strcmp(token, "utinyint") == 0 ||
+        strcmp(token, "unsigned_byte") == 0) {
+        return RDUCKS_TYPE_U8;
+    }
+    if (strcmp(token, "i16") == 0 || strcmp(token, "int16") == 0 || strcmp(token, "smallint") == 0) {
+        return RDUCKS_TYPE_I16;
+    }
+    if (strcmp(token, "u16") == 0 || strcmp(token, "uint16") == 0 || strcmp(token, "usmallint") == 0) {
+        return RDUCKS_TYPE_U16;
+    }
     if (strcmp(token, "i32") == 0 || strcmp(token, "int") == 0 || strcmp(token, "integer") == 0 ||
         strcmp(token, "int32") == 0) {
         return RDUCKS_TYPE_I32;
     }
-    if (strcmp(token, "i64") == 0 || strcmp(token, "int64") == 0) {
+    if (strcmp(token, "u32") == 0 || strcmp(token, "uint") == 0 || strcmp(token, "uint32") == 0 ||
+        strcmp(token, "uinteger") == 0) {
+        return RDUCKS_TYPE_U32;
+    }
+    if (strcmp(token, "i64") == 0 || strcmp(token, "int64") == 0 || strcmp(token, "bigint") == 0) {
         return RDUCKS_TYPE_I64;
+    }
+    if (strcmp(token, "u64") == 0 || strcmp(token, "uint64") == 0 || strcmp(token, "ubigint") == 0) {
+        return RDUCKS_TYPE_U64;
     }
     if (strcmp(token, "f32") == 0 || strcmp(token, "float") == 0) {
         return RDUCKS_TYPE_F32;
@@ -134,6 +170,18 @@ static rducks_type_id_t rducks_type_from_token(const char *raw_token) {
         strcmp(token, "cstring") == 0) {
         return RDUCKS_TYPE_VARCHAR;
     }
+    if (strcmp(token, "blob") == 0 || strcmp(token, "raw") == 0 || strcmp(token, "binary") == 0) {
+        return RDUCKS_TYPE_BLOB;
+    }
+    if (strcmp(token, "date") == 0) {
+        return RDUCKS_TYPE_DATE;
+    }
+    if (strcmp(token, "time") == 0) {
+        return RDUCKS_TYPE_TIME;
+    }
+    if (strcmp(token, "timestamp") == 0 || strcmp(token, "posixct") == 0 || strcmp(token, "datetime") == 0) {
+        return RDUCKS_TYPE_TIMESTAMP;
+    }
     return RDUCKS_TYPE_INVALID;
 }
 
@@ -141,16 +189,36 @@ static size_t rducks_type_size(rducks_type_id_t type) {
     switch (type) {
     case RDUCKS_TYPE_BOOL:
         return sizeof(bool);
+    case RDUCKS_TYPE_I8:
+        return sizeof(int8_t);
+    case RDUCKS_TYPE_U8:
+        return sizeof(uint8_t);
+    case RDUCKS_TYPE_I16:
+        return sizeof(int16_t);
+    case RDUCKS_TYPE_U16:
+        return sizeof(uint16_t);
     case RDUCKS_TYPE_I32:
         return sizeof(int32_t);
+    case RDUCKS_TYPE_U32:
+        return sizeof(uint32_t);
     case RDUCKS_TYPE_I64:
         return sizeof(int64_t);
+    case RDUCKS_TYPE_U64:
+        return sizeof(uint64_t);
     case RDUCKS_TYPE_F32:
         return sizeof(float);
     case RDUCKS_TYPE_F64:
         return sizeof(double);
     case RDUCKS_TYPE_VARCHAR:
         return sizeof(const char *);
+    case RDUCKS_TYPE_BLOB:
+        return sizeof(rducks_blob_t);
+    case RDUCKS_TYPE_DATE:
+        return sizeof(duckdb_date);
+    case RDUCKS_TYPE_TIME:
+        return sizeof(duckdb_time);
+    case RDUCKS_TYPE_TIMESTAMP:
+        return sizeof(duckdb_timestamp);
     default:
         return 0U;
     }
@@ -160,16 +228,36 @@ static duckdb_type rducks_duckdb_type_id(rducks_type_id_t type) {
     switch (type) {
     case RDUCKS_TYPE_BOOL:
         return DUCKDB_TYPE_BOOLEAN;
+    case RDUCKS_TYPE_I8:
+        return DUCKDB_TYPE_TINYINT;
+    case RDUCKS_TYPE_U8:
+        return DUCKDB_TYPE_UTINYINT;
+    case RDUCKS_TYPE_I16:
+        return DUCKDB_TYPE_SMALLINT;
+    case RDUCKS_TYPE_U16:
+        return DUCKDB_TYPE_USMALLINT;
     case RDUCKS_TYPE_I32:
         return DUCKDB_TYPE_INTEGER;
+    case RDUCKS_TYPE_U32:
+        return DUCKDB_TYPE_UINTEGER;
     case RDUCKS_TYPE_I64:
         return DUCKDB_TYPE_BIGINT;
+    case RDUCKS_TYPE_U64:
+        return DUCKDB_TYPE_UBIGINT;
     case RDUCKS_TYPE_F32:
         return DUCKDB_TYPE_FLOAT;
     case RDUCKS_TYPE_F64:
         return DUCKDB_TYPE_DOUBLE;
     case RDUCKS_TYPE_VARCHAR:
         return DUCKDB_TYPE_VARCHAR;
+    case RDUCKS_TYPE_BLOB:
+        return DUCKDB_TYPE_BLOB;
+    case RDUCKS_TYPE_DATE:
+        return DUCKDB_TYPE_DATE;
+    case RDUCKS_TYPE_TIME:
+        return DUCKDB_TYPE_TIME;
+    case RDUCKS_TYPE_TIMESTAMP:
+        return DUCKDB_TYPE_TIMESTAMP;
     default:
         return DUCKDB_TYPE_INVALID;
     }
@@ -354,12 +442,13 @@ static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk i
 }
 
 static int rducks_prepare_arg(rducks_type_id_t type, duckdb_vector vector, idx_t row, bool *is_null, void **arg_ptr,
-                              const char **varchar_slot) {
+                              void **arg_alloc) {
     uint64_t *validity = duckdb_vector_get_validity(vector);
     uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
     size_t size = rducks_type_size(type);
     *is_null = false;
     *arg_ptr = NULL;
+    *arg_alloc = NULL;
     if (validity && !duckdb_validity_row_is_valid(validity, row)) {
         *is_null = true;
         return 1;
@@ -370,8 +459,20 @@ static int rducks_prepare_arg(rducks_type_id_t type, duckdb_vector vector, idx_t
         if (!copy) {
             return 0;
         }
-        *varchar_slot = copy;
-        *arg_ptr = (void *)varchar_slot;
+        *arg_alloc = copy;
+        *arg_ptr = (void *)arg_alloc;
+        return 1;
+    }
+    if (type == RDUCKS_TYPE_BLOB) {
+        duckdb_string_t *strings = (duckdb_string_t *)data;
+        rducks_blob_t *blob = (rducks_blob_t *)malloc(sizeof(rducks_blob_t));
+        if (!blob) {
+            return 0;
+        }
+        blob->len = (uint64_t)duckdb_string_t_length(strings[row]);
+        blob->ptr = (const uint8_t *)duckdb_string_t_data(&strings[row]);
+        *arg_alloc = blob;
+        *arg_ptr = (void *)blob;
         return 1;
     }
     if (size == 0U) {
@@ -388,12 +489,24 @@ static void rducks_write_compiled_result(rducks_r_scalar_meta_t *meta, duckdb_ve
         return;
     }
     if (meta->returns == RDUCKS_TYPE_VARCHAR) {
-        const char *value = *(const char **)out_value;
+        char *value = *(char **)out_value;
         if (!value) {
             rducks_output_set_null(output, row);
             return;
         }
         duckdb_vector_assign_string_element(output, row, value);
+        free(value);
+        rducks_output_set_valid(output, row);
+        return;
+    }
+    if (meta->returns == RDUCKS_TYPE_BLOB) {
+        rducks_blob_t *value = (rducks_blob_t *)out_value;
+        if (!value->ptr && value->len > 0U) {
+            rducks_output_set_null(output, row);
+            return;
+        }
+        duckdb_vector_assign_string_element_len(output, row, value->ptr ? (const char *)value->ptr : "", (idx_t)value->len);
+        free((void *)value->ptr);
         rducks_output_set_valid(output, row);
         return;
     }
@@ -409,7 +522,7 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
     idx_t n;
     void **arg_ptrs = NULL;
     bool *arg_is_null = NULL;
-    const char **varchar_slots = NULL;
+    void **arg_allocs = NULL;
     if (!meta || !meta->fun || !meta->wrapper) {
         duckdb_scalar_function_set_error(info, "Rducks compiled scalar metadata missing");
         return;
@@ -419,17 +532,17 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
 
     if (meta->arity > 0) {
         if (meta->arity > (SIZE_MAX / sizeof(void *)) || meta->arity > (SIZE_MAX / sizeof(bool)) ||
-            meta->arity > (SIZE_MAX / sizeof(const char *))) {
+            meta->arity > (SIZE_MAX / sizeof(void *))) {
             duckdb_scalar_function_set_error(info, "Rducks argument list is too large to allocate");
             return;
         }
         arg_ptrs = (void **)malloc(sizeof(void *) * meta->arity);
         arg_is_null = (bool *)malloc(sizeof(bool) * meta->arity);
-        varchar_slots = (const char **)malloc(sizeof(const char *) * meta->arity);
-        if (!arg_ptrs || !arg_is_null || !varchar_slots) {
+        arg_allocs = (void **)malloc(sizeof(void *) * meta->arity);
+        if (!arg_ptrs || !arg_is_null || !arg_allocs) {
             free(arg_ptrs);
             free(arg_is_null);
-            free(varchar_slots);
+            free(arg_allocs);
             duckdb_scalar_function_set_error(info, "out of memory");
             return;
         }
@@ -442,30 +555,30 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
         if (meta->return_size > sizeof(out_value)) {
             free(arg_ptrs);
             free(arg_is_null);
-            free(varchar_slots);
+            free(arg_allocs);
             duckdb_scalar_function_set_error(info, "Rducks return type is too large for scalar bridge");
             return;
         }
         if (meta->arity > 0) {
-            memset(varchar_slots, 0, sizeof(const char *) * meta->arity);
+            memset(arg_allocs, 0, sizeof(void *) * meta->arity);
             for (size_t col = 0; col < meta->arity; col++) {
                 duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
                 if (!rducks_prepare_arg(meta->args[col], vector, row, &arg_is_null[col], &arg_ptrs[col],
-                                        &varchar_slots[col])) {
+                                        &arg_allocs[col])) {
                     ok = 0;
                     break;
                 }
             }
         }
         if (!ok) {
-            if (varchar_slots) {
+            if (arg_allocs) {
                 for (size_t col = 0; col < meta->arity; col++) {
-                    free((void *)varchar_slots[col]);
+                    free(arg_allocs[col]);
                 }
             }
             free(arg_ptrs);
             free(arg_is_null);
-            free(varchar_slots);
+            free(arg_allocs);
             duckdb_scalar_function_set_error(info, "out of memory preparing Rducks arguments");
             return;
         }
@@ -479,9 +592,9 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
             }
             if (has_null) {
                 rducks_output_set_null(output, row);
-                if (varchar_slots) {
+                if (arg_allocs) {
                     for (size_t col = 0; col < meta->arity; col++) {
-                        free((void *)varchar_slots[col]);
+                        free(arg_allocs[col]);
                     }
                 }
                 continue;
@@ -491,35 +604,35 @@ static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_ch
         if (!meta->wrapper(meta->fun, arg_ptrs, arg_is_null, (void *)out_value, &out_is_null)) {
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
                 rducks_output_set_null(output, row);
-                if (varchar_slots) {
+                if (arg_allocs) {
                     for (size_t col = 0; col < meta->arity; col++) {
-                        free((void *)varchar_slots[col]);
+                        free(arg_allocs[col]);
                     }
                 }
                 continue;
             }
-            if (varchar_slots) {
+            if (arg_allocs) {
                 for (size_t col = 0; col < meta->arity; col++) {
-                    free((void *)varchar_slots[col]);
+                    free(arg_allocs[col]);
                 }
             }
             free(arg_ptrs);
             free(arg_is_null);
-            free(varchar_slots);
+            free(arg_allocs);
             duckdb_scalar_function_set_error(info, "Rducks compiled callback raised an error");
             return;
         }
         rducks_write_compiled_result(meta, output, row, (void *)out_value, out_is_null);
-        if (varchar_slots) {
+        if (arg_allocs) {
             for (size_t col = 0; col < meta->arity; col++) {
-                free((void *)varchar_slots[col]);
+                free(arg_allocs[col]);
             }
         }
     }
 
     free(arg_ptrs);
     free(arg_is_null);
-    free(varchar_slots);
+    free(arg_allocs);
 }
 
 static bool rducks_register_r_scalar(const char *name, SEXP fun, void *wrapper_ptr, const char *args_spec,

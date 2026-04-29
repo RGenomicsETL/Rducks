@@ -8,6 +8,21 @@ rducks_keep_compiled_wrapper <- function(compiled) {
   id
 }
 
+rducks_warn_type_mapping <- function(spec) {
+  numeric_integer <- intersect(unique(c(spec$args, spec$returns)), c("u32", "i64", "u64"))
+  if (length(numeric_integer)) {
+    warning(
+      "Rducks maps ", paste(numeric_integer, collapse = ", "),
+      " through R numeric (double); integer precision is exact only up to 2^53",
+      call. = FALSE
+    )
+  }
+  if ("f32" %in% unique(c(spec$args, spec$returns))) {
+    warning("Rducks maps f32 through R numeric (double) on the R side", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Register an R UDF in DuckDB
 #'
 #' Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
@@ -51,6 +66,7 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
+  rducks_warn_type_mapping(spec)
   rducks_assert_single_thread(con)
   compiled <- rducks_compile_scalar_wrapper(spec)
 

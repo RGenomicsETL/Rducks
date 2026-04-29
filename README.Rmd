@@ -27,7 +27,8 @@ Implemented now:
 - install-time build of `rducks.duckdb_extension`
 - `rducks_enable()` to load the extension into a DuckDB connection
 - `rducks_register()` for row-oriented scalar R UDFs
-- scalar types: `bool`, `i32`, `i64`, `f32`, `f64`, and `varchar`
+- scalar types: `bool`, `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`,
+  `u64`, `f32`, `f64`, `varchar`, `blob`, `date`, `time`, and `timestamp`
 - `null_handling`, `exception_handling`, and `side_effects` controls
 
 Current constraint:
@@ -56,6 +57,10 @@ reg_plus_one <- rducks_register(
 
 dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 ```
+
+`u32`, `i64`, and `u64` are passed through R numeric (`double`), matching the
+DuckDB R package's default type mapping. Values beyond `2^53` cannot be exactly
+represented as R doubles.
 
 ## NULL handling
 

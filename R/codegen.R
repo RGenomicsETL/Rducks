@@ -58,32 +58,137 @@ rducks_codegen_hash <- function(x) {
 }
 
 rducks_c_arg_expr <- function(token, index) {
+  protect_line <- sprintf("  protect_count++;")
+  simple <- function(expr) {
+    sprintf("arg_values[%d] = PROTECT(%s);\n%s", index, expr, protect_line)
+  }
   switch(token,
-    bool = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarLogical(NA_LOGICAL) : Rf_ScalarLogical((*(bool *)args[%d]) ? TRUE : FALSE));",
-      index, index, index
-    ),
-    i32 = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(int32_t *)args[%d]));",
-      index, index, index
-    ),
-    i64 = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(int64_t *)args[%d]));",
-      index, index, index
-    ),
-    f32 = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(float *)args[%d]));",
-      index, index, index
-    ),
-    f64 = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal(*(double *)args[%d]));",
-      index, index, index
-    ),
-    varchar = sprintf(
-      "arg_values[%d] = PROTECT(arg_is_null[%d] ? Rf_ScalarString(NA_STRING) : Rf_mkString(*(const char **)args[%d]));",
-      index, index, index
-    ),
+    bool = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarLogical(NA_LOGICAL) : Rf_ScalarLogical((*(bool *)args[%d]) ? TRUE : FALSE)",
+      index, index
+    )),
+    i8 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(int8_t *)args[%d])",
+      index, index
+    )),
+    u8 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(uint8_t *)args[%d])",
+      index, index
+    )),
+    i16 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(int16_t *)args[%d])",
+      index, index
+    )),
+    u16 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(uint16_t *)args[%d])",
+      index, index
+    )),
+    i32 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarInteger(NA_INTEGER) : Rf_ScalarInteger((int)*(int32_t *)args[%d])",
+      index, index
+    )),
+    u32 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(uint32_t *)args[%d])",
+      index, index
+    )),
+    i64 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(int64_t *)args[%d])",
+      index, index
+    )),
+    u64 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(uint64_t *)args[%d])",
+      index, index
+    )),
+    f32 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)*(float *)args[%d])",
+      index, index
+    )),
+    f64 = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal(*(double *)args[%d])",
+      index, index
+    )),
+    varchar = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarString(NA_STRING) : Rf_mkString(*(const char **)args[%d])",
+      index, index
+    )),
+    blob = sprintf(paste(
+      "if (arg_is_null[%d]) {",
+      "  arg_values[%d] = PROTECT(R_NilValue);",
+      "} else {",
+      "  rducks_blob_t *blob_%d = (rducks_blob_t *)args[%d];",
+      "  if (blob_%d->len > (uint64_t)R_XLEN_T_MAX) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "    UNPROTECT(protect_count);",
+      "    return false;",
+      "  }",
+      "  arg_values[%d] = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)blob_%d->len));",
+      "  if (blob_%d->len > 0) memcpy(RAW(arg_values[%d]), blob_%d->ptr, (size_t)blob_%d->len);",
+      "}",
+      "protect_count++;",
+      sep = "\n"
+    ), index, index, index, index, index, index, index, index, index, index, index),
+    date = sprintf(paste(
+      "if (arg_is_null[%d]) {",
+      "  arg_values[%d] = PROTECT(Rf_ScalarReal(NA_REAL));",
+      "} else {",
+      "  rducks_date_t *date_%d = (rducks_date_t *)args[%d];",
+      "  SEXP cls_%d;",
+      "  arg_values[%d] = PROTECT(Rf_ScalarReal((double)date_%d->days));",
+      "  cls_%d = PROTECT(Rf_mkString(\"Date\"));",
+      "  Rf_classgets(arg_values[%d], cls_%d);",
+      "  UNPROTECT(1);",
+      "}",
+      "protect_count++;",
+      sep = "\n"
+    ), index, index, index, index, index, index, index, index, index, index),
+    time = simple(sprintf(
+      "arg_is_null[%d] ? Rf_ScalarReal(NA_REAL) : Rf_ScalarReal((double)((rducks_time_t *)args[%d])->micros / 1000000.0)",
+      index, index
+    )),
+    timestamp = sprintf(paste(
+      "if (arg_is_null[%d]) {",
+      "  arg_values[%d] = PROTECT(Rf_ScalarReal(NA_REAL));",
+      "} else {",
+      "  rducks_timestamp_t *ts_%d = (rducks_timestamp_t *)args[%d];",
+      "  SEXP cls_%d;",
+      "  arg_values[%d] = PROTECT(Rf_ScalarReal((double)ts_%d->micros / 1000000.0));",
+      "  cls_%d = PROTECT(Rf_allocVector(STRSXP, 2));",
+      "  SET_STRING_ELT(cls_%d, 0, Rf_mkChar(\"POSIXct\"));",
+      "  SET_STRING_ELT(cls_%d, 1, Rf_mkChar(\"POSIXt\"));",
+      "  Rf_classgets(arg_values[%d], cls_%d);",
+      "  UNPROTECT(1);",
+      "}",
+      "protect_count++;",
+      sep = "\n"
+    ), index, index, index, index, index, index, index, index, index, index, index, index),
     stop("unsupported generated argument type: ", token, call. = FALSE)
+  )
+}
+
+rducks_c_integer_return_lines <- function(c_type, min_value, max_value) {
+  c(
+    "  double value = Rf_asReal(result);",
+    "  if (ISNA(value)) {",
+    "    if (out_is_null) *out_is_null = true;",
+    sprintf("  } else if (!R_FINITE(value) || value < %.17g || value > %.17g) {", min_value, max_value),
+    "    UNPROTECT(protect_count);",
+    "    return false;",
+    "  } else {",
+    sprintf("    *(%s *)out_value = (%s)value;", c_type, c_type),
+    "    if (out_is_null) *out_is_null = false;",
+    "  }"
+  )
+}
+
+rducks_c_real_return_lines <- function(c_type) {
+  c(
+    "  double value = Rf_asReal(result);",
+    "  if (ISNA(value)) {",
+    "    if (out_is_null) *out_is_null = true;",
+    "  } else {",
+    sprintf("    *(%s *)out_value = (%s)value;", c_type, c_type),
+    "    if (out_is_null) *out_is_null = false;",
+    "  }"
   )
 }
 
@@ -98,42 +203,16 @@ rducks_c_return_lines <- function(token) {
       "    if (out_is_null) *out_is_null = false;",
       "  }"
     ),
-    i32 = c(
-      "  int value = Rf_asInteger(result);",
-      "  if (value == NA_INTEGER) {",
-      "    if (out_is_null) *out_is_null = true;",
-      "  } else {",
-      "    *(int32_t *)out_value = (int32_t)value;",
-      "    if (out_is_null) *out_is_null = false;",
-      "  }"
-    ),
-    i64 = c(
-      "  double value = Rf_asReal(result);",
-      "  if (ISNA(value)) {",
-      "    if (out_is_null) *out_is_null = true;",
-      "  } else {",
-      "    *(int64_t *)out_value = (int64_t)value;",
-      "    if (out_is_null) *out_is_null = false;",
-      "  }"
-    ),
-    f32 = c(
-      "  double value = Rf_asReal(result);",
-      "  if (ISNA(value)) {",
-      "    if (out_is_null) *out_is_null = true;",
-      "  } else {",
-      "    *(float *)out_value = (float)value;",
-      "    if (out_is_null) *out_is_null = false;",
-      "  }"
-    ),
-    f64 = c(
-      "  double value = Rf_asReal(result);",
-      "  if (ISNA(value)) {",
-      "    if (out_is_null) *out_is_null = true;",
-      "  } else {",
-      "    *(double *)out_value = value;",
-      "    if (out_is_null) *out_is_null = false;",
-      "  }"
-    ),
+    i8 = rducks_c_integer_return_lines("int8_t", -128, 127),
+    u8 = rducks_c_integer_return_lines("uint8_t", 0, 255),
+    i16 = rducks_c_integer_return_lines("int16_t", -32768, 32767),
+    u16 = rducks_c_integer_return_lines("uint16_t", 0, 65535),
+    i32 = rducks_c_integer_return_lines("int32_t", -2147483648, 2147483647),
+    u32 = rducks_c_integer_return_lines("uint32_t", 0, 4294967295),
+    i64 = rducks_c_integer_return_lines("int64_t", -9223372036854775808, 9223372036854775807),
+    u64 = rducks_c_integer_return_lines("uint64_t", 0, 18446744073709551615),
+    f32 = rducks_c_real_return_lines("float"),
+    f64 = rducks_c_real_return_lines("double"),
     varchar = c(
       "  SEXP str_vec;",
       "  int str_protected = 0;",
@@ -149,10 +228,75 @@ rducks_c_return_lines <- function(token) {
       "    if (XLENGTH(str_vec) == 0 || STRING_ELT(str_vec, 0) == NA_STRING) {",
       "      if (out_is_null) *out_is_null = true;",
       "    } else {",
-      "      *(const char **)out_value = Rf_translateCharUTF8(STRING_ELT(str_vec, 0));",
+      "      const char *src = Rf_translateCharUTF8(STRING_ELT(str_vec, 0));",
+      "      size_t len = strlen(src);",
+      "      char *copy = (char *)malloc(len + 1U);",
+      "      if (!copy) {",
+      "        if (str_protected) UNPROTECT(1);",
+      "        UNPROTECT(protect_count);",
+      "        return false;",
+      "      }",
+      "      memcpy(copy, src, len + 1U);",
+      "      *(char **)out_value = copy;",
       "      if (out_is_null) *out_is_null = false;",
       "    }",
       "    if (str_protected) UNPROTECT(1);",
+      "  }"
+    ),
+    blob = c(
+      "  if (TYPEOF(result) != RAWSXP) {",
+      "    UNPROTECT(protect_count);",
+      "    return false;",
+      "  }",
+      "  rducks_blob_t *blob = (rducks_blob_t *)out_value;",
+      "  blob->len = (uint64_t)XLENGTH(result);",
+      "  if (blob->len == 0) {",
+      "    blob->ptr = NULL;",
+      "  } else {",
+      "    unsigned char *copy = (unsigned char *)malloc((size_t)blob->len);",
+      "    if (!copy) {",
+      "      UNPROTECT(protect_count);",
+      "      return false;",
+      "    }",
+      "    memcpy(copy, RAW(result), (size_t)blob->len);",
+      "    blob->ptr = copy;",
+      "  }",
+      "  if (out_is_null) *out_is_null = false;"
+    ),
+    date = c(
+      "  double value = Rf_asReal(result);",
+      "  if (ISNA(value)) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "  } else if (!R_FINITE(value) || value < -2147483648.0 || value > 2147483647.0) {",
+      "    UNPROTECT(protect_count);",
+      "    return false;",
+      "  } else {",
+      "    ((rducks_date_t *)out_value)->days = (int32_t)value;",
+      "    if (out_is_null) *out_is_null = false;",
+      "  }"
+    ),
+    time = c(
+      "  double value = Rf_asReal(result);",
+      "  if (ISNA(value)) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "  } else if (!R_FINITE(value)) {",
+      "    UNPROTECT(protect_count);",
+      "    return false;",
+      "  } else {",
+      "    ((rducks_time_t *)out_value)->micros = (int64_t)(value * 1000000.0);",
+      "    if (out_is_null) *out_is_null = false;",
+      "  }"
+    ),
+    timestamp = c(
+      "  double value = Rf_asReal(result);",
+      "  if (ISNA(value)) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "  } else if (!R_FINITE(value)) {",
+      "    UNPROTECT(protect_count);",
+      "    return false;",
+      "  } else {",
+      "    ((rducks_timestamp_t *)out_value)->micros = (int64_t)(value * 1000000.0);",
+      "    if (out_is_null) *out_is_null = false;",
       "  }"
     ),
     stop("unsupported generated return type: ", token, call. = FALSE)
@@ -190,9 +334,16 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
     "#define _Complex",
     "#include <R.h>",
     "#include <Rinternals.h>",
+    "#include <R_ext/Arith.h>",
     "#include <stdbool.h>",
     "#include <stdint.h>",
     "#include <stddef.h>",
+    "#include <stdlib.h>",
+    "#include <string.h>",
+    "typedef struct rducks_blob { const unsigned char *ptr; uint64_t len; } rducks_blob_t;",
+    "typedef struct rducks_date { int32_t days; } rducks_date_t;",
+    "typedef struct rducks_time { int64_t micros; } rducks_time_t;",
+    "typedef struct rducks_timestamp { int64_t micros; } rducks_timestamp_t;",
     "",
     sprintf("bool %s(SEXP fun, void **args, const bool *arg_is_null, void *out_value, bool *out_is_null) {", symbol),
     sprintf("  SEXP arg_values[%d];", max(n_args, 1L)),
@@ -202,7 +353,6 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
     "  int protect_count = 0;",
     "  int err = 0;",
     if (n_args) paste0("  ", arg_lines, collapse = "\n") else "  (void)args;\n  (void)arg_is_null;\n  (void)arg_values;",
-    if (n_args) sprintf("  protect_count += %d;", n_args) else "",
     if (n_args) sprintf("  for (size_t i = %d; i > 0; --i) {", n_args) else "  for (size_t i = 0; i > 0; --i) {",
     "    pair = PROTECT(Rf_cons(arg_values[i - 1], pair));",
     "    protect_count++;",
