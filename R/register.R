@@ -1,31 +1,58 @@
+.rducks_compiled_registry <- new.env(parent = emptyenv())
+.rducks_compiled_registry$next_id <- 0L
+
+rducks_keep_compiled_wrapper <- function(compiled) {
+  .rducks_compiled_registry$next_id <- .rducks_compiled_registry$next_id + 1L
+  id <- paste0("wrapper_", .rducks_compiled_registry$next_id)
+  .rducks_compiled_registry[[id]] <- compiled
+  id
+}
+
 #' Register an R UDF in DuckDB
 #'
 #' Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
-#' extension. The current implemented path supports one- or two-argument
-#' `f64 -> f64`/`f64, f64 -> f64` callbacks and requires [rducks_enable()] first.
+#' extension and an Rtinycc-generated shape-specific C wrapper. The current
+#' implemented path is direct main-R-thread callback execution and requires
+#' single-thread DuckDB execution.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
 #' @param fun R function.
-#' @param args Character vector of Rducks type tokens. Currently all must be
-#'   `"f64"` and length must be one or two.
-#' @param returns Return type token. Currently must be `"f64"`.
-#' @param mode Reserved for future generic/compiled paths.
-#' @param compile Reserved for future Rtinycc-generated wrapper paths.
+#' @param args Character vector of Rducks scalar type tokens.
+#' @param returns Scalar return type token.
+#' @param mode Registration mode. Currently only `"compiled"` is implemented.
+#' @param compile Kept for API compatibility; must be `TRUE`.
+#' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
+#'   the R function, or `"special"` to call the R function with NA-like R
+#'   values for NULL inputs.
+#' @param exception_handling Either `"rethrow"` to report R errors to DuckDB, or
+#'   `"return_null"` to turn callback errors into SQL NULL values.
+#' @param side_effects Logical scalar. Use `TRUE` for callbacks with randomness,
+#'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
+#'   function as pure.
 #' @return Object of class `rducks_registration`.
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
-                            mode = c("generic", "compiled"),
-                            compile = identical(mode[[1]], "compiled")) {
+                            mode = c("compiled"),
+                            compile = TRUE,
+                            null_handling = c("default", "special"),
+                            exception_handling = c("rethrow", "return_null"),
+                            side_effects = FALSE) {
   mode <- match.arg(mode)
-  force(compile)
+  null_handling <- match.arg(null_handling)
+  exception_handling <- match.arg(exception_handling)
+  if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
+    stop("side_effects must be TRUE or FALSE", call. = FALSE)
+  }
+  if (!isTRUE(compile)) {
+    stop("Rducks currently requires compile = TRUE", call. = FALSE)
+  }
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
-  if (!identical(spec$returns, "f64") || !(length(spec$args) %in% c(1L, 2L)) || any(spec$args != "f64")) {
-    stop("current Rducks backend only supports f64 unary/binary scalar UDFs", call. = FALSE)
-  }
+  rducks_assert_single_thread(con)
+  compiled <- rducks_compile_scalar_wrapper(spec)
 
   callback <- rducks_callback(fun)
   ok <- FALSE
@@ -33,21 +60,38 @@ rducks_register <- function(con, name, fun, args, returns,
     if (!ok) rducks_callback_close(callback)
   }, add = TRUE)
 
-  ptr <- .Call(RDUCKS_callback_fun_addr, callback)
+  fun_ptr <- .Call(RDUCKS_callback_fun_addr, callback)
+  wrapper_ptr <- .Call(RDUCKS_extptr_addr, compiled$pointer)
   sql <- sprintf(
-    "SELECT rducks_register_f64(%s, %s::UBIGINT, %d::INTEGER) AS ok",
+    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s::UBIGINT, %s, %s, %s, %s, %s) AS ok",
     rducks_sql_string(name),
-    as.character(ptr),
-    length(spec$args)
+    as.character(fun_ptr),
+    as.character(wrapper_ptr),
+    rducks_sql_string(paste(spec$args, collapse = ",")),
+    rducks_sql_string(spec$returns),
+    rducks_sql_string(null_handling),
+    rducks_sql_string(exception_handling),
+    if (isTRUE(side_effects)) "TRUE" else "FALSE"
   )
   res <- DBI::dbGetQuery(con, sql)
   if (!NROW(res) || !isTRUE(res$ok[[1]])) {
     stop("native Rducks registration failed for SQL function: ", name, call. = FALSE)
   }
   ok <- TRUE
+  registry_id <- rducks_keep_compiled_wrapper(compiled)
 
   structure(
-    list(connection = con, spec = spec, callback = callback, registered = TRUE),
+    list(
+      connection = con,
+      spec = spec,
+      callback = callback,
+      compiled = compiled,
+      compiled_registry_id = registry_id,
+      null_handling = null_handling,
+      exception_handling = exception_handling,
+      side_effects = side_effects,
+      registered = TRUE
+    ),
     class = "rducks_registration"
   )
 }

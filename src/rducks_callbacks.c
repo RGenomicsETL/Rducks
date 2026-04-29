@@ -105,7 +105,7 @@ SEXP RDUCKS_callback_invoke(SEXP xptr, SEXP args) {
 SEXP RDUCKS_pump(void) {
     /* The DuckDB-extension request queue is introduced in the next native
      * milestone. Returning zero reports that no queued worker requests were
-     * processed by this minimal DuckTinyCC-backed implementation. */
+     * processed by this minimal direct-callback implementation. */
     return Rf_ScalarInteger(0);
 }
 

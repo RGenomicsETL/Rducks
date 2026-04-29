@@ -50,15 +50,15 @@ Pump triggers are staged deliberately:
 
 ## First safe mode
 
-The first fully safe scalar mode is expected to use:
+The first direct-callback scalar mode uses:
 
 ```sql
 PRAGMA threads=1;
 ```
 
-In this mode the R callback can be invoked directly by a main-thread trampoline.
-Multi-threaded sync UDFs require the pump queue to be proven under blocking UDF
-loads before being documented as stable.
+Rducks requires this mode before registering direct R callbacks. Multi-threaded
+sync UDFs require the pump queue to be proven under blocking UDF loads before
+being documented as stable.
 
 ## Arrow/nanoarrow direction
 

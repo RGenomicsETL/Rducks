@@ -2,20 +2,20 @@
 % Please edit documentation in R/codegen.R
 \name{rducks_generate_scalar_wrapper}
 \alias{rducks_generate_scalar_wrapper}
-\title{Generate C source for a scalar wrapper shape}
+\title{Generate C source for a scalar R UDF wrapper}
 \usage{
-rducks_generate_scalar_wrapper(spec, callback_id = "callback_id")
+rducks_generate_scalar_wrapper(spec, symbol = NULL)
 }
 \arguments{
 \item{spec}{A \code{\link[=rducks_udf_spec]{rducks_udf_spec()}} object.}
 
-\item{callback_id}{Integer callback id or C expression naming the callback.}
+\item{symbol}{Optional C symbol name.}
 }
 \value{
-Character scalar C source.
+Character scalar C source with attributes \code{symbol} and \code{hash}.
 }
 \description{
-Generates the shape-specific source that Rducks will compile via Rtinycc for
-the compiled registration path. The source intentionally calls placeholder
-runtime functions; the DuckDB extension will provide those symbols.
+The generated function has the fixed native ABI used by the Rducks DuckDB
+extension: \verb{bool fn(SEXP fun, void **args, const bool *arg_is_null, void *out_value, bool *out_is_null)}. The extension handles DuckDB vector
+access and the generated wrapper handles only shape-specific R marshalling.
 }

@@ -10,8 +10,11 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("generic", "compiled"),
-  compile = identical(mode[[1]], "compiled")
+  mode = c("compiled"),
+  compile = TRUE,
+  null_handling = c("default", "special"),
+  exception_handling = c("rethrow", "return_null"),
+  side_effects = FALSE
 )
 }
 \arguments{
@@ -21,20 +24,31 @@ rducks_register(
 
 \item{fun}{R function.}
 
-\item{args}{Character vector of Rducks type tokens. Currently all must be
-\code{"f64"} and length must be one or two.}
+\item{args}{Character vector of Rducks scalar type tokens.}
 
-\item{returns}{Return type token. Currently must be \code{"f64"}.}
+\item{returns}{Scalar return type token.}
 
-\item{mode}{Reserved for future generic/compiled paths.}
+\item{mode}{Registration mode. Currently only \code{"compiled"} is implemented.}
 
-\item{compile}{Reserved for future Rtinycc-generated wrapper paths.}
+\item{compile}{Kept for API compatibility; must be \code{TRUE}.}
+
+\item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
+the R function, or \code{"special"} to call the R function with NA-like R
+values for NULL inputs.}
+
+\item{exception_handling}{Either \code{"rethrow"} to report R errors to DuckDB, or
+\code{"return_null"} to turn callback errors into SQL NULL values.}
+
+\item{side_effects}{Logical scalar. Use \code{TRUE} for callbacks with randomness,
+counters, I/O, mutation, or other side effects so DuckDB does not treat the
+function as pure.}
 }
 \value{
 Object of class \code{rducks_registration}.
 }
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
-extension. The current implemented path supports one- or two-argument
-\code{f64 -> f64}/\verb{f64, f64 -> f64} callbacks and requires \code{\link[=rducks_enable]{rducks_enable()}} first.
+extension and an Rtinycc-generated shape-specific C wrapper. The current
+implemented path is direct main-R-thread callback execution and requires
+single-thread DuckDB execution.
 }

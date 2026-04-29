@@ -17,13 +17,11 @@ Depends:
     R (>= 4.1)
 Imports:
     DBI,
-    methods
-Suggests:
     duckdb,
-    Rtinycc,
+    methods,
+    Rtinycc
+Suggests:
     nanoarrow,
-    tinytest,
-    roxygen2
-SystemRequirements: DuckDB R package; a C toolchain for native extension builds
+    tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

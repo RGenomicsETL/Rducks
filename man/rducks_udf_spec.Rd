@@ -4,7 +4,7 @@
 \alias{rducks_udf_spec}
 \title{Create an Rducks UDF specification}
 \usage{
-rducks_udf_spec(name, fun, args, returns, mode = c("generic", "compiled"))
+rducks_udf_spec(name, fun, args, returns, mode = c("compiled"))
 }
 \arguments{
 \item{name}{SQL function name.}
@@ -15,7 +15,8 @@ rducks_udf_spec(name, fun, args, returns, mode = c("generic", "compiled"))
 
 \item{returns}{Return type token.}
 
-\item{mode}{Registration mode, currently \code{"generic"} or \code{"compiled"}.}
+\item{mode}{Registration mode. The implemented scalar path uses
+\code{"compiled"} Rtinycc-generated wrappers.}
 }
 \value{
 Object of class \code{rducks_udf_spec}.

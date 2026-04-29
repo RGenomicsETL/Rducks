@@ -7,7 +7,7 @@
 rducks_enable(
   con,
   extension_path = rducks_extension_path(),
-  threads = c("single", "unchanged")
+  threads = c("unchanged", "single")
 )
 }
 \arguments{
@@ -15,12 +15,13 @@ rducks_enable(
 
 \item{extension_path}{Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.}
 
-\item{threads}{Either \code{"single"} or \code{"unchanged"}.}
+\item{threads}{Either \code{"unchanged"} or \code{"single"}.}
 }
 \value{
 \code{con}, invisibly.
 }
 \description{
-Loads the bundled Rducks DuckDB extension and sets \verb{PRAGMA threads=1} by
-default for the current direct-R-callback implementation.
+Loads the bundled Rducks DuckDB extension. The current direct R callback
+execution mode requires single-thread DuckDB execution; pass
+\code{threads = "single"} to set \verb{PRAGMA threads=1} explicitly.
 }

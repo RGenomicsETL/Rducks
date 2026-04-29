@@ -1,13 +1,22 @@
 # Rducks Function Catalog
 
+## `rducks_enable`
+
+- Kind: `r-wrapper/native-extension`
+- Category: `connection`
+- Signature: `rducks_enable(con, extension_path, threads)`
+- Returns: `duckdb_connection invisibly`
+
+Load the Rducks DuckDB extension into a connection. The current direct callback path requires explicit single-thread execution via threads = 'single' or PRAGMA threads=1 before R UDF registration.
+
 ## `rducks_register`
 
-- Kind: `r-wrapper`
+- Kind: `r-wrapper/native-extension/Rtinycc`
 - Category: `registration`
-- Signature: `rducks_register(con, name, fun, args, returns, mode)`
+- Signature: `rducks_register(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)`
 - Returns: `rducks_registration`
 
-Create metadata and callback state for an R UDF registration. Native DuckDB registration is staged behind the loaded extension.
+Compile a shape-specific scalar wrapper with Rtinycc, preserve the R callback, and register the resulting function through the loaded Rducks DuckDB extension. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.
 
 ## `rducks_pump`
 
@@ -16,5 +25,5 @@ Create metadata and callback state for an R UDF registration. Native DuckDB regi
 - Signature: `rducks_pump()`
 - Returns: `integer`
 
-Drain pending main-thread callback requests. The initial scaffold returns zero until the DuckDB extension queue is wired in.
+Planned main-thread pump for future DuckDB worker-thread callback requests. The current direct-callback implementation still errors because the worker request queue is not implemented.
 

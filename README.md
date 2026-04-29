@@ -7,16 +7,17 @@ DuckDB user-defined functions.
 
 - The package builds a small native DuckDB extension at install time.
 - `rducks_enable()` loads that extension into a DuckDB connection.
-- `rducks_register()` registers one- or two-argument `DOUBLE -> DOUBLE` R scalar
-  UDFs.
+- `rducks_register()` compiles an Rtinycc per-shape scalar wrapper and registers
+  it through the loaded extension.
 - The test suite executes the real path through `DBI::dbGetQuery()`.
 
 ## Current limits
 
-- Only `f64` unary/binary scalar UDFs are implemented.
-- Multi-threaded callback pumping is not implemented; `rducks_enable()` sets
-  `PRAGMA threads=1` by default.
-- Rtinycc-generated arbitrary-shape wrappers are not wired in yet.
+- Implemented scalar types are `bool`, `i32`, `i64`, `f32`, `f64`, and
+  `varchar`.
+- Multi-threaded callback pumping is not implemented; direct callbacks require
+  `PRAGMA threads=1` or `rducks_enable(con, threads = "single")`.
+- Scalar wrappers are row-oriented; batch/Arrow wrappers are not wired in yet.
 - Arrow/nanoarrow batch UDFs are not implemented yet.
 
 ## Real example
@@ -27,7 +28,7 @@ library(duckdb)
 library(Rducks)
 
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(con)
+rducks_enable(con, threads = "single")
 
 reg <- rducks_register(
   con,
@@ -41,6 +42,11 @@ DBI::dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 #>    x
 #> 1 42
 ```
+
+Use `null_handling = "special"` when the R function should receive `NA` for
+SQL `NULL` inputs instead of using NULL-in/NULL-out interception. Use
+`side_effects = TRUE` for counters, randomness, I/O, or mutation so DuckDB does
+not treat the function as pure.
 
 ## Intended next architecture
 

@@ -23,7 +23,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Sounkou Toure \email{sounkoutoure@gmail.com}
+\strong{Maintainer}: Sounkou Mahamane Toure \email{sounkoutoure@gmail.com}
 
 }
 \keyword{internal}

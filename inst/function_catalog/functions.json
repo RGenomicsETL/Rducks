@@ -1,11 +1,21 @@
 [
   {
+    "name": "rducks_enable",
+    "kind": "r-wrapper/native-extension",
+    "category": "connection",
+    "signature": "rducks_enable(con, extension_path, threads)",
+    "returns": "duckdb_connection invisibly",
+    "description": "Load the Rducks DuckDB extension into a connection. The current direct callback path requires explicit single-thread execution via threads = 'single' or PRAGMA threads=1 before R UDF registration.",
+    "since": "0.0.0.9000",
+    "experimental": true
+  },
+  {
     "name": "rducks_register",
-    "kind": "r-wrapper",
+    "kind": "r-wrapper/native-extension/Rtinycc",
     "category": "registration",
-    "signature": "rducks_register(con, name, fun, args, returns, mode)",
+    "signature": "rducks_register(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)",
     "returns": "rducks_registration",
-    "description": "Create metadata and callback state for an R UDF registration. Native DuckDB registration is staged behind the loaded extension.",
+    "description": "Compile a shape-specific scalar wrapper with Rtinycc, preserve the R callback, and register the resulting function through the loaded Rducks DuckDB extension. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.",
     "since": "0.0.0.9000",
     "experimental": true
   },
@@ -15,7 +25,7 @@
     "category": "callback-runtime",
     "signature": "rducks_pump()",
     "returns": "integer",
-    "description": "Drain pending main-thread callback requests. The initial scaffold returns zero until the DuckDB extension queue is wired in.",
+    "description": "Planned main-thread pump for future DuckDB worker-thread callback requests. The current direct-callback implementation still errors because the worker request queue is not implemented.",
     "since": "0.0.0.9000",
     "experimental": true
   }

@@ -53,3 +53,40 @@ DuckHTS.
 
 `cleanup` and `cleanup.win` remove generated extension build artifacts and
 native object/shared-library leftovers.
+
+## Unstable DuckDB C API and metadata
+
+Rducks uses DuckDB's unstable C extension API by default because planned Arrow
+batch paths need API members that are behind `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`.
+The configure scripts therefore default to:
+
+```sh
+USE_UNSTABLE_C_API=1
+```
+
+This adds a compile flag like:
+
+```sh
+-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.2.0
+```
+
+Unlike DuckDB's CMake/extension-ci-tools flow, Rducks appends its own metadata
+footer with `tools/append_extension_metadata.R`. The metadata ABI type is
+controlled separately:
+
+```sh
+RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT
+```
+
+That default is intentional for this R package build: we compile with the
+unstable struct members visible, but keep the footer ABI as `C_STRUCT` to avoid
+DuckDB's exact-version `C_STRUCT_UNSTABLE` loader check across DuckDB patch
+versions. If exact-version enforcement is desired for a diagnostic build, use:
+
+```sh
+RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE R CMD INSTALL .
+```
+
+Do not accidentally mix these knobs: if unstable C API macros are injected from
+external compiler flags, set `USE_UNSTABLE_C_API=1` so the build configuration is
+explicit.
