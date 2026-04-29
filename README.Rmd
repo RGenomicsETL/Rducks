@@ -1,12 +1,24 @@
+---
+output: github_document
+---
 
 <!-- README.md is generated from README.Rmd. Please edit README.Rmd. -->
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE
+)
+```
+
 # Rducks
 
-Rducks registers R scalar functions as DuckDB SQL functions. It ships as
-an R package plus a DuckDB extension. Rtinycc compiles a small C wrapper
-for each R function signature, and the loaded DuckDB extension registers
-that wrapper on a DuckDB connection.
+Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R
+package plus a DuckDB extension. Rtinycc compiles a small C wrapper for each R
+function signature, and the loaded DuckDB extension registers that wrapper on a
+DuckDB connection.
 
 ## Current scope
 
@@ -21,12 +33,12 @@ Implemented now:
 Current constraint:
 
 - direct R callbacks require single-thread DuckDB execution, so call
-  `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
-  before registering R UDFs.
+  `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1` before
+  registering R UDFs.
 
 ## Example
 
-``` r
+```{r example}
 library(DBI)
 library(duckdb)
 library(Rducks)
@@ -43,19 +55,17 @@ reg_plus_one <- rducks_register(
 )
 
 dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
-#>    x
-#> 1 42
 ```
 
 ## NULL handling
 
-By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL
-`NULL`, the R callback is not called and the SQL result is `NULL`.
+By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL `NULL`,
+the R callback is not called and the SQL result is `NULL`.
 
-Use `null_handling = "special"` to pass an R NA-like value to the R
-function for SQL `NULL` inputs.
+Use `null_handling = "special"` to pass an R NA-like value to the R function
+for SQL `NULL` inputs.
 
-``` r
+```{r null-handling}
 reg_null_special <- rducks_register(
   con,
   name = "r_null_special",
@@ -66,17 +76,15 @@ reg_null_special <- rducks_register(
 )
 
 dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
-#>   x
-#> 1 5
 ```
 
 ## Exceptions and side effects
 
-Set `exception_handling = "return_null"` to turn callback errors into
-SQL `NULL`. Set `side_effects = TRUE` for callbacks with counters,
-randomness, I/O, or mutation so DuckDB reruns the function for each row.
+Set `exception_handling = "return_null"` to turn callback errors into SQL
+`NULL`. Set `side_effects = TRUE` for callbacks with counters, randomness, I/O,
+or mutation so DuckDB reruns the function for each row.
 
-``` r
+```{r side-effects}
 counter <- local({
   i <- 0L
   function() {
@@ -95,24 +103,22 @@ reg_counter <- rducks_register(
 )
 
 dbGetQuery(con, "SELECT r_counter() AS x FROM range(5)")
-#>   x
-#> 1 1
-#> 2 2
-#> 3 3
-#> 4 4
-#> 5 5
 ```
 
 ## Build notes
 
-The package builds its DuckDB extension during installation using
-`configure` or `configure.win`. The extension metadata footer is
-appended by `tools/append_extension_metadata.R`.
+The package builds its DuckDB extension during installation using `configure` or
+`configure.win`. The extension metadata footer is appended by
+`tools/append_extension_metadata.R`.
 
 DuckDB C API headers are refreshed explicitly with:
 
-``` sh
+```sh
 Rscript tools/fetch_duckdb_headers.R --ref v1.2.0
 ```
 
 See `docs/BUILD.md` for the extension build and metadata details.
+
+```{r cleanup, include=FALSE}
+dbDisconnect(con, shutdown = TRUE)
+```
