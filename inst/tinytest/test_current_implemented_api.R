@@ -1,6 +1,12 @@
 library(Rducks)
 
 expect_equal(rducks_type_normalize("integer"), "i32")
+expect_equal(rducks_type_normalize(INTEGER), "i32")
+expect_equal(rducks_type_normalize(INTEGER[]), "list<i32>")
+expect_equal(rducks_type_normalize(INTEGER[3]), "i32[3]")
+expect_equal(rducks_type_normalize(STRUCT(a = INTEGER, b = VARCHAR)), "struct<a:i32;b:varchar>")
+expect_equal(rducks_type_normalize(MAP(VARCHAR, INTEGER)), "map<varchar;i32>")
+expect_equal(rducks_types_normalize(c(INTEGER, DOUBLE)), c("i32", "f64"))
 expect_equal(
   rducks_duckdb_types(c("i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp")),
   c("TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP")
@@ -21,12 +27,14 @@ expect_true(all(c(
   "notes"
 ) %in% names(scalar_mapping)))
 
-composite_mapping <- rducks_argument_type_mapping(c("list<i32>", "i32[]", "i64[3]", "struct<a:i32;b:varchar>", "map<varchar;i32>"))
+composite_mapping <- rducks_argument_type_mapping(c(LIST(INTEGER), INTEGER[], BIGINT[3], STRUCT(a = INTEGER, b = VARCHAR), MAP(VARCHAR, INTEGER)))
 expect_equal(
   composite_mapping$duckdb_sql,
   c("INTEGER[]", "INTEGER[]", "BIGINT[3]", "STRUCT(a INTEGER, b VARCHAR)", "MAP(VARCHAR, INTEGER)")
 )
 expect_equal(composite_mapping$argument_kind, c("list", "list", "array", "struct", "map"))
+expect_equal(composite_mapping$r_value_passed_to_fun[[1L]], "integer vector")
+expect_equal(composite_mapping$r_value_passed_to_fun[[3L]], "numeric vector of length 3")
 expect_true(composite_mapping$precision_may_be_lost[[3L]])
 
 for (token in c(scalar_mapping$rducks_type, composite_mapping$rducks_type)) {
@@ -35,7 +43,10 @@ for (token in c(scalar_mapping$rducks_type, composite_mapping$rducks_type)) {
   expect_equal(spec$argument_type_mapping$rducks_type, rducks_type_normalize(token))
   src <- rducks_generate_scalar_wrapper(spec)
   expect_true(is.character(src) && length(src) == 1L && grepl("R_tryEvalSilent", src, fixed = TRUE))
+  expect_true(grepl("#define _Complex", src, fixed = TRUE))
 }
+expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
+expect_equal(rducks_udf_spec("compiled_alias", function(x) x, INTEGER, INTEGER, mode = "compiled")$mode, "row")
 expect_error(rducks_udf_spec("bad_mapping", function(x) x, "list<nope>", "i32"), "unsupported")
 
 cb <- rducks_callback(function(x, y) x + y)
@@ -51,11 +62,24 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   rducks_enable(con, threads = "single")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_version() AS x")$x, "Rducks extension loaded")
 
-  reg1 <- rducks_register(con, "rducks_plus_one", function(x) x + 1, "f64", "f64")
+  reg1 <- rducks_register(con, "rducks_plus_one", function(x) x + 1, DOUBLE, DOUBLE)
   expect_inherits(reg1, "rducks_registration")
+  expect_equal(reg1$spec$mode, "row")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_plus_one(41.0) AS x")$x, 42)
 
-  reg2 <- rducks_register(con, "rducks_add", function(x, y) x + y, c("f64", "f64"), "f64")
+  reg_soft <- rducks_register(con, "rducks_soft_unregister", function(x) x + 1L, INTEGER, INTEGER)
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_soft_unregister(1::INTEGER) AS x")$x, 2L)
+  expect_null(rducks_unregister(reg_soft))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_soft_unregister(1::INTEGER) AS x"), "unregistered")
+  invisible(rducks_register(con, "rducks_soft_unregister", function(x) x + 2L, INTEGER, INTEGER))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_soft_unregister(1::INTEGER) AS x")$x, 3L)
+
+  expect_error(
+    rducks_register(con, "rducks_arrow_lapply", function(x) x, INTEGER, INTEGER, mode = "arrow_lapply"),
+    "reserved"
+  )
+
+  reg2 <- rducks_register(con, "rducks_add", function(x, y) x + y, c(DOUBLE, DOUBLE), DOUBLE)
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_add(1.5, 2.25) AS x")$x, 3.75)
 
   reg3 <- rducks_register(con, "rducks_i32_double", function(x) as.integer(x * 2L), "i32", "i32")
@@ -129,25 +153,35 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   invisible(rducks_register(con, "rducks_counter", counter, character(), "i32", side_effects = TRUE))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_counter() AS x FROM range(5)")$x, 1:5)
 
-  invisible(rducks_register(con, "rducks_list_len", function(x) length(x), "list<i32>", "i32"))
-  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_list_len([1,2,3]::INTEGER[]) AS x")$x, 3L)
+  invisible(rducks_register(con, "rducks_list_len", function(x) length(x) + as.integer(is.integer(x)), INTEGER[], INTEGER))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_list_len([1,2,3]::INTEGER[]) AS x")$x, 4L)
 
-  invisible(rducks_register(con, "rducks_array_sum", function(x) sum(unlist(x)), "i32[3]", "i32"))
+  invisible(rducks_register(con, "rducks_array_sum", function(x) sum(x), INTEGER[3], INTEGER))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_array_sum([1,2,3]::INTEGER[3]) AS x")$x, 6L)
 
-  invisible(rducks_register(con, "rducks_struct_sum", function(x) x$a + x$b, "struct<a:i32;b:i32>", "i32"))
+  invisible(rducks_register(con, "rducks_list_null", function(x) as.integer(is.na(x[[2L]])), INTEGER[], INTEGER, null_handling = "special"))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_list_null([1,NULL,3]::INTEGER[]) AS x")$x, 1L)
+
+  invisible(rducks_register(con, "rducks_struct_sum", function(x) x$a + x$b, STRUCT(a = INTEGER, b = INTEGER), INTEGER))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS x")$x, 42L)
 
-  invisible(rducks_register(con, "rducks_map_sum", function(x) sum(unlist(x$values)), "map<varchar;i32>", "i32"))
+  invisible(rducks_register(con, "rducks_map_sum", function(x) sum(x$values), MAP(VARCHAR, INTEGER), INTEGER))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_map_sum(map(['a','b'], [20,22])) AS x")$x, 42L)
 
-  invisible(rducks_register(con, "rducks_nested_len", function(x) length(x$s), "struct<s:list<i32>>", "i32"))
-  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_nested_len({'s': [1,2,3]}::STRUCT(s INTEGER[])) AS x")$x, 3L)
+  invisible(rducks_register(con, "rducks_nested_len", function(x) length(x$s) + as.integer(is.integer(x$s)), STRUCT(s = INTEGER[]), INTEGER))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_nested_len({'s': [1,2,3]}::STRUCT(s INTEGER[])) AS x")$x, 4L)
 
-  expect_error(
-    rducks_register(con, "rducks_list_return", function() list(1L), character(), "list<i32>"),
-    "composite return types"
-  )
+  invisible(rducks_register(con, "rducks_make_struct", function(x) list(a = x, b = x + 1L), INTEGER, STRUCT(a = INTEGER, b = INTEGER)))
+  expect_equal(DBI::dbGetQuery(con, "SELECT (rducks_make_struct(41::INTEGER)).b AS x")$x, 42L)
+
+  invisible(rducks_register(con, "rducks_make_list", function(x) c(x, x + 1L), INTEGER, INTEGER[]))
+  expect_equal(DBI::dbGetQuery(con, "SELECT list_sum(rducks_make_list(20::INTEGER)) AS x")$x, 41)
+
+  invisible(rducks_register(con, "rducks_make_map", function(x) list(keys = c('a', 'b'), values = c(x, x + 1L)), INTEGER, MAP(VARCHAR, INTEGER)))
+  expect_equal(DBI::dbGetQuery(con, "SELECT list_sum(map_values(rducks_make_map(20::INTEGER))) AS x")$x, 41)
+
+  invisible(rducks_register(con, "rducks_list_return", function() c(1L, 2L), character(), INTEGER[]))
+  expect_equal(DBI::dbGetQuery(con, "SELECT list_sum(rducks_list_return()) AS x")$x, 3)
 
   many_args <- rep("f64", 20)
   invisible(rducks_register(con, "rducks_sum20", function(...) sum(unlist(list(...))), many_args, "f64"))

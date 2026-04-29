@@ -7,7 +7,9 @@
 rducks_type_normalize(x)
 }
 \arguments{
-\item{x}{Character scalar type token.}
+\item{x}{Character scalar type token. DuckDB SQL type names such as
+\code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \verb{STRUCT(a INTEGER)}, and
+\code{MAP(VARCHAR, INTEGER)} are accepted.}
 }
 \value{
 Canonical type token.

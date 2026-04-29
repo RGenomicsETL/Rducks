@@ -1,15 +1,25 @@
+rducks_match_mode <- function(mode) {
+  mode <- match.arg(mode, c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"))
+  if (identical(mode, "compiled")) {
+    mode <- "row"
+  }
+  mode
+}
+
 #' Create an Rducks UDF specification
 #'
 #' @param name SQL function name.
 #' @param fun R function.
 #' @param args Character vector of Rducks type tokens.
 #' @param returns Return type token.
-#' @param mode Registration mode. The implemented scalar path uses
-#'   `"compiled"` Rtinycc-generated wrappers.
+#' @param mode Registration mode. `"row"` is implemented now and uses an
+#'   Rtinycc-generated wrapper for row-oriented scalar callbacks.
+#'   `"arrow_lapply"` and `"arrow_nanoarrow"` are reserved for future batch
+#'   UDF paths.
 #' @return Object of class `rducks_udf_spec`.
 #' @export
-rducks_udf_spec <- function(name, fun, args, returns, mode = c("compiled")) {
-  mode <- match.arg(mode)
+rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled")) {
+  mode <- rducks_match_mode(mode)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
   }
@@ -208,6 +218,13 @@ rducks_c_real_return_lines <- function(c_type) {
 }
 
 rducks_c_return_lines <- function(token) {
+  if (rducks_type_is_composite(token)) {
+    return(c(
+      "  *(SEXP *)out_value = result;",
+      "  R_PreserveObject(result);",
+      "  if (out_is_null) *out_is_null = false;"
+    ))
+  }
   switch(token,
     bool = c(
       "  int value = Rf_asLogical(result);",
@@ -333,9 +350,6 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
   if (!inherits(spec, "rducks_udf_spec")) {
     stop("spec must be a rducks_udf_spec", call. = FALSE)
   }
-  if (rducks_type_is_composite(spec$returns)) {
-    stop("composite return types are not implemented yet", call. = FALSE)
-  }
   key <- c(spec$name, spec$args, spec$returns)
   hash <- rducks_codegen_hash(key)
   symbol <- symbol %||% paste0("rducks_wrap_", rducks_c_identifier(spec$name), "_", hash)
@@ -351,6 +365,23 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
     character()
   }
   return_lines <- rducks_c_return_lines(spec$returns)
+  result_null_check <- if (rducks_type_is_composite(spec$returns)) {
+    c(
+      "  if (result == R_NilValue) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "    UNPROTECT(protect_count);",
+      "    return true;",
+      "  }"
+    )
+  } else {
+    c(
+      "  if (result == R_NilValue || XLENGTH(result) == 0) {",
+      "    if (out_is_null) *out_is_null = true;",
+      "    UNPROTECT(protect_count);",
+      "    return true;",
+      "  }"
+    )
+  }
 
   src <- paste(
     "#define _Complex",
@@ -388,11 +419,7 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
     "    UNPROTECT(protect_count);",
     "    return false;",
     "  }",
-    "  if (result == R_NilValue || XLENGTH(result) == 0) {",
-    "    if (out_is_null) *out_is_null = true;",
-    "    UNPROTECT(protect_count);",
-    "    return true;",
-    "  }",
+    paste(result_null_check, collapse = "\n"),
     paste(return_lines, collapse = "\n"),
     "  UNPROTECT(protect_count);",
     "  return true;",

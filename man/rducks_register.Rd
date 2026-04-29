@@ -10,7 +10,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("compiled"),
+  mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"),
   compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
@@ -24,11 +24,15 @@ rducks_register(
 
 \item{fun}{R function.}
 
-\item{args}{Character vector of Rducks scalar type tokens.}
+\item{args}{Argument type specification. Use exported DuckDB-style type
+objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]},
+\code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}.}
 
-\item{returns}{Scalar return type token.}
+\item{returns}{Return type specification.}
 
-\item{mode}{Registration mode. Currently only \code{"compiled"} is implemented.}
+\item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
+function once per row through an Rtinycc wrapper. \code{"arrow_lapply"} and
+\code{"arrow_nanoarrow"} are reserved for future batch UDF paths.}
 
 \item{compile}{Kept for API compatibility; must be \code{TRUE}.}
 
@@ -44,7 +48,8 @@ counters, I/O, mutation, or other side effects so DuckDB does not treat the
 function as pure.}
 }
 \value{
-Object of class \code{rducks_registration}.
+Object of class \code{rducks_registration}. Keep this object if you want
+to soft-unregister the UDF later with \code{\link[=rducks_unregister]{rducks_unregister()}}.
 }
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks

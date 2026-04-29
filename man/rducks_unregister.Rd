@@ -2,7 +2,7 @@
 % Please edit documentation in R/register.R
 \name{rducks_unregister}
 \alias{rducks_unregister}
-\title{Close an Rducks registration}
+\title{Soft-unregister an Rducks registration}
 \usage{
 rducks_unregister(registration)
 }
@@ -13,7 +13,10 @@ rducks_unregister(registration)
 \code{NULL}, invisibly.
 }
 \description{
-This releases the R-side callback token. The current native extension keeps
-its own preserved reference for the registered SQL function until DuckDB
-releases the function metadata.
+DuckDB currently registers extension scalar functions as internal catalog
+entries, so SQL \verb{DROP FUNCTION} cannot remove them. \code{rducks_unregister()}
+replaces the matching overload with an inactive stub, releases Rducks' R-side
+callback token, and drops the package registry reference to the compiled
+wrapper. Future SQL calls to the same overload report that the UDF was
+unregistered.
 }

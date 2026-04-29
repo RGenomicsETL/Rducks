@@ -8,6 +8,13 @@ rducks_keep_compiled_wrapper <- function(compiled) {
   id
 }
 
+rducks_drop_compiled_wrapper <- function(id) {
+  if (is.character(id) && length(id) == 1L && exists(id, envir = .rducks_compiled_registry, inherits = FALSE)) {
+    rm(list = id, envir = .rducks_compiled_registry)
+  }
+  invisible(NULL)
+}
+
 rducks_warn_type_mapping <- function(spec) {
   mapping <- rducks_argument_type_mapping(unique(c(spec$args, spec$returns)))
   numeric_integer <- mapping$rducks_type[mapping$uses_r_double_for_integer]
@@ -39,9 +46,13 @@ rducks_warn_type_mapping <- function(spec) {
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
 #' @param fun R function.
-#' @param args Character vector of Rducks scalar type tokens.
-#' @param returns Scalar return type token.
-#' @param mode Registration mode. Currently only `"compiled"` is implemented.
+#' @param args Argument type specification. Use exported DuckDB-style type
+#'   objects such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
+#'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
+#' @param returns Return type specification.
+#' @param mode Registration mode. `"row"` is implemented now and calls the R
+#'   function once per row through an Rtinycc wrapper. `"arrow_lapply"` and
+#'   `"arrow_nanoarrow"` are reserved for future batch UDF paths.
 #' @param compile Kept for API compatibility; must be `TRUE`.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with NA-like R
@@ -51,15 +62,16 @@ rducks_warn_type_mapping <- function(spec) {
 #' @param side_effects Logical scalar. Use `TRUE` for callbacks with randomness,
 #'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
 #'   function as pure.
-#' @return Object of class `rducks_registration`.
+#' @return Object of class `rducks_registration`. Keep this object if you want
+#'   to soft-unregister the UDF later with [rducks_unregister()].
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
-                            mode = c("compiled"),
+                            mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"),
                             compile = TRUE,
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
                             side_effects = FALSE) {
-  mode <- match.arg(mode)
+  mode <- rducks_match_mode(mode)
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
   if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
@@ -72,6 +84,13 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
+  if (identical(mode, "arrow_lapply")) {
+    stop("mode = 'arrow_lapply' is reserved for a future Arrow-batch lapply UDF path", call. = FALSE)
+  }
+  if (identical(mode, "arrow_nanoarrow")) {
+    rducks_assert_nanoarrow()
+    stop("mode = 'arrow_nanoarrow' is reserved for a future Arrow C Data Interface UDF path", call. = FALSE)
+  }
   rducks_warn_type_mapping(spec)
   rducks_assert_single_thread(con)
   compiled <- rducks_compile_scalar_wrapper(spec)
@@ -84,11 +103,13 @@ rducks_register <- function(con, name, fun, args, returns,
 
   fun_ptr <- .Call(RDUCKS_callback_fun_addr, callback)
   wrapper_ptr <- .Call(RDUCKS_extptr_addr, compiled$pointer)
+  compiled_ptr <- .Call(RDUCKS_sexp_addr, compiled)
   sql <- sprintf(
-    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s::UBIGINT, %s, %s, %s, %s, %s) AS ok",
+    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s::UBIGINT, %s::UBIGINT, %s, %s, %s, %s, %s) AS ok",
     rducks_sql_string(name),
     as.character(fun_ptr),
     as.character(wrapper_ptr),
+    as.character(compiled_ptr),
     rducks_sql_string(paste(spec$args, collapse = ",")),
     rducks_sql_string(spec$returns),
     rducks_sql_string(null_handling),
@@ -126,11 +147,14 @@ print.rducks_registration <- function(x, ...) {
   invisible(x)
 }
 
-#' Close an Rducks registration
+#' Soft-unregister an Rducks registration
 #'
-#' This releases the R-side callback token. The current native extension keeps
-#' its own preserved reference for the registered SQL function until DuckDB
-#' releases the function metadata.
+#' DuckDB currently registers extension scalar functions as internal catalog
+#' entries, so SQL `DROP FUNCTION` cannot remove them. `rducks_unregister()`
+#' replaces the matching overload with an inactive stub, releases Rducks' R-side
+#' callback token, and drops the package registry reference to the compiled
+#' wrapper. Future SQL calls to the same overload report that the UDF was
+#' unregistered.
 #'
 #' @param registration A [rducks_register()] result.
 #' @return `NULL`, invisibly.
@@ -139,6 +163,18 @@ rducks_unregister <- function(registration) {
   if (!inherits(registration, "rducks_registration")) {
     stop("registration must be a rducks_registration", call. = FALSE)
   }
+  spec <- registration$spec
+  sql <- sprintf(
+    "SELECT rducks_unregister_scalar(%s, %s, %s) AS ok",
+    rducks_sql_string(spec$name),
+    rducks_sql_string(paste(spec$args, collapse = ",")),
+    rducks_sql_string(spec$returns)
+  )
+  res <- DBI::dbGetQuery(registration$connection, sql)
+  if (!NROW(res) || !isTRUE(res$ok[[1]])) {
+    stop("native Rducks unregister failed for SQL function: ", spec$name, call. = FALSE)
+  }
   rducks_callback_close(registration$callback)
+  rducks_drop_compiled_wrapper(registration$compiled_registry_id)
   invisible(NULL)
 }

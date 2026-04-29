@@ -16,7 +16,16 @@ Load the Rducks DuckDB extension into a connection. The current direct callback 
 - Signature: `rducks_register(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)`
 - Returns: `rducks_registration`
 
-Compile a shape-specific scalar wrapper with Rtinycc, preserve the R callback, and register the resulting function through the loaded Rducks DuckDB extension. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.
+Register an R function as a DuckDB UDF. The implemented mode = 'row' compiles a shape-specific scalar wrapper with Rtinycc, preserves the R callback, and registers the resulting function through the loaded Rducks DuckDB extension. The returned rducks_registration can be passed to rducks_unregister(). Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.
+
+## `rducks_unregister`
+
+- Kind: `r-wrapper/native-extension`
+- Category: `registration`
+- Signature: `rducks_unregister(registration)`
+- Returns: `NULL invisibly`
+
+Soft-unregister a previously registered Rducks UDF by replacing the DuckDB overload with an inactive stub and releasing Rducks' R-side callback and compiled-wrapper references. SQL DROP FUNCTION cannot remove these internal extension entries in current DuckDB.
 
 ## `rducks_pump`
 

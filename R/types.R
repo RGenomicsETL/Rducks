@@ -138,27 +138,107 @@ rducks_scalar_argument_mapping_specs <- list(
   )
 )
 
-#' Normalize an Rducks type token
-#'
-#' @param x Character scalar type token.
-#' @return Canonical type token.
-#' @export
-rducks_type_normalize <- function(x) {
-  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
-    stop("type token must be a non-empty character scalar", call. = FALSE)
-  }
-  token <- tolower(trimws(x))
+rducks_type_normalize_scalar <- function(token, original = token) {
   token <- sub("^duckdb_", "", token)
   if (token %in% names(rducks_scalar_types$aliases)) {
     token <- unname(rducks_scalar_types$aliases[[token]])
   }
-  if (rducks_type_is_composite(token)) {
-    return(gsub("\\s+", "", token))
-  }
   if (!token %in% names(rducks_scalar_types$table)) {
-    stop("unsupported Rducks type token: ", x, call. = FALSE)
+    stop("unsupported Rducks type token: ", original, call. = FALSE)
   }
   token
+}
+
+rducks_type_inner <- function(token, prefix, open, close) {
+  prefix_len <- nchar(prefix)
+  token <- trimws(token)
+  if (!startsWith(token, prefix)) return(NULL)
+  rest <- trimws(substring(token, prefix_len + 1L))
+  if (!startsWith(rest, open) || !endsWith(rest, close)) return(NULL)
+  substring(rest, 2L, nchar(rest) - 1L)
+}
+
+rducks_normalize_struct_angle_field <- function(field) {
+  pos <- rducks_find_top_level(field, ":")
+  if (length(pos) != 1L) stop("struct fields must be name:type", call. = FALSE)
+  name <- trimws(substring(field, 1L, pos - 1L))
+  type <- trimws(substring(field, pos + 1L))
+  if (!nzchar(name) || !nzchar(type)) stop("struct fields must be name:type", call. = FALSE)
+  paste0(name, ":", rducks_type_normalize(type))
+}
+
+rducks_normalize_struct_sql_field <- function(field) {
+  field <- trimws(field)
+  match <- gregexpr("[[:space:]]+", field, perl = TRUE)[[1L]]
+  if (identical(match[[1L]], -1L)) stop("STRUCT fields must be name TYPE", call. = FALSE)
+  split <- match[[1L]]
+  split_len <- attr(match, "match.length")[[1L]]
+  name <- trimws(substring(field, 1L, split - 1L))
+  type <- trimws(substring(field, split + split_len))
+  if (!nzchar(name) || !nzchar(type)) stop("STRUCT fields must be name TYPE", call. = FALSE)
+  paste0(name, ":", rducks_type_normalize(type))
+}
+
+rducks_type_normalize_composite <- function(token, original = token) {
+  array_pos <- regexpr("\\[[0-9]*\\]$", token)[[1L]]
+  if (array_pos > 0L) {
+    child <- trimws(substring(token, 1L, array_pos - 1L))
+    len <- substring(token, array_pos + 1L, nchar(token) - 1L)
+    return(paste0(rducks_type_normalize(child), "[", len, "]"))
+  }
+
+  inner <- rducks_type_inner(token, "list", "<", ">")
+  if (!is.null(inner)) return(paste0("list<", rducks_type_normalize(inner), ">"))
+  inner <- rducks_type_inner(token, "list", "(", ")")
+  if (!is.null(inner)) return(paste0("list<", rducks_type_normalize(inner), ">"))
+
+  inner <- rducks_type_inner(token, "map", "<", ">")
+  if (!is.null(inner)) {
+    parts <- rducks_split_top_level(inner, c(";", ","))
+    if (length(parts) != 2L) stop("map type must be map<key;value>", call. = FALSE)
+    return(sprintf("map<%s;%s>", rducks_type_normalize(parts[[1L]]), rducks_type_normalize(parts[[2L]])))
+  }
+  inner <- rducks_type_inner(token, "map", "(", ")")
+  if (!is.null(inner)) {
+    parts <- rducks_split_top_level(inner, ",")
+    if (length(parts) != 2L) stop("MAP type must be MAP(key, value)", call. = FALSE)
+    return(sprintf("map<%s;%s>", rducks_type_normalize(parts[[1L]]), rducks_type_normalize(parts[[2L]])))
+  }
+
+  inner <- rducks_type_inner(token, "struct", "<", ">")
+  if (!is.null(inner)) {
+    fields <- rducks_split_top_level(inner, ";")
+    return(sprintf("struct<%s>", paste(vapply(fields, rducks_normalize_struct_angle_field, character(1)), collapse = ";")))
+  }
+  inner <- rducks_type_inner(token, "struct", "(", ")")
+  if (!is.null(inner)) {
+    fields <- rducks_split_top_level(inner, ",")
+    return(sprintf("struct<%s>", paste(vapply(fields, rducks_normalize_struct_sql_field, character(1)), collapse = ";")))
+  }
+
+  stop("unsupported Rducks type token: ", original, call. = FALSE)
+}
+
+#' Normalize an Rducks type token
+#'
+#' @param x Character scalar type token. DuckDB SQL type names such as
+#'   `INTEGER`, `DOUBLE`, `INTEGER[]`, `STRUCT(a INTEGER)`, and
+#'   `MAP(VARCHAR, INTEGER)` are accepted.
+#' @return Canonical type token.
+#' @export
+rducks_type_normalize <- function(x) {
+  if (inherits(x, "rducks_type")) {
+    return(x$token)
+  }
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+    stop("type token must be a non-empty character scalar or rducks_type object", call. = FALSE)
+  }
+  token <- tolower(trimws(x))
+  token <- gsub("\\s+", " ", token)
+  if (rducks_type_is_composite(token)) {
+    return(rducks_type_normalize_composite(token, x))
+  }
+  rducks_type_normalize_scalar(token, x)
 }
 
 #' Normalize a vector of Rducks type tokens
@@ -167,15 +247,24 @@ rducks_type_normalize <- function(x) {
 #' @return Character vector of canonical type tokens.
 #' @export
 rducks_types_normalize <- function(x) {
+  if (inherits(x, "rducks_type")) {
+    return(rducks_type_normalize(x))
+  }
+  if (inherits(x, "rducks_type_list") || is.list(x)) {
+    if (!all(vapply(x, inherits, logical(1), what = "rducks_type"))) {
+      stop("type lists must contain only rducks_type objects", call. = FALSE)
+    }
+    return(vapply(x, rducks_type_normalize, character(1), USE.NAMES = FALSE))
+  }
   if (!is.character(x)) {
-    stop("types must be a character vector", call. = FALSE)
+    stop("types must be a character vector, rducks_type object, or list of rducks_type objects", call. = FALSE)
   }
   vapply(x, rducks_type_normalize, character(1), USE.NAMES = FALSE)
 }
 
 rducks_type_is_composite <- function(x) {
   token <- tolower(trimws(x))
-  grepl("^(list|struct|map)<", token) || grepl("\\[[0-9]*\\]$", token)
+  grepl("^(list|struct|map)\\s*[<(]", token) || grepl("\\[[0-9]*\\]$", token)
 }
 
 rducks_type_info <- function(x) {
@@ -188,6 +277,7 @@ rducks_type_info <- function(x) {
 rducks_find_top_level <- function(x, chars) {
   depth_angle <- 0L
   depth_square <- 0L
+  depth_paren <- 0L
   n <- nchar(x)
   if (!n) return(integer())
   out <- integer()
@@ -197,7 +287,9 @@ rducks_find_top_level <- function(x, chars) {
     else if (identical(ch, ">")) depth_angle <- max(0L, depth_angle - 1L)
     else if (identical(ch, "[")) depth_square <- depth_square + 1L
     else if (identical(ch, "]")) depth_square <- max(0L, depth_square - 1L)
-    else if (depth_angle == 0L && depth_square == 0L && ch %in% chars) out <- c(out, i)
+    else if (identical(ch, "(")) depth_paren <- depth_paren + 1L
+    else if (identical(ch, ")")) depth_paren <- max(0L, depth_paren - 1L)
+    else if (depth_angle == 0L && depth_square == 0L && depth_paren == 0L && ch %in% chars) out <- c(out, i)
   }
   out
 }
@@ -279,6 +371,134 @@ rducks_duckdb_type_one <- function(token) {
   stop("unsupported Rducks type token: ", token, call. = FALSE)
 }
 
+rducks_type_object <- function(token) {
+  token <- rducks_type_normalize(token)
+  structure(
+    list(token = token, duckdb_sql = rducks_duckdb_type_one(token)),
+    class = c("rducks_type", "rducks_type_object")
+  )
+}
+
+#' Rducks DuckDB type objects and constructors
+#'
+#' Use these objects and constructors in [rducks_register()] to avoid string type
+#' specifications. Examples include `args = INTEGER`, `args = c(INTEGER,
+#' DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
+#' `args = STRUCT(a = INTEGER, b = VARCHAR)`, and
+#' `args = MAP(VARCHAR, INTEGER)`.
+#'
+#' @return A `rducks_type` object, or a `rducks_type_list` from `c()`.
+#' @name rducks_type_objects
+NULL
+
+#' @rdname rducks_type_objects
+#' @export
+BOOLEAN <- rducks_type_object("BOOLEAN")
+#' @rdname rducks_type_objects
+#' @export
+TINYINT <- rducks_type_object("TINYINT")
+#' @rdname rducks_type_objects
+#' @export
+UTINYINT <- rducks_type_object("UTINYINT")
+#' @rdname rducks_type_objects
+#' @export
+SMALLINT <- rducks_type_object("SMALLINT")
+#' @rdname rducks_type_objects
+#' @export
+USMALLINT <- rducks_type_object("USMALLINT")
+#' @rdname rducks_type_objects
+#' @export
+INTEGER <- rducks_type_object("INTEGER")
+#' @rdname rducks_type_objects
+#' @export
+UINTEGER <- rducks_type_object("UINTEGER")
+#' @rdname rducks_type_objects
+#' @export
+BIGINT <- rducks_type_object("BIGINT")
+#' @rdname rducks_type_objects
+#' @export
+UBIGINT <- rducks_type_object("UBIGINT")
+#' @rdname rducks_type_objects
+#' @export
+FLOAT <- rducks_type_object("FLOAT")
+#' @rdname rducks_type_objects
+#' @export
+DOUBLE <- rducks_type_object("DOUBLE")
+#' @rdname rducks_type_objects
+#' @export
+VARCHAR <- rducks_type_object("VARCHAR")
+#' @rdname rducks_type_objects
+#' @export
+BLOB <- rducks_type_object("BLOB")
+#' @rdname rducks_type_objects
+#' @export
+DATE <- rducks_type_object("DATE")
+#' @rdname rducks_type_objects
+#' @export
+TIME <- rducks_type_object("TIME")
+#' @rdname rducks_type_objects
+#' @export
+TIMESTAMP <- rducks_type_object("TIMESTAMP")
+
+#' @rdname rducks_type_objects
+#' @export
+LIST <- function(type) {
+  rducks_type_object(sprintf("list<%s>", rducks_type_normalize(type)))
+}
+
+#' @rdname rducks_type_objects
+#' @export
+ARRAY <- function(type, size) {
+  if (!is.numeric(size) || length(size) != 1L || is.na(size) || size <= 0 || size != as.integer(size)) {
+    stop("size must be a positive integer scalar", call. = FALSE)
+  }
+  rducks_type_object(sprintf("%s[%d]", rducks_type_normalize(type), as.integer(size)))
+}
+
+#' @rdname rducks_type_objects
+#' @export
+MAP <- function(key, value) {
+  rducks_type_object(sprintf("map<%s;%s>", rducks_type_normalize(key), rducks_type_normalize(value)))
+}
+
+#' @rdname rducks_type_objects
+#' @export
+STRUCT <- function(...) {
+  fields <- list(...)
+  names <- names(fields)
+  if (!length(fields) || is.null(names) || any(!nzchar(names))) {
+    stop("STRUCT fields must be named", call. = FALSE)
+  }
+  pieces <- vapply(seq_along(fields), function(i) {
+    sprintf("%s:%s", names[[i]], rducks_type_normalize(fields[[i]]))
+  }, character(1))
+  rducks_type_object(sprintf("struct<%s>", paste(pieces, collapse = ";")))
+}
+
+#' @export
+print.rducks_type <- function(x, ...) {
+  cat("<rducks_type> ", x$duckdb_sql, "\n", sep = "")
+  invisible(x)
+}
+
+#' @export
+c.rducks_type <- function(..., recursive = FALSE) {
+  out <- list(...)
+  if (!all(vapply(out, inherits, logical(1), what = "rducks_type"))) {
+    stop("all values must be rducks_type objects", call. = FALSE)
+  }
+  class(out) <- c("rducks_type_list", "list")
+  out
+}
+
+#' @export
+`[.rducks_type` <- function(x, i, ...) {
+  if (missing(i)) {
+    return(LIST(x))
+  }
+  ARRAY(x, i)
+}
+
 rducks_argument_type_kind <- function(token) {
   token <- rducks_type_normalize(token)
   if (token %in% names(rducks_scalar_types$table)) {
@@ -324,26 +544,90 @@ rducks_scalar_argument_mapping_row <- function(token) {
   )
 }
 
+rducks_sequence_child_type <- function(token) {
+  token <- rducks_type_normalize(token)
+  if (grepl("^list<.*>$", token)) {
+    return(substring(token, 6L, nchar(token) - 1L))
+  }
+  if (grepl("\\[[0-9]*\\]$", token)) {
+    open <- regexpr("\\[[0-9]*\\]$", token)[[1L]]
+    return(substring(token, 1L, open - 1L))
+  }
+  stop("type is not a list or array: ", token, call. = FALSE)
+}
+
+rducks_map_child_types <- function(token) {
+  token <- rducks_type_normalize(token)
+  inner <- substring(token, 5L, nchar(token) - 1L)
+  parts <- rducks_split_top_level(inner, ";")
+  if (length(parts) != 2L) stop("map type must be map<key;value>", call. = FALSE)
+  parts
+}
+
+rducks_scalar_vector_description <- function(token, len = NULL) {
+  token <- rducks_type_normalize(token)
+  desc <- switch(token,
+    bool = "logical vector",
+    i8 = "integer vector",
+    u8 = "integer vector",
+    i16 = "integer vector",
+    u16 = "integer vector",
+    i32 = "integer vector",
+    u32 = "numeric vector",
+    i64 = "numeric vector",
+    u64 = "numeric vector",
+    f32 = "numeric vector",
+    f64 = "numeric vector",
+    varchar = "character vector",
+    blob = "list of raw vectors",
+    date = "Date vector",
+    time = "numeric vector seconds",
+    timestamp = "POSIXct vector",
+    stop("not a scalar type: ", token, call. = FALSE)
+  )
+  if (!is.null(len) && !identical(token, "blob")) {
+    desc <- paste(desc, "of length", len)
+  } else if (!is.null(len) && identical(token, "blob")) {
+    desc <- paste(desc, "of length", len)
+  }
+  desc
+}
+
+rducks_sequence_value_description <- function(child, len = NULL) {
+  child <- rducks_type_normalize(child)
+  if (child %in% names(rducks_scalar_types$table)) {
+    return(rducks_scalar_vector_description(child, len = len))
+  }
+  if (is.null(len)) "list of element values" else paste("list of length", len)
+}
+
 rducks_composite_argument_mapping_row <- function(token) {
   token <- rducks_type_normalize(token)
   kind <- rducks_argument_type_kind(token)
   duckdb_sql <- rducks_duckdb_type_one(token)
   r_value <- switch(kind,
-    list = "list of element values",
+    list = rducks_sequence_value_description(rducks_sequence_child_type(token)),
     array = {
       open <- regexpr("\\[[0-9]+\\]$", token)[[1L]]
       len <- substring(token, open + 1L, nchar(token) - 1L)
-      paste0("list of length ", len)
+      rducks_sequence_value_description(rducks_sequence_child_type(token), len = len)
     },
     struct = "named list of fields",
-    map = "list(keys = ..., values = ...)",
+    map = {
+      parts <- rducks_map_child_types(token)
+      sprintf(
+        "list(keys = %s, values = %s)",
+        rducks_sequence_value_description(parts[[1L]]),
+        rducks_sequence_value_description(parts[[2L]])
+      )
+    },
     stop("unsupported composite argument kind: ", kind, call. = FALSE)
   )
   notes <- switch(kind,
-    list = if (grepl("\\[]$", token)) "same as list<type>" else "recursive element mapping",
-    array = "fixed-size array",
+    list = if (grepl("\\[]$", token)) "same as list<type>" else "homogeneous scalar children use atomic vectors",
+    array = "fixed-size array; homogeneous scalar children use atomic vectors",
     struct = "recursive field mapping",
-    map = "keys and values are recursive lists",
+    map = "keys and values use sequence mapping",
     ""
   )
   leaf_rows <- do.call(rbind, lapply(unique(rducks_type_scalar_leaves(token)), rducks_scalar_argument_mapping_row))
@@ -351,10 +635,10 @@ rducks_composite_argument_mapping_row <- function(token) {
     rducks_type = token,
     duckdb_sql = duckdb_sql,
     argument_kind = kind,
-    r_type = "list",
+    r_type = if (kind %in% c("struct", "map") || grepl("^list of", r_value)) "list" else "vector",
     r_value_passed_to_fun = r_value,
     sql_null_in_callback = "NULL",
-    copy_semantics = "recursive R allocation",
+    copy_semantics = if (grepl("vector", r_value)) "R vector allocation" else "recursive R allocation",
     uses_r_double_for_integer = any(leaf_rows$uses_r_double_for_integer),
     uses_r_double_for_float = any(leaf_rows$uses_r_double_for_float),
     precision_may_be_lost = any(leaf_rows$precision_may_be_lost),

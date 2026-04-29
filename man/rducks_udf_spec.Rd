@@ -4,7 +4,13 @@
 \alias{rducks_udf_spec}
 \title{Create an Rducks UDF specification}
 \usage{
-rducks_udf_spec(name, fun, args, returns, mode = c("compiled"))
+rducks_udf_spec(
+  name,
+  fun,
+  args,
+  returns,
+  mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled")
+)
 }
 \arguments{
 \item{name}{SQL function name.}
@@ -15,8 +21,10 @@ rducks_udf_spec(name, fun, args, returns, mode = c("compiled"))
 
 \item{returns}{Return type token.}
 
-\item{mode}{Registration mode. The implemented scalar path uses
-\code{"compiled"} Rtinycc-generated wrappers.}
+\item{mode}{Registration mode. \code{"row"} is implemented now and uses an
+Rtinycc-generated wrapper for row-oriented scalar callbacks.
+\code{"arrow_lapply"} and \code{"arrow_nanoarrow"} are reserved for future batch
+UDF paths.}
 }
 \value{
 Object of class \code{rducks_udf_spec}.

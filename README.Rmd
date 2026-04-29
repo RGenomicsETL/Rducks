@@ -11,6 +11,7 @@ knitr::opts_chunk$set(
   warning = FALSE,
   message = FALSE
 )
+library(Rducks)
 ```
 
 # Rducks
@@ -24,16 +25,18 @@ DuckDB connection.
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads it into
 DuckDB with `rducks_enable()`, and registers row-oriented scalar R UDFs with
-`rducks_register()`. The implemented scalar input/output type set is `bool`,
-`i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`, `f64`,
-`varchar`, `blob`, `date`, `time`, and `timestamp`. Composite inputs are
-accepted as `list<type>`, `type[]`, `type[N]`, `struct<name:type;...>`, and
-`map<key;value>`. Registration also supports `null_handling`,
-`exception_handling`, and `side_effects` controls.
+`rducks_register()`. The implemented scalar input/output type set is `BOOLEAN`,
+`TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`,
+`BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`,
+and `TIMESTAMP`. Composite inputs and outputs are accepted as `TYPE[]`,
+`TYPE[N]`, `STRUCT(...)`, and `MAP(...)`. The default `mode = "row"` calls
+R once per row; `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are
+reserved for future batch UDF paths. Registration also supports
+`null_handling`, `exception_handling`, and `side_effects` controls.
 
-Composite return types are not implemented yet. Direct R callbacks require
-single-thread DuckDB execution, so call `rducks_enable(con, threads = "single")`
-or set `PRAGMA threads=1` before registering R UDFs.
+Direct R callbacks require single-thread DuckDB execution, so call
+`rducks_enable(con, threads = "single")` or set `PRAGMA threads=1` before
+registering R UDFs.
 
 <details>
 <summary>Argument values passed to R callbacks</summary>
@@ -46,17 +49,20 @@ inside composite inputs are represented as R `NULL`.
 
 ```{r argument-type-mapping, echo=FALSE, results="asis"}
 type_mapping_tokens <- c(
-  "bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
-  "f32", "f64", "varchar", "blob", "date", "time", "timestamp",
-  "list<i32>", "i32[]", "i32[3]", "struct<a:i32;b:varchar>",
-  "map<varchar;i32>"
+  BOOLEAN, TINYINT, UTINYINT, SMALLINT, USMALLINT, INTEGER, UINTEGER,
+  BIGINT, UBIGINT, FLOAT, DOUBLE, VARCHAR, BLOB, DATE, TIME, TIMESTAMP,
+  INTEGER[], INTEGER[3], STRUCT(a = INTEGER, b = VARCHAR),
+  MAP(VARCHAR, INTEGER)
 )
 argument_type_mapping <- Rducks::rducks_argument_type_mapping(type_mapping_tokens)
 knitr::kable(
-  argument_type_mapping[, c(
-    "rducks_type", "duckdb_sql", "r_value_passed_to_fun",
-    "sql_null_in_callback", "notes"
-  )],
+  data.frame(
+    argument_type = argument_type_mapping$duckdb_sql,
+    r_value_passed_to_fun = argument_type_mapping$r_value_passed_to_fun,
+    sql_null_in_callback = argument_type_mapping$sql_null_in_callback,
+    notes = argument_type_mapping$notes,
+    check.names = FALSE
+  ),
   format = "markdown"
 )
 ```
@@ -77,12 +83,20 @@ reg_plus_one <- rducks_register(
   con,
   name = "r_plus_one",
   fun = function(x) x + 1,
-  args = "f64",
-  returns = "f64"
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "row"
 )
 
 dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 ```
+
+`rducks_register()` returns an `rducks_registration` object. Keep it if you want
+to soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
+
+The implemented mode is `mode = "row"`, which calls the R function once per row.
+The names `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
+for future batch UDF paths.
 
 `u32`, `i64`, and `u64` are passed through R numeric (`double`), matching the
 DuckDB R package's default type mapping. Values beyond `2^53` cannot be exactly
@@ -90,40 +104,57 @@ represented as R doubles.
 
 ## Composite input examples
 
-Composite values are passed to R as ordinary lists. These examples exercise
-list, fixed-size array, struct, and map inputs.
+Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL
+`NULL` elements represented as typed `NA` values. Structs are passed as named
+lists, and maps are passed as `list(keys = ..., values = ...)`.
 
 ```{r composite-inputs}
 reg_list_len <- rducks_register(
   con,
   name = "r_list_len",
   fun = function(x) length(x),
-  args = "list<i32>",
-  returns = "i32"
+  args = INTEGER[],
+  returns = INTEGER
 )
 
 reg_array_sum <- rducks_register(
   con,
   name = "r_array_sum",
-  fun = function(x) sum(unlist(x)),
-  args = "i32[3]",
-  returns = "i32"
+  fun = function(x) sum(x),
+  args = INTEGER[3],
+  returns = INTEGER
 )
 
 reg_struct_sum <- rducks_register(
   con,
   name = "r_struct_sum",
   fun = function(x) x$a + x$b,
-  args = "struct<a:i32;b:i32>",
-  returns = "i32"
+  args = STRUCT(a = INTEGER, b = INTEGER),
+  returns = INTEGER
 )
 
 reg_map_sum <- rducks_register(
   con,
   name = "r_map_sum",
-  fun = function(x) sum(unlist(x$values)),
-  args = "map<varchar;i32>",
-  returns = "i32"
+  fun = function(x) sum(x$values),
+  args = MAP(VARCHAR, INTEGER),
+  returns = INTEGER
+)
+
+reg_make_struct <- rducks_register(
+  con,
+  name = "r_make_struct",
+  fun = function(x) list(a = x, b = x + 1L),
+  args = INTEGER,
+  returns = STRUCT(a = INTEGER, b = INTEGER)
+)
+
+reg_make_array <- rducks_register(
+  con,
+  name = "r_make_array",
+  fun = function(x) c(x, x + 1L),
+  args = INTEGER,
+  returns = INTEGER[]
 )
 
 dbGetQuery(con, paste(
@@ -131,7 +162,9 @@ dbGetQuery(con, paste(
   "r_list_len([1,2,3]::INTEGER[]) AS list_len,",
   "r_array_sum([1,2,3]::INTEGER[3]) AS array_sum,",
   "r_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS struct_sum,",
-  "r_map_sum(map(['a','b'], [20,22])) AS map_sum"
+  "r_map_sum(map(['a','b'], [20,22])) AS map_sum,",
+  "(r_make_struct(41::INTEGER)).b AS struct_return,",
+  "list_sum(r_make_array(20::INTEGER)) AS array_return"
 ))
 ```
 
@@ -148,8 +181,8 @@ reg_null_special <- rducks_register(
   con,
   name = "r_null_special",
   fun = function(x) if (is.na(x)) 5L else x,
-  args = "i32",
-  returns = "i32",
+  args = INTEGER,
+  returns = INTEGER,
   null_handling = "special"
 )
 
@@ -166,8 +199,8 @@ reg_error_null <- rducks_register(
   con,
   name = "r_error_null",
   fun = function(x) stop("boom"),
-  args = "i32",
-  returns = "i32",
+  args = INTEGER,
+  returns = INTEGER,
   exception_handling = "return_null"
 )
 
@@ -191,11 +224,47 @@ reg_counter <- rducks_register(
   name = "r_counter",
   fun = counter,
   args = character(),
-  returns = "i32",
+  returns = INTEGER,
   side_effects = TRUE
 )
 
 dbGetQuery(con, "SELECT r_counter() AS x FROM range(5)")
+
+set.seed(1)
+reg_rng <- rducks_register(
+  con,
+  name = "r_rng",
+  fun = function() runif(1),
+  args = character(),
+  returns = DOUBLE,
+  side_effects = TRUE
+)
+
+dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
+```
+
+## Soft unregistering
+
+DuckDB currently exposes extension scalar functions as internal catalog entries,
+so `DROP FUNCTION` cannot remove them. `rducks_unregister()` replaces the UDF
+overload with an inactive stub and releases Rducks' R-side callback and compiled
+wrapper references.
+
+```{r soft-unregister}
+reg_temp <- rducks_register(
+  con,
+  name = "r_temp",
+  fun = function(x) x + 1L,
+  args = INTEGER,
+  returns = INTEGER
+)
+
+dbGetQuery(con, "SELECT r_temp(1::INTEGER) AS x")
+rducks_unregister(reg_temp)
+tryCatch(
+  dbGetQuery(con, "SELECT r_temp(1::INTEGER) AS x"),
+  error = function(e) conditionMessage(e)
+)
 ```
 
 ## Build notes
