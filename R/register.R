@@ -16,7 +16,8 @@ rducks_drop_compiled_wrapper <- function(id) {
 }
 
 rducks_warn_type_mapping <- function(spec) {
-  mapping <- rducks_argument_type_mapping(unique(c(spec$args, spec$returns)))
+  types <- c(spec$arg_types %||% rducks_as_type_list(spec$args), list(spec$return_type %||% rducks_as_type(spec$returns)))
+  mapping <- rducks_argument_type_mapping(types)
   numeric_integer <- mapping$rducks_type[mapping$uses_r_double_for_integer]
   if (length(numeric_integer)) {
     warning(
@@ -30,6 +31,36 @@ rducks_warn_type_mapping <- function(spec) {
     warning(
       "Rducks maps ", paste(float_double, collapse = ", "),
       " through R numeric (double) on the R side",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+rducks_type_row_marshalling_supported <- function(type) {
+  if (!inherits(type, "rducks_type")) {
+    type <- rducks_type_object(type)
+  }
+  kind <- rducks_type_kind(type)
+  if (identical(kind, "scalar")) {
+    return(rducks_type_token(type) %in% names(rducks_scalar_types$table))
+  }
+  if (kind %in% c("list", "array", "struct", "map")) {
+    return(all(vapply(rducks_type_children(type), rducks_type_row_marshalling_supported, logical(1))))
+  }
+  FALSE
+}
+
+rducks_assert_row_marshalling_supported <- function(spec) {
+  types <- c(spec$arg_types %||% rducks_as_type_list(spec$args), list(spec$return_type %||% rducks_as_type(spec$returns)))
+  unsupported <- vapply(types, function(type) {
+    if (rducks_type_row_marshalling_supported(type)) "" else rducks_type_duckdb_sql(type)
+  }, character(1))
+  unsupported <- unsupported[nzchar(unsupported)]
+  if (length(unsupported)) {
+    stop(
+      "row-mode native marshalling is not implemented yet for: ",
+      paste(unique(unsupported), collapse = ", "),
       call. = FALSE
     )
   }
@@ -91,6 +122,7 @@ rducks_register <- function(con, name, fun, args, returns,
     rducks_assert_nanoarrow()
     stop("mode = 'arrow_nanoarrow' is reserved for a future Arrow C Data Interface UDF path", call. = FALSE)
   }
+  rducks_assert_row_marshalling_supported(spec)
   rducks_warn_type_mapping(spec)
   rducks_assert_single_thread(con)
   compiled <- rducks_compile_scalar_wrapper(spec)

@@ -17,9 +17,9 @@ rducks_udf_spec(
 
 \item{fun}{R function.}
 
-\item{args}{Character vector of Rducks type tokens.}
+\item{args}{Rducks type objects or scalar type tokens.}
 
-\item{returns}{Return type token.}
+\item{returns}{Rducks return type object or scalar type token.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and uses an
 Rtinycc-generated wrapper for row-oriented scalar callbacks.

@@ -28,38 +28,59 @@ DuckDB with `rducks_enable()`, and registers row-oriented scalar R UDFs with
 `rducks_register()`. The implemented scalar input/output type set is `BOOLEAN`,
 `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`,
 `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`,
-and `TIMESTAMP`. Composite inputs and outputs are accepted as `TYPE[]`,
-`TYPE[N]`, `STRUCT(...)`, and `MAP(...)`. The default `mode = "row"` calls
-R once per row; `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are
-reserved for future batch UDF paths. Registration also supports
-`null_handling`, `exception_handling`, and `side_effects` controls.
+and `TIMESTAMP`. Composite inputs and outputs are accepted as constructed type
+objects such as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`. The type
+system also has descriptors for `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`,
+`BIT`, `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)` for exact
+R-side value validation. The default `mode = "row"` calls R once per row;
+`mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved for future
+batch UDF paths. Registration also supports `null_handling`,
+`exception_handling`, and `side_effects` controls.
 
 Direct R callbacks require single-thread DuckDB execution, so call
 `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1` before
 registering R UDFs.
 
+Rducks also provides explicit R value classes for planned exotic DuckDB types:
+`rducks_uuid()`, `rducks_interval()`, `rducks_decimal()`, `rducks_hugeint()`,
+`rducks_uhugeint()`, `rducks_bits()`, `rducks_enum()`, and `rducks_union()`.
+These classes preserve exact representation before native UDF marshalling for
+those types is enabled. Constructed DuckDB type objects are formal S7-backed
+Rducks descriptors with native structural checks via `rducks_is_type()`.
+Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals,
+and unions can be nested through the constructors rather than quoted type
+strings. `rducks_check_argument()` and `rducks_check_return()` can validate
+ordinary R values against those descriptors before marshalling.
+
 <details>
 <summary>Argument values passed to R callbacks</summary>
 
-The table is produced by the exported `rducks_argument_type_mapping()` helper.
-With `null_handling = "default"`, any top-level SQL `NULL` input makes DuckDB
-return SQL `NULL` without calling the R callback. The `SQL NULL in callback`
-column below applies when `null_handling = "special"`. Nested SQL `NULL` values
-inside composite inputs are represented as R `NULL`.
+The table is produced by the exported `rducks_argument_type_mapping()` helper
+and reflects the currently implemented row-mode native marshalling path. With
+`null_handling = "default"`, any top-level SQL `NULL` input makes DuckDB return
+SQL `NULL` without calling the R callback. The `SQL NULL in callback` column
+below applies when `null_handling = "special"`. For composite inputs, top-level
+`NULL` values are passed as R `NULL`; `NULL` elements in homogeneous scalar
+lists/arrays are represented as typed `NA` values, while nested composite
+`NULL` values are represented as R `NULL`.
 
 ```{r argument-type-mapping, echo=FALSE, results="asis"}
-type_mapping_tokens <- c(
-  BOOLEAN, TINYINT, UTINYINT, SMALLINT, USMALLINT, INTEGER, UINTEGER,
-  BIGINT, UBIGINT, FLOAT, DOUBLE, VARCHAR, BLOB, DATE, TIME, TIMESTAMP,
-  INTEGER[], INTEGER[3], STRUCT(a = INTEGER, b = VARCHAR),
-  MAP(VARCHAR, INTEGER)
+argument_type_mapping <- rbind(
+  Rducks::rducks_argument_type_mapping(),
+  Rducks::rducks_argument_type_mapping(list(
+    INTEGER[],
+    INTEGER[3],
+    STRUCT(a = INTEGER, b = VARCHAR),
+    MAP(VARCHAR, INTEGER)
+  ))
 )
-argument_type_mapping <- Rducks::rducks_argument_type_mapping(type_mapping_tokens)
 knitr::kable(
   data.frame(
     argument_type = argument_type_mapping$duckdb_sql,
+    r_type = argument_type_mapping$r_type,
     r_value_passed_to_fun = argument_type_mapping$r_value_passed_to_fun,
     sql_null_in_callback = argument_type_mapping$sql_null_in_callback,
+    copy_semantics = argument_type_mapping$copy_semantics,
     notes = argument_type_mapping$notes,
     check.names = FALSE
   ),
@@ -67,7 +88,57 @@ knitr::kable(
 )
 ```
 
+The exact descriptor/value-class families below exist for validation and future
+native marshalling, but row-mode UDF registration currently rejects them until
+the corresponding DuckDB vector read/write paths are implemented.
+
+```{r pending-exotic-type-mapping, echo=FALSE, results="asis"}
+pending_types <- list(
+  HUGEINT,
+  UHUGEINT,
+  UUID,
+  INTERVAL,
+  BIT,
+  DECIMAL(10, 2),
+  ENUM(c("red", "blue")),
+  UNION(code = INTEGER, label = VARCHAR)
+)
+knitr::kable(
+  data.frame(
+    argument_type = paste0("`", vapply(pending_types, Rducks::rducks_type_sql, character(1)), "`"),
+    R_value_class = c(
+      "rducks_hugeint",
+      "rducks_uhugeint",
+      "rducks_uuid",
+      "rducks_interval",
+      "rducks_bits",
+      "rducks_decimal",
+      "rducks_enum",
+      "rducks_union"
+    ),
+    row_mode_callback_status = "not implemented yet",
+    check.names = FALSE
+  ),
+  format = "markdown"
+)
+```
+
 </details>
+
+```{r type-descriptor-checks}
+nested_type <- STRUCT(
+  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
+  amount = DECIMAL(10, 2),
+  tags = LIST(ENUM(c("red", "blue")))
+)
+
+rducks_is_type(nested_type)
+rducks_type_kind(nested_type)
+rducks_type_sql(nested_type)
+rducks_type_child_names(nested_type)
+rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
+rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
+```
 
 ## Example
 

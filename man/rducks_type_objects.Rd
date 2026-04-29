@@ -3,6 +3,7 @@
 \docType{data}
 \name{rducks_type_objects}
 \alias{rducks_type_objects}
+\alias{rducks_is_type}
 \alias{BOOLEAN}
 \alias{TINYINT}
 \alias{UTINYINT}
@@ -19,45 +20,65 @@
 \alias{DATE}
 \alias{TIME}
 \alias{TIMESTAMP}
+\alias{HUGEINT}
+\alias{UHUGEINT}
+\alias{UUID}
+\alias{INTERVAL}
+\alias{BIT}
+\alias{DECIMAL}
+\alias{ENUM}
+\alias{UNION}
 \alias{LIST}
 \alias{ARRAY}
 \alias{MAP}
 \alias{STRUCT}
 \title{Rducks DuckDB type objects and constructors}
 \format{
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_type} (inherits from \code{rducks_type_object}) of length 2.
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{rducks_scalar_type} (inherits from \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 }
 \usage{
+rducks_is_type(x)
+
 BOOLEAN
 
 TINYINT
@@ -90,6 +111,22 @@ TIME
 
 TIMESTAMP
 
+HUGEINT
+
+UHUGEINT
+
+UUID
+
+INTERVAL
+
+BIT
+
+DECIMAL(width, scale = 0L)
+
+ENUM(levels)
+
+UNION(...)
+
 LIST(type)
 
 ARRAY(type, size)
@@ -98,8 +135,24 @@ MAP(key, value)
 
 STRUCT(...)
 }
+\arguments{
+\item{x}{Object to test with \code{rducks_is_type()}.}
+
+\item{width, scale}{DuckDB decimal width and scale for \code{DECIMAL()}.}
+
+\item{levels}{Character vector of enum dictionary values for \code{ENUM()}.}
+
+\item{...}{Named field types for \code{STRUCT()}/\code{UNION()} or type objects for \code{c()}.}
+
+\item{type}{Child type for \code{LIST()} or \code{ARRAY()}.}
+
+\item{size}{Fixed array size for \code{ARRAY()}.}
+
+\item{key, value}{Key and value types for \code{MAP()}.}
+}
 \value{
-A \code{rducks_type} object, or a \code{rducks_type_list} from \code{c()}.
+A formal S7/S3-compatible \code{rducks_type} object, or a
+\code{rducks_type_list} from \code{c()}.
 }
 \description{
 Use these objects and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid string type

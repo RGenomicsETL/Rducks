@@ -9,6 +9,10 @@ SEXP RDUCKS_pump(void);
 SEXP RDUCKS_sexp_addr(SEXP x);
 SEXP RDUCKS_extptr_addr(SEXP x);
 SEXP RDUCKS_callback_fun_addr(SEXP xptr);
+SEXP RDUCKS_type_object_new(SEXP token, SEXP duckdb_sql, SEXP kind, SEXP children,
+                            SEXP child_names, SEXP size, SEXP parameters,
+                            SEXP s7_class, SEXP class_vector);
+SEXP RDUCKS_type_object_is(SEXP x);
 
 static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_callback_register", (DL_FUNC) &RDUCKS_callback_register, 1},
@@ -18,6 +22,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_sexp_addr",         (DL_FUNC) &RDUCKS_sexp_addr,         1},
     {"RDUCKS_extptr_addr",       (DL_FUNC) &RDUCKS_extptr_addr,       1},
     {"RDUCKS_callback_fun_addr", (DL_FUNC) &RDUCKS_callback_fun_addr, 1},
+    {"RDUCKS_type_object_new",   (DL_FUNC) &RDUCKS_type_object_new,   9},
+    {"RDUCKS_type_object_is",    (DL_FUNC) &RDUCKS_type_object_is,    1},
     {NULL, NULL, 0}
 };
 

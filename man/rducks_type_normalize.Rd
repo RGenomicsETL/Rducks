@@ -7,13 +7,14 @@
 rducks_type_normalize(x)
 }
 \arguments{
-\item{x}{Character scalar type token. DuckDB SQL type names such as
-\code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \verb{STRUCT(a INTEGER)}, and
-\code{MAP(VARCHAR, INTEGER)} are accepted.}
+\item{x}{Character scalar scalar-type token or a \code{rducks_type} object.}
 }
 \value{
-Canonical type token.
+Canonical scalar token for character input, or the object's wire
+token for a \code{rducks_type}.
 }
 \description{
-Normalize an Rducks type token
+Character input is limited to scalar aliases. Composite, DECIMAL, ENUM, and
+UNION types are represented by constructed \code{rducks_type} objects rather than
+quoted type strings.
 }

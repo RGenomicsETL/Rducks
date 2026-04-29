@@ -7,10 +7,11 @@
 rducks_argument_type_mapping(x = NULL)
 }
 \arguments{
-\item{x}{Optional character vector of Rducks type tokens. When \code{NULL}, all
-scalar argument mappings are returned. Composite tokens such as
-\verb{list<i32>}, \code{i32[]}, \code{i32[3]}, \verb{struct<a:i32;b:varchar>}, and
-\verb{map<varchar;i32>} can be supplied explicitly.}
+\item{x}{Optional scalar type tokens or constructed \code{rducks_type} objects.
+When \code{NULL}, all currently implemented row-mode scalar argument mappings
+are returned. Composite mappings should be requested with constructors such
+as \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, and
+\code{MAP(VARCHAR, INTEGER)}.}
 }
 \value{
 A data frame with one row per requested type token.
@@ -24,6 +25,16 @@ callback. It is used by registration checks and wrapper code generation.
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
 to a SQL \code{NULL} result and the R callback is not called. The
 \code{sql_null_in_callback} column describes the value passed only when
-\code{null_handling = "special"}. Nested SQL \code{NULL} values inside composite
-inputs are represented as R \code{NULL}.
+\code{null_handling = "special"}. For composite inputs, top-level \code{NULL} values
+are passed as R \code{NULL}; \code{NULL} elements in homogeneous scalar lists/arrays
+are represented as typed \code{NA} values, while nested composite \code{NULL} values
+are represented as R \code{NULL}.
+
+The default table is limited to scalar types whose row-mode native marshalling
+is currently implemented. Exotic scalar descriptors such as \code{UUID} and
+\code{HUGEINT} can be requested explicitly to inspect their exact R value classes,
+but \code{rducks_register()} still rejects them in row mode until the matching
+DuckDB vector marshalling paths are implemented. \code{DECIMAL}, \code{ENUM}, and
+\code{UNION} descriptors are currently validation descriptors, not row-mode
+callback argument mappings.
 }

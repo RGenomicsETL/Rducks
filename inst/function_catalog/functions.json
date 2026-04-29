@@ -30,6 +30,16 @@
     "experimental": true
   },
   {
+    "name": "rducks_is_type",
+    "kind": "r-wrapper/native/S7",
+    "category": "types",
+    "signature": "rducks_is_type(x)",
+    "returns": "logical scalar",
+    "description": "Check whether an object is a structurally valid Rducks DuckDB type descriptor. The fast native path verifies the S7/S3 class vector, core attributes, kind-specific child layout, enum/decimal parameters, and nested child descriptors before marshalling.",
+    "since": "0.0.0.9000",
+    "experimental": true
+  },
+  {
     "name": "rducks_pump",
     "kind": "r-wrapper/native",
     "category": "callback-runtime",

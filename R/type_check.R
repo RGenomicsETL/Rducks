@@ -1,0 +1,194 @@
+rducks_check_length <- function(x, size, what) {
+  if (!is.null(size) && length(x) != size) {
+    stop(what, " must have length ", size, call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
+  rducks_check_length(x, size, what)
+  ok <- switch(token,
+    bool = is.logical(x),
+    i8 = is.integer(x) || is.numeric(x),
+    u8 = is.integer(x) || is.numeric(x),
+    i16 = is.integer(x) || is.numeric(x),
+    u16 = is.integer(x) || is.numeric(x),
+    i32 = is.integer(x) || is.numeric(x),
+    u32 = is.integer(x) || is.numeric(x),
+    i64 = is.numeric(x),
+    u64 = is.numeric(x),
+    f32 = is.numeric(x),
+    f64 = is.numeric(x),
+    varchar = is.character(x),
+    blob = is.raw(x),
+    date = inherits(x, "Date") || is.numeric(x),
+    time = is.numeric(x),
+    timestamp = inherits(x, "POSIXct") || is.numeric(x),
+    hugeint = inherits(x, "rducks_hugeint"),
+    uhugeint = inherits(x, "rducks_uhugeint"),
+    uuid = inherits(x, "rducks_uuid"),
+    interval = inherits(x, "rducks_interval"),
+    bit = inherits(x, "rducks_bits") || (is.list(x) && all(vapply(x, inherits, logical(1), what = "rducks_bits"))),
+    FALSE
+  )
+  if (!isTRUE(ok)) {
+    stop(what, " is not compatible with ", rducks_duckdb_type_one(token), call. = FALSE)
+  }
+  if (token %in% c("i8", "u8", "i16", "u16", "i32", "u32") && any(!is.na(x) & (x != trunc(x)))) {
+    stop(what, " must contain whole-number values for ", rducks_duckdb_type_one(token), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+rducks_check_sequence_value <- function(type, x, size = NULL, what = "value") {
+  child <- rducks_type_children(type)[[1L]]
+  rducks_check_length(x, size, what)
+  if (identical(rducks_type_kind(child), "scalar") && !identical(rducks_type_token(child), "blob")) {
+    rducks_check_value(child, x, what = what)
+    return(invisible(TRUE))
+  }
+  if (!is.list(x)) {
+    stop(what, " must be a list for ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  for (i in seq_along(x)) {
+    rducks_check_value(child, x[[i]], what = sprintf("%s[[%d]]", what, i))
+  }
+  invisible(TRUE)
+}
+
+rducks_check_struct_value <- function(type, x, what) {
+  if (!is.list(x)) {
+    stop(what, " must be a list for ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  children <- rducks_type_children(type)
+  field_names <- rducks_type_child_names(type)
+  value_names <- names(x)
+  for (i in seq_along(children)) {
+    name <- field_names[[i]]
+    if (!is.null(value_names) && any(nzchar(value_names))) {
+      if (!name %in% value_names) {
+        stop(what, " is missing STRUCT field ", name, call. = FALSE)
+      }
+      field_value <- x[[name]]
+    } else if (i <= length(x)) {
+      field_value <- x[[i]]
+    } else {
+      stop(what, " is missing STRUCT field ", name, call. = FALSE)
+    }
+    rducks_check_value(children[[i]], field_value, what = paste0(what, "$", name))
+  }
+  invisible(TRUE)
+}
+
+rducks_check_map_value <- function(type, x, what) {
+  if (!is.list(x) || is.null(x$keys) || is.null(x$values)) {
+    stop(what, " must be list(keys = ..., values = ...) for ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  children <- rducks_type_children(type)
+  if (length(x$keys) != length(x$values)) {
+    stop(what, "$keys and ", what, "$values must have equal length", call. = FALSE)
+  }
+  rducks_check_sequence_value(LIST(children[[1L]]), x$keys, what = paste0(what, "$keys"))
+  rducks_check_sequence_value(LIST(children[[2L]]), x$values, what = paste0(what, "$values"))
+  invisible(TRUE)
+}
+
+rducks_check_decimal_value <- function(type, x, what) {
+  params <- rducks_type_parameters(type)
+  if (!inherits(x, "rducks_decimal")) {
+    stop(what, " must be a rducks_decimal object for ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  if (!identical(as.integer(x$width), as.integer(params$width)) || !identical(as.integer(x$scale), as.integer(params$scale))) {
+    stop(what, " must have type ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+rducks_check_enum_value <- function(type, x, what) {
+  levels <- rducks_type_parameters(type)$levels
+  if (inherits(x, "rducks_enum")) {
+    if (!identical(base::levels(x), levels)) {
+      stop(what, " enum levels must match ", rducks_type_duckdb_sql(type), call. = FALSE)
+    }
+    return(invisible(TRUE))
+  }
+  values <- as.character(x)
+  bad <- !is.na(values) & !values %in% levels
+  if (any(bad)) {
+    stop(what, " enum values must be present in ", rducks_type_duckdb_sql(type), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+rducks_check_union_value <- function(type, x, what) {
+  tag <- if (inherits(x, "rducks_union")) x$tag else x$tag
+  value <- if (inherits(x, "rducks_union")) x$value else x$value
+  if (!is.character(tag) || length(tag) != 1L || is.na(tag) || !nzchar(tag)) {
+    stop(what, " must have a non-empty union tag", call. = FALSE)
+  }
+  member_names <- rducks_type_child_names(type)
+  idx <- match(tag, member_names)
+  if (is.na(idx)) {
+    stop(what, " union tag must be one of: ", paste(member_names, collapse = ", "), call. = FALSE)
+  }
+  rducks_check_value(rducks_type_children(type)[[idx]], value, what = paste0(what, "$", tag))
+  invisible(TRUE)
+}
+
+#' Check that an R value is compatible with a DuckDB type
+#'
+#' This is a pre-marshalling guard for Rducks type objects. It checks the R value
+#' shape that the marshaller expects for scalar, decimal, enum, list, array,
+#' struct, map, and union descriptors.
+#'
+#' @param type A `rducks_type` object such as `INTEGER`, `INTEGER[]`,
+#'   `STRUCT(a = INTEGER)`, or a character type token accepted by
+#'   [rducks_type_normalize()].
+#' @param x R value to check.
+#' @param size Optional exact length for scalar/vector checks.
+#' @param what Label used in error messages.
+#' @param name Argument label used by `rducks_check_argument()` in error
+#'   messages.
+#' @return `x`, invisibly, on success.
+#' @export
+rducks_check_value <- function(type, x, size = NULL, what = "value") {
+  if (!inherits(type, "rducks_type")) {
+    type <- rducks_type_object(type)
+  }
+  if (is.null(x)) {
+    return(invisible(x))
+  }
+  kind <- rducks_type_kind(type)
+  if (identical(kind, "scalar")) {
+    rducks_check_scalar_value(rducks_type_token(type), x, size = size, what = what)
+  } else if (identical(kind, "decimal")) {
+    rducks_check_decimal_value(type, x, what)
+  } else if (identical(kind, "enum")) {
+    rducks_check_enum_value(type, x, what)
+  } else if (identical(kind, "list")) {
+    rducks_check_sequence_value(type, x, size = size, what = what)
+  } else if (identical(kind, "array")) {
+    rducks_check_sequence_value(type, x, size = rducks_type_size(type), what = what)
+  } else if (identical(kind, "struct")) {
+    rducks_check_struct_value(type, x, what)
+  } else if (identical(kind, "map")) {
+    rducks_check_map_value(type, x, what)
+  } else if (identical(kind, "union")) {
+    rducks_check_union_value(type, x, what)
+  } else {
+    stop("unsupported type kind: ", kind, call. = FALSE)
+  }
+  invisible(x)
+}
+
+#' @rdname rducks_check_value
+#' @export
+rducks_check_argument <- function(type, x, name = "argument") {
+  rducks_check_value(type, x, what = name)
+}
+
+#' @rdname rducks_check_value
+#' @export
+rducks_check_return <- function(type, x) {
+  rducks_check_value(type, x, what = "return value")
+}

@@ -27,6 +27,15 @@ Register an R function as a DuckDB UDF. The implemented mode = 'row' compiles a 
 
 Soft-unregister a previously registered Rducks UDF by replacing the DuckDB overload with an inactive stub and releasing Rducks' R-side callback and compiled-wrapper references. SQL DROP FUNCTION cannot remove these internal extension entries in current DuckDB.
 
+## `rducks_is_type`
+
+- Kind: `r-wrapper/native/S7`
+- Category: `types`
+- Signature: `rducks_is_type(x)`
+- Returns: `logical scalar`
+
+Check whether an object is a structurally valid Rducks DuckDB type descriptor. The fast native path verifies the S7/S3 class vector, core attributes, kind-specific child layout, enum/decimal parameters, and nested child descriptors before marshalling.
+
 ## `rducks_pump`
 
 - Kind: `r-wrapper/native`

@@ -10,8 +10,8 @@ rducks_match_mode <- function(mode) {
 #'
 #' @param name SQL function name.
 #' @param fun R function.
-#' @param args Character vector of Rducks type tokens.
-#' @param returns Return type token.
+#' @param args Rducks type objects or scalar type tokens.
+#' @param returns Rducks return type object or scalar type token.
 #' @param mode Registration mode. `"row"` is implemented now and uses an
 #'   Rtinycc-generated wrapper for row-oriented scalar callbacks.
 #'   `"arrow_lapply"` and `"arrow_nanoarrow"` are reserved for future batch
@@ -26,17 +26,21 @@ rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "arrow_lap
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
   }
-  args <- rducks_types_normalize(args)
-  returns <- rducks_type_normalize(returns)
-  argument_type_mapping <- rducks_argument_type_mapping(args)
+  arg_types <- rducks_as_type_list(args)
+  return_type <- rducks_as_type(returns)
+  args <- vapply(arg_types, rducks_type_token, character(1), USE.NAMES = FALSE)
+  returns <- rducks_type_token(return_type)
+  argument_type_mapping <- rducks_argument_type_mapping(arg_types)
   structure(
     list(
       name = name,
       fun = fun,
       args = args,
       returns = returns,
+      arg_types = arg_types,
+      return_type = return_type,
       mode = mode,
-      signature = rducks_duckdb_signature(name, args, returns),
+      signature = rducks_duckdb_signature(name, arg_types, return_type),
       argument_type_mapping = argument_type_mapping
     ),
     class = "rducks_udf_spec"
@@ -218,13 +222,15 @@ rducks_c_real_return_lines <- function(c_type) {
 }
 
 rducks_c_return_lines <- function(token) {
-  if (rducks_type_is_composite(token)) {
+  type <- rducks_as_type(token)
+  if (!identical(rducks_type_kind(type), "scalar")) {
     return(c(
       "  *(SEXP *)out_value = result;",
       "  R_PreserveObject(result);",
       "  if (out_is_null) *out_is_null = false;"
     ))
   }
+  token <- rducks_type_token(type)
   switch(token,
     bool = c(
       "  int value = Rf_asLogical(result);",
@@ -355,17 +361,18 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
   symbol <- symbol %||% paste0("rducks_wrap_", rducks_c_identifier(spec$name), "_", hash)
   n_args <- length(spec$args)
 
-  arg_mapping <- spec$argument_type_mapping %||% rducks_argument_type_mapping(spec$args)
+  arg_mapping <- spec$argument_type_mapping %||% rducks_argument_type_mapping(spec$arg_types %||% spec$args)
   if (!identical(arg_mapping$rducks_type, spec$args)) {
-    arg_mapping <- rducks_argument_type_mapping(spec$args)
+    arg_mapping <- rducks_argument_type_mapping(spec$arg_types %||% spec$args)
   }
   arg_lines <- if (n_args) {
     vapply(seq_len(n_args), function(i) rducks_c_arg_expr(arg_mapping[i, , drop = FALSE], i - 1L), character(1))
   } else {
     character()
   }
-  return_lines <- rducks_c_return_lines(spec$returns)
-  result_null_check <- if (rducks_type_is_composite(spec$returns)) {
+  return_type <- spec$return_type %||% rducks_as_type(spec$returns)
+  return_lines <- rducks_c_return_lines(return_type)
+  result_null_check <- if (!identical(rducks_type_kind(return_type), "scalar")) {
     c(
       "  if (result == R_NilValue) {",
       "    if (out_is_null) *out_is_null = true;",
