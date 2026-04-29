@@ -7,8 +7,8 @@ rducks_scalar_types <- local({
     u16 = list(c = "uint16_t", duckdb = "USMALLINT", r = "integer"),
     i32 = list(c = "int32_t", duckdb = "INTEGER", r = "integer"),
     u32 = list(c = "uint32_t", duckdb = "UINTEGER", r = "numeric"),
-    i64 = list(c = "int64_t", duckdb = "BIGINT", r = "numeric"),
-    u64 = list(c = "uint64_t", duckdb = "UBIGINT", r = "numeric"),
+    i64 = list(c = "int64_t", duckdb = "BIGINT", r = "rducks_bigint"),
+    u64 = list(c = "uint64_t", duckdb = "UBIGINT", r = "rducks_ubigint"),
     f32 = list(c = "float", duckdb = "FLOAT", r = "numeric"),
     f64 = list(c = "double", duckdb = "DOUBLE", r = "numeric"),
     varchar = list(c = "const char *", duckdb = "VARCHAR", r = "character"),
@@ -92,14 +92,14 @@ rducks_scalar_argument_mapping_specs <- list(
     precision_may_be_lost = FALSE
   ),
   i64 = list(
-    r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "R double; exact only up to 2^53", uses_r_double_for_integer = TRUE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = TRUE
+    r_value = "rducks_bigint scalar", sql_null = "NULL", copy = "boxed exact Rducks value object",
+    notes = "exact signed 64-bit integer string", uses_r_double_for_integer = FALSE,
+    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
   ),
   u64 = list(
-    r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "R double; exact only up to 2^53", uses_r_double_for_integer = TRUE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = TRUE
+    r_value = "rducks_ubigint scalar", sql_null = "NULL", copy = "boxed exact Rducks value object",
+    notes = "exact unsigned 64-bit integer string", uses_r_double_for_integer = FALSE,
+    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
   ),
   f32 = list(
     r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
@@ -674,8 +674,8 @@ rducks_scalar_vector_description <- function(token, len = NULL) {
     u16 = "integer vector",
     i32 = "integer vector",
     u32 = "numeric vector",
-    i64 = "numeric vector",
-    u64 = "numeric vector",
+    i64 = "rducks_bigint vector",
+    u64 = "rducks_ubigint vector",
     f32 = "numeric vector",
     f64 = "numeric vector",
     varchar = "character vector",
@@ -710,9 +710,12 @@ rducks_row_mapping_supported <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
-    return(rducks_type_token(type) %in% names(rducks_scalar_types$table))
+    return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
   }
-  if (kind %in% c("list", "array", "struct", "map")) {
+  if (kind %in% c("decimal", "enum")) {
+    return(TRUE)
+  }
+  if (kind %in% c("list", "array", "struct", "map", "union")) {
     return(all(vapply(rducks_type_children(type), rducks_row_mapping_supported, logical(1))))
   }
   FALSE
@@ -750,6 +753,9 @@ rducks_composite_argument_mapping_row <- function(token) {
       rducks_sequence_value_description(children[[1L]]),
       rducks_sequence_value_description(children[[2L]])
     ),
+    decimal = "rducks_decimal scalar",
+    enum = "rducks_enum scalar",
+    union = "rducks_union object",
     stop("unsupported argument kind: ", kind, call. = FALSE)
   )
   r_type <- switch(kind,
@@ -757,6 +763,9 @@ rducks_composite_argument_mapping_row <- function(token) {
     array = if (identical(rducks_type_kind(children[[1L]]), "scalar")) "vector" else "list",
     struct = "list",
     map = "list",
+    decimal = "rducks_decimal",
+    enum = "rducks_enum",
+    union = "rducks_union",
     "list"
   )
   notes <- switch(kind,
@@ -764,10 +773,13 @@ rducks_composite_argument_mapping_row <- function(token) {
     array = "fixed-size array; homogeneous scalar children use atomic vectors",
     struct = "recursive field mapping",
     map = "keys and values use sequence mapping",
+    decimal = "exact fixed-point value class",
+    enum = "factor with enum levels",
+    union = "tagged value object",
     ""
   )
   leaves <- unique(rducks_type_scalar_leaves(type))
-  unsupported_leaves <- leaves[!leaves %in% names(rducks_scalar_types$table)]
+  unsupported_leaves <- leaves[!leaves %in% rducks_all_scalar_type_names()]
   if (length(unsupported_leaves)) {
     stop(
       "row-mode argument marshalling is not available for ",
@@ -783,7 +795,7 @@ rducks_composite_argument_mapping_row <- function(token) {
     r_type = r_type,
     r_value_passed_to_fun = r_value,
     sql_null_in_callback = "NULL",
-    copy_semantics = if (identical(r_type, "vector")) "R vector allocation" else "recursive R allocation",
+    copy_semantics = if (kind %in% c("decimal", "enum", "union")) "boxed exact Rducks value object" else if (identical(r_type, "vector")) "R vector allocation" else "recursive R allocation",
     uses_r_double_for_integer = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_integer),
     uses_r_double_for_float = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_float),
     precision_may_be_lost = if (is.null(leaf_rows)) FALSE else any(leaf_rows$precision_may_be_lost),
@@ -842,13 +854,9 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' are represented as typed `NA` values, while nested composite `NULL` values
 #' are represented as R `NULL`.
 #'
-#' The default table is limited to scalar types whose row-mode native marshalling
-#' is currently implemented. Exotic scalar descriptors such as `UUID` and
-#' `HUGEINT` can be requested explicitly to inspect their exact R value classes,
-#' but `rducks_register()` still rejects them in row mode until the matching
-#' DuckDB vector marshalling paths are implemented. `DECIMAL`, `ENUM`, and
-#' `UNION` descriptors are currently validation descriptors, not row-mode
-#' callback argument mappings.
+#' The default table contains all scalar types supported by row-mode native
+#' marshalling. `DECIMAL`, `ENUM`, `UNION`, and composite descriptors can be
+#' requested explicitly to inspect their recursive R callback shapes.
 #'
 #' @param x Optional scalar type tokens or constructed `rducks_type` objects.
 #'   When `NULL`, all currently implemented row-mode scalar argument mappings
@@ -859,7 +867,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' @export
 rducks_argument_type_mapping <- function(x = NULL) {
   items <- if (is.null(x)) {
-    as.list(names(rducks_scalar_types$table))
+    as.list(rducks_all_scalar_type_names())
   } else if (inherits(x, "rducks_type")) {
     list(x)
   } else {

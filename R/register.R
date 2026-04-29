@@ -22,7 +22,7 @@ rducks_warn_type_mapping <- function(spec) {
   if (length(numeric_integer)) {
     warning(
       "Rducks maps ", paste(numeric_integer, collapse = ", "),
-      " through R numeric (double); i64/u64 values beyond 2^53 cannot be represented exactly",
+      " through R numeric (double) on the R side",
       call. = FALSE
     )
   }
@@ -43,9 +43,12 @@ rducks_type_row_marshalling_supported <- function(type) {
   }
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
-    return(rducks_type_token(type) %in% names(rducks_scalar_types$table))
+    return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
   }
-  if (kind %in% c("list", "array", "struct", "map")) {
+  if (kind %in% c("decimal", "enum")) {
+    return(TRUE)
+  }
+  if (kind %in% c("list", "array", "struct", "map", "union")) {
     return(all(vapply(rducks_type_children(type), rducks_type_row_marshalling_supported, logical(1))))
   }
   FALSE

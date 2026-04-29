@@ -73,6 +73,14 @@ rducks_codegen_hash <- function(x) {
   sprintf("%08x", as.integer(h))
 }
 
+rducks_codegen_type_uses_sexp_bridge <- function(type) {
+  type <- rducks_as_type(type)
+  if (!identical(rducks_type_kind(type), "scalar")) {
+    return(TRUE)
+  }
+  rducks_type_token(type) %in% c("i64", "u64", "hugeint", "uhugeint", "uuid", "interval", "bit")
+}
+
 rducks_c_arg_expr <- function(arg_mapping, index) {
   if (is.character(arg_mapping)) {
     arg_mapping <- rducks_argument_type_mapping(arg_mapping)
@@ -81,7 +89,7 @@ rducks_c_arg_expr <- function(arg_mapping, index) {
     stop("arg_mapping must be a one-row argument type mapping", call. = FALSE)
   }
   token <- arg_mapping$rducks_type[[1L]]
-  if (!identical(arg_mapping$argument_kind[[1L]], "scalar")) {
+  if (!identical(arg_mapping$argument_kind[[1L]], "scalar") || token %in% c("i64", "u64", "hugeint", "uhugeint", "uuid", "interval", "bit")) {
     return(sprintf(
       "arg_values[%d] = PROTECT(arg_is_null[%d] ? R_NilValue : (SEXP)args[%d]);\n  protect_count++;",
       index, index, index
@@ -223,7 +231,7 @@ rducks_c_real_return_lines <- function(c_type) {
 
 rducks_c_return_lines <- function(token) {
   type <- rducks_as_type(token)
-  if (!identical(rducks_type_kind(type), "scalar")) {
+  if (rducks_codegen_type_uses_sexp_bridge(type)) {
     return(c(
       "  *(SEXP *)out_value = result;",
       "  R_PreserveObject(result);",
@@ -317,11 +325,16 @@ rducks_c_return_lines <- function(token) {
       "  double value = Rf_asReal(result);",
       "  if (ISNA(value)) {",
       "    if (out_is_null) *out_is_null = true;",
-      "  } else if (!R_FINITE(value)) {",
+      "  } else if (!R_FINITE(value) || value < 0.0 || value >= 86400.0) {",
       "    UNPROTECT(protect_count);",
       "    return false;",
       "  } else {",
-      "    ((rducks_time_t *)out_value)->micros = (int64_t)(value * 1000000.0);",
+      "    int64_t micros = rducks_round_double_to_i64(value * 1000000.0);",
+      "    if (micros < 0 || micros >= INT64_C(86400000000)) {",
+      "      UNPROTECT(protect_count);",
+      "      return false;",
+      "    }",
+      "    ((rducks_time_t *)out_value)->micros = micros;",
       "    if (out_is_null) *out_is_null = false;",
       "  }"
     ),
@@ -329,11 +342,11 @@ rducks_c_return_lines <- function(token) {
       "  double value = Rf_asReal(result);",
       "  if (ISNA(value)) {",
       "    if (out_is_null) *out_is_null = true;",
-      "  } else if (!R_FINITE(value)) {",
+      "  } else if (!R_FINITE(value) || value < -9223372036854.774 || value > 9223372036854.774) {",
       "    UNPROTECT(protect_count);",
       "    return false;",
       "  } else {",
-      "    ((rducks_timestamp_t *)out_value)->micros = (int64_t)(value * 1000000.0);",
+      "    ((rducks_timestamp_t *)out_value)->micros = rducks_round_double_to_i64(value * 1000000.0);",
       "    if (out_is_null) *out_is_null = false;",
       "  }"
     ),
@@ -372,7 +385,7 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
   }
   return_type <- spec$return_type %||% rducks_as_type(spec$returns)
   return_lines <- rducks_c_return_lines(return_type)
-  result_null_check <- if (!identical(rducks_type_kind(return_type), "scalar")) {
+  result_null_check <- if (rducks_codegen_type_uses_sexp_bridge(return_type)) {
     c(
       "  if (result == R_NilValue) {",
       "    if (out_is_null) *out_is_null = true;",
@@ -404,6 +417,7 @@ rducks_generate_scalar_wrapper <- function(spec, symbol = NULL) {
     "typedef struct rducks_date { int32_t days; } rducks_date_t;",
     "typedef struct rducks_time { int64_t micros; } rducks_time_t;",
     "typedef struct rducks_timestamp { int64_t micros; } rducks_timestamp_t;",
+    "static int64_t rducks_round_double_to_i64(double value) { return (int64_t)(value >= 0 ? value + 0.5 : value - 0.5); }",
     "",
     sprintf("bool %s(SEXP fun, void **args, const bool *arg_is_null, void *out_value, bool *out_is_null) {", symbol),
     sprintf("  SEXP arg_values[%d];", max(n_args, 1L)),

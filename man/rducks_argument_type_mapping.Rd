@@ -30,11 +30,7 @@ are passed as R \code{NULL}; \code{NULL} elements in homogeneous scalar lists/ar
 are represented as typed \code{NA} values, while nested composite \code{NULL} values
 are represented as R \code{NULL}.
 
-The default table is limited to scalar types whose row-mode native marshalling
-is currently implemented. Exotic scalar descriptors such as \code{UUID} and
-\code{HUGEINT} can be requested explicitly to inspect their exact R value classes,
-but \code{rducks_register()} still rejects them in row mode until the matching
-DuckDB vector marshalling paths are implemented. \code{DECIMAL}, \code{ENUM}, and
-\code{UNION} descriptors are currently validation descriptors, not row-mode
-callback argument mappings.
+The default table contains all scalar types supported by row-mode native
+marshalling. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite descriptors can be
+requested explicitly to inspect their recursive R callback shapes.
 }

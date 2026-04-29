@@ -7,9 +7,9 @@ rducks_normalize_integer_string <- function(x, unsigned = FALSE, what = "integer
     if (any(bad)) {
       stop(what, " values must be whole finite numbers or integer strings", call. = FALSE)
     }
-    too_large <- !missing & abs(x) > 2^53
+    too_large <- !missing & abs(x) >= 2^53
     if (any(too_large)) {
-      stop(what, " numeric values outside +/-2^53 must be supplied as character strings", call. = FALSE)
+      stop(what, " numeric values at or outside +/-2^53 must be supplied as character strings", call. = FALSE)
     }
     out[!missing] <- format(x[!missing], scientific = FALSE, trim = TRUE)
     x <- out
@@ -40,6 +40,84 @@ rducks_normalize_integer_string <- function(x, unsigned = FALSE, what = "integer
     paste0(sign, value)
   }
   vapply(out, normalize_one, character(1), USE.NAMES = FALSE)
+}
+
+rducks_check_integer_bounds <- function(x, min, max, what) {
+  too_low <- !is.na(x) & rducks_compare_integer_strings(x, rep(min, length.out = length(x))) < 0L
+  too_high <- !is.na(x) & rducks_compare_integer_strings(x, rep(max, length.out = length(x))) > 0L
+  if (any(too_low | too_high)) {
+    stop(what, " values are outside the supported range", call. = FALSE)
+  }
+  x
+}
+
+#' Construct exact DuckDB BIGINT values
+#'
+#' Values are stored as canonical decimal strings so signed 64-bit values are
+#' not silently rounded through R double.
+#'
+#' @param x Numeric, integer, or character vector of whole numbers.
+#' @return Character vector with class `rducks_bigint`.
+#' @export
+rducks_bigint <- function(x = character()) {
+  value <- rducks_normalize_integer_string(x, unsigned = FALSE, what = "BIGINT")
+  value <- rducks_check_integer_bounds(value, "-9223372036854775808", "9223372036854775807", "BIGINT")
+  structure(value, class = c("rducks_bigint", "character"))
+}
+
+#' @export
+format.rducks_bigint <- function(x, ...) unclass(x)
+
+#' @export
+as.character.rducks_bigint <- function(x, ...) unclass(x)
+
+#' @export
+c.rducks_bigint <- function(..., recursive = FALSE) {
+  rducks_bigint(unlist(lapply(list(...), as.character), use.names = FALSE))
+}
+
+#' @export
+`[.rducks_bigint` <- function(x, i, ...) rducks_bigint(unclass(x)[i])
+
+#' @export
+print.rducks_bigint <- function(x, ...) {
+  cat("<rducks_bigint[", length(x), "]>\n", sep = "")
+  print(unclass(x), quote = FALSE)
+  invisible(x)
+}
+
+#' Construct exact DuckDB UBIGINT values
+#'
+#' Values are stored as canonical unsigned decimal strings.
+#'
+#' @param x Numeric, integer, or character vector of whole unsigned numbers.
+#' @return Character vector with class `rducks_ubigint`.
+#' @export
+rducks_ubigint <- function(x = character()) {
+  value <- rducks_normalize_integer_string(x, unsigned = TRUE, what = "UBIGINT")
+  value <- rducks_check_integer_bounds(value, "0", "18446744073709551615", "UBIGINT")
+  structure(value, class = c("rducks_ubigint", "character"))
+}
+
+#' @export
+format.rducks_ubigint <- function(x, ...) unclass(x)
+
+#' @export
+as.character.rducks_ubigint <- function(x, ...) unclass(x)
+
+#' @export
+c.rducks_ubigint <- function(..., recursive = FALSE) {
+  rducks_ubigint(unlist(lapply(list(...), as.character), use.names = FALSE))
+}
+
+#' @export
+`[.rducks_ubigint` <- function(x, i, ...) rducks_ubigint(unclass(x)[i])
+
+#' @export
+print.rducks_ubigint <- function(x, ...) {
+  cat("<rducks_ubigint[", length(x), "]>\n", sep = "")
+  print(unclass(x), quote = FALSE)
+  invisible(x)
 }
 
 #' Construct DuckDB UUID values
@@ -89,10 +167,14 @@ print.rducks_uuid <- function(x, ...) {
 #' @return Character vector with class `rducks_hugeint`.
 #' @export
 rducks_hugeint <- function(x = character()) {
-  structure(
-    rducks_normalize_integer_string(x, unsigned = FALSE, what = "HUGEINT"),
-    class = c("rducks_hugeint", "character")
+  value <- rducks_normalize_integer_string(x, unsigned = FALSE, what = "HUGEINT")
+  value <- rducks_check_integer_bounds(
+    value,
+    "-170141183460469231731687303715884105728",
+    "170141183460469231731687303715884105727",
+    "HUGEINT"
   )
+  structure(value, class = c("rducks_hugeint", "character"))
 }
 
 #' @export
@@ -124,10 +206,14 @@ print.rducks_hugeint <- function(x, ...) {
 #' @return Character vector with class `rducks_uhugeint`.
 #' @export
 rducks_uhugeint <- function(x = character()) {
-  structure(
-    rducks_normalize_integer_string(x, unsigned = TRUE, what = "UHUGEINT"),
-    class = c("rducks_uhugeint", "character")
+  value <- rducks_normalize_integer_string(x, unsigned = TRUE, what = "UHUGEINT")
+  value <- rducks_check_integer_bounds(
+    value,
+    "0",
+    "340282366920938463463374607431768211455",
+    "UHUGEINT"
   )
+  structure(value, class = c("rducks_uhugeint", "character"))
 }
 
 #' @export
@@ -283,11 +369,13 @@ rducks_interval <- function(months = 0L, days = 0L, micros = 0L) {
   if (any(!is.na(days) & (days != trunc(days) | days < -2147483648 | days > 2147483647))) {
     stop("days must fit in signed 32-bit integers", call. = FALSE)
   }
+  micros <- rducks_normalize_integer_string(micros, unsigned = FALSE, what = "INTERVAL micros")
+  micros <- rducks_check_integer_bounds(micros, "-9223372036854775808", "9223372036854775807", "INTERVAL micros")
   structure(
     list(
       months = as.integer(months),
       days = as.integer(days),
-      micros = rducks_normalize_integer_string(micros, unsigned = FALSE, what = "INTERVAL micros")
+      micros = micros
     ),
     class = "rducks_interval"
   )
@@ -412,8 +500,8 @@ rducks_bits <- function(x = raw(), length = NULL) {
   if (inherits(x, "rducks_bits")) return(x)
   if (is.raw(x)) {
     bit_length <- if (is.null(length)) base::length(x) * 8L else as.integer(length)
-    if (is.na(bit_length) || bit_length < 0L || bit_length > base::length(x) * 8L) {
-      stop("length must be between 0 and the raw storage bit capacity", call. = FALSE)
+    if (is.na(bit_length) || bit_length <= 0L || bit_length > base::length(x) * 8L) {
+      stop("length must be between 1 and the raw storage bit capacity", call. = FALSE)
     }
     return(structure(list(data = x, length = bit_length), class = "rducks_bits"))
   }
@@ -429,6 +517,9 @@ rducks_bits <- function(x = raw(), length = NULL) {
     if (any(is.na(bits)) || any(!bits %in% c(0L, 1L))) {
       stop("BIT vector input must contain only 0/1 or TRUE/FALSE values", call. = FALSE)
     }
+  }
+  if (!length(bits)) {
+    stop("BIT values must contain at least one bit", call. = FALSE)
   }
   structure(list(data = rducks_pack_bits(bits), length = length(bits)), class = "rducks_bits")
 }
@@ -597,6 +688,26 @@ rducks_sql_quote <- function(x) paste0("'", gsub("'", "''", x, fixed = TRUE), "'
 rducks_scalar_literal_check <- function(x) {
   if (length(x) != 1L) stop("DuckDB literal conversion requires a scalar value", call. = FALSE)
   invisible(NULL)
+}
+
+#' @export
+rducks_value_type.rducks_bigint <- function(x, ...) "BIGINT"
+
+#' @export
+rducks_duckdb_literal.rducks_bigint <- function(x, ...) {
+  rducks_scalar_literal_check(x)
+  if (is.na(x)) return("NULL::BIGINT")
+  paste0(rducks_sql_quote(unclass(x)), "::BIGINT")
+}
+
+#' @export
+rducks_value_type.rducks_ubigint <- function(x, ...) "UBIGINT"
+
+#' @export
+rducks_duckdb_literal.rducks_ubigint <- function(x, ...) {
+  rducks_scalar_literal_check(x)
+  if (is.na(x)) return("NULL::UBIGINT")
+  paste0(rducks_sql_quote(unclass(x)), "::UBIGINT")
 }
 
 #' @export
@@ -827,6 +938,24 @@ rducks_integer_double <- function(x, what) {
 }
 
 #' @export
+as.double.rducks_bigint <- function(x, ...) rducks_integer_double(x, "BIGINT")
+
+#' @export
+as.numeric.rducks_bigint <- function(x, ...) as.double.rducks_bigint(x, ...)
+
+#' @export
+as.integer.rducks_bigint <- function(x, ...) as.integer(as.double(x))
+
+#' @export
+as.double.rducks_ubigint <- function(x, ...) rducks_integer_double(x, "UBIGINT")
+
+#' @export
+as.numeric.rducks_ubigint <- function(x, ...) as.double.rducks_ubigint(x, ...)
+
+#' @export
+as.integer.rducks_ubigint <- function(x, ...) as.integer(as.double(x))
+
+#' @export
 as.double.rducks_hugeint <- function(x, ...) rducks_integer_double(x, "HUGEINT")
 
 #' @export
@@ -857,6 +986,24 @@ rducks_integer_ops <- function(e1, e2, op, unsigned = FALSE, what = "integer") {
     `>=` = cmp >= 0L,
     stop("operation ", op, " is not implemented for ", what, " values", call. = FALSE)
   )
+}
+
+#' @export
+Ops.rducks_bigint <- function(e1, e2) {
+  if (.Generic %in% c("+", "-")) {
+    if (missing(e2)) return(rducks_bigint(rducks_integer_arith(e1, op = .Generic, unsigned = FALSE, what = "BIGINT")))
+    return(rducks_bigint(rducks_integer_arith(e1, e2, .Generic, unsigned = FALSE, what = "BIGINT")))
+  }
+  rducks_integer_ops(e1, e2, .Generic, unsigned = FALSE, what = "BIGINT")
+}
+
+#' @export
+Ops.rducks_ubigint <- function(e1, e2) {
+  if (.Generic %in% c("+", "-")) {
+    if (missing(e2)) return(rducks_ubigint(rducks_integer_arith(e1, op = .Generic, unsigned = TRUE, what = "UBIGINT")))
+    return(rducks_ubigint(rducks_integer_arith(e1, e2, .Generic, unsigned = TRUE, what = "UBIGINT")))
+  }
+  rducks_integer_ops(e1, e2, .Generic, unsigned = TRUE, what = "UBIGINT")
 }
 
 #' @export

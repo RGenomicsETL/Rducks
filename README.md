@@ -12,15 +12,14 @@ that wrapper on a DuckDB connection.
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads
 it into DuckDB with `rducks_enable()`, and registers row-oriented scalar
-R UDFs with `rducks_register()`. The implemented scalar input/output
-type set is `BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`,
-`INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`,
-`VARCHAR`, `BLOB`, `DATE`, `TIME`, and `TIMESTAMP`. Composite inputs and
-outputs are accepted as constructed type objects such as `TYPE[]`,
-`TYPE[N]`, `STRUCT(...)`, and `MAP(...)`. The type system also has
-descriptors for `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
-`DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)` for exact
-R-side value validation. The default `mode = "row"` calls R once per
+R UDFs with `rducks_register()`. The row-mode input/output type set is
+`BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`,
+`UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`,
+`DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`,
+`BIT`, `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`.
+Composite inputs and outputs are accepted as constructed type objects
+such as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively
+over supported child types. The default `mode = "row"` calls R once per
 row; `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
 for future batch UDF paths. Registration also supports `null_handling`,
 `exception_handling`, and `side_effects` controls.
@@ -29,15 +28,16 @@ Direct R callbacks require single-thread DuckDB execution, so call
 `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
 before registering R UDFs.
 
-Rducks also provides explicit R value classes for planned exotic DuckDB
-types: `rducks_uuid()`, `rducks_interval()`, `rducks_decimal()`,
+Rducks also provides explicit R value classes for exact or
+DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
+`rducks_uuid()`, `rducks_interval()`, `rducks_decimal()`,
 `rducks_hugeint()`, `rducks_uhugeint()`, `rducks_bits()`,
 `rducks_enum()`, and `rducks_union()`. These classes preserve exact
-representation before native UDF marshalling for those types is enabled.
-Constructed DuckDB type objects are formal S7-backed Rducks descriptors
-with native structural checks via `rducks_is_type()`. Descriptors are
-recursive, so lists, arrays, structs, maps, enums, decimals, and unions
-can be nested through the constructors rather than quoted type strings.
+representation at the row-mode callback boundary. Constructed DuckDB
+type objects are formal S7-backed Rducks descriptors with native
+structural checks via `rducks_is_type()`. Descriptors are recursive, so
+lists, arrays, structs, maps, enums, decimals, and unions can be nested
+through the constructors rather than quoted type strings.
 `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
 
@@ -56,44 +56,36 @@ values are passed as R `NULL`; `NULL` elements in homogeneous scalar
 lists/arrays are represented as typed `NA` values, while nested
 composite `NULL` values are represented as R `NULL`.
 
-| argument_type                | r_type    | r_value_passed_to_fun                                  | sql_null_in_callback  | copy_semantics         | notes                                                            |
-|:-----------------------------|:----------|:-------------------------------------------------------|:----------------------|:-----------------------|:-----------------------------------------------------------------|
-| BOOLEAN                      | logical   | logical(1)                                             | NA                    | boxed scalar           |                                                                  |
-| TINYINT                      | integer   | integer(1)                                             | NA_integer\_          | boxed scalar           |                                                                  |
-| UTINYINT                     | integer   | integer(1)                                             | NA_integer\_          | boxed scalar           |                                                                  |
-| SMALLINT                     | integer   | integer(1)                                             | NA_integer\_          | boxed scalar           |                                                                  |
-| USMALLINT                    | integer   | integer(1)                                             | NA_integer\_          | boxed scalar           |                                                                  |
-| INTEGER                      | integer   | integer(1)                                             | NA_integer\_          | boxed scalar           |                                                                  |
-| UINTEGER                     | numeric   | numeric(1)                                             | NA_real\_             | boxed scalar           | R double                                                         |
-| BIGINT                       | numeric   | numeric(1)                                             | NA_real\_             | boxed scalar           | R double; exact only up to 2^53                                  |
-| UBIGINT                      | numeric   | numeric(1)                                             | NA_real\_             | boxed scalar           | R double; exact only up to 2^53                                  |
-| FLOAT                        | numeric   | numeric(1)                                             | NA_real\_             | boxed scalar           | widened to R double                                              |
-| DOUBLE                       | numeric   | numeric(1)                                             | NA_real\_             | boxed scalar           |                                                                  |
-| VARCHAR                      | character | character(1)                                           | NA_character\_        | string copied into R   | string copied into R                                             |
-| BLOB                         | raw       | raw vector                                             | NULL                  | bytes copied into R    | bytes copied into R                                              |
-| DATE                         | Date      | Date scalar                                            | NA_real\_ (unclassed) | boxed scalar           | days since 1970-01-01                                            |
-| TIME                         | numeric   | numeric(1) seconds                                     | NA_real\_             | boxed scalar           | microseconds converted to seconds                                |
-| TIMESTAMP                    | POSIXct   | POSIXct scalar                                         | NA_real\_ (unclassed) | boxed scalar           | microseconds converted to seconds                                |
-| INTEGER\[\]                  | vector    | integer vector                                         | NULL                  | R vector allocation    | homogeneous scalar children use atomic vectors                   |
-| INTEGER\[3\]                 | vector    | integer vector of length 3                             | NULL                  | R vector allocation    | fixed-size array; homogeneous scalar children use atomic vectors |
-| STRUCT(a INTEGER, b VARCHAR) | list      | named list of fields                                   | NULL                  | recursive R allocation | recursive field mapping                                          |
-| MAP(VARCHAR, INTEGER)        | list      | list(keys = character vector, values = integer vector) | NULL                  | recursive R allocation | keys and values use sequence mapping                             |
-
-The exact descriptor/value-class families below exist for validation and
-future native marshalling, but row-mode UDF registration currently
-rejects them until the corresponding DuckDB vector read/write paths are
-implemented.
-
-| argument_type                        | R_value_class   | row_mode_callback_status |
-|:-------------------------------------|:----------------|:-------------------------|
-| `HUGEINT`                            | rducks_hugeint  | not implemented yet      |
-| `UHUGEINT`                           | rducks_uhugeint | not implemented yet      |
-| `UUID`                               | rducks_uuid     | not implemented yet      |
-| `INTERVAL`                           | rducks_interval | not implemented yet      |
-| `BIT`                                | rducks_bits     | not implemented yet      |
-| `DECIMAL(10, 2)`                     | rducks_decimal  | not implemented yet      |
-| `ENUM('red', 'blue')`                | rducks_enum     | not implemented yet      |
-| `UNION(code INTEGER, label VARCHAR)` | rducks_union    | not implemented yet      |
+| argument_type                        | r_type          | r_value_passed_to_fun                                  | sql_null_in_callback  | copy_semantics                  | notes                                                            |
+|:-------------------------------------|:----------------|:-------------------------------------------------------|:----------------------|:--------------------------------|:-----------------------------------------------------------------|
+| `BOOLEAN`                            | logical         | logical(1)                                             | NA                    | boxed scalar                    |                                                                  |
+| `TINYINT`                            | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
+| `UTINYINT`                           | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
+| `SMALLINT`                           | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
+| `USMALLINT`                          | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
+| `INTEGER`                            | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
+| `UINTEGER`                           | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    | R double                                                         |
+| `BIGINT`                             | rducks_bigint   | rducks_bigint scalar                                   | NULL                  | boxed exact Rducks value object | exact signed 64-bit integer string                               |
+| `UBIGINT`                            | rducks_ubigint  | rducks_ubigint scalar                                  | NULL                  | boxed exact Rducks value object | exact unsigned 64-bit integer string                             |
+| `FLOAT`                              | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    | widened to R double                                              |
+| `DOUBLE`                             | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    |                                                                  |
+| `VARCHAR`                            | character       | character(1)                                           | NA_character\_        | string copied into R            | string copied into R                                             |
+| `BLOB`                               | raw             | raw vector                                             | NULL                  | bytes copied into R             | bytes copied into R                                              |
+| `DATE`                               | Date            | Date scalar                                            | NA_real\_ (unclassed) | boxed scalar                    | days since 1970-01-01                                            |
+| `TIME`                               | numeric         | numeric(1) seconds                                     | NA_real\_             | boxed scalar                    | microseconds converted to seconds                                |
+| `TIMESTAMP`                          | POSIXct         | POSIXct scalar                                         | NA_real\_ (unclassed) | boxed scalar                    | microseconds converted to seconds                                |
+| `HUGEINT`                            | rducks_hugeint  | rducks_hugeint                                         | NULL                  | boxed exact Rducks value object | exact Rducks value class                                         |
+| `UHUGEINT`                           | rducks_uhugeint | rducks_uhugeint                                        | NULL                  | boxed exact Rducks value object | exact Rducks value class                                         |
+| `UUID`                               | rducks_uuid     | rducks_uuid                                            | NULL                  | boxed exact Rducks value object | exact Rducks value class                                         |
+| `INTERVAL`                           | rducks_interval | rducks_interval                                        | NULL                  | boxed exact Rducks value object | exact Rducks value class                                         |
+| `BIT`                                | rducks_bits     | rducks_bits                                            | NULL                  | boxed exact Rducks value object | exact Rducks value class                                         |
+| `INTEGER[]`                          | vector          | integer vector                                         | NULL                  | R vector allocation             | homogeneous scalar children use atomic vectors                   |
+| `BIGINT[3]`                          | vector          | rducks_bigint vector of length 3                       | NULL                  | R vector allocation             | fixed-size array; homogeneous scalar children use atomic vectors |
+| `STRUCT(a UUID, b DECIMAL(10, 2))`   | list            | named list of fields                                   | NULL                  | recursive R allocation          | recursive field mapping                                          |
+| `MAP(VARCHAR, INTEGER)`              | list            | list(keys = character vector, values = integer vector) | NULL                  | recursive R allocation          | keys and values use sequence mapping                             |
+| `DECIMAL(10, 2)`                     | rducks_decimal  | rducks_decimal scalar                                  | NULL                  | boxed exact Rducks value object | exact fixed-point value class                                    |
+| `ENUM('red', 'blue')`                | rducks_enum     | rducks_enum scalar                                     | NULL                  | boxed exact Rducks value object | factor with enum levels                                          |
+| `UNION(code INTEGER, label VARCHAR)` | rducks_union    | rducks_union object                                    | NULL                  | boxed exact Rducks value object | tagged value object                                              |
 
 </details>
 
@@ -148,9 +140,9 @@ The implemented mode is `mode = "row"`, which calls the R function once
 per row. The names `mode = "arrow_lapply"` and
 `mode = "arrow_nanoarrow"` are reserved for future batch UDF paths.
 
-`u32`, `i64`, and `u64` are passed through R numeric (`double`),
-matching the DuckDB R package’s default type mapping. Values beyond
-`2^53` cannot be exactly represented as R doubles.
+`u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
+`HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
+canonical decimal strings.
 
 ## Composite input examples
 
