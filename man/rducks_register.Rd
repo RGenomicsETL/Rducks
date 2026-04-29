@@ -21,21 +21,20 @@ rducks_register(
 
 \item{fun}{R function.}
 
-\item{args}{Character vector of Rducks type tokens.}
+\item{args}{Character vector of Rducks type tokens. Currently all must be
+\code{"f64"} and length must be one or two.}
 
-\item{returns}{Return type token.}
+\item{returns}{Return type token. Currently must be \code{"f64"}.}
 
-\item{mode}{Planned registration mode.}
+\item{mode}{Reserved for future generic/compiled paths.}
 
-\item{compile}{Planned compiled-wrapper flag.}
+\item{compile}{Reserved for future Rtinycc-generated wrapper paths.}
 }
 \value{
-Currently does not return; errors until the native DuckDB extension
-registration path exists.
+Object of class \code{rducks_registration}.
 }
 \description{
-This is the intended public registration entry point. It currently errors
-because the loaded DuckDB extension bridge is not implemented in this repo
-yet. Keeping the function as an explicit failure is preferable to returning a
-metadata object that looks registered but is not visible to DuckDB.
+Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
+extension. The current implemented path supports one- or two-argument
+\code{f64 -> f64}/\verb{f64, f64 -> f64} callbacks and requires \code{\link[=rducks_enable]{rducks_enable()}} first.
 }

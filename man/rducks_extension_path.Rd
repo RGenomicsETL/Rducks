@@ -2,13 +2,13 @@
 % Please edit documentation in R/connection.R
 \name{rducks_extension_path}
 \alias{rducks_extension_path}
-\title{Locate the installed Rducks DuckDB extension artifact}
+\title{Locate the built Rducks DuckDB extension}
 \usage{
 rducks_extension_path()
 }
 \value{
-Character scalar path, or \code{NA_character_} if no artifact is bundled.
+Character scalar path to \code{rducks.duckdb_extension}.
 }
 \description{
-Locate the installed Rducks DuckDB extension artifact
+Locate the built Rducks DuckDB extension
 }

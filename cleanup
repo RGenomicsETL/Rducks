@@ -1,0 +1,2 @@
+#!/bin/sh
+rm -rf inst/rducks_extension/build

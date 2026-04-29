@@ -11,3 +11,4 @@
 *.Rcheck
 build/
 .DS_Store
+inst/rducks_extension/build/

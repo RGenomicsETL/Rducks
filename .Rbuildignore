@@ -7,3 +7,4 @@
 ^docs/.*\.dot$
 ^Makefile$
 ^AGENTS\.md$
+^inst/rducks_extension/build$

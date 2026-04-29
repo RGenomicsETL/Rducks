@@ -13,5 +13,7 @@ rducks_unregister(registration)
 \code{NULL}, invisibly.
 }
 \description{
-Close an Rducks registration
+This releases the R-side callback token. The current native extension keeps
+its own preserved reference for the registered SQL function until DuckDB
+releases the function metadata.
 }

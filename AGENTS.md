@@ -24,5 +24,5 @@ This repo owns:
 ## Architecture notes
 
 - See `docs/ARCHITECTURE.md` for the package/extension split.
-- See `docs/COPYING_FROM_DUCKTINYCC.md` for the exact DuckTinyCC pieces to adapt.
+- See `docs/BUILD.md` for the install-time DuckDB extension build and header-fetch workflow.
 - See `docs/NANOARROW.md` for nanoarrow dependency policy.

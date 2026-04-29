@@ -6,28 +6,21 @@
 \usage{
 rducks_enable(
   con,
-  extension_path = NULL,
-  threads = c("unchanged", "single"),
-  required = TRUE
+  extension_path = rducks_extension_path(),
+  threads = c("single", "unchanged")
 )
 }
 \arguments{
 \item{con}{A \code{duckdb_connection}.}
 
-\item{extension_path}{Optional extension path. If \code{NULL},
-\code{\link[=rducks_extension_path]{rducks_extension_path()}} is used.}
+\item{extension_path}{Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.}
 
-\item{threads}{Either \code{"unchanged"} or \code{"single"}. \code{"single"} executes
-\verb{PRAGMA threads=1}, which is the first safe mode for direct main-thread R
-callbacks.}
-
-\item{required}{If \code{TRUE}, error when no extension artifact is available.}
+\item{threads}{Either \code{"single"} or \code{"unchanged"}.}
 }
 \value{
 \code{con}, invisibly.
 }
 \description{
-Loads the Rducks DuckDB extension artifact and applies optional connection
-settings used by safe R callback execution. This function errors by default
-until a real extension artifact is bundled or supplied explicitly.
+Loads the bundled Rducks DuckDB extension and sets \verb{PRAGMA threads=1} by
+default for the current direct-R-callback implementation.
 }

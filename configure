@@ -1,0 +1,90 @@
+#!/bin/sh
+set -eu
+
+THIS_DIR=`dirname "$0"`
+THIS_DIR=`cd "$THIS_DIR" && pwd`
+EXT_DIR="${THIS_DIR}/inst/rducks_extension"
+DUCKDB_CAPI_HEADER="${EXT_DIR}/duckdb_capi/duckdb_extension.h"
+SRC_FILE="${EXT_DIR}/rducks_extension.c"
+BUILD_DIR="${EXT_DIR}/build"
+RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
+FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
+
+if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
+  echo "ERROR: DuckDB C API header not found at ${DUCKDB_CAPI_HEADER}"
+  exit 1
+fi
+if [ ! -f "${SRC_FILE}" ]; then
+  echo "ERROR: Rducks extension source not found at ${SRC_FILE}"
+  exit 1
+fi
+
+CC=`"${R_HOME}/bin/R" CMD config CC | cut -f1 -d' '`
+R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
+R_INCLUDE_FLAGS=`"${R_HOME}/bin/R" CMD config --cppflags`
+R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
+R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
+R_LDFLAGS=`"${R_HOME}/bin/R" CMD config LDFLAGS`
+R_LD_FLAGS=`"${R_HOME}/bin/R" CMD config --ldflags`
+
+EXT_VERSION=`awk -F': *' '/^Version:/ {print $2; exit}' "${THIS_DIR}/DESCRIPTION" || true`
+if [ -z "${EXT_VERSION}" ]; then
+  EXT_VERSION="0.0.0"
+fi
+
+DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+DUCKDB_API_MINOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MINOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+DUCKDB_API_PATCH=`awk '/DUCKDB_EXTENSION_API_VERSION_PATCH/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+if [ -n "${DUCKDB_API_MAJOR}" ] && [ -n "${DUCKDB_API_MINOR}" ] && [ -n "${DUCKDB_API_PATCH}" ]; then
+  DUCKDB_VERSION="v${DUCKDB_API_MAJOR}.${DUCKDB_API_MINOR}.${DUCKDB_API_PATCH}"
+else
+  DUCKDB_VERSION="v1.2.0"
+fi
+
+OS_NAME=`uname -s`
+ARCH_NAME=`uname -m`
+DUCKDB_PLATFORM=""
+case "${OS_NAME}" in
+  Linux)
+    case "${ARCH_NAME}" in
+      x86_64) DUCKDB_PLATFORM="linux_amd64";;
+      aarch64|arm64) DUCKDB_PLATFORM="linux_arm64";;
+    esac
+    ;;
+  Darwin)
+    case "${ARCH_NAME}" in
+      x86_64) DUCKDB_PLATFORM="osx_amd64";;
+      arm64) DUCKDB_PLATFORM="osx_arm64";;
+    esac
+    ;;
+esac
+if [ -z "${DUCKDB_PLATFORM}" ]; then
+  echo "ERROR: Unsupported platform: ${OS_NAME}/${ARCH_NAME}"
+  exit 1
+fi
+
+mkdir -p "${BUILD_DIR}"
+CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2 -fPIC"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks -I${EXT_DIR}/duckdb_capi"
+
+if [ "${OS_NAME}" = "Darwin" ]; then
+  SHARED_FLAGS="-shared -fPIC -undefined dynamic_lookup"
+else
+  SHARED_FLAGS="-shared -fPIC"
+fi
+
+echo "---------- Building Rducks DuckDB extension ----------"
+${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${R_LD_FLAGS}
+
+echo "Appending DuckDB extension metadata..."
+"${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
+  --library-file "${RAW_EXT_FILE}" \
+  --out-file "${FINAL_EXT_FILE}" \
+  --extension-name "rducks" \
+  --duckdb-platform "${DUCKDB_PLATFORM}" \
+  --duckdb-version "${DUCKDB_VERSION}" \
+  --extension-version "${EXT_VERSION}" \
+  --abi-type "C_STRUCT"
+
+rm -f "${RAW_EXT_FILE}"
+echo "Built ${FINAL_EXT_FILE}"

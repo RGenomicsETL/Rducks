@@ -1,6 +1,8 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -102,6 +104,29 @@ SEXP RDUCKS_callback_invoke(SEXP xptr, SEXP args) {
 
 SEXP RDUCKS_pump(void) {
     /* The DuckDB-extension request queue is introduced in the next native
-     * milestone. Returning zero keeps the R API and tests stable now. */
+     * milestone. Returning zero reports that no queued worker requests were
+     * processed by this minimal DuckTinyCC-backed implementation. */
     return Rf_ScalarInteger(0);
+}
+
+SEXP RDUCKS_sexp_addr(SEXP x) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)x);
+    return Rf_mkString(buf);
+}
+
+SEXP RDUCKS_extptr_addr(SEXP x) {
+    if (TYPEOF(x) != EXTPTRSXP) {
+        Rf_error("expected external pointer");
+    }
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)R_ExternalPtrAddr(x));
+    return Rf_mkString(buf);
+}
+
+SEXP RDUCKS_callback_fun_addr(SEXP xptr) {
+    rducks_callback_t *cb = rducks_callback_from_xptr(xptr);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)cb->fun);
+    return Rf_mkString(buf);
 }

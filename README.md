@@ -1,31 +1,48 @@
 # Rducks
 
-Rducks is intended to be an R package plus loaded DuckDB extension for
-registering R functions as DuckDB user-defined functions.
+Rducks is an R package plus DuckDB extension for registering R functions as
+DuckDB user-defined functions.
 
-This repo is **not yet a working R UDF extension**. There is deliberately no
-fake `dbGetQuery()` example here until a real DuckDB extension path exists and
-is covered by tests.
+## Implemented now
 
-## Current implemented pieces
+- The package builds a small native DuckDB extension at install time.
+- `rducks_enable()` loads that extension into a DuckDB connection.
+- `rducks_register()` registers one- or two-argument `DOUBLE -> DOUBLE` R scalar
+  UDFs.
+- The test suite executes the real path through `DBI::dbGetQuery()`.
 
-- R package skeleton and native R callback token preservation.
-- Type-token normalization helpers for planned scalar signatures.
-- Architecture notes for the DuckDB extension and Rtinycc-generated wrapper
-  path.
+## Current limits
 
-## Not implemented yet
+- Only `f64` unary/binary scalar UDFs are implemented.
+- Multi-threaded callback pumping is not implemented; `rducks_enable()` sets
+  `PRAGMA threads=1` by default.
+- Rtinycc-generated arbitrary-shape wrappers are not wired in yet.
+- Arrow/nanoarrow batch UDFs are not implemented yet.
 
-- Loading a bundled `rducks.duckdb_extension` artifact.
-- Registering a SQL UDF visible to DuckDB.
-- The generic DuckDB scalar bridge.
-- The main-thread pump queue that releases DuckDB workers waiting on R.
-- Arrow/nanoarrow batch UDFs.
+## Real example
 
-Until those exist, `rducks_enable()`, `rducks_register()`, and `rducks_pump()`
-fail explicitly instead of pretending to work.
+```r
+library(DBI)
+library(duckdb)
+library(Rducks)
 
-## Intended architecture
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con)
+
+reg <- rducks_register(
+  con,
+  name = "r_plus_one",
+  fun = function(x) x + 1,
+  args = "f64",
+  returns = "f64"
+)
+
+DBI::dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
+#>    x
+#> 1 42
+```
+
+## Intended next architecture
 
 ```text
 DuckDB extension loaded into a connection
@@ -38,9 +55,9 @@ DuckDB extension loaded into a connection
 ## Why Rtinycc?
 
 DuckDB scalar callbacks use one fixed C ABI, but R UDFs have arbitrary type
-shapes. Rtinycc is useful as the dynamic shape compiler: Rducks can generate a
-small C wrapper per UDF signature instead of interpreting every value through a
-large runtime switch.
+shapes. Rtinycc should be used as the dynamic shape compiler: Rducks can
+generate a small C wrapper per UDF signature instead of interpreting every value
+through a large runtime switch.
 
 ## Why nanoarrow?
 
@@ -51,5 +68,5 @@ use nanoarrow for low-level R pointer/ownership helpers.
 See:
 
 - `docs/ARCHITECTURE.md`
-- `docs/COPYING_FROM_DUCKTINYCC.md`
+- `docs/BUILD.md`
 - `docs/NANOARROW.md`
