@@ -40,12 +40,16 @@ Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.2.0
 
 ## Install-time build
 
-`configure` compiles `rducks_extension.c` into:
+`configure` on Unix/macOS and `configure.win` on Windows compile
+`rducks_extension.c` into:
 
 ```text
 inst/rducks_extension/build/rducks.duckdb_extension
 ```
 
-Then it appends the DuckDB extension metadata trailer using
+Then the configure script appends the DuckDB extension metadata trailer using
 `tools/append_extension_metadata.R`, following the same metadata layout used by
 DuckHTS.
+
+`cleanup` and `cleanup.win` remove generated extension build artifacts and
+native object/shared-library leftovers.
