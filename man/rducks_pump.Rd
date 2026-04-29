@@ -7,10 +7,10 @@
 rducks_pump()
 }
 \value{
-Integer number of callback requests processed.
+Currently does not return; errors until the native queue exists.
 }
 \description{
-Drain pending native callback requests on the R main thread. The current
-development scaffold exposes this function before the DuckDB extension queue
-is wired in; it returns the number of requests processed.
+This is the planned main-R-thread pump for native DuckDB worker requests. It
+currently errors because the DuckDB extension request queue is not implemented
+yet.
 }

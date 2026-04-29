@@ -1,44 +1,35 @@
-#' Register an R UDF specification
+#' Register an R UDF in DuckDB
 #'
-#' Creates and preserves an R callback token and returns an Rducks registration
-#' object. The native DuckDB extension registration path is intentionally staged:
-#' the returned object contains all metadata required by either the generic
-#' bridge or the Rtinycc-compiled bridge.
+#' This is the intended public registration entry point. It currently errors
+#' because the loaded DuckDB extension bridge is not implemented in this repo
+#' yet. Keeping the function as an explicit failure is preferable to returning a
+#' metadata object that looks registered but is not visible to DuckDB.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
 #' @param fun R function.
 #' @param args Character vector of Rducks type tokens.
 #' @param returns Return type token.
-#' @param mode Registration mode.
-#' @param compile If `TRUE`, include generated scalar wrapper source for the
-#'   compiled path.
-#' @return Object of class `rducks_registration`.
+#' @param mode Planned registration mode.
+#' @param compile Planned compiled-wrapper flag.
+#' @return Currently does not return; errors until the native DuckDB extension
+#'   registration path exists.
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
                             mode = c("generic", "compiled"),
                             compile = identical(mode[[1]], "compiled")) {
-  if (!inherits(con, "duckdb_connection")) {
-    stop("con must be a duckdb_connection", call. = FALSE)
-  }
   mode <- match.arg(mode)
-  spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
-  callback <- rducks_callback(fun)
-  source <- NULL
-  if (isTRUE(compile)) {
-    source <- rducks_generate_scalar_wrapper(spec)
-  }
-  out <- structure(
-    list(
-      connection = con,
-      spec = spec,
-      callback = callback,
-      source = source,
-      registered = FALSE
-    ),
-    class = "rducks_registration"
+  force(con)
+  force(name)
+  force(fun)
+  force(args)
+  force(returns)
+  force(compile)
+  stop(
+    "rducks_register() is not implemented yet: ",
+    "the native DuckDB extension registration bridge is missing",
+    call. = FALSE
   )
-  out
 }
 
 #' @export

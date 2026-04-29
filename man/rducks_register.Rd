@@ -2,7 +2,7 @@
 % Please edit documentation in R/register.R
 \name{rducks_register}
 \alias{rducks_register}
-\title{Register an R UDF specification}
+\title{Register an R UDF in DuckDB}
 \usage{
 rducks_register(
   con,
@@ -25,17 +25,17 @@ rducks_register(
 
 \item{returns}{Return type token.}
 
-\item{mode}{Registration mode.}
+\item{mode}{Planned registration mode.}
 
-\item{compile}{If \code{TRUE}, include generated scalar wrapper source for the
-compiled path.}
+\item{compile}{Planned compiled-wrapper flag.}
 }
 \value{
-Object of class \code{rducks_registration}.
+Currently does not return; errors until the native DuckDB extension
+registration path exists.
 }
 \description{
-Creates and preserves an R callback token and returns an Rducks registration
-object. The native DuckDB extension registration path is intentionally staged:
-the returned object contains all metadata required by either the generic
-bridge or the Rtinycc-compiled bridge.
+This is the intended public registration entry point. It currently errors
+because the loaded DuckDB extension bridge is not implemented in this repo
+yet. Keeping the function as an explicit failure is preferable to returning a
+metadata object that looks registered but is not visible to DuckDB.
 }

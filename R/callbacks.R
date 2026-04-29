@@ -51,12 +51,16 @@ rducks_callback_invoke <- function(callback, args = list()) {
 
 #' Pump pending Rducks callback requests
 #'
-#' Drain pending native callback requests on the R main thread. The current
-#' development scaffold exposes this function before the DuckDB extension queue
-#' is wired in; it returns the number of requests processed.
+#' This is the planned main-R-thread pump for native DuckDB worker requests. It
+#' currently errors because the DuckDB extension request queue is not implemented
+#' yet.
 #'
-#' @return Integer number of callback requests processed.
+#' @return Currently does not return; errors until the native queue exists.
 #' @export
 rducks_pump <- function() {
-  .Call(RDUCKS_pump)
+  stop(
+    "rducks_pump() is not implemented yet: ",
+    "the native DuckDB worker request queue is missing",
+    call. = FALSE
+  )
 }

@@ -17,8 +17,9 @@ rducks_extension_path <- function() {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the Rducks DuckDB extension artifact when one is available and applies
-#' optional connection settings used by safe R callback execution.
+#' Loads the Rducks DuckDB extension artifact and applies optional connection
+#' settings used by safe R callback execution. This function errors by default
+#' until a real extension artifact is bundled or supplied explicitly.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Optional extension path. If `NULL`,
@@ -31,7 +32,7 @@ rducks_extension_path <- function() {
 #' @export
 rducks_enable <- function(con, extension_path = NULL,
                           threads = c("unchanged", "single"),
-                          required = FALSE) {
+                          required = TRUE) {
   threads <- match.arg(threads)
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)

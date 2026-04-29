@@ -1,9 +1,31 @@
 # Rducks
 
-Rducks is an experimental R package plus DuckDB extension bridge for registering
-R functions as DuckDB user-defined functions.
+Rducks is intended to be an R package plus loaded DuckDB extension for
+registering R functions as DuckDB user-defined functions.
 
-The design target is:
+This repo is **not yet a working R UDF extension**. There is deliberately no
+fake `dbGetQuery()` example here until a real DuckDB extension path exists and
+is covered by tests.
+
+## Current implemented pieces
+
+- R package skeleton and native R callback token preservation.
+- Type-token normalization helpers for planned scalar signatures.
+- Architecture notes for the DuckDB extension and Rtinycc-generated wrapper
+  path.
+
+## Not implemented yet
+
+- Loading a bundled `rducks.duckdb_extension` artifact.
+- Registering a SQL UDF visible to DuckDB.
+- The generic DuckDB scalar bridge.
+- The main-thread pump queue that releases DuckDB workers waiting on R.
+- Arrow/nanoarrow batch UDFs.
+
+Until those exist, `rducks_enable()`, `rducks_register()`, and `rducks_pump()`
+fail explicitly instead of pretending to work.
+
+## Intended architecture
 
 ```text
 DuckDB extension loaded into a connection
@@ -12,18 +34,6 @@ DuckDB extension loaded into a connection
   -> main-R-thread callback pump
   -> R callback result written back to DuckDB vectors
 ```
-
-## Current status
-
-This repository is an initial package scaffold. It includes:
-
-- R package APIs for UDF specs, callback tokens, extension loading, and wrapper
-  source generation
-- a minimal native callback registry used by tests
-- architecture notes for the DuckDB extension runtime
-- a function catalog seed
-
-The native DuckDB extension implementation is staged next.
 
 ## Why Rtinycc?
 
@@ -43,26 +53,3 @@ See:
 - `docs/ARCHITECTURE.md`
 - `docs/COPYING_FROM_DUCKTINYCC.md`
 - `docs/NANOARROW.md`
-
-## Example
-
-```r
-library(DBI)
-library(duckdb)
-library(Rducks)
-
-con <- dbConnect(duckdb())
-rducks_enable(con, threads = "single")
-
-reg <- rducks_register(
-  con,
-  name = "r_plus_one",
-  fun = function(x) x + 1,
-  args = "f64",
-  returns = "f64",
-  mode = "compiled",
-  compile = TRUE
-)
-
-cat(reg$source)
-```

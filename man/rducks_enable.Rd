@@ -8,7 +8,7 @@ rducks_enable(
   con,
   extension_path = NULL,
   threads = c("unchanged", "single"),
-  required = FALSE
+  required = TRUE
 )
 }
 \arguments{
@@ -27,6 +27,7 @@ callbacks.}
 \code{con}, invisibly.
 }
 \description{
-Loads the Rducks DuckDB extension artifact when one is available and applies
-optional connection settings used by safe R callback execution.
+Loads the Rducks DuckDB extension artifact and applies optional connection
+settings used by safe R callback execution. This function errors by default
+until a real extension artifact is bundled or supplied explicitly.
 }
