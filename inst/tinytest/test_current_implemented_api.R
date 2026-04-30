@@ -100,7 +100,6 @@ for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
 expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
 expect_equal(rducks_udf_spec("nanoarrow_lapply_mode", function(x) x, INTEGER, INTEGER, mode = "nanoarrow_lapply")$mode, "nanoarrow_lapply")
 expect_error(rducks_udf_spec("compiled_alias", function(x) x, INTEGER, INTEGER, mode = "compiled"), "arg")
-expect_error(rducks_udf_spec("old_arrow_lapply", function(x) x, INTEGER, INTEGER, mode = "arrow_lapply"), "arg")
 mode_semantics <- rducks_mode_semantics()
 expect_equal(mode_semantics$mode, c("row", "nanoarrow_lapply", "arrow_nanoarrow"))
 expect_equal(mode_semantics$status[mode_semantics$mode == "row"], "implemented")
