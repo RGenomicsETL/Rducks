@@ -1,8 +1,9 @@
 # Register an R UDF in DuckDB
 
 Registers a scalar R function as a DuckDB SQL function using the loaded
-Rducks extension. The current implemented path is direct main-R-thread
-callback execution and requires single-thread DuckDB execution.
+Rducks extension. The current implemented path is direct callback
+execution on the calling R thread and requires `external_threads=1` plus
+`PRAGMA threads=1`.
 
 ## Usage
 

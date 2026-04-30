@@ -14,9 +14,10 @@ row-mode callback execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
 bundled `rducks.duckdb_extension` into that DuckDB connection and
-explicitly sets `PRAGMA threads=1`. Current row-mode R callbacks call
-back into R directly, so single-thread DuckDB execution is required
-until the future main-thread pump is implemented.
+explicitly sets `external_threads=1` plus `PRAGMA threads=1`. Current
+row-mode R callbacks call back into R directly, so callbacks must
+execute on the calling R thread until the future main-thread pump is
+implemented.
 
 When you call
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
@@ -86,11 +87,12 @@ supported child types. The default `mode = "row"` calls R once per row.
 Registration also supports `null_handling`, `exception_handling`, and
 `side_effects` controls.
 
-Direct R callbacks require single-thread DuckDB execution, so call
-`rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
-before registering R UDFs. Rducks checks this at registration time and
-the native extension also checks the execution thread before each direct
-R callback, refusing to call R from a DuckDB worker thread.
+Direct R callbacks require DuckDB to execute callbacks on the calling R
+thread, so call `rducks_enable(con, threads = "single")` or set
+`external_threads=1` and `PRAGMA threads=1` before registering R UDFs.
+Rducks checks this at registration time and the native extension also
+checks the execution thread before each direct R callback, refusing to
+call R from a DuckDB worker thread.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values:
@@ -126,7 +128,7 @@ Only `row` is public and implemented now.
 
 | mode | status | call_granularity | input_shape | return_shape | length_semantics | threading | copy_semantics |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | requires single-thread DuckDB execution; native execution-thread guard refuses worker-thread R calls | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
+| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | requires callbacks to execute on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1, and native guards refuse worker-thread R calls | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
 
 ## Type descriptors
 
