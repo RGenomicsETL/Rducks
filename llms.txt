@@ -98,6 +98,33 @@ composite `NULL` values are represented as R `NULL`.
 | `ENUM('red', 'blue')` | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | factor with enum levels |
 | `UNION(code INTEGER, label VARCHAR)` | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | tagged value object |
 
+NULL, NA, NaN, Inf, and value-class operation semantics
+
+The table below is produced by
+[`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md),
+the exported schema that Rducks uses to document row-mode missing and
+non-finite value behavior. Top-level R `NULL` returns map to SQL `NULL`.
+R `NA` values map to SQL `NULL` when represented by the declared R type.
+`NaN` and `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date,
+time, timestamp, exact, and exotic return paths reject them.
+
+| duckdb_type | sql_null_special | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics |
+|:---|:---|:---|:---|:---|:---|:---|
+| `INTEGER` | NA_integer\_ | NA_integer\_ -\> SQL NULL | error | error | no Rducks-specific binary ops | NaN, Inf, fractional, and out-of-range return values error |
+| `DOUBLE` | NA_real\_ | NA_real\_ -\> SQL NULL | preserved as DuckDB NaN | preserved as DuckDB +/-Inf | ordinary R numeric semantics in the callback | NA is NULL; NaN and Inf are valid DOUBLE values |
+| `BIGINT` | NULL | rducks_bigint(NA) -\> SQL NULL | error | error | rducks_bigint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
+| `UBIGINT` | NULL | rducks_ubigint(NA) -\> SQL NULL | error | error | rducks_ubigint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
+| `HUGEINT` | NULL | rducks_hugeint(NA) -\> SQL NULL | error | error | rducks_hugeint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
+| `UHUGEINT` | NULL | rducks_uhugeint(NA) -\> SQL NULL | error | error | rducks_uhugeint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
+| `UUID` | NULL | rducks_uuid(NA) -\> SQL NULL | error | error | no Rducks-specific binary ops | NA UUID values are NULL; malformed UUID text errors |
+| `INTERVAL` | NULL | any NA component in rducks_interval() -\> SQL NULL | error | error | rducks_interval + and -; NA components propagate; component overflow remains an error | NaN/Inf components and months/days/micros outside DuckDB ranges error |
+| `BIT` | NULL | no NA bit payload; use R NULL for SQL NULL | error | error | rducks_bits &, \|, !, rducks_bits_xor(); NA bits are rejected | BIT inputs must contain only 0/1 or TRUE/FALSE; NA bits error |
+| `DECIMAL(10, 2)` | NULL | rducks_decimal(NA, width, scale) -\> SQL NULL | error | error | rducks_decimal +, -, comparisons; NA propagates; matching scales are required | NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error |
+| `ENUM('red', 'blue')` | NULL | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error |
+| `UNION(code INTEGER, label VARCHAR)` | NULL | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error |
+| `STRUCT(amount DECIMAL(10, 2), id BIGINT)` | NULL | field values recurse; scalar field NA values become SQL NULL fields | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | missing fields and field type mismatches error |
+| `MAP(VARCHAR, INTEGER)` | NULL | keys and values recurse; scalar NA values become SQL NULL child entries | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch and child type mismatches error |
+
 ``` r
 
 nested_type <- STRUCT(
@@ -469,6 +496,8 @@ See `docs/BUILD.md` for the extension build and metadata details.
   : Soft-unregister an Rducks registration
 - [`rducks_uuid()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uuid.md)
   : Construct DuckDB UUID values
+- [`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md)
+  : Describe Rducks NULL, NA, NaN, and Inf semantics
 - [`rducks_value_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   [`rducks_duckdb_literal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   : Generic helpers for Rducks value classes

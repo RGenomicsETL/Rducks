@@ -302,6 +302,156 @@ Argument values passed to R callbacks
 <td align="left">tagged value object</td>
 </tr>
 </tbody>
+</table></details><details><summary>
+NULL, NA, NaN, Inf, and value-class operation semantics
+</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document row-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
+<table class="table">
+<colgroup>
+<col width="11%">
+<col width="4%">
+<col width="18%">
+<col width="9%">
+<col width="9%">
+<col width="24%">
+<col width="21%">
+</colgroup>
+<thead><tr>
+<th align="left">duckdb_type</th>
+<th align="left">sql_null_special</th>
+<th align="left">r_na_return</th>
+<th align="left">r_nan_return</th>
+<th align="left">r_inf_return</th>
+<th align="left">binary_ops</th>
+<th align="left">error_semantics</th>
+</tr></thead>
+<tbody>
+<tr>
+<td align="left"><code>INTEGER</code></td>
+<td align="left">NA_integer_</td>
+<td align="left">NA_integer_ -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">no Rducks-specific binary ops</td>
+<td align="left">NaN, Inf, fractional, and out-of-range return values error</td>
+</tr>
+<tr>
+<td align="left"><code>DOUBLE</code></td>
+<td align="left">NA_real_</td>
+<td align="left">NA_real_ -&gt; SQL NULL</td>
+<td align="left">preserved as DuckDB NaN</td>
+<td align="left">preserved as DuckDB +/-Inf</td>
+<td align="left">ordinary R numeric semantics in the callback</td>
+<td align="left">NA is NULL; NaN and Inf are valid DOUBLE values</td>
+</tr>
+<tr>
+<td align="left"><code>BIGINT</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_bigint(NA) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_bigint +, -, comparisons; NA propagates; range errors remain errors</td>
+<td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
+</tr>
+<tr>
+<td align="left"><code>UBIGINT</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_ubigint(NA) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_ubigint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors</td>
+<td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
+</tr>
+<tr>
+<td align="left"><code>HUGEINT</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_hugeint(NA) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_hugeint +, -, comparisons; NA propagates; range errors remain errors</td>
+<td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
+</tr>
+<tr>
+<td align="left"><code>UHUGEINT</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_uhugeint(NA) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_uhugeint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors</td>
+<td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
+</tr>
+<tr>
+<td align="left"><code>UUID</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_uuid(NA) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">no Rducks-specific binary ops</td>
+<td align="left">NA UUID values are NULL; malformed UUID text errors</td>
+</tr>
+<tr>
+<td align="left"><code>INTERVAL</code></td>
+<td align="left">NULL</td>
+<td align="left">any NA component in rducks_interval() -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_interval + and -; NA components propagate; component overflow remains an error</td>
+<td align="left">NaN/Inf components and months/days/micros outside DuckDB ranges error</td>
+</tr>
+<tr>
+<td align="left"><code>BIT</code></td>
+<td align="left">NULL</td>
+<td align="left">no NA bit payload; use R NULL for SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_bits &amp;, |, !, rducks_bits_xor(); NA bits are rejected</td>
+<td align="left">BIT inputs must contain only 0/1 or TRUE/FALSE; NA bits error</td>
+</tr>
+<tr>
+<td align="left"><code>DECIMAL(10, 2)</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_decimal(NA, width, scale) -&gt; SQL NULL</td>
+<td align="left">error</td>
+<td align="left">error</td>
+<td align="left">rducks_decimal +, -, comparisons; NA propagates; matching scales are required</td>
+<td align="left">NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error</td>
+</tr>
+<tr>
+<td align="left"><code>ENUM('red', 'blue')</code></td>
+<td align="left">NULL</td>
+<td align="left">rducks_enum(NA, levels) -&gt; SQL NULL</td>
+<td align="left">not applicable</td>
+<td align="left">not applicable</td>
+<td align="left">no Rducks-specific ENUM binary ops</td>
+<td align="left">values outside the declared enum levels error</td>
+</tr>
+<tr>
+<td align="left"><code>UNION(code INTEGER, label VARCHAR)</code></td>
+<td align="left">NULL</td>
+<td align="left">no missing tag; NA in the selected child follows that child semantics</td>
+<td align="left">recursive selected-child semantics</td>
+<td align="left">recursive selected-child semantics</td>
+<td align="left">no Rducks-specific UNION binary ops</td>
+<td align="left">missing, empty, or unknown tags and selected-child mismatches error</td>
+</tr>
+<tr>
+<td align="left"><code>STRUCT(amount DECIMAL(10, 2), id BIGINT)</code></td>
+<td align="left">NULL</td>
+<td align="left">field values recurse; scalar field NA values become SQL NULL fields</td>
+<td align="left">recursive child semantics</td>
+<td align="left">recursive child semantics</td>
+<td align="left">no descriptor-level Rducks binary ops; child value classes keep their own ops</td>
+<td align="left">missing fields and field type mismatches error</td>
+</tr>
+<tr>
+<td align="left"><code>MAP(VARCHAR, INTEGER)</code></td>
+<td align="left">NULL</td>
+<td align="left">keys and values recurse; scalar NA values become SQL NULL child entries</td>
+<td align="left">recursive child semantics</td>
+<td align="left">recursive child semantics</td>
+<td align="left">no descriptor-level Rducks binary ops; child value classes keep their own ops</td>
+<td align="left">keys/values length mismatch and child type mismatches error</td>
+</tr>
+</tbody>
 </table></details><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nested_type</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span></span>
 <span>  payload <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, label <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>

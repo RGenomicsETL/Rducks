@@ -108,6 +108,8 @@
   : Soft-unregister an Rducks registration
 - [`rducks_uuid()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uuid.md)
   : Construct DuckDB UUID values
+- [`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md)
+  : Describe Rducks NULL, NA, NaN, and Inf semantics
 - [`rducks_value_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   [`rducks_duckdb_literal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   : Generic helpers for Rducks value classes
