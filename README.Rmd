@@ -56,6 +56,39 @@ DuckDB extension-side registration of compiler-backed C UDFs. Rducks does not
 use DuckTinyCC as a backend: it uses Rtinycc-generated R callback wrappers,
 Rducks type descriptors, and R-specific SEXP/value-class marshalling.
 
+## Getting started
+
+```{r getting-started}
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+
+reg_plus_one <- rducks_register(
+  con,
+  name = "r_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "row"
+)
+
+dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
+```
+
+`rducks_register()` returns an `rducks_registration` object. Keep it if you want
+to soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
+
+The implemented mode is `mode = "row"`, which calls the R function once per row.
+The names `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
+for future batch UDF paths.
+
+`u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
+and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
+strings.
+
 ## Current scope
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads it into
@@ -87,6 +120,23 @@ Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals,
 and unions can be nested through the constructors rather than quoted type
 strings. `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
+
+## Type descriptors
+
+```{r type-descriptor-checks}
+nested_type <- STRUCT(
+  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
+  amount = DECIMAL(10, 2),
+  tags = LIST(ENUM(c("red", "blue")))
+)
+
+rducks_is_type(nested_type)
+rducks_type_kind(nested_type)
+rducks_type_sql(nested_type)
+rducks_type_child_names(nested_type)
+rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
+rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
+```
 
 ### Argument values passed to R functions
 
@@ -177,54 +227,6 @@ knitr::kable(
 ```
 
 </details>
-
-```{r type-descriptor-checks}
-nested_type <- STRUCT(
-  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
-  amount = DECIMAL(10, 2),
-  tags = LIST(ENUM(c("red", "blue")))
-)
-
-rducks_is_type(nested_type)
-rducks_type_kind(nested_type)
-rducks_type_sql(nested_type)
-rducks_type_child_names(nested_type)
-rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
-rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
-```
-
-## Example
-
-```{r example}
-library(DBI)
-library(duckdb)
-library(Rducks)
-
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(con, threads = "single")
-
-reg_plus_one <- rducks_register(
-  con,
-  name = "r_plus_one",
-  fun = function(x) x + 1,
-  args = DOUBLE,
-  returns = DOUBLE,
-  mode = "row"
-)
-
-dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
-```
-
-`rducks_register()` returns an `rducks_registration` object. Keep it if you want
-to soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
-
-The implemented mode is `mode = "row"`, which calls the R function once per row.
-The names `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
-for future batch UDF paths.
-
-`u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
-and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
-strings.
 
 ## Composite input examples
 
