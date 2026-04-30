@@ -95,6 +95,50 @@ knitr::kable(
 
 </details>
 
+<details>
+<summary>NULL, NA, NaN, Inf, and value-class operation semantics</summary>
+
+The table below is produced by `rducks_value_semantics()`, the exported schema
+that Rducks uses to document row-mode missing and non-finite value behavior.
+Top-level R `NULL` returns map to SQL `NULL`. R `NA` values map to SQL `NULL`
+when represented by the declared R type. `NaN` and `Inf` are values only for
+`FLOAT` and `DOUBLE`; integer, date, time, timestamp, exact, and exotic return
+paths reject them.
+
+```{r value-semantics, echo=FALSE, results="asis"}
+value_semantics <- Rducks::rducks_value_semantics(list(
+  INTEGER,
+  DOUBLE,
+  BIGINT,
+  UBIGINT,
+  HUGEINT,
+  UHUGEINT,
+  UUID,
+  INTERVAL,
+  BIT,
+  DECIMAL(10, 2),
+  ENUM(c("red", "blue")),
+  UNION(code = INTEGER, label = VARCHAR),
+  STRUCT(amount = DECIMAL(10, 2), id = BIGINT),
+  MAP(VARCHAR, INTEGER)
+))
+knitr::kable(
+  data.frame(
+    duckdb_type = paste0("`", value_semantics$duckdb_sql, "`"),
+    sql_null_special = value_semantics$sql_null_input_special,
+    r_na_return = value_semantics$r_na_return,
+    r_nan_return = value_semantics$r_nan_return,
+    r_inf_return = value_semantics$r_inf_return,
+    binary_ops = value_semantics$binary_ops,
+    error_semantics = value_semantics$error_semantics,
+    check.names = FALSE
+  ),
+  format = "markdown"
+)
+```
+
+</details>
+
 ```{r type-descriptor-checks}
 nested_type <- STRUCT(
   payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),

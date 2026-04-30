@@ -61,6 +61,22 @@ expect_true(all(c(
   "notes"
 ) %in% names(scalar_mapping)))
 
+value_semantics <- rducks_value_semantics()
+expect_true(all(scalar_mapping$rducks_type %in% value_semantics$rducks_type))
+expect_true(all(c(
+  "rducks_type", "duckdb_sql", "kind", "r_type", "sql_null_input_default",
+  "sql_null_input_special", "sql_nan_inf_input", "r_null_return", "r_na_return",
+  "r_nan_return", "r_inf_return", "binary_ops", "error_semantics", "notes"
+) %in% names(value_semantics)))
+expect_equal(value_semantics$r_nan_return[value_semantics$rducks_type == "f64"], "preserved as DuckDB NaN")
+expect_equal(value_semantics$r_inf_return[value_semantics$rducks_type == "i32"], "error")
+custom_semantics <- rducks_value_semantics(list(BIGINT, DECIMAL(5, 2), INTERVAL, BIT, UNION(i = INTEGER)))
+expect_true(any(grepl("rducks_bigint", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("rducks_decimal", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("rducks_interval", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("NA bits", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("selected child", custom_semantics$r_na_return, fixed = TRUE)))
+
 composite_types <- list(LIST(INTEGER), INTEGER[], BIGINT[3], STRUCT(a = INTEGER, b = VARCHAR), MAP(VARCHAR, INTEGER))
 composite_mapping <- rducks_argument_type_mapping(composite_types)
 expect_equal(
