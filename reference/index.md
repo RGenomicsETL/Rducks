@@ -52,6 +52,8 @@
   : Construct exact DuckDB HUGEINT values
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)
   : Construct DuckDB INTERVAL values
+- [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
+  : Describe Rducks execution mode semantics
 - [`rducks_pump()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_pump.md)
   : Pump pending Rducks callback requests
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)

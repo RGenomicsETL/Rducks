@@ -14,7 +14,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow"),
+  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
   compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
@@ -49,7 +49,7 @@ rducks_register(
 - mode:
 
   Registration mode. `"row"` is implemented now and calls the R function
-  once per row through an Rtinycc wrapper. `"arrow_lapply"` and
+  once per row through an Rtinycc wrapper. `"nanoarrow_lapply"` and
   `"arrow_nanoarrow"` are reserved for future batch UDF paths.
 
 - compile:

@@ -10,7 +10,7 @@ rducks_udf_spec(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow")
+  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")
 )
 ```
 
@@ -36,8 +36,8 @@ rducks_udf_spec(
 
   Registration mode. `"row"` is implemented now and uses an
   Rtinycc-generated wrapper for row-oriented scalar callbacks.
-  `"arrow_lapply"` and `"arrow_nanoarrow"` are reserved for future batch
-  UDF paths.
+  `"nanoarrow_lapply"` and `"arrow_nanoarrow"` are reserved for future
+  batch UDF paths.
 
 ## Value
 
