@@ -8,7 +8,7 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes row-shaped NA/NULL values",
     length_semantics = "one output value per callback invocation",
     error_semantics = "callback or marshalling errors abort the query unless exception_handling = 'return_null'",
-    threading = "requires single-thread DuckDB execution; native execution-thread guard refuses worker-thread R calls",
+    threading = "requires callbacks to execute on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1, and native guards refuse worker-thread R calls",
     copy_semantics = "row values are boxed/copied into R objects; exact/exotic types use Rducks value classes",
     notes = "current production path"
   )

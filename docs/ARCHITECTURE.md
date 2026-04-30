@@ -29,7 +29,7 @@ DuckDB
   -> rducks_generic_scalar_callback(info, input, output)
       -> metadata from extra_info
       -> vector/chunk decoding
-      -> direct R call if on R main thread
+      -> direct R call if on the calling R thread
       -> execution-thread guard errors before touching R if execution reaches a DuckDB worker
       -> queued sync request if on a DuckDB worker once the pump exists
       -> output vector write-back
@@ -53,17 +53,35 @@ Pump triggers are staged deliberately:
 The first direct-callback scalar mode uses:
 
 ```sql
+SET external_threads=1;
 PRAGMA threads=1;
 ```
 
 Rducks requires this mode before registering direct R callbacks; that
-registration-time check is the primary guard. The extension also records the
-loading thread and checks the execution thread before every direct R callback as
-a defensive backstop, rejecting worker-thread calls before touching the R API.
-Multi-threaded sync UDFs require the pump queue to be proven under blocking UDF
-loads before being documented as stable.
+registration-time check is the primary guard. On Windows, the R package records
+a thread token in package state at namespace load and passes it to the extension
+through an internal SQL function during `rducks_enable()`. The extension checks
+the execution thread before every direct R callback as a defensive backstop,
+rejecting worker-thread calls before touching the R API. Multi-threaded sync UDFs
+require the pump queue to be proven under blocking UDF loads before being
+documented as stable.
 
-## Arrow/nanoarrow direction
+## Arrow/nanoarrow direction and lifetime model
+
+Rducks should follow the Arrow PyCapsule ownership pattern in R terms: use named
+`externalptr` objects, explicit owner/protected slots, idempotent finalizers, and
+move-only consumption. A worker-to-main request that carries Arrow data should
+answer four questions at every boundary:
+
+- who owns the `ArrowArray`/`ArrowSchema`/request object now
+- whether the pointer is borrowed from DuckDB memory or owns independent buffers
+- who calls `release()` if the object is abandoned
+- who nulls `release` after the object has been consumed by DuckDB or R
+
+Borrowed DuckDB chunk views must not outlive the DuckDB callback stack that
+created them. If a future pump allows the worker to return before the main R
+thread has consumed the input, the request must copy into owned Arrow buffers
+instead of exporting a borrowed view.
 
 Rducks should use the in-process Arrow C Data Interface for batch UDFs:
 

@@ -22,8 +22,8 @@ rducks_enable(
 }
 \description{
 Loads the bundled Rducks DuckDB extension. The current direct R callback
-execution mode requires single-thread DuckDB execution; pass
-\code{threads = "single"} to set \verb{PRAGMA threads=1} explicitly. Registration-time
-checks enforce the setting, and native execution guards defensively refuse to
-call R from DuckDB worker threads.
+execution mode requires DuckDB to execute callbacks on the calling R thread;
+pass \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
+explicitly. Registration-time checks enforce the setting, and native execution
+guards defensively refuse to call R from DuckDB worker threads.
 }
