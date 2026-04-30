@@ -1,9 +1,8 @@
 # Register an R UDF in DuckDB
 
 Registers a scalar R function as a DuckDB SQL function using the loaded
-Rducks extension and an Rtinycc-generated shape-specific C wrapper. The
-current implemented path is direct main-R-thread callback execution and
-requires single-thread DuckDB execution.
+Rducks extension. The current implemented path is direct main-R-thread
+callback execution and requires single-thread DuckDB execution.
 
 ## Usage
 
@@ -15,7 +14,6 @@ rducks_register(
   args,
   returns,
   mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
-  compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -49,12 +47,9 @@ rducks_register(
 - mode:
 
   Registration mode. `"row"` is implemented now and calls the R function
-  once per row through an Rtinycc wrapper. `"nanoarrow_lapply"` and
-  `"arrow_nanoarrow"` are reserved for future batch UDF paths.
-
-- compile:
-
-  Kept for API compatibility; must be `TRUE`.
+  once per row through the native Rducks DuckDB extension.
+  `"nanoarrow_lapply"` and `"arrow_nanoarrow"` are reserved for future
+  batch UDF paths.
 
 - null_handling:
 

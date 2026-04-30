@@ -69,10 +69,10 @@
 
 
 <dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
-<dd><p>Registration mode. <code>"row"</code> is implemented now and uses an
-Rtinycc-generated wrapper for row-oriented scalar callbacks.
-<code>"nanoarrow_lapply"</code> and <code>"arrow_nanoarrow"</code> are reserved for future batch
-UDF paths.</p></dd>
+<dd><p>Registration mode. <code>"row"</code> is implemented now and calls the R
+function once per row through the native Rducks DuckDB extension. The
+<code>"nanoarrow_lapply"</code> and <code>"arrow_nanoarrow"</code> modes are reserved for future
+batch UDF paths.</p></dd>
 
 </dl></div>
     <div class="section level2">

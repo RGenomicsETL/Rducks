@@ -30,8 +30,6 @@
   [`rducks_check_argument()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   [`rducks_check_return()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   : Check that an R value is compatible with a DuckDB type
-- [`rducks_compile_scalar_wrapper()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_compile_scalar_wrapper.md)
-  : Compile a scalar wrapper with Rtinycc
 - [`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md)
   : Construct exact DuckDB DECIMAL values
 - [`rducks_duckdb_signature()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.md)
@@ -44,8 +42,6 @@
   : Construct DuckDB ENUM values
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
-- [`rducks_generate_scalar_wrapper()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_generate_scalar_wrapper.md)
-  : Generate C source for a scalar R UDF wrapper
 - [`rducks_has_nanoarrow()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_has_nanoarrow.md)
   : Check for nanoarrow support
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)

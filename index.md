@@ -1,15 +1,16 @@
 # Rducks
 
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as
-an R package plus a DuckDB extension. Rtinycc compiles a small C wrapper
-for each R function signature, and the loaded DuckDB extension registers
-that wrapper on a DuckDB connection.
+an R package plus a DuckDB extension. The loaded DuckDB extension
+registers callbacks on a DuckDB connection and performs the current
+row-mode callback bridge directly against R.
 
 ## How it works
 
 Rducks has two native boundaries: an R package that owns callback
-lifetime and Rtinycc wrapper generation, and a loaded DuckDB extension
-that owns SQL function registration and DuckDB vector access.
+lifetime and registration ergonomics, and a loaded DuckDB extension that
+owns SQL function registration, DuckDB vector access, and current
+row-mode callback execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
 bundled `rducks.duckdb_extension` into that DuckDB connection and
@@ -20,30 +21,15 @@ until the future main-thread pump is implemented.
 When you call
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
 Rducks normalizes the declared DuckDB type objects, checks that row-mode
-marshalling is available, preserves the R callback, and generates a
-small C wrapper for that exact function shape. Rtinycc compiles that
-wrapper in memory and returns a native symbol pointer. The wrapper ABI
-is fixed: DuckDB-side native code passes `void **` argument slots, NULL
-flags, an output slot, and an output NULL flag; the generated wrapper
-converts those values to R objects, calls the R function with
-`R_tryEvalSilent()`, and converts the result back to the declared DuckDB
-type.
-
-Registration then crosses back through SQL: Rducks calls the extension
-function `rducks_register_scalar(...)`, passing the callback token,
-compiled wrapper pointer, type descriptor tokens, and
-NULL/exception/side-effect flags. The extension registers one DuckDB
-scalar function implementation and stores the per-UDF metadata in DuckDB
-`extra_info`. During query execution, that generic DuckDB callback reads
-input vectors, constructs the row callback values, invokes the compiled
-wrapper, and writes the result into the output vector.
-
-The loaded-extension registration bridge was informed by
-[DuckTinyCC](https://github.com/sounkou-bioinfo/DuckTinyCC), which
-demonstrates DuckDB extension-side registration of compiler-backed C
-UDFs. Rducks does not use DuckTinyCC as a backend: it uses
-Rtinycc-generated R callback wrappers, Rducks type descriptors, and
-R-specific SEXP/value-class marshalling.
+marshalling is available, and preserves the R callback. Registration
+then crosses back through SQL: Rducks calls the extension function
+`rducks_register_scalar(...)`, passing the callback token, type
+descriptor tokens, and NULL/exception/side-effect flags. The extension
+registers one DuckDB scalar function implementation and stores the
+per-UDF metadata in DuckDB `extra_info`. During query execution, that
+generic DuckDB callback reads input vectors, constructs the row callback
+values, calls the R function with `R_tryEvalSilent()`, and writes the
+result into the output vector.
 
 ## Getting started
 
@@ -410,7 +396,7 @@ DuckDB currently exposes extension scalar functions as internal catalog
 entries, so `DROP FUNCTION` cannot remove them.
 [`rducks_unregister()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_unregister.md)
 replaces the UDF overload with an inactive stub and releases Rducks’
-R-side callback and compiled wrapper references.
+R-side callback reference.
 
 ``` r
 

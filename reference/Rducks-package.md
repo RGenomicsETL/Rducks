@@ -7,7 +7,7 @@ registering R functions as DuckDB user-defined functions.
 
 The design keeps the DuckDB extension as the canonical execution surface
 and uses R for ergonomic registration, callback lifetime management, and
-optional code generation through Rtinycc.
+row callback execution.
 
 ## See also
 

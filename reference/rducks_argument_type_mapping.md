@@ -2,8 +2,8 @@
 
 `rducks_argument_type_mapping()` is the package-level source of truth
 for the R value shape used when DuckDB argument values are marshalled
-into an R callback. It is used by registration checks and wrapper code
-generation.
+into an R callback. It is used by registration checks and native row
+marshalling.
 
 ## Usage
 
