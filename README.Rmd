@@ -88,8 +88,10 @@ and unions can be nested through the constructors rather than quoted type
 strings. `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
 
+### Argument values passed to R functions
+
 <details>
-<summary>Argument values passed to R callbacks</summary>
+<summary>Expand for argument values passed to R functions</summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()` helper
 and reflects the currently implemented row-mode native marshalling path. With
@@ -130,8 +132,10 @@ knitr::kable(
 
 </details>
 
+### NULL, NA, NaN, Inf, and value-class semantics
+
 <details>
-<summary>NULL, NA, NaN, Inf, and value-class operation semantics</summary>
+<summary>Expand for NULL, NA, NaN, Inf, and value-class semantics</summary>
 
 The table below is produced by `rducks_value_semantics()`, the exported schema
 that Rducks uses to document row-mode missing and non-finite value behavior.

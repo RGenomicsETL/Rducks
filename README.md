@@ -79,9 +79,11 @@ through the constructors rather than quoted type strings.
 `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
 
+### Argument values passed to R functions
+
 <details>
 <summary>
-Argument values passed to R callbacks
+Expand for argument values passed to R functions
 </summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()`
@@ -126,9 +128,12 @@ composite `NULL` values are represented as R `NULL`.
 | `UNION(code INTEGER, label VARCHAR)` | rducks_union    | rducks_union object                                    | NULL                  | boxed exact Rducks value object | tagged value object                                              |
 
 </details>
+
+### NULL, NA, NaN, Inf, and value-class semantics
+
 <details>
 <summary>
-NULL, NA, NaN, Inf, and value-class operation semantics
+Expand for NULL, NA, NaN, Inf, and value-class semantics
 </summary>
 
 The table below is produced by `rducks_value_semantics()`, the exported
