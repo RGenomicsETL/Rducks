@@ -9,7 +9,7 @@ This repo owns:
 - R package wrappers for enabling the extension and registering R UDFs
 - native callback token/pump runtime
 - DuckDB extension registration and execution bridge
-- Rtinycc-generated per-shape UDF wrappers
+- native row-mode UDF registration and callback marshalling
 - optional nanoarrow/Arrow C Data Interface batch UDF paths
 
 ## Rules

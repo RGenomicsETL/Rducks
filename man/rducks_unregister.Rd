@@ -15,8 +15,7 @@ rducks_unregister(registration)
 \description{
 DuckDB currently registers extension scalar functions as internal catalog
 entries, so SQL \verb{DROP FUNCTION} cannot remove them. \code{rducks_unregister()}
-replaces the matching overload with an inactive stub, releases Rducks' R-side
-callback token, and drops the package registry reference to the compiled
-wrapper. Future SQL calls to the same overload report that the UDF was
-unregistered.
+replaces the matching overload with an inactive stub and releases Rducks'
+R-side callback token. Future SQL calls to the same overload report that the
+UDF was unregistered.
 }

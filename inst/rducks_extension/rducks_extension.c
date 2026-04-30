@@ -40,14 +40,6 @@ typedef enum rducks_type_id {
     RDUCKS_TYPE_BIT
 } rducks_type_id_t;
 
-typedef struct rducks_blob {
-    const uint8_t *ptr;
-    uint64_t len;
-} rducks_blob_t;
-
-typedef bool (*rducks_scalar_wrapper_fn_t)(SEXP fun, void **args, const bool *arg_is_null, void *out_value,
-                                           bool *out_is_null);
-
 typedef enum rducks_null_handling {
     RDUCKS_NULL_DEFAULT = 0,
     RDUCKS_NULL_SPECIAL = 1
@@ -85,14 +77,9 @@ typedef struct rducks_type_desc {
 
 typedef struct rducks_r_scalar_meta {
     SEXP fun;
-    SEXP compiled;
-    rducks_scalar_wrapper_fn_t wrapper;
     size_t arity;
     struct rducks_type_desc **args;
-    size_t *arg_sizes;
     struct rducks_type_desc *return_desc;
-    rducks_type_id_t returns;
-    size_t return_size;
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
 } rducks_r_scalar_meta_t;
@@ -521,74 +508,6 @@ static rducks_type_id_t rducks_type_from_token(const char *raw_token) {
         return RDUCKS_TYPE_BIT;
     }
     return RDUCKS_TYPE_INVALID;
-}
-
-static size_t rducks_type_size(rducks_type_id_t type) {
-    switch (type) {
-    case RDUCKS_TYPE_BOOL:
-        return sizeof(bool);
-    case RDUCKS_TYPE_I8:
-        return sizeof(int8_t);
-    case RDUCKS_TYPE_U8:
-        return sizeof(uint8_t);
-    case RDUCKS_TYPE_I16:
-        return sizeof(int16_t);
-    case RDUCKS_TYPE_U16:
-        return sizeof(uint16_t);
-    case RDUCKS_TYPE_I32:
-        return sizeof(int32_t);
-    case RDUCKS_TYPE_U32:
-        return sizeof(uint32_t);
-    case RDUCKS_TYPE_I64:
-        return sizeof(int64_t);
-    case RDUCKS_TYPE_U64:
-        return sizeof(uint64_t);
-    case RDUCKS_TYPE_F32:
-        return sizeof(float);
-    case RDUCKS_TYPE_F64:
-        return sizeof(double);
-    case RDUCKS_TYPE_VARCHAR:
-        return sizeof(const char *);
-    case RDUCKS_TYPE_BLOB:
-        return sizeof(rducks_blob_t);
-    case RDUCKS_TYPE_DATE:
-        return sizeof(duckdb_date);
-    case RDUCKS_TYPE_TIME:
-        return sizeof(duckdb_time);
-    case RDUCKS_TYPE_TIMESTAMP:
-        return sizeof(duckdb_timestamp);
-    case RDUCKS_TYPE_HUGEINT:
-    case RDUCKS_TYPE_UUID:
-        return sizeof(duckdb_hugeint);
-    case RDUCKS_TYPE_UHUGEINT:
-        return sizeof(duckdb_uhugeint);
-    case RDUCKS_TYPE_INTERVAL:
-        return sizeof(duckdb_interval);
-    case RDUCKS_TYPE_BIT:
-        return sizeof(duckdb_string_t);
-    default:
-        return 0U;
-    }
-}
-
-static int rducks_scalar_uses_sexp_bridge(rducks_type_id_t type) {
-    switch (type) {
-    case RDUCKS_TYPE_I64:
-    case RDUCKS_TYPE_U64:
-    case RDUCKS_TYPE_HUGEINT:
-    case RDUCKS_TYPE_UHUGEINT:
-    case RDUCKS_TYPE_UUID:
-    case RDUCKS_TYPE_INTERVAL:
-    case RDUCKS_TYPE_BIT:
-        return 1;
-    default:
-        return 0;
-    }
-}
-
-static int rducks_desc_uses_sexp_bridge(const rducks_type_desc_t *desc) {
-    if (!desc) return 0;
-    return desc->kind != RDUCKS_KIND_SCALAR || rducks_scalar_uses_sexp_bridge(desc->scalar);
 }
 
 static duckdb_type rducks_duckdb_type_id(rducks_type_id_t type) {
@@ -1217,14 +1136,10 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
     if (meta->fun && meta->fun != R_NilValue) {
         R_ReleaseObject(meta->fun);
     }
-    if (meta->compiled && meta->compiled != R_NilValue) {
-        R_ReleaseObject(meta->compiled);
-    }
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
     }
     free(meta->args);
-    free(meta->arg_sizes);
     rducks_type_desc_destroy(meta->return_desc);
     free(meta);
 }
@@ -1742,7 +1657,10 @@ static SEXP rducks_build_sexp_from_desc(const rducks_type_desc_t *desc, duckdb_v
     uint64_t *validity;
     if (!desc) return R_NilValue;
     validity = duckdb_vector_get_validity(vector);
-    if (validity && !duckdb_validity_row_is_valid(validity, row)) return R_NilValue;
+    if (validity && !duckdb_validity_row_is_valid(validity, row)) {
+        if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_build_scalar_sexp(desc->scalar, vector, row);
+        return R_NilValue;
+    }
     if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_build_scalar_sexp(desc->scalar, vector, row);
     if (desc->kind == RDUCKS_KIND_DECIMAL) return rducks_build_decimal_sexp(desc, vector, row);
     if (desc->kind == RDUCKS_KIND_ENUM) return rducks_build_enum_sexp(desc, vector, row);
@@ -1814,53 +1732,6 @@ static SEXP rducks_build_sexp_from_desc(const rducks_type_desc_t *desc, duckdb_v
         return out;
     }
     return R_NilValue;
-}
-
-static int rducks_prepare_arg(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row, bool *is_null,
-                              void **arg_ptr, void **arg_alloc, int *arg_protect_count) {
-    uint64_t *validity = duckdb_vector_get_validity(vector);
-    uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
-    size_t size;
-    *is_null = false;
-    *arg_ptr = NULL;
-    *arg_alloc = NULL;
-    if (validity && !duckdb_validity_row_is_valid(validity, row)) {
-        *is_null = true;
-        if (desc && desc->kind != RDUCKS_KIND_SCALAR) {
-            *arg_ptr = (void *)R_NilValue;
-        }
-        return 1;
-    }
-    if (!desc) return 0;
-    if (desc->kind != RDUCKS_KIND_SCALAR || rducks_scalar_uses_sexp_bridge(desc->scalar)) {
-        SEXP value = rducks_build_sexp_from_desc(desc, vector, row);
-        PROTECT(value);
-        (*arg_protect_count)++;
-        *arg_ptr = (void *)value;
-        return 1;
-    }
-    if (desc->scalar == RDUCKS_TYPE_VARCHAR) {
-        duckdb_string_t *strings = (duckdb_string_t *)data;
-        char *copy = rducks_copy_duckdb_string(&strings[row]);
-        if (!copy) return 0;
-        *arg_alloc = copy;
-        *arg_ptr = (void *)arg_alloc;
-        return 1;
-    }
-    if (desc->scalar == RDUCKS_TYPE_BLOB) {
-        duckdb_string_t *strings = (duckdb_string_t *)data;
-        rducks_blob_t *blob = (rducks_blob_t *)malloc(sizeof(rducks_blob_t));
-        if (!blob) return 0;
-        blob->len = (uint64_t)duckdb_string_t_length(strings[row]);
-        blob->ptr = (const uint8_t *)duckdb_string_t_data(&strings[row]);
-        *arg_alloc = blob;
-        *arg_ptr = (void *)blob;
-        return 1;
-    }
-    size = rducks_type_size(desc->scalar);
-    if (size == 0U) return 0;
-    *arg_ptr = (void *)(data + ((size_t)row * size));
-    return 1;
 }
 
 static int rducks_sexp_is_null_scalar(SEXP value, R_xlen_t index) {
@@ -2377,205 +2248,150 @@ static int rducks_write_value_to_vector(const rducks_type_desc_t *desc, duckdb_v
     }
 }
 
-static int rducks_write_compiled_result(rducks_r_scalar_meta_t *meta, duckdb_vector output, idx_t row, void *out_value,
-                                         bool out_is_null) {
-    if (out_is_null) {
-        rducks_output_set_null(output, row);
-        return 1;
-    }
-    if (meta->return_desc && rducks_desc_uses_sexp_bridge(meta->return_desc)) {
-        SEXP value = *(SEXP *)out_value;
-        int ok;
-        if (value == R_NilValue) {
-            rducks_output_set_null(output, row);
-            return 1;
-        }
-        ok = rducks_write_value_to_vector(meta->return_desc, output, row, value);
-        R_ReleaseObject(value);
-        return ok;
-    }
-    if (meta->returns == RDUCKS_TYPE_VARCHAR) {
-        char *value = *(char **)out_value;
-        if (!value) {
-            rducks_output_set_null(output, row);
-            return 1;
-        }
-        duckdb_vector_assign_string_element(output, row, value);
-        free(value);
-        rducks_output_set_valid(output, row);
-        return 1;
-    }
-    if (meta->returns == RDUCKS_TYPE_BLOB) {
-        rducks_blob_t *value = (rducks_blob_t *)out_value;
-        if (!value->ptr && value->len > 0U) {
-            rducks_output_set_null(output, row);
-            return 1;
-        }
-        duckdb_vector_assign_string_element_len(output, row, value->ptr ? (const char *)value->ptr : "", (idx_t)value->len);
-        free((void *)value->ptr);
-        rducks_output_set_valid(output, row);
-        return 1;
-    }
-    if (meta->return_size > 0U) {
-        uint8_t *out_data = (uint8_t *)duckdb_vector_get_data(output);
-        memcpy(out_data + ((size_t)row * meta->return_size), out_value, meta->return_size);
-    }
-    rducks_output_set_valid(output, row);
-    return 1;
+static int rducks_vector_row_is_null(duckdb_vector vector, idx_t row) {
+    uint64_t *validity = duckdb_vector_get_validity(vector);
+    return validity && !duckdb_validity_row_is_valid(validity, row);
 }
 
-static void rducks_compiled_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+static int rducks_scalar_top_level_null_is_r_null(rducks_type_id_t type) {
+    switch (type) {
+    case RDUCKS_TYPE_I64:
+    case RDUCKS_TYPE_U64:
+    case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_HUGEINT:
+    case RDUCKS_TYPE_UHUGEINT:
+    case RDUCKS_TYPE_UUID:
+    case RDUCKS_TYPE_INTERVAL:
+    case RDUCKS_TYPE_BIT:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static SEXP rducks_build_top_level_arg(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row) {
+    if (!desc) return R_NilValue;
+    if (rducks_vector_row_is_null(vector, row)) {
+        if (desc->kind == RDUCKS_KIND_SCALAR && !rducks_scalar_top_level_null_is_r_null(desc->scalar)) {
+            return rducks_build_scalar_sexp(desc->scalar, vector, row);
+        }
+        return R_NilValue;
+    }
+    return rducks_build_sexp_from_desc(desc, vector, row);
+}
+
+static SEXP rducks_build_row_call(SEXP fun, SEXP args, int *protect_count) {
+    R_xlen_t n = XLENGTH(args);
+    SEXP call;
+    if (n == 0) {
+        call = PROTECT(Rf_lang1(fun));
+        (*protect_count)++;
+        return call;
+    }
+    if (n == 1) {
+        call = PROTECT(Rf_lang2(fun, VECTOR_ELT(args, 0)));
+        (*protect_count)++;
+        return call;
+    }
+    if (n == 2) {
+        call = PROTECT(Rf_lang3(fun, VECTOR_ELT(args, 0), VECTOR_ELT(args, 1)));
+        (*protect_count)++;
+        return call;
+    }
+    if (n == 3) {
+        call = PROTECT(Rf_lang4(fun, VECTOR_ELT(args, 0), VECTOR_ELT(args, 1), VECTOR_ELT(args, 2)));
+        (*protect_count)++;
+        return call;
+    }
+
+    SEXP pair = R_NilValue;
+    for (R_xlen_t i = n; i > 0; --i) {
+        pair = PROTECT(Rf_cons(VECTOR_ELT(args, i - 1), pair));
+        (*protect_count)++;
+    }
+    call = PROTECT(Rf_lcons(fun, pair));
+    (*protect_count)++;
+    return call;
+}
+
+static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n;
-    void **arg_ptrs = NULL;
-    bool *arg_is_null = NULL;
-    void **arg_allocs = NULL;
-    if (!meta || !meta->fun || !meta->wrapper) {
-        duckdb_scalar_function_set_error(info, "Rducks compiled scalar metadata missing");
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        duckdb_scalar_function_set_error(info, "Rducks scalar metadata missing");
         return;
     }
     n = duckdb_data_chunk_get_size(input);
     duckdb_vector_ensure_validity_writable(output);
 
-    if (meta->arity > 0) {
-        if (meta->arity > (SIZE_MAX / sizeof(void *)) || meta->arity > (SIZE_MAX / sizeof(bool)) ||
-            meta->arity > (SIZE_MAX / sizeof(void *))) {
-            duckdb_scalar_function_set_error(info, "Rducks argument list is too large to allocate");
-            return;
-        }
-        arg_ptrs = (void **)malloc(sizeof(void *) * meta->arity);
-        arg_is_null = (bool *)malloc(sizeof(bool) * meta->arity);
-        arg_allocs = (void **)malloc(sizeof(void *) * meta->arity);
-        if (!arg_ptrs || !arg_is_null || !arg_allocs) {
-            free(arg_ptrs);
-            free(arg_is_null);
-            free(arg_allocs);
-            duckdb_scalar_function_set_error(info, "out of memory");
-            return;
-        }
-    }
-
     for (idx_t row = 0; row < n; row++) {
-        uint8_t out_value[32];
-        bool out_is_null = false;
-        int ok = 1;
-        int arg_protect_count = 0;
-        if (meta->return_size > sizeof(out_value)) {
-            free(arg_ptrs);
-            free(arg_is_null);
-            free(arg_allocs);
-            duckdb_scalar_function_set_error(info, "Rducks return type is too large for scalar bridge");
-            return;
-        }
-        if (meta->arity > 0) {
-            memset(arg_allocs, 0, sizeof(void *) * meta->arity);
-            for (size_t col = 0; col < meta->arity; col++) {
-                duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
-                if (!rducks_prepare_arg(meta->args[col], vector, row, &arg_is_null[col], &arg_ptrs[col],
-                                        &arg_allocs[col], &arg_protect_count)) {
-                    ok = 0;
+        int protect_count = 0;
+        int err = 0;
+        int has_null = 0;
+        SEXP args;
+        SEXP call;
+        SEXP result;
+
+        args = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
+        protect_count++;
+
+        for (size_t col = 0; col < meta->arity; col++) {
+            duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
+            if (rducks_vector_row_is_null(vector, row)) {
+                has_null = 1;
+                if (meta->null_handling == RDUCKS_NULL_DEFAULT) {
                     break;
                 }
             }
+            SEXP value = PROTECT(rducks_build_top_level_arg(meta->args[col], vector, row));
+            protect_count++;
+            SET_VECTOR_ELT(args, (R_xlen_t)col, value);
         }
-        if (!ok) {
-            if (arg_allocs) {
-                for (size_t col = 0; col < meta->arity; col++) {
-                    free(arg_allocs[col]);
-                }
-            }
-            if (arg_protect_count) UNPROTECT(arg_protect_count);
-            free(arg_ptrs);
-            free(arg_is_null);
-            free(arg_allocs);
-            duckdb_scalar_function_set_error(info, "out of memory preparing Rducks arguments");
-            return;
+
+        if (has_null && meta->null_handling == RDUCKS_NULL_DEFAULT) {
+            rducks_output_set_null(output, row);
+            UNPROTECT(protect_count);
+            continue;
         }
-        if (meta->null_handling == RDUCKS_NULL_DEFAULT) {
-            int has_null = 0;
-            for (size_t col = 0; col < meta->arity; col++) {
-                if (arg_is_null[col]) {
-                    has_null = 1;
-                    break;
-                }
-            }
-            if (has_null) {
-                rducks_output_set_null(output, row);
-                if (arg_allocs) {
-                    for (size_t col = 0; col < meta->arity; col++) {
-                        free(arg_allocs[col]);
-                    }
-                }
-                if (arg_protect_count) UNPROTECT(arg_protect_count);
-                continue;
-            }
-        }
-        memset(out_value, 0, sizeof(out_value));
-        if (!meta->wrapper(meta->fun, arg_ptrs, arg_is_null, (void *)out_value, &out_is_null)) {
+
+        call = rducks_build_row_call(meta->fun, args, &protect_count);
+        result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &err));
+        protect_count++;
+
+        if (err) {
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
                 rducks_output_set_null(output, row);
-                if (arg_allocs) {
-                    for (size_t col = 0; col < meta->arity; col++) {
-                        free(arg_allocs[col]);
-                    }
-                }
-                if (arg_protect_count) UNPROTECT(arg_protect_count);
+                UNPROTECT(protect_count);
                 continue;
             }
-            if (arg_allocs) {
-                for (size_t col = 0; col < meta->arity; col++) {
-                    free(arg_allocs[col]);
-                }
-            }
-            if (arg_protect_count) UNPROTECT(arg_protect_count);
-            free(arg_ptrs);
-            free(arg_is_null);
-            free(arg_allocs);
-            duckdb_scalar_function_set_error(info, "Rducks compiled callback raised an error");
+            UNPROTECT(protect_count);
+            duckdb_scalar_function_set_error(info, "Rducks callback raised an error");
             return;
         }
-        if (!rducks_write_compiled_result(meta, output, row, (void *)out_value, out_is_null)) {
-            if (arg_allocs) {
-                for (size_t col = 0; col < meta->arity; col++) {
-                    free(arg_allocs[col]);
-                }
-            }
-            if (arg_protect_count) UNPROTECT(arg_protect_count);
-            free(arg_ptrs);
-            free(arg_is_null);
-            free(arg_allocs);
+
+        if (!rducks_write_value_to_vector(meta->return_desc, output, row, result)) {
+            UNPROTECT(protect_count);
             duckdb_scalar_function_set_error(info, "Rducks failed to marshal callback result");
             return;
         }
-        if (arg_allocs) {
-            for (size_t col = 0; col < meta->arity; col++) {
-                free(arg_allocs[col]);
-            }
-        }
-        if (arg_protect_count) UNPROTECT(arg_protect_count);
-    }
 
-    free(arg_ptrs);
-    free(arg_is_null);
-    free(arg_allocs);
+        UNPROTECT(protect_count);
+    }
 }
 
-static bool rducks_register_r_scalar(const char *name, SEXP fun, SEXP compiled, void *wrapper_ptr, const char *args_spec,
-                                     const char *return_spec, const char *null_handling_spec,
-                                     const char *exception_handling_spec, bool side_effects, char *err,
-                                     size_t err_cap) {
+static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *args_spec, const char *return_spec,
+                                     const char *null_handling_spec, const char *exception_handling_spec,
+                                     bool side_effects, char *err, size_t err_cap) {
     rducks_type_desc_t **arg_descs = NULL;
     rducks_type_desc_t *return_desc = NULL;
     size_t arity = 0;
-    rducks_type_id_t return_type;
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
     rducks_r_scalar_meta_t *meta = NULL;
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
     duckdb_state rc;
-    if (!g_connection || !name || !name[0] || !Rf_isFunction(fun) || !compiled || compiled == R_NilValue ||
-        !wrapper_ptr) {
+    if (!g_connection || !name || !name[0] || !Rf_isFunction(fun)) {
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
         return false;
     }
@@ -2587,7 +2403,6 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, SEXP compiled, 
         free(arg_descs);
         return false;
     }
-    return_type = return_desc->kind == RDUCKS_KIND_SCALAR ? return_desc->scalar : RDUCKS_TYPE_INVALID;
     if (!rducks_parse_null_handling(null_handling_spec, &null_handling, err, err_cap)) {
         for (size_t i = 0; i < arity; i++) rducks_type_desc_destroy(arg_descs[i]);
         free(arg_descs);
@@ -2644,36 +2459,15 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, SEXP compiled, 
         return false;
     }
     meta->fun = R_NilValue;
-    meta->compiled = R_NilValue;
-    meta->wrapper = (rducks_scalar_wrapper_fn_t)wrapper_ptr;
     meta->arity = arity;
     meta->args = arg_descs;
     arg_descs = NULL;
     meta->return_desc = return_desc;
     return_desc = NULL;
-    meta->returns = return_type;
-    meta->return_size = rducks_desc_uses_sexp_bridge(meta->return_desc) ? sizeof(SEXP) : rducks_type_size(return_type);
     meta->null_handling = null_handling;
     meta->exception_handling = exception_handling;
-    if (arity > 0) {
-        meta->arg_sizes = (size_t *)calloc(arity, sizeof(size_t));
-        if (!meta->arg_sizes) {
-            snprintf(err, err_cap, "out of memory");
-            rducks_r_scalar_meta_destroy(meta);
-            duckdb_destroy_scalar_function(&fn);
-            duckdb_destroy_logical_type(&return_logical_type);
-            return false;
-        }
-    }
-    for (size_t i = 0; i < arity; i++) {
-        meta->arg_sizes[i] = (meta->args[i] && meta->args[i]->kind == RDUCKS_KIND_SCALAR &&
-                              !rducks_scalar_uses_sexp_bridge(meta->args[i]->scalar)) ?
-                                 rducks_type_size(meta->args[i]->scalar) : 0U;
-    }
     meta->fun = fun;
-    meta->compiled = compiled;
     R_PreserveObject(fun);
-    R_PreserveObject(compiled);
 
     duckdb_scalar_function_set_return_type(fn, return_logical_type);
     if (null_handling == RDUCKS_NULL_SPECIAL) {
@@ -2683,7 +2477,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, SEXP compiled, 
         duckdb_scalar_function_set_volatile(fn);
     }
     duckdb_scalar_function_set_extra_info(fn, meta, rducks_r_scalar_meta_destroy);
-    duckdb_scalar_function_set_function(fn, rducks_compiled_scalar_udf);
+    duckdb_scalar_function_set_function(fn, rducks_r_scalar_udf);
     rc = duckdb_register_scalar_function(g_connection, fn);
     duckdb_destroy_scalar_function(&fn);
     duckdb_destroy_logical_type(&return_logical_type);
@@ -2698,15 +2492,13 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
     idx_t n = duckdb_data_chunk_get_size(input);
     duckdb_string_t *names = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
     uint64_t *fun_ptrs = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
-    uint64_t *wrapper_ptrs = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 2));
-    uint64_t *compiled_ptrs = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 3));
-    duckdb_string_t *args_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 4));
-    duckdb_string_t *return_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 5));
+    duckdb_string_t *args_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 2));
+    duckdb_string_t *return_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 3));
     duckdb_string_t *null_handling_specs =
-        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
+        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 4));
     duckdb_string_t *exception_handling_specs =
-        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 7));
-    bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 8));
+        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 5));
+    bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
     bool *out = (bool *)duckdb_vector_get_data(output);
 
     for (idx_t i = 0; i < n; i++) {
@@ -2717,8 +2509,6 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
         char *exception_handling_spec = rducks_copy_duckdb_string(&exception_handling_specs[i]);
         char err[256];
         SEXP fun;
-        SEXP compiled;
-        void *wrapper_ptr;
         err[0] = '\0';
         if (!name || !args_spec || !return_spec || !null_handling_spec || !exception_handling_spec) {
             free(name);
@@ -2730,9 +2520,7 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
             return;
         }
         fun = (SEXP)(uintptr_t)fun_ptrs[i];
-        compiled = (SEXP)(uintptr_t)compiled_ptrs[i];
-        wrapper_ptr = (void *)(uintptr_t)wrapper_ptrs[i];
-        out[i] = rducks_register_r_scalar(name, fun, compiled, wrapper_ptr, args_spec, return_spec, null_handling_spec,
+        out[i] = rducks_register_r_scalar(name, fun, args_spec, return_spec, null_handling_spec,
                                           exception_handling_spec, side_effects_values[i], err, sizeof(err));
         free(name);
         free(args_spec);
@@ -2890,8 +2678,6 @@ static bool rducks_register_scalar_surface(duckdb_connection con) {
     }
     duckdb_scalar_function_set_name(fn, "rducks_register_scalar");
     duckdb_scalar_function_add_parameter(fn, varchar_type);
-    duckdb_scalar_function_add_parameter(fn, ubigint_type);
-    duckdb_scalar_function_add_parameter(fn, ubigint_type);
     duckdb_scalar_function_add_parameter(fn, ubigint_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);

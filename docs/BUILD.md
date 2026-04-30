@@ -9,9 +9,9 @@ Rducks builds its own small DuckDB extension during R package installation.
 - `tools/fetch_duckdb_headers.R`
 - `tools/append_extension_metadata.R`
 
-There is no DuckTinyCC extension dependency and no embedded TinyCC runtime.
-Rtinycc remains the intended code-generation/compiler dependency for future
-arbitrary-shape wrappers; Rducks does not need to embed TinyCC assets.
+There is no external DuckDB extension dependency and no runtime code-generation
+dependency. Current row callbacks are handled by the Rducks extension; future
+batch paths are planned around DuckDB chunk-to-Arrow APIs and nanoarrow.
 
 ## Header vendoring
 

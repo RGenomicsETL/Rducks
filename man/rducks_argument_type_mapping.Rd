@@ -19,7 +19,7 @@ A data frame with one row per requested type token.
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
-callback. It is used by registration checks and wrapper code generation.
+callback. It is used by registration checks and native row marshalling.
 }
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit

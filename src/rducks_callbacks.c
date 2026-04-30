@@ -109,21 +109,6 @@ SEXP RDUCKS_pump(void) {
     return Rf_ScalarInteger(0);
 }
 
-SEXP RDUCKS_sexp_addr(SEXP x) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)x);
-    return Rf_mkString(buf);
-}
-
-SEXP RDUCKS_extptr_addr(SEXP x) {
-    if (TYPEOF(x) != EXTPTRSXP) {
-        Rf_error("expected external pointer");
-    }
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)R_ExternalPtrAddr(x));
-    return Rf_mkString(buf);
-}
-
 SEXP RDUCKS_callback_fun_addr(SEXP xptr) {
     rducks_callback_t *cb = rducks_callback_from_xptr(xptr);
     char buf[32];

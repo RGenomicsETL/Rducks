@@ -11,7 +11,6 @@ rducks_register(
   args,
   returns,
   mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
-  compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -31,10 +30,9 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{returns}{Return type specification.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per row through an Rtinycc wrapper. \code{"nanoarrow_lapply"} and
-\code{"arrow_nanoarrow"} are reserved for future batch UDF paths.}
-
-\item{compile}{Kept for API compatibility; must be \code{TRUE}.}
+function once per row through the native Rducks DuckDB extension.
+\code{"nanoarrow_lapply"} and \code{"arrow_nanoarrow"} are reserved for future batch
+UDF paths.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with NA-like R
@@ -53,7 +51,6 @@ to soft-unregister the UDF later with \code{\link[=rducks_unregister]{rducks_unr
 }
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
-extension and an Rtinycc-generated shape-specific C wrapper. The current
-implemented path is direct main-R-thread callback execution and requires
-single-thread DuckDB execution.
+extension. The current implemented path is direct main-R-thread callback
+execution and requires single-thread DuckDB execution.
 }

@@ -8,19 +8,19 @@ R functions as DuckDB UDFs.
 1. **R wrapper layer**
    - validates user-facing registration calls
    - preserves R callback functions
-   - generates shape-specific C wrapper source through Rtinycc
    - loads/enables the DuckDB extension on a connection
 
 2. **DuckDB extension layer**
    - owns SQL registration and DuckDB function objects
    - stores per-UDF metadata in `extra_info`
    - exposes one generic DuckDB scalar callback per execution family
-   - manages a main-R-thread pump for R callback requests
+   - performs current direct row-mode marshalling and R callback execution
+   - will manage a main-R-thread pump for worker-thread callback requests
 
-3. **Generated wrapper layer**
-   - one TinyCC/Rtinycc-compiled wrapper per UDF shape
-   - typed row/chunk marshalling between DuckDB vectors and Rducks callback args
-   - no R API calls from DuckDB worker threads
+3. **Arrow/nanoarrow bridge layer**
+   - planned canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow APIs
+   - typed Rducks conversion rules for exact/exotic values
+   - batch callback paths that avoid one R call per row
 
 ## Scalar UDF execution model
 
@@ -29,9 +29,8 @@ DuckDB
   -> rducks_generic_scalar_callback(info, input, output)
       -> metadata from extra_info
       -> vector/chunk decoding
-      -> generated shape wrapper
-          -> direct R call if on R main thread
-          -> queued sync request if on a DuckDB worker
+      -> direct R call if on R main thread
+      -> queued sync request if on a DuckDB worker once the pump exists
       -> output vector write-back
 ```
 

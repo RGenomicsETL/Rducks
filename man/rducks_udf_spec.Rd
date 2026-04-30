@@ -21,10 +21,10 @@ rducks_udf_spec(
 
 \item{returns}{Rducks return type object or scalar type token.}
 
-\item{mode}{Registration mode. \code{"row"} is implemented now and uses an
-Rtinycc-generated wrapper for row-oriented scalar callbacks.
-\code{"nanoarrow_lapply"} and \code{"arrow_nanoarrow"} are reserved for future batch
-UDF paths.}
+\item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
+function once per row through the native Rducks DuckDB extension. The
+\code{"nanoarrow_lapply"} and \code{"arrow_nanoarrow"} modes are reserved for future
+batch UDF paths.}
 }
 \value{
 Object of class \code{rducks_udf_spec}.

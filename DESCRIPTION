@@ -19,7 +19,6 @@ Imports:
     DBI,
     duckdb (>= 1.5.0),
     methods,
-    Rtinycc,
     S7
 Suggests:
     nanoarrow,

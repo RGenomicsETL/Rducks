@@ -90,16 +90,15 @@ expect_false(composite_mapping$precision_may_be_lost[[3L]])
 
 for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
   token <- rducks_type_normalize(type)
-  symbol <- paste0("rducks_mapping_codegen_", gsub("[^A-Za-z0-9]", "_", token))
+  symbol <- paste0("rducks_mapping_spec_", gsub("[^A-Za-z0-9]", "_", token))
   spec <- rducks_udf_spec(symbol, function(x) 1L, type, INTEGER)
   expect_equal(spec$argument_type_mapping$rducks_type, token)
-  src <- rducks_generate_scalar_wrapper(spec)
-  expect_true(is.character(src) && length(src) == 1L && grepl("R_tryEvalSilent", src, fixed = TRUE))
-  expect_true(grepl("#define _Complex", src, fixed = TRUE))
+  expect_equal(spec$mode, "row")
+  expect_equal(spec$returns, "i32")
 }
 expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
 expect_equal(rducks_udf_spec("nanoarrow_lapply_mode", function(x) x, INTEGER, INTEGER, mode = "nanoarrow_lapply")$mode, "nanoarrow_lapply")
-expect_error(rducks_udf_spec("compiled_alias", function(x) x, INTEGER, INTEGER, mode = "compiled"), "arg")
+expect_error(rducks_udf_spec("bad_mode", function(x) x, INTEGER, INTEGER, mode = "legacy"), "arg")
 mode_semantics <- rducks_mode_semantics()
 expect_equal(mode_semantics$mode, c("row", "nanoarrow_lapply", "arrow_nanoarrow"))
 expect_equal(mode_semantics$status[mode_semantics$mode == "row"], "implemented")
@@ -288,7 +287,7 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_add(1.5, 2.25) AS x")$x, 3.75)
 
   reg3 <- rducks_register(con, "rducks_i32_double", function(x) as.integer(x * 2L), "i32", "i32")
-  expect_inherits(reg3$compiled, "rducks_compiled_wrapper")
+  expect_inherits(reg3$callback, "rducks_callback")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_i32_double(21::INTEGER) AS x")$x, 42L)
 
   reg4 <- rducks_register(con, "rducks_not", function(x) !x, "bool", "bool")
@@ -388,6 +387,18 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
     null_handling = "special"
   ))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_null_special(NULL::INTEGER) AS x")$x, 5L)
+
+  invisible(rducks_register(
+    con, "rducks_null_special_bigint", function(x) as.integer(is.null(x)), BIGINT, INTEGER,
+    null_handling = "special"
+  ))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_null_special_bigint(NULL::BIGINT) AS x")$x, 1L)
+
+  invisible(rducks_register(
+    con, "rducks_null_special_blob", function(x) as.integer(is.null(x)), BLOB, INTEGER,
+    null_handling = "special"
+  ))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_null_special_blob(NULL::BLOB) AS x")$x, 1L)
 
   invisible(rducks_register(
     con, "rducks_error_null", function(x) stop("boom"), "i32", "i32",
