@@ -82,8 +82,8 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 to soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
 
 The implemented mode is `mode = "row"`, which calls the R function once per row.
-The names `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
-for future batch UDF paths.
+The names `mode = "nanoarrow_lapply"` and `mode = "arrow_nanoarrow"` are
+reserved for future batch UDF paths.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
 and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
@@ -101,8 +101,8 @@ DuckDB with `rducks_enable()`, and registers row-oriented scalar R UDFs with
 outputs are accepted as constructed type objects such as `TYPE[]`, `TYPE[N]`,
 `STRUCT(...)`, and `MAP(...)`, recursively over supported child types. The
 default `mode = "row"` calls R once per row;
-`mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved for future
-batch UDF paths. Registration also supports `null_handling`,
+`mode = "nanoarrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved for
+future batch UDF paths. Registration also supports `null_handling`,
 `exception_handling`, and `side_effects` controls.
 
 Direct R callbacks require single-thread DuckDB execution, so call
@@ -120,6 +120,30 @@ Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals,
 and unions can be nested through the constructors rather than quoted type
 strings. `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
+
+### Execution mode semantics
+
+The table below is produced by `rducks_mode_semantics()`. Only `row` is
+implemented now. `nanoarrow_lapply` and `arrow_nanoarrow` are reserved contracts
+for future batch paths and intentionally error if used with `rducks_register()`.
+
+```{r mode-semantics, echo=FALSE, results="asis"}
+mode_semantics <- Rducks::rducks_mode_semantics()
+knitr::kable(
+  data.frame(
+    mode = paste0("`", mode_semantics$mode, "`"),
+    status = mode_semantics$status,
+    call_granularity = mode_semantics$call_granularity,
+    input_shape = mode_semantics$input_shape,
+    return_shape = mode_semantics$return_shape,
+    length_semantics = mode_semantics$length_semantics,
+    threading = mode_semantics$threading,
+    copy_semantics = mode_semantics$copy_semantics,
+    check.names = FALSE
+  ),
+  format = "markdown"
+)
+```
 
 ## Type descriptors
 

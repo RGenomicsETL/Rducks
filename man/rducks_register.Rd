@@ -10,7 +10,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow"),
+  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
   compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
@@ -31,7 +31,7 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{returns}{Return type specification.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per row through an Rtinycc wrapper. \code{"arrow_lapply"} and
+function once per row through an Rtinycc wrapper. \code{"nanoarrow_lapply"} and
 \code{"arrow_nanoarrow"} are reserved for future batch UDF paths.}
 
 \item{compile}{Kept for API compatibility; must be \code{TRUE}.}

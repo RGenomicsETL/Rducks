@@ -9,7 +9,7 @@ rducks_udf_spec(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow")
+  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")
 )
 }
 \arguments{
@@ -23,7 +23,7 @@ rducks_udf_spec(
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and uses an
 Rtinycc-generated wrapper for row-oriented scalar callbacks.
-\code{"arrow_lapply"} and \code{"arrow_nanoarrow"} are reserved for future batch
+\code{"nanoarrow_lapply"} and \code{"arrow_nanoarrow"} are reserved for future batch
 UDF paths.}
 }
 \value{

@@ -85,7 +85,7 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
 #' @param mode Registration mode. `"row"` is implemented now and calls the R
-#'   function once per row through an Rtinycc wrapper. `"arrow_lapply"` and
+#'   function once per row through an Rtinycc wrapper. `"nanoarrow_lapply"` and
 #'   `"arrow_nanoarrow"` are reserved for future batch UDF paths.
 #' @param compile Kept for API compatibility; must be `TRUE`.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
@@ -100,7 +100,7 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   to soft-unregister the UDF later with [rducks_unregister()].
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
-                            mode = c("row", "arrow_lapply", "arrow_nanoarrow"),
+                            mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
                             compile = TRUE,
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
@@ -118,8 +118,8 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
-  if (identical(mode, "arrow_lapply")) {
-    stop("mode = 'arrow_lapply' is reserved for a future Arrow-batch lapply UDF path", call. = FALSE)
+  if (identical(mode, "nanoarrow_lapply")) {
+    stop("mode = 'nanoarrow_lapply' is reserved for a future nanoarrow-backed batch lapply UDF path", call. = FALSE)
   }
   if (identical(mode, "arrow_nanoarrow")) {
     rducks_assert_nanoarrow()

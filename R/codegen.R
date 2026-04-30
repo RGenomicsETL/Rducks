@@ -1,5 +1,5 @@
 rducks_match_mode <- function(mode) {
-  match.arg(mode, c("row", "arrow_lapply", "arrow_nanoarrow"))
+  match.arg(mode, names(rducks_mode_semantics_rows))
 }
 
 #' Create an Rducks UDF specification
@@ -10,11 +10,11 @@ rducks_match_mode <- function(mode) {
 #' @param returns Rducks return type object or scalar type token.
 #' @param mode Registration mode. `"row"` is implemented now and uses an
 #'   Rtinycc-generated wrapper for row-oriented scalar callbacks.
-#'   `"arrow_lapply"` and `"arrow_nanoarrow"` are reserved for future batch
+#'   `"nanoarrow_lapply"` and `"arrow_nanoarrow"` are reserved for future batch
 #'   UDF paths.
 #' @return Object of class `rducks_udf_spec`.
 #' @export
-rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "arrow_lapply", "arrow_nanoarrow")) {
+rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")) {
   mode <- rducks_match_mode(mode)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
