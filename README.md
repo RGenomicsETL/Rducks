@@ -8,39 +8,6 @@ an R package plus a DuckDB extension. Rtinycc compiles a small C wrapper
 for each R function signature, and the loaded DuckDB extension registers
 that wrapper on a DuckDB connection.
 
-## Current scope
-
-Rducks currently builds `rducks.duckdb_extension` at install time, loads
-it into DuckDB with `rducks_enable()`, and registers row-oriented scalar
-R UDFs with `rducks_register()`. The row-mode input/output type set is
-`BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`,
-`UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`,
-`DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`,
-`BIT`, `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`.
-Composite inputs and outputs are accepted as constructed type objects
-such as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively
-over supported child types. The default `mode = "row"` calls R once per
-row; `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
-for future batch UDF paths. Registration also supports `null_handling`,
-`exception_handling`, and `side_effects` controls.
-
-Direct R callbacks require single-thread DuckDB execution, so call
-`rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
-before registering R UDFs.
-
-Rducks also provides explicit R value classes for exact or
-DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
-`rducks_uuid()`, `rducks_interval()`, `rducks_decimal()`,
-`rducks_hugeint()`, `rducks_uhugeint()`, `rducks_bits()`,
-`rducks_enum()`, and `rducks_union()`. These classes preserve exact
-representation at the row-mode callback boundary. Constructed DuckDB
-type objects are formal S7-backed Rducks descriptors with native
-structural checks via `rducks_is_type()`. Descriptors are recursive, so
-lists, arrays, structs, maps, enums, decimals, and unions can be nested
-through the constructors rather than quoted type strings.
-`rducks_check_argument()` and `rducks_check_return()` can validate
-ordinary R values against those descriptors before marshalling.
-
 ## How it works
 
 Rducks has two native boundaries: an R package that owns callback
@@ -78,6 +45,39 @@ demonstrates DuckDB extension-side registration of compiler-backed C
 UDFs. Rducks does not use DuckTinyCC as a backend: it uses
 Rtinycc-generated R callback wrappers, Rducks type descriptors, and
 R-specific SEXP/value-class marshalling.
+
+## Current scope
+
+Rducks currently builds `rducks.duckdb_extension` at install time, loads
+it into DuckDB with `rducks_enable()`, and registers row-oriented scalar
+R UDFs with `rducks_register()`. The row-mode input/output type set is
+`BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`,
+`UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`,
+`DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`,
+`BIT`, `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`.
+Composite inputs and outputs are accepted as constructed type objects
+such as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively
+over supported child types. The default `mode = "row"` calls R once per
+row; `mode = "arrow_lapply"` and `mode = "arrow_nanoarrow"` are reserved
+for future batch UDF paths. Registration also supports `null_handling`,
+`exception_handling`, and `side_effects` controls.
+
+Direct R callbacks require single-thread DuckDB execution, so call
+`rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
+before registering R UDFs.
+
+Rducks also provides explicit R value classes for exact or
+DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
+`rducks_uuid()`, `rducks_interval()`, `rducks_decimal()`,
+`rducks_hugeint()`, `rducks_uhugeint()`, `rducks_bits()`,
+`rducks_enum()`, and `rducks_union()`. These classes preserve exact
+representation at the row-mode callback boundary. Constructed DuckDB
+type objects are formal S7-backed Rducks descriptors with native
+structural checks via `rducks_is_type()`. Descriptors are recursive, so
+lists, arrays, structs, maps, enums, decimals, and unions can be nested
+through the constructors rather than quoted type strings.
+`rducks_check_argument()` and `rducks_check_return()` can validate
+ordinary R values against those descriptors before marshalling.
 
 <details>
 <summary>
