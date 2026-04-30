@@ -425,7 +425,7 @@ appended by `tools/append_extension_metadata.R`.
 DuckDB C API headers are refreshed explicitly with:
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.2.0
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
 ```
 
 See `docs/BUILD.md` for the extension build and metadata details.

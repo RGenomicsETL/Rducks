@@ -18,7 +18,7 @@ arbitrary-shape wrappers; Rducks does not need to embed TinyCC assets.
 DuckDB C API headers are refreshed explicitly with:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.2.0
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
 ```
 
 The script fetches exactly these files from the DuckDB repository:
@@ -35,7 +35,7 @@ source, file hashes, and repair counts.
 For offline/local refresh from an explicit DuckDB checkout:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.2.0
+Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.0
 ```
 
 ## Install-time build
@@ -69,6 +69,16 @@ This adds a compile flag like:
 ```sh
 -DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.2.0
 ```
+
+The vendored header ref is newer than the stable C extension API version string:
+Rducks pins DuckDB headers to `v1.5.0` so future nanoarrow batch work can use
+unstable chunk-to-Arrow helpers such as `duckdb_data_chunk_to_arrow()` and
+`duckdb_data_chunk_from_arrow()`, plus scalar `set_init`/`get_state` for
+per-worker execution scratch. DuckDB's stable C extension ABI version in these
+headers is still `v1.2.0`, so the metadata footer continues to advertise the
+stable `C_STRUCT` ABI version while the build exposes newer unstable members.
+This requires a DuckDB runtime new enough to provide those function-pointer
+slots; the R package therefore imports `duckdb (>= 1.5.0)`.
 
 Unlike DuckDB's CMake/extension-ci-tools flow, Rducks appends its own metadata
 footer with `tools/append_extension_metadata.R`. The metadata ABI type is

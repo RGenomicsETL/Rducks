@@ -3,8 +3,8 @@
 #
 # This is an explicit vendoring tool, not an install-time network step.
 # Usage:
-#   Rscript tools/fetch_duckdb_headers.R --ref v1.2.0
-#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.2.0
+#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
+#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.0
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -34,7 +34,7 @@ if (!file.exists(file.path(repo_root, "DESCRIPTION"))) {
 }
 
 opts <- parse_args(args)
-ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.2.0")
+ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.0")
 dest <- opts[["dest"]] %||% file.path(repo_root, "inst", "rducks_extension", "duckdb_capi")
 source_repo <- opts[["repo"]] %||% ""
 

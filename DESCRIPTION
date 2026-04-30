@@ -17,7 +17,7 @@ Depends:
     R (>= 4.1)
 Imports:
     DBI,
-    duckdb,
+    duckdb (>= 1.5.0),
     methods,
     Rtinycc,
     S7
