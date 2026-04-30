@@ -45,6 +45,43 @@ UDFs. Rducks does not use DuckTinyCC as a backend: it uses
 Rtinycc-generated R callback wrappers, Rducks type descriptors, and
 R-specific SEXP/value-class marshalling.
 
+## Getting started
+
+``` r
+
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+
+reg_plus_one <- rducks_register(
+  con,
+  name = "r_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "row"
+)
+
+dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
+#>    x
+#> 1 42
+```
+
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+returns an `rducks_registration` object. Keep it if you want to
+soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
+
+The implemented mode is `mode = "row"`, which calls the R function once
+per row. The names `mode = "arrow_lapply"` and
+`mode = "arrow_nanoarrow"` are reserved for future batch UDF paths.
+
+`u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
+`HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
+canonical decimal strings.
+
 ## Current scope
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads
@@ -93,6 +130,28 @@ and
 [`rducks_check_return()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
 can validate ordinary R values against those descriptors before
 marshalling.
+
+## Type descriptors
+
+``` r
+
+nested_type <- STRUCT(
+  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
+  amount = DECIMAL(10, 2),
+  tags = LIST(ENUM(c("red", "blue")))
+)
+
+rducks_is_type(nested_type)
+#> [1] TRUE
+rducks_type_kind(nested_type)
+#> [1] "struct"
+rducks_type_sql(nested_type)
+#> [1] "STRUCT(payload UNION(code INTEGER, label ENUM('red', 'blue')), amount DECIMAL(10, 2), tags ENUM('red', 'blue')[])"
+rducks_type_child_names(nested_type)
+#> [1] "payload" "amount"  "tags"
+rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
+rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
+```
 
 ### Argument values passed to R functions
 
@@ -168,63 +227,6 @@ time, timestamp, exact, and exotic return paths reject them.
 | `UNION(code INTEGER, label VARCHAR)` | NULL | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error |
 | `STRUCT(amount DECIMAL(10, 2), id BIGINT)` | NULL | field values recurse; scalar field NA values become SQL NULL fields | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | missing fields and field type mismatches error |
 | `MAP(VARCHAR, INTEGER)` | NULL | keys and values recurse; scalar NA values become SQL NULL child entries | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch and child type mismatches error |
-
-``` r
-
-nested_type <- STRUCT(
-  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
-  amount = DECIMAL(10, 2),
-  tags = LIST(ENUM(c("red", "blue")))
-)
-
-rducks_is_type(nested_type)
-#> [1] TRUE
-rducks_type_kind(nested_type)
-#> [1] "struct"
-rducks_type_sql(nested_type)
-#> [1] "STRUCT(payload UNION(code INTEGER, label ENUM('red', 'blue')), amount DECIMAL(10, 2), tags ENUM('red', 'blue')[])"
-rducks_type_child_names(nested_type)
-#> [1] "payload" "amount"  "tags"
-rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
-rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
-```
-
-## Example
-
-``` r
-
-library(DBI)
-library(duckdb)
-library(Rducks)
-
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(con, threads = "single")
-
-reg_plus_one <- rducks_register(
-  con,
-  name = "r_plus_one",
-  fun = function(x) x + 1,
-  args = DOUBLE,
-  returns = DOUBLE,
-  mode = "row"
-)
-
-dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
-#>    x
-#> 1 42
-```
-
-[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
-returns an `rducks_registration` object. Keep it if you want to
-soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
-
-The implemented mode is `mode = "row"`, which calls the R function once
-per row. The names `mode = "arrow_lapply"` and
-`mode = "arrow_nanoarrow"` are reserved for future batch UDF paths.
-
-`u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
-`HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
-canonical decimal strings.
 
 ## Composite input examples
 
