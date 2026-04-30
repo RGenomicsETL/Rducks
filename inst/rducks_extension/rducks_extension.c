@@ -101,57 +101,64 @@ typedef struct rducks_inactive_scalar_meta {
 static duckdb_database g_database = NULL;
 static duckdb_connection g_connection = NULL;
 static int g_registration_surface_ready = 0;
-#ifdef _WIN32
 static char g_main_thread_token[128];
 static int g_main_thread_token_set = 0;
+#ifdef _WIN32
 static SRWLOCK g_main_thread_token_lock = SRWLOCK_INIT;
+static void rducks_main_thread_token_lock_write(void) { AcquireSRWLockExclusive(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_unlock_write(void) { ReleaseSRWLockExclusive(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_lock_read(void) { AcquireSRWLockShared(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_unlock_read(void) { ReleaseSRWLockShared(&g_main_thread_token_lock); }
+#else
+static pthread_mutex_t g_main_thread_token_lock = PTHREAD_MUTEX_INITIALIZER;
+static void rducks_main_thread_token_lock_write(void) { pthread_mutex_lock(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_unlock_write(void) { pthread_mutex_unlock(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_lock_read(void) { pthread_mutex_lock(&g_main_thread_token_lock); }
+static void rducks_main_thread_token_unlock_read(void) { pthread_mutex_unlock(&g_main_thread_token_lock); }
+#endif
 
 static void rducks_current_thread_token(char *buf, size_t cap) {
     if (!buf || cap == 0U) return;
+#ifdef _WIN32
     snprintf(buf, cap, "win:%lu", (unsigned long)GetCurrentThreadId());
+#else
+    pthread_t self = pthread_self();
+    unsigned char bytes[sizeof(self)];
+    size_t pos = 0;
+    memcpy(bytes, &self, sizeof(self));
+    pos += (size_t)snprintf(buf + pos, cap - pos, "posix:");
+    for (size_t i = 0; i < sizeof(self) && pos + 2U < cap; i++) {
+        pos += (size_t)snprintf(buf + pos, cap - pos, "%02x", bytes[i]);
+    }
+#endif
     buf[cap - 1U] = '\0';
 }
 
 static void rducks_set_main_thread_token(const char *token) {
-    AcquireSRWLockExclusive(&g_main_thread_token_lock);
+    rducks_main_thread_token_lock_write();
     snprintf(g_main_thread_token, sizeof(g_main_thread_token), "%s", token ? token : "");
     g_main_thread_token_set = token && token[0];
-    ReleaseSRWLockExclusive(&g_main_thread_token_lock);
+    rducks_main_thread_token_unlock_write();
 }
 
 static int rducks_get_main_thread_token(char *buf, size_t cap) {
     int out;
     if (!buf || cap == 0U) return 0;
-    AcquireSRWLockShared(&g_main_thread_token_lock);
+    rducks_main_thread_token_lock_read();
     out = g_main_thread_token_set;
     if (out) {
         snprintf(buf, cap, "%s", g_main_thread_token);
     }
-    ReleaseSRWLockShared(&g_main_thread_token_lock);
+    rducks_main_thread_token_unlock_read();
     if (out) buf[cap - 1U] = '\0';
     return out;
 }
 
 static void rducks_capture_main_thread(void) {
-    /* Windows DuckDB may run the extension entrypoint on a worker thread. The
-     * R package passes the calling R thread token explicitly through
-     * rducks_set_main_thread_token() after LOAD. */
+    /* DuckDB may run extension loading on a worker thread. The R package passes
+     * the calling R thread token explicitly through rducks_set_main_thread_token()
+     * during rducks_enable(). */
 }
-#else
-typedef pthread_t rducks_thread_id_t;
-static rducks_thread_id_t g_main_thread_id;
-static int g_main_thread_id_set = 0;
-static pthread_once_t g_main_thread_once = PTHREAD_ONCE_INIT;
-static rducks_thread_id_t rducks_current_thread_id(void) { return pthread_self(); }
-static int rducks_thread_id_equal(rducks_thread_id_t a, rducks_thread_id_t b) { return pthread_equal(a, b); }
-static void rducks_capture_main_thread_once(void) {
-    g_main_thread_id = rducks_current_thread_id();
-    g_main_thread_id_set = 1;
-}
-static void rducks_capture_main_thread(void) {
-    pthread_once(&g_main_thread_once, rducks_capture_main_thread_once);
-}
-#endif
 
 static char *rducks_copy_duckdb_string(duckdb_string_t *s) {
     uint32_t len = duckdb_string_t_length(*s);
@@ -1190,16 +1197,11 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
 }
 
 static int rducks_is_main_thread(void) {
-#ifdef _WIN32
     char current[128];
     char expected[128];
     if (!rducks_get_main_thread_token(expected, sizeof(expected))) return 0;
     rducks_current_thread_token(current, sizeof(current));
     return strcmp(current, expected) == 0;
-#else
-    pthread_once(&g_main_thread_once, rducks_capture_main_thread_once);
-    return g_main_thread_id_set && rducks_thread_id_equal(rducks_current_thread_id(), g_main_thread_id);
-#endif
 }
 
 static int rducks_allow_direct_r_callback(char *err, size_t err_cap) {
@@ -2762,11 +2764,7 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
             duckdb_scalar_function_set_error(info, "out of memory setting Rducks main thread token");
             return;
         }
-#ifdef _WIN32
         rducks_set_main_thread_token(token);
-#else
-        (void)token;
-#endif
         free(token);
         out[i] = true;
     }

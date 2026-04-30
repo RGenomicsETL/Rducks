@@ -6,9 +6,12 @@
 #include <R_ext/Rdynload.h>
 
 #include <stdio.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <pthread.h>
 #endif
 
 SEXP RDUCKS_callback_register(SEXP fun);
@@ -22,13 +25,21 @@ SEXP RDUCKS_type_object_new(SEXP token, SEXP duckdb_sql, SEXP kind, SEXP childre
 SEXP RDUCKS_type_object_is(SEXP x);
 
 SEXP RDUCKS_current_thread_token(void) {
-#ifdef _WIN32
     char buf[128];
+#ifdef _WIN32
     snprintf(buf, sizeof(buf), "win:%lu", (unsigned long)GetCurrentThreadId());
-    return Rf_mkString(buf);
 #else
-    return Rf_mkString("");
+    pthread_t self = pthread_self();
+    unsigned char bytes[sizeof(self)];
+    size_t pos = 0;
+    memcpy(bytes, &self, sizeof(self));
+    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "posix:");
+    for (size_t i = 0; i < sizeof(self) && pos + 2U < sizeof(buf); i++) {
+        pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "%02x", bytes[i]);
+    }
 #endif
+    buf[sizeof(buf) - 1U] = '\0';
+    return Rf_mkString(buf);
 }
 
 static const R_CallMethodDef CallEntries[] = {

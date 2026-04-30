@@ -58,10 +58,10 @@ PRAGMA threads=1;
 ```
 
 Rducks requires this mode before registering direct R callbacks; that
-registration-time check is the primary guard. On Windows, the R package records
-a thread token in package state at namespace load and passes it to the extension
-through an internal SQL function during `rducks_enable()`. The extension checks
-the execution thread before every direct R callback as a defensive backstop,
+registration-time check is the primary guard. The R package records a thread
+token in package state at namespace load and passes it to the extension through
+an internal SQL function during `rducks_enable()`. The extension checks the
+execution thread before every direct R callback as a defensive backstop,
 rejecting worker-thread calls before touching the R API. Multi-threaded sync UDFs
 require the pump queue to be proven under blocking UDF loads before being
 documented as stable.
