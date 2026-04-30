@@ -2,8 +2,9 @@ rducks_normalize_integer_string <- function(x, unsigned = FALSE, what = "integer
   if (is.numeric(x) || is.integer(x)) {
     x <- as.numeric(x)
     out <- rep(NA_character_, length(x))
-    missing <- is.na(x)
-    bad <- !missing & (!is.finite(x) | x != trunc(x))
+    nan <- is.nan(x)
+    missing <- is.na(x) & !nan
+    bad <- nan | (!missing & (!is.finite(x) | x != trunc(x)))
     if (any(bad)) {
       stop(what, " values must be whole finite numbers or integer strings", call. = FALSE)
     }
@@ -249,7 +250,16 @@ rducks_check_decimal_spec <- function(width, scale) {
 
 rducks_normalize_decimal_string <- function(x, width, scale) {
   if (is.numeric(x) || is.integer(x)) {
-    x <- format(as.numeric(x), scientific = FALSE, trim = TRUE, digits = 17L)
+    x <- as.numeric(x)
+    out <- rep(NA_character_, length(x))
+    nan <- is.nan(x)
+    missing <- is.na(x) & !nan
+    bad <- nan | (!missing & !is.finite(x))
+    if (any(bad)) {
+      stop("DECIMAL numeric values must be finite or NA", call. = FALSE)
+    }
+    out[!missing] <- format(x[!missing], scientific = FALSE, trim = TRUE, digits = 17L)
+    x <- out
   } else {
     x <- as.character(x)
   }
@@ -346,6 +356,20 @@ print.rducks_decimal <- function(x, ...) {
   invisible(x)
 }
 
+rducks_interval_i32_component <- function(x, what) {
+  if (!(is.integer(x) || is.numeric(x)) && !(is.logical(x) && all(is.na(x)))) {
+    stop(what, " must fit in signed 32-bit integers", call. = FALSE)
+  }
+  x <- as.numeric(x)
+  nan <- is.nan(x)
+  missing <- is.na(x) & !nan
+  bad <- nan | (!missing & (!is.finite(x) | x != trunc(x) | x < -2147483648 | x > 2147483647))
+  if (any(bad)) {
+    stop(what, " must fit in signed 32-bit integers", call. = FALSE)
+  }
+  as.integer(x)
+}
+
 #' Construct DuckDB INTERVAL values
 #'
 #' DuckDB intervals have three independent components: months, days, and
@@ -363,18 +387,14 @@ rducks_interval <- function(months = 0L, days = 0L, micros = 0L) {
   months <- rep(months, length.out = n)
   days <- rep(days, length.out = n)
   micros <- rep(micros, length.out = n)
-  if (any(!is.na(months) & (months != trunc(months) | months < -2147483648 | months > 2147483647))) {
-    stop("months must fit in signed 32-bit integers", call. = FALSE)
-  }
-  if (any(!is.na(days) & (days != trunc(days) | days < -2147483648 | days > 2147483647))) {
-    stop("days must fit in signed 32-bit integers", call. = FALSE)
-  }
+  months <- rducks_interval_i32_component(months, "months")
+  days <- rducks_interval_i32_component(days, "days")
   micros <- rducks_normalize_integer_string(micros, unsigned = FALSE, what = "INTERVAL micros")
   micros <- rducks_check_integer_bounds(micros, "-9223372036854775808", "9223372036854775807", "INTERVAL micros")
   structure(
     list(
-      months = as.integer(months),
-      days = as.integer(days),
+      months = months,
+      days = days,
       micros = micros
     ),
     class = "rducks_interval"
@@ -446,8 +466,8 @@ rducks_interval_arith <- function(e1, e2, op) {
     rhs_micros <- rducks_integer_negate_strings(rhs_micros)
   }
   rducks_interval(
-    months = months + rhs_months,
-    days = days + rhs_days,
+    months = as.numeric(months) + as.numeric(rhs_months),
+    days = as.numeric(days) + as.numeric(rhs_days),
     micros = rducks_integer_add_strings(micros, rhs_micros)
   )
 }
