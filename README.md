@@ -41,6 +41,44 @@ through the constructors rather than quoted type strings.
 `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
 
+## How it works
+
+Rducks has two native boundaries: an R package that owns callback
+lifetime and Rtinycc wrapper generation, and a loaded DuckDB extension
+that owns SQL function registration and DuckDB vector access.
+
+When you call `rducks_enable(con, threads = "single")`, Rducks loads the
+bundled `rducks.duckdb_extension` into that DuckDB connection and
+explicitly sets `PRAGMA threads=1`. Current row-mode R callbacks call
+back into R directly, so single-thread DuckDB execution is required
+until the future main-thread pump is implemented.
+
+When you call `rducks_register()`, Rducks normalizes the declared DuckDB
+type objects, checks that row-mode marshalling is available, preserves
+the R callback, and generates a small C wrapper for that exact function
+shape. Rtinycc compiles that wrapper in memory and returns a native
+symbol pointer. The wrapper ABI is fixed: DuckDB-side native code passes
+`void **` argument slots, NULL flags, an output slot, and an output NULL
+flag; the generated wrapper converts those values to R objects, calls
+the R function with `R_tryEvalSilent()`, and converts the result back to
+the declared DuckDB type.
+
+Registration then crosses back through SQL: Rducks calls the extension
+function `rducks_register_scalar(...)`, passing the callback token,
+compiled wrapper pointer, type descriptor tokens, and
+NULL/exception/side-effect flags. The extension registers one DuckDB
+scalar function implementation and stores the per-UDF metadata in DuckDB
+`extra_info`. During query execution, that generic DuckDB callback reads
+input vectors, constructs the row callback values, invokes the compiled
+wrapper, and writes the result into the output vector.
+
+The loaded-extension registration bridge was informed by
+[DuckTinyCC](https://github.com/sounkou-bioinfo/DuckTinyCC), which
+demonstrates DuckDB extension-side registration of compiler-backed C
+UDFs. Rducks does not use DuckTinyCC as a backend: it uses
+Rtinycc-generated R callback wrappers, Rducks type descriptors, and
+R-specific SEXP/value-class marshalling.
+
 <details>
 <summary>
 Argument values passed to R callbacks
