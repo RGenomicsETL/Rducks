@@ -94,7 +94,9 @@ and
 can validate ordinary R values against those descriptors before
 marshalling.
 
-Argument values passed to R callbacks
+### Argument values passed to R functions
+
+Expand for argument values passed to R functions
 
 The table is produced by the exported
 [`rducks_argument_type_mapping()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_argument_type_mapping.md)
@@ -138,7 +140,9 @@ composite `NULL` values are represented as R `NULL`.
 | `ENUM('red', 'blue')` | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | factor with enum levels |
 | `UNION(code INTEGER, label VARCHAR)` | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | tagged value object |
 
-NULL, NA, NaN, Inf, and value-class operation semantics
+### NULL, NA, NaN, Inf, and value-class semantics
+
+Expand for NULL, NA, NaN, Inf, and value-class semantics
 
 The table below is produced by
 [`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md),

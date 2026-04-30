@@ -65,8 +65,11 @@
 <p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers row-oriented scalar R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The row-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "row"</code> calls R once per row; <code>mode = "arrow_lapply"</code> and <code>mode = "arrow_nanoarrow"</code> are reserved for future batch UDF paths. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
 <p>Direct R callbacks require single-thread DuckDB execution, so call <code>rducks_enable(con, threads = "single")</code> or set <code>PRAGMA threads=1</code> before registering R UDFs.</p>
 <p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the row-mode callback boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with native structural checks via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
+<div class="section level3">
+<h3 id="argument-values-passed-to-r-functions">Argument values passed to R functions<a class="anchor" aria-label="anchor" href="#argument-values-passed-to-r-functions"></a>
+</h3>
 <details><summary>
-Argument values passed to R callbacks
+Expand for argument values passed to R functions
 </summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented row-mode native marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R callback. The <code>SQL NULL in callback</code> column below applies when <code>null_handling = "special"</code>. For composite inputs, top-level <code>NULL</code> values are passed as R <code>NULL</code>; <code>NULL</code> elements in homogeneous scalar lists/arrays are represented as typed <code>NA</code> values, while nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
 <table class="table">
 <colgroup>
@@ -311,8 +314,13 @@ Argument values passed to R callbacks
 <td align="left">tagged value object</td>
 </tr>
 </tbody>
-</table></details><details><summary>
-NULL, NA, NaN, Inf, and value-class operation semantics
+</table></details>
+</div>
+<div class="section level3">
+<h3 id="null-na-nan-inf-and-value-class-semantics">NULL, NA, NaN, Inf, and value-class semantics<a class="anchor" aria-label="anchor" href="#null-na-nan-inf-and-value-class-semantics"></a>
+</h3>
+<details><summary>
+Expand for NULL, NA, NaN, Inf, and value-class semantics
 </summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document row-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
 <table class="table">
 <colgroup>
@@ -478,6 +486,7 @@ NULL, NA, NaN, Inf, and value-class operation semantics
 <span><span class="co">#&gt; [1] "payload" "amount"  "tags"</span></span>
 <span><span class="fu"><a href="reference/rducks_check_value.html">rducks_check_return</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, label <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_union.html">rducks_union</a></span><span class="op">(</span><span class="st">"label"</span>, <span class="st">"ok"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_check_value.html">rducks_check_return</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_enum.html">rducks_enum</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+</div>
 </div>
 <div class="section level2">
 <h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
