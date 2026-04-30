@@ -416,22 +416,6 @@ static void rducks_ascii_lower_inplace(char *x) {
     }
 }
 
-static char *rducks_trim_ascii(char *x) {
-    char *end;
-    while (*x == ' ' || *x == '\t' || *x == '\n' || *x == '\r') {
-        x++;
-    }
-    if (*x == '\0') {
-        return x;
-    }
-    end = x + strlen(x) - 1U;
-    while (end > x && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
-        *end = '\0';
-        end--;
-    }
-    return x;
-}
-
 static rducks_type_id_t rducks_type_from_token(const char *raw_token) {
     char token[64];
     size_t len;
@@ -1275,13 +1259,6 @@ static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk i
     for (idx_t i = 0; i < n; i++) {
         duckdb_vector_assign_string_element(output, i, "Rducks extension loaded");
     }
-}
-
-static SEXP rducks_build_string_class_vector(const char *klass, R_xlen_t len) {
-    SEXP out = PROTECT(Rf_allocVector(STRSXP, len));
-    rducks_set_class2(out, klass, "character");
-    UNPROTECT(1);
-    return out;
 }
 
 static SEXP rducks_build_hugeint_vector_sexp(duckdb_vector vector, idx_t offset, idx_t len, int is_unsigned, int is_uuid) {
