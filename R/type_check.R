@@ -34,8 +34,41 @@ rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
   if (!isTRUE(ok)) {
     stop(what, " is not compatible with ", rducks_duckdb_type_one(token), call. = FALSE)
   }
-  if (token %in% c("i8", "u8", "i16", "u16", "i32", "u32") && any(!is.na(x) & (x != trunc(x)))) {
-    stop(what, " must contain whole-number values for ", rducks_duckdb_type_one(token), call. = FALSE)
+  integer_ranges <- list(
+    i8 = c(-128, 127), u8 = c(0, 255),
+    i16 = c(-32768, 32767), u16 = c(0, 65535),
+    i32 = c(-2147483648, 2147483647), u32 = c(0, 4294967295)
+  )
+  if (token %in% names(integer_ranges)) {
+    v <- as.numeric(x)
+    range <- integer_ranges[[token]]
+    bad <- is.nan(v) | (!is.na(v) & (!is.finite(v) | v != trunc(v) | v < range[[1L]] | v > range[[2L]]))
+    if (any(bad)) {
+      stop(what, " must contain finite whole-number values in range for ", rducks_duckdb_type_one(token), call. = FALSE)
+    }
+  }
+  if (identical(token, "date")) {
+    v <- as.numeric(x)
+    bad <- is.nan(v) | (!is.na(v) & (!is.finite(v) | v != trunc(v) | v < -2147483648 | v > 2147483647))
+    if (any(bad)) {
+      stop(what, " must contain finite whole-day values in range for DATE", call. = FALSE)
+    }
+  }
+  if (identical(token, "time")) {
+    v <- as.numeric(x)
+    rounded_micros <- round(v * 1000000)
+    bad <- is.nan(v) | (!is.na(v) & (!is.finite(v) | v < 0 | v >= 86400 |
+      rounded_micros < 0 | rounded_micros >= 86400000000))
+    if (any(bad)) {
+      stop(what, " must contain finite seconds in [0, 86400) for TIME", call. = FALSE)
+    }
+  }
+  if (identical(token, "timestamp")) {
+    v <- as.numeric(x)
+    bad <- is.nan(v) | (!is.na(v) & (!is.finite(v) | v < -9223372036854.774 | v > 9223372036854.774))
+    if (any(bad)) {
+      stop(what, " must contain finite POSIXct-compatible seconds for TIMESTAMP", call. = FALSE)
+    }
   }
   invisible(TRUE)
 }

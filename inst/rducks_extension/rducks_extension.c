@@ -392,6 +392,17 @@ static int64_t rducks_round_double_to_i64(double value) {
     return (int64_t)(value >= 0 ? value + 0.5 : value - 0.5);
 }
 
+static int rducks_integer_double_at(SEXP value, R_xlen_t index, double min_value, double max_value, double *out) {
+    double v;
+    if (TYPEOF(value) == INTSXP) v = (double)INTEGER(value)[index];
+    else if (TYPEOF(value) == REALSXP) v = REAL(value)[index];
+    else if (TYPEOF(value) == LGLSXP) v = (double)LOGICAL(value)[index];
+    else v = Rf_asReal(value);
+    if (!R_FINITE(v) || v < min_value || v > max_value || v != (double)((int64_t)v)) return 0;
+    *out = v;
+    return 1;
+}
+
 static int rducks_decimal_storage_write(uint8_t width, void *data, idx_t row, duckdb_hugeint value) {
     __int128 v = rducks_hugeint_to_i128(value);
     if (width <= 4) {
@@ -1931,30 +1942,48 @@ static int rducks_write_scalar_value_to_vector(rducks_type_id_t type, duckdb_vec
         }
         return 1;
     }
-    case RDUCKS_TYPE_I8:
-        ((int8_t *)data)[row] = (int8_t)(TYPEOF(value) == INTSXP ? INTEGER(value)[index] : Rf_asInteger(value));
+    case RDUCKS_TYPE_I8: {
+        double v;
+        if (!rducks_integer_double_at(value, index, -128.0, 127.0, &v)) return 0;
+        ((int8_t *)data)[row] = (int8_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
-    case RDUCKS_TYPE_U8:
-        ((uint8_t *)data)[row] = (uint8_t)(TYPEOF(value) == INTSXP ? INTEGER(value)[index] : Rf_asInteger(value));
+    }
+    case RDUCKS_TYPE_U8: {
+        double v;
+        if (!rducks_integer_double_at(value, index, 0.0, 255.0, &v)) return 0;
+        ((uint8_t *)data)[row] = (uint8_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
-    case RDUCKS_TYPE_I16:
-        ((int16_t *)data)[row] = (int16_t)(TYPEOF(value) == INTSXP ? INTEGER(value)[index] : Rf_asInteger(value));
+    }
+    case RDUCKS_TYPE_I16: {
+        double v;
+        if (!rducks_integer_double_at(value, index, -32768.0, 32767.0, &v)) return 0;
+        ((int16_t *)data)[row] = (int16_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
-    case RDUCKS_TYPE_U16:
-        ((uint16_t *)data)[row] = (uint16_t)(TYPEOF(value) == INTSXP ? INTEGER(value)[index] : Rf_asInteger(value));
+    }
+    case RDUCKS_TYPE_U16: {
+        double v;
+        if (!rducks_integer_double_at(value, index, 0.0, 65535.0, &v)) return 0;
+        ((uint16_t *)data)[row] = (uint16_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
-    case RDUCKS_TYPE_I32:
-        ((int32_t *)data)[row] = (int32_t)(TYPEOF(value) == INTSXP ? INTEGER(value)[index] : Rf_asInteger(value));
+    }
+    case RDUCKS_TYPE_I32: {
+        double v;
+        if (!rducks_integer_double_at(value, index, -2147483648.0, 2147483647.0, &v)) return 0;
+        ((int32_t *)data)[row] = (int32_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
-    case RDUCKS_TYPE_U32:
-        ((uint32_t *)data)[row] = (uint32_t)(TYPEOF(value) == REALSXP ? REAL(value)[index] : Rf_asReal(value));
+    }
+    case RDUCKS_TYPE_U32: {
+        double v;
+        if (!rducks_integer_double_at(value, index, 0.0, 4294967295.0, &v)) return 0;
+        ((uint32_t *)data)[row] = (uint32_t)v;
         rducks_output_set_valid(vector, row);
         return 1;
+    }
     case RDUCKS_TYPE_F32:
         ((float *)data)[row] = (float)(TYPEOF(value) == REALSXP ? REAL(value)[index] : Rf_asReal(value));
         rducks_output_set_valid(vector, row);
@@ -1987,7 +2016,8 @@ static int rducks_write_scalar_value_to_vector(rducks_type_id_t type, duckdb_vec
         rducks_output_set_valid(vector, row);
         return 1;
     case RDUCKS_TYPE_DATE: {
-        double v = TYPEOF(value) == REALSXP ? REAL(value)[index] : Rf_asReal(value);
+        double v;
+        if (!rducks_integer_double_at(value, index, -2147483648.0, 2147483647.0, &v)) return 0;
         ((duckdb_date *)data)[row].days = (int32_t)v;
         rducks_output_set_valid(vector, row);
         return 1;

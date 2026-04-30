@@ -6,6 +6,7 @@
 ^build$
 ^docs/.*\.dot$
 ^Makefile$
+^README\.Rmd$
 ^AGENTS\.md$
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$

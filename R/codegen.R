@@ -203,7 +203,7 @@ rducks_c_integer_return_lines <- function(c_type, min_value, max_value) {
     "  double value = Rf_asReal(result);",
     "  if (ISNA(value)) {",
     "    if (out_is_null) *out_is_null = true;",
-    sprintf("  } else if (!R_FINITE(value) || value < %.17g || value > %.17g) {", min_value, max_value),
+    sprintf("  } else if (!R_FINITE(value) || value < %.17g || value > %.17g || value != (double)((%s)value)) {", min_value, max_value, c_type),
     "    UNPROTECT(protect_count);",
     "    return false;",
     "  } else {",
@@ -309,7 +309,7 @@ rducks_c_return_lines <- function(token) {
       "  double value = Rf_asReal(result);",
       "  if (ISNA(value)) {",
       "    if (out_is_null) *out_is_null = true;",
-      "  } else if (!R_FINITE(value) || value < -2147483648.0 || value > 2147483647.0) {",
+      "  } else if (!R_FINITE(value) || value < -2147483648.0 || value > 2147483647.0 || value != (double)((int32_t)value)) {",
       "    UNPROTECT(protect_count);",
       "    return false;",
       "  } else {",
@@ -464,8 +464,17 @@ rducks_compile_scalar_wrapper <- function(spec) {
   if (!identical(as.integer(status), 0L)) {
     stop("failed to add R include path to Rtinycc state", call. = FALSE)
   }
-  if (dir.exists(R.home("lib"))) {
-    tcc_add_library_path(state, R.home("lib"))
+  r_lib_paths <- unique(c(
+    R.home("lib"),
+    R.home("bin"),
+    file.path(R.home("bin"), sub("^/", "", .Platform$r_arch))
+  ))
+  for (path in r_lib_paths[dir.exists(r_lib_paths)]) {
+    tcc_add_library_path(state, path)
+  }
+  r_link_status <- tcc_add_library(state, "R")
+  if (.Platform$OS.type == "windows" && as.integer(r_link_status) < 0L) {
+    stop("failed to add R shared library to Rtinycc state", call. = FALSE)
   }
   compile_status <- tcc_compile_string(state, source)
   if (!identical(as.integer(compile_status), 0L)) {

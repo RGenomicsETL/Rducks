@@ -315,9 +315,8 @@ NULL
 #' @rdname rducks_type_objects
 #' @export
 rducks_is_type <- function(x) {
-  sym <- rducks_get_native_symbol("RDUCKS_type_object_is")
-  if (!is.null(sym)) {
-    return(isTRUE(.Call(sym, x)))
+  if (exists("RDUCKS_type_object_is", inherits = TRUE)) {
+    return(isTRUE(.Call(RDUCKS_type_object_is, x)))
   }
   if (!inherits(x, "rducks_type")) {
     return(FALSE)

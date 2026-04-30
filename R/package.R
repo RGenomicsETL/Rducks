@@ -13,6 +13,6 @@
 #' @import duckdb
 #' @import methods
 #' @importFrom DBI dbExecute
-#' @importFrom Rtinycc tcc_add_include_path tcc_add_library_path tcc_compile_string tcc_get_symbol tcc_relocate tcc_state tcc_symbol_is_valid
+#' @importFrom Rtinycc tcc_add_include_path tcc_add_library tcc_add_library_path tcc_compile_string tcc_get_symbol tcc_relocate tcc_state tcc_symbol_is_valid
 #' @useDynLib Rducks, .registration = TRUE
 NULL

@@ -92,6 +92,11 @@ expect_identical(rducks_check_return(INTEGER[3], c(1L, 2L, 3L)), c(1L, 2L, 3L))
 expect_identical(rducks_check_return(STRUCT(a = INTEGER, b = VARCHAR), list(a = 1L, b = "x")), list(a = 1L, b = "x"))
 expect_identical(rducks_check_return(MAP(VARCHAR, INTEGER), list(keys = c("a", "b"), values = c(1L, 2L))), list(keys = c("a", "b"), values = c(1L, 2L)))
 expect_error(rducks_check_argument(INTEGER, "x", name = "x"), "INTEGER")
+expect_error(rducks_check_return(INTEGER, NaN), "finite")
+expect_error(rducks_check_return(INTEGER, Inf), "finite")
+expect_error(rducks_check_return(INTEGER, 1.5), "whole")
+expect_identical(rducks_check_return(DOUBLE, Inf), Inf)
+expect_true(is.nan(rducks_check_return(DOUBLE, NaN)))
 expect_error(rducks_check_return(INTEGER[3], c(1L, 2L)), "length 3")
 expect_error(rducks_check_return(STRUCT(a = INTEGER), list(b = 1L)), "field")
 
@@ -349,6 +354,23 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
     exception_handling = "return_null"
   ))
   expect_true(is.na(DBI::dbGetQuery(con, "SELECT rducks_error_null(1::INTEGER) AS x")$x))
+
+  invisible(rducks_register(con, "rducks_i32_na_return", function() NA_integer_, character(), INTEGER))
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT rducks_i32_na_return() AS x")$x))
+  invisible(rducks_register(con, "rducks_i32_nan_bad", function() NaN, character(), INTEGER))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_i32_nan_bad() AS x"), "Rducks")
+  invisible(rducks_register(con, "rducks_i32_inf_bad", function() Inf, character(), INTEGER))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_i32_inf_bad() AS x"), "Rducks")
+  invisible(rducks_register(con, "rducks_i32_fraction_bad", function() 1.5, character(), INTEGER))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_i32_fraction_bad() AS x"), "Rducks")
+  invisible(rducks_register(con, "rducks_struct_i32_nan_bad", function() list(a = NaN), character(), STRUCT(a = INTEGER)))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_struct_i32_nan_bad() AS x"), "marshal")
+  invisible(rducks_register(con, "rducks_double_inf_return", function() Inf, character(), DOUBLE))
+  expect_true(is.infinite(DBI::dbGetQuery(con, "SELECT rducks_double_inf_return() AS x")$x))
+  invisible(rducks_register(con, "rducks_double_nan_return", function() NaN, character(), DOUBLE))
+  expect_true(is.nan(DBI::dbGetQuery(con, "SELECT rducks_double_nan_return() AS x")$x))
+  suppressWarnings(invisible(rducks_register(con, "rducks_float_inf_return", function() Inf, character(), FLOAT)))
+  expect_true(is.infinite(DBI::dbGetQuery(con, "SELECT rducks_float_inf_return() AS x")$x))
 
   counter <- local({
     i <- 0L

@@ -48,7 +48,7 @@ jobs:
         with:
           extra-packages: |
             any::rcmdcheck
-            github::sounkou-bioinfo/Rtinycc@65845e0bb60384a03624eb00f439a669fcbd921e
+            github::sounkou-bioinfo/Rtinycc@b698c573376993c2528fc5e47f2235f5af397ad2
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2

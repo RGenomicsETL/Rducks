@@ -37,7 +37,7 @@ jobs:
           GITHUB_PAT: ${{ github.token }}
         run: |
           install.packages(c("remotes", "DBI", "duckdb", "S7", "tinytest"))
-          remotes::install_github("sounkou-bioinfo/Rtinycc@65845e0bb60384a03624eb00f439a669fcbd921e")
+          remotes::install_github("sounkou-bioinfo/Rtinycc@b698c573376993c2528fc5e47f2235f5af397ad2")
         shell: Rscript {0}
 
       - name: Install Rducks

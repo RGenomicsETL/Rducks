@@ -106,10 +106,6 @@ rducks_type_list_class <- S7::new_class(
   validator = rducks_validate_type_list_s7
 )
 
-rducks_get_native_symbol <- function(name) {
-  get0(name, envir = environment(rducks_get_native_symbol), inherits = FALSE)
-}
-
 rducks_type_class_for_kind <- function(kind) {
   switch(kind,
     scalar = rducks_scalar_type_class,
@@ -152,10 +148,9 @@ rducks_type_construct_s7 <- function(token, duckdb_sql, kind, children, child_na
     parameters = parameters
   )
   class <- rducks_type_class_for_kind(kind)
-  sym <- rducks_get_native_symbol("RDUCKS_type_object_new")
-  if (!is.null(sym)) {
+  if (exists("RDUCKS_type_object_new", inherits = TRUE)) {
     return(.Call(
-      sym, token, duckdb_sql, kind, children, child_names, size, parameters,
+      RDUCKS_type_object_new, token, duckdb_sql, kind, children, child_names, size, parameters,
       class, rducks_type_class_vector_for_kind(kind)
     ))
   }
