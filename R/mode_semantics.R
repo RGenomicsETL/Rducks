@@ -8,51 +8,18 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes row-shaped NA/NULL values",
     length_semantics = "one output value per callback invocation",
     error_semantics = "callback or marshalling errors abort the query unless exception_handling = 'return_null'",
-    threading = "requires single-thread DuckDB execution for direct R callbacks",
+    threading = "requires single-thread DuckDB execution; native execution-thread guard refuses worker-thread R calls",
     copy_semantics = "row values are boxed/copied into R objects; exact/exotic types use Rducks value classes",
     notes = "current production path"
-  ),
-  nanoarrow_lapply = list(
-    mode = "nanoarrow_lapply",
-    status = "reserved",
-    call_granularity = "planned one R call per DuckDB vector chunk",
-    input_shape = "planned nanoarrow-backed chunk arrays converted to R vectors/lists before calling the R function",
-    return_shape = "planned R vector/list result with exactly the chunk length and declared return type",
-    null_semantics = "planned per-element validity bitmap mapped to R NA/NULL using row-mode child semantics",
-    length_semantics = "planned no recycling: result length must match the input chunk length",
-    error_semantics = "planned callback or marshalling errors abort the chunk/query unless exception handling maps the whole failing chunk to NULL",
-    threading = "requires the future main-R-thread pump before multi-threaded DuckDB execution is enabled",
-    copy_semantics = "planned convenience path; may materialize R vectors/lists from nanoarrow arrays",
-    notes = "not implemented; intended high-level batch lapply path"
-  ),
-  arrow_nanoarrow = list(
-    mode = "arrow_nanoarrow",
-    status = "reserved",
-    call_granularity = "planned one R call per DuckDB vector chunk or ArrowArrayStream batch",
-    input_shape = "planned nanoarrow ArrowArray/ArrowSchema objects or stream wrappers",
-    return_shape = "planned nanoarrow-compatible Arrow array with declared return schema and chunk length",
-    null_semantics = "planned Arrow validity bitmap semantics; R NULL represents a top-level failure/null result only where explicitly allowed",
-    length_semantics = "planned output array length must match the input chunk length",
-    error_semantics = "planned callback, schema, length, or release-callback errors abort unless exception handling maps the chunk to NULL",
-    threading = "requires the future main-R-thread pump and explicit Arrow C Data Interface ownership rules",
-    copy_semantics = "planned lower-level path preserving Arrow C Data Interface buffers where safe",
-    notes = "not implemented; intended low-level nanoarrow/Arrow C Data Interface path"
   )
 )
 
 #' Describe Rducks execution mode semantics
 #'
-#' `rducks_mode_semantics()` is the package-level schema for row and future
-#' batch execution modes. It intentionally documents reserved modes as reserved,
-#' so README/pkgdown text can describe the intended contract without pretending
-#' that native batch registration is implemented.
-#'
-#' `mode = "row"` is currently implemented. `mode = "nanoarrow_lapply"` is the
-#' planned high-level batch convenience path: Rducks will use nanoarrow-backed
-#' chunk arrays internally, materialize R vectors/lists for the callback, and
-#' require a return value with exactly the input chunk length. `mode =
-#' "arrow_nanoarrow"` is the planned lower-level Arrow C Data Interface path
-#' where callbacks work with nanoarrow/Arrow array objects directly.
+#' `rducks_mode_semantics()` is the package-level schema for execution-mode
+#' semantics. `mode = "row"` is currently the only public mode: Rducks calls the
+#' R callback once for each DuckDB row. Future chunk or Arrow-backed execution
+#' modes will be added only when they execute real UDFs.
 #'
 #' @param mode Optional character vector of mode names. When `NULL`, all known
 #'   modes are returned.

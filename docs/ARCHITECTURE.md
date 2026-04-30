@@ -30,6 +30,7 @@ DuckDB
       -> metadata from extra_info
       -> vector/chunk decoding
       -> direct R call if on R main thread
+      -> execution-thread guard errors before touching R if execution reaches a DuckDB worker
       -> queued sync request if on a DuckDB worker once the pump exists
       -> output vector write-back
 ```
@@ -55,9 +56,12 @@ The first direct-callback scalar mode uses:
 PRAGMA threads=1;
 ```
 
-Rducks requires this mode before registering direct R callbacks. Multi-threaded
-sync UDFs require the pump queue to be proven under blocking UDF loads before
-being documented as stable.
+Rducks requires this mode before registering direct R callbacks; that
+registration-time check is the primary guard. The extension also records the
+loading thread and checks the execution thread before every direct R callback as
+a defensive backstop, rejecting worker-thread calls before touching the R API.
+Multi-threaded sync UDFs require the pump queue to be proven under blocking UDF
+loads before being documented as stable.
 
 ## Arrow/nanoarrow direction
 

@@ -21,7 +21,6 @@ Imports:
     methods,
     S7
 Suggests:
-    nanoarrow,
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

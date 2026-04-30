@@ -12,9 +12,9 @@ for the scalar MVP.
 
 ## Dependency stance
 
-For the initial scalar package, `nanoarrow` is optional (`Suggests`). Once native
-Arrow batch UDF code includes nanoarrow headers, move it to `LinkingTo` and, if
-R wrappers require it at runtime, `Imports`.
+`nanoarrow` is not a current package dependency. Once native Arrow-backed UDF
+execution includes nanoarrow headers, move it to `LinkingTo` and, if R wrappers
+require it at runtime, `Imports`.
 
 ## Non-goals
 

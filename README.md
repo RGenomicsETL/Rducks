@@ -61,8 +61,8 @@ you want to soft-unregister the UDF later with
 `rducks_unregister(reg_plus_one)`.
 
 The implemented mode is `mode = "row"`, which calls the R function once
-per row. The names `mode = "nanoarrow_lapply"` and
-`mode = "arrow_nanoarrow"` are reserved for future batch UDF paths.
+per row. Future chunk or Arrow-backed execution modes will be added only
+when they execute real UDFs.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
@@ -80,13 +80,14 @@ R UDFs with `rducks_register()`. The row-mode input/output type set is
 Composite inputs and outputs are accepted as constructed type objects
 such as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively
 over supported child types. The default `mode = "row"` calls R once per
-row; `mode = "nanoarrow_lapply"` and `mode = "arrow_nanoarrow"` are
-reserved for future batch UDF paths. Registration also supports
-`null_handling`, `exception_handling`, and `side_effects` controls.
+row. Registration also supports `null_handling`, `exception_handling`,
+and `side_effects` controls.
 
 Direct R callbacks require single-thread DuckDB execution, so call
 `rducks_enable(con, threads = "single")` or set `PRAGMA threads=1`
-before registering R UDFs.
+before registering R UDFs. Rducks checks this at registration time and
+the native extension also checks the execution thread before each direct
+R callback, refusing to call R from a DuckDB worker thread.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
@@ -104,15 +105,11 @@ ordinary R values against those descriptors before marshalling.
 ### Execution mode semantics
 
 The table below is produced by `rducks_mode_semantics()`. Only `row` is
-implemented now. `nanoarrow_lapply` and `arrow_nanoarrow` are reserved
-contracts for future batch paths and intentionally error if used with
-`rducks_register()`.
+public and implemented now.
 
-| mode               | status      | call_granularity                                                     | input_shape                                                                                      | return_shape                                                                          | length_semantics                                                      | threading                                                                                  | copy_semantics                                                                          |
-|:-------------------|:------------|:---------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
-| `row`              | implemented | one R call per row                                                   | one scalar/composite R value per declared argument                                               | one scalar/composite R value compatible with the declared return type                 | one output value per callback invocation                              | requires single-thread DuckDB execution for direct R callbacks                             | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
-| `nanoarrow_lapply` | reserved    | planned one R call per DuckDB vector chunk                           | planned nanoarrow-backed chunk arrays converted to R vectors/lists before calling the R function | planned R vector/list result with exactly the chunk length and declared return type   | planned no recycling: result length must match the input chunk length | requires the future main-R-thread pump before multi-threaded DuckDB execution is enabled   | planned convenience path; may materialize R vectors/lists from nanoarrow arrays         |
-| `arrow_nanoarrow`  | reserved    | planned one R call per DuckDB vector chunk or ArrowArrayStream batch | planned nanoarrow ArrowArray/ArrowSchema objects or stream wrappers                              | planned nanoarrow-compatible Arrow array with declared return schema and chunk length | planned output array length must match the input chunk length         | requires the future main-R-thread pump and explicit Arrow C Data Interface ownership rules | planned lower-level path preserving Arrow C Data Interface buffers where safe           |
+| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                            | copy_semantics                                                                          |
+|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:-----------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
+| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | requires single-thread DuckDB execution; native execution-thread guard refuses worker-thread R calls | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
 
 ## Type descriptors
 

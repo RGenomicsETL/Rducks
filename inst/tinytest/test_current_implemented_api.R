@@ -97,13 +97,10 @@ for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
   expect_equal(spec$returns, "i32")
 }
 expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
-expect_equal(rducks_udf_spec("nanoarrow_lapply_mode", function(x) x, INTEGER, INTEGER, mode = "nanoarrow_lapply")$mode, "nanoarrow_lapply")
 expect_error(rducks_udf_spec("bad_mode", function(x) x, INTEGER, INTEGER, mode = "legacy"), "arg")
 mode_semantics <- rducks_mode_semantics()
-expect_equal(mode_semantics$mode, c("row", "nanoarrow_lapply", "arrow_nanoarrow"))
+expect_equal(mode_semantics$mode, "row")
 expect_equal(mode_semantics$status[mode_semantics$mode == "row"], "implemented")
-expect_equal(mode_semantics$status[mode_semantics$mode == "nanoarrow_lapply"], "reserved")
-expect_true(any(grepl("chunk length", mode_semantics$length_semantics[mode_semantics$mode == "nanoarrow_lapply"], fixed = TRUE)))
 expect_error(rducks_type_normalize("list<i32>"), "constructors")
 expect_error(rducks_udf_spec("bad_mapping", function(x) x, LIST("nope"), INTEGER), "unsupported")
 expect_identical(rducks_check_argument(INTEGER, 1L, name = "x"), 1L)
@@ -277,11 +274,6 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_soft_unregister(1::INTEGER) AS x"), "unregistered")
   invisible(rducks_register(con, "rducks_soft_unregister", function(x) x + 2L, INTEGER, INTEGER))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_soft_unregister(1::INTEGER) AS x")$x, 3L)
-
-  expect_error(
-    rducks_register(con, "rducks_nanoarrow_lapply", function(x) x, INTEGER, INTEGER, mode = "nanoarrow_lapply"),
-    "reserved"
-  )
 
   reg2 <- rducks_register(con, "rducks_add", function(x, y) x + y, c(DOUBLE, DOUBLE), DOUBLE)
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_add(1.5, 2.25) AS x")$x, 3.75)

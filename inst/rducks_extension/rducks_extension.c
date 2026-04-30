@@ -9,8 +9,21 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+typedef DWORD rducks_thread_id_t;
+static rducks_thread_id_t rducks_current_thread_id(void) { return GetCurrentThreadId(); }
+static int rducks_thread_id_equal(rducks_thread_id_t a, rducks_thread_id_t b) { return a == b; }
+#else
+#include <pthread.h>
+typedef pthread_t rducks_thread_id_t;
+static rducks_thread_id_t rducks_current_thread_id(void) { return pthread_self(); }
+static int rducks_thread_id_equal(rducks_thread_id_t a, rducks_thread_id_t b) { return pthread_equal(a, b); }
+#endif
 
 DUCKDB_EXTENSION_EXTERN
 
@@ -91,6 +104,35 @@ typedef struct rducks_inactive_scalar_meta {
 static duckdb_database g_database = NULL;
 static duckdb_connection g_connection = NULL;
 static int g_registration_surface_ready = 0;
+static rducks_thread_id_t g_main_thread_id;
+static int g_main_thread_id_set = 0;
+#ifdef _WIN32
+static INIT_ONCE g_main_thread_once = INIT_ONCE_STATIC_INIT;
+#else
+static pthread_once_t g_main_thread_once = PTHREAD_ONCE_INIT;
+#endif
+
+#ifdef _WIN32
+static BOOL CALLBACK rducks_capture_main_thread_once(PINIT_ONCE init_once, PVOID parameter, PVOID *context) {
+    (void)init_once;
+    (void)parameter;
+    (void)context;
+    g_main_thread_id = rducks_current_thread_id();
+    g_main_thread_id_set = 1;
+    return TRUE;
+}
+static void rducks_capture_main_thread(void) {
+    InitOnceExecuteOnce(&g_main_thread_once, rducks_capture_main_thread_once, NULL, NULL);
+}
+#else
+static void rducks_capture_main_thread_once(void) {
+    g_main_thread_id = rducks_current_thread_id();
+    g_main_thread_id_set = 1;
+}
+static void rducks_capture_main_thread(void) {
+    pthread_once(&g_main_thread_once, rducks_capture_main_thread_once);
+}
+#endif
 
 static char *rducks_copy_duckdb_string(duckdb_string_t *s) {
     uint32_t len = duckdb_string_t_length(*s);
@@ -1128,14 +1170,28 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
     return 1;
 }
 
+static int rducks_is_main_thread(void) {
+    return g_main_thread_id_set && rducks_thread_id_equal(rducks_current_thread_id(), g_main_thread_id);
+}
+
+static int rducks_allow_direct_r_callback(char *err, size_t err_cap) {
+    if (!rducks_is_main_thread()) {
+        snprintf(err, err_cap, "direct Rducks callbacks reached a non-main DuckDB execution thread");
+        return 0;
+    }
+    return 1;
+}
 static void rducks_r_scalar_meta_destroy(void *ptr) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)ptr;
     if (!meta) {
         return;
     }
-    if (meta->fun && meta->fun != R_NilValue) {
+    if (meta->fun && meta->fun != R_NilValue && rducks_is_main_thread()) {
         R_ReleaseObject(meta->fun);
     }
+    /* Without the future main-thread pump, an off-main DuckDB destructor cannot
+     * safely call R_ReleaseObject(). Prefer a preserved-object leak over an
+     * unsafe off-main R API call. */
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
     }
@@ -2316,7 +2372,13 @@ static SEXP rducks_build_row_call(SEXP fun, SEXP args, int *protect_count) {
 
 static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
+    char state_err[256];
     idx_t n;
+    state_err[0] = '\0';
+    if (!rducks_allow_direct_r_callback(state_err, sizeof(state_err))) {
+        duckdb_scalar_function_set_error(info, state_err[0] ? state_err : "direct Rducks callback thread-safety guard failed");
+        return;
+    }
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         duckdb_scalar_function_set_error(info, "Rducks scalar metadata missing");
         return;
@@ -2391,6 +2453,9 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
     duckdb_state rc;
+    if (!rducks_allow_direct_r_callback(err, err_cap)) {
+        return false;
+    }
     if (!g_connection || !name || !name[0] || !Rf_isFunction(fun)) {
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
         return false;
@@ -2543,6 +2608,9 @@ static bool rducks_unregister_r_scalar(const char *name, const char *args_spec, 
     duckdb_logical_type return_logical_type = NULL;
     rducks_inactive_scalar_meta_t *meta = NULL;
     duckdb_state rc;
+    if (!rducks_allow_direct_r_callback(err, err_cap)) {
+        return false;
+    }
     if (!g_connection || !name || !name[0]) {
         snprintf(err, err_cap, "invalid Rducks scalar unregister request");
         return false;
@@ -2745,6 +2813,7 @@ static bool rducks_register_version(duckdb_connection con) {
 
 DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_extension_access *access) {
     duckdb_database database = NULL;
+    rducks_capture_main_thread();
     if (access && info) {
         duckdb_database *db_ptr = access->get_database(info);
         if (db_ptr) {

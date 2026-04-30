@@ -16,7 +16,9 @@ rducks_extension_path <- function() {
 #'
 #' Loads the bundled Rducks DuckDB extension. The current direct R callback
 #' execution mode requires single-thread DuckDB execution; pass
-#' `threads = "single"` to set `PRAGMA threads=1` explicitly.
+#' `threads = "single"` to set `PRAGMA threads=1` explicitly. Registration-time
+#' checks enforce the setting, and native execution guards defensively refuse to
+#' call R from DuckDB worker threads.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to [rducks_extension_path()].

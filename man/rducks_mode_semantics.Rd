@@ -16,15 +16,8 @@ shape, NULL handling, length checks, error behavior, threading, and copy
 semantics for each mode.
 }
 \description{
-\code{rducks_mode_semantics()} is the package-level schema for row and future
-batch execution modes. It intentionally documents reserved modes as reserved,
-so README/pkgdown text can describe the intended contract without pretending
-that native batch registration is implemented.
-}
-\details{
-\code{mode = "row"} is currently implemented. \code{mode = "nanoarrow_lapply"} is the
-planned high-level batch convenience path: Rducks will use nanoarrow-backed
-chunk arrays internally, materialize R vectors/lists for the callback, and
-require a return value with exactly the input chunk length. \code{mode = "arrow_nanoarrow"} is the planned lower-level Arrow C Data Interface path
-where callbacks work with nanoarrow/Arrow array objects directly.
+\code{rducks_mode_semantics()} is the package-level schema for execution-mode
+semantics. \code{mode = "row"} is currently the only public mode: Rducks calls the
+R callback once for each DuckDB row. Future chunk or Arrow-backed execution
+modes will be added only when they execute real UDFs.
 }

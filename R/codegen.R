@@ -9,12 +9,10 @@ rducks_match_mode <- function(mode) {
 #' @param args Rducks type objects or scalar type tokens.
 #' @param returns Rducks return type object or scalar type token.
 #' @param mode Registration mode. `"row"` is implemented now and calls the R
-#'   function once per row through the native Rducks DuckDB extension. The
-#'   `"nanoarrow_lapply"` and `"arrow_nanoarrow"` modes are reserved for future
-#'   batch UDF paths.
+#'   function once per row through the native Rducks DuckDB extension.
 #' @return Object of class `rducks_udf_spec`.
 #' @export
-rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")) {
+rducks_udf_spec <- function(name, fun, args, returns, mode = "row") {
   mode <- rducks_match_mode(mode)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)

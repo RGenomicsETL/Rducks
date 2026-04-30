@@ -4,13 +4,7 @@
 \alias{rducks_udf_spec}
 \title{Create an Rducks UDF specification}
 \usage{
-rducks_udf_spec(
-  name,
-  fun,
-  args,
-  returns,
-  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")
-)
+rducks_udf_spec(name, fun, args, returns, mode = "row")
 }
 \arguments{
 \item{name}{SQL function name.}
@@ -22,9 +16,7 @@ rducks_udf_spec(
 \item{returns}{Rducks return type object or scalar type token.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per row through the native Rducks DuckDB extension. The
-\code{"nanoarrow_lapply"} and \code{"arrow_nanoarrow"} modes are reserved for future
-batch UDF paths.}
+function once per row through the native Rducks DuckDB extension.}
 }
 \value{
 Object of class \code{rducks_udf_spec}.
