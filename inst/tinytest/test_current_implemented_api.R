@@ -82,7 +82,7 @@ for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
   expect_true(grepl("#define _Complex", src, fixed = TRUE))
 }
 expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
-expect_equal(rducks_udf_spec("compiled_alias", function(x) x, INTEGER, INTEGER, mode = "compiled")$mode, "row")
+expect_error(rducks_udf_spec("compiled_alias", function(x) x, INTEGER, INTEGER, mode = "compiled"), "arg")
 expect_error(rducks_type_normalize("list<i32>"), "constructors")
 expect_error(rducks_udf_spec("bad_mapping", function(x) x, LIST("nope"), INTEGER), "unsupported")
 expect_identical(rducks_check_argument(INTEGER, 1L, name = "x"), 1L)
@@ -393,15 +393,9 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_bigint_array_bad() AS x"), "marshal")
 
   many_args <- rep("f64", 20)
-  if (.Platform$OS.type == "windows") {
-    spec20 <- rducks_udf_spec("rducks_sum20", function(...) sum(unlist(list(...))), many_args, "f64")
-    src20 <- rducks_generate_scalar_wrapper(spec20)
-    expect_true(grepl("arg_19", src20, fixed = TRUE))
-  } else {
-    invisible(rducks_register(con, "rducks_sum20", function(...) sum(unlist(list(...))), many_args, "f64"))
-    sum20_sql <- paste(rep("1.0", 20), collapse = ", ")
-    expect_equal(DBI::dbGetQuery(con, sprintf("SELECT rducks_sum20(%s) AS x", sum20_sql))$x, 20)
-  }
+  invisible(rducks_register(con, "rducks_sum20", function(...) sum(unlist(list(...))), many_args, "f64"))
+  sum20_sql <- paste(rep("1.0", 20), collapse = ", ")
+  expect_equal(DBI::dbGetQuery(con, sprintf("SELECT rducks_sum20(%s) AS x", sum20_sql))$x, 20)
 
   invisible(rducks_register(con, "rducks_tmp", function(x) x + 10, "f64", "f64"))
   gc()

@@ -100,7 +100,7 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   to soft-unregister the UDF later with [rducks_unregister()].
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
-                            mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"),
+                            mode = c("row", "arrow_lapply", "arrow_nanoarrow"),
                             compile = TRUE,
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),

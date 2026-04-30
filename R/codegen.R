@@ -1,9 +1,5 @@
 rducks_match_mode <- function(mode) {
-  mode <- match.arg(mode, c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"))
-  if (identical(mode, "compiled")) {
-    mode <- "row"
-  }
-  mode
+  match.arg(mode, c("row", "arrow_lapply", "arrow_nanoarrow"))
 }
 
 #' Create an Rducks UDF specification
@@ -18,7 +14,7 @@ rducks_match_mode <- function(mode) {
 #'   UDF paths.
 #' @return Object of class `rducks_udf_spec`.
 #' @export
-rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled")) {
+rducks_udf_spec <- function(name, fun, args, returns, mode = c("row", "arrow_lapply", "arrow_nanoarrow")) {
   mode <- rducks_match_mode(mode)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)

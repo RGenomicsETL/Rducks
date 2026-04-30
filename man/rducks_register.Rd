@@ -10,7 +10,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled"),
+  mode = c("row", "arrow_lapply", "arrow_nanoarrow"),
   compile = TRUE,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),

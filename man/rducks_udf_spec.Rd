@@ -9,7 +9,7 @@ rducks_udf_spec(
   fun,
   args,
   returns,
-  mode = c("row", "arrow_lapply", "arrow_nanoarrow", "compiled")
+  mode = c("row", "arrow_lapply", "arrow_nanoarrow")
 )
 }
 \arguments{

@@ -18,6 +18,7 @@ code generation through Rtinycc.
 Useful links:
 \itemize{
   \item \url{https://github.com/sounkou-bioinfo/Rducks}
+  \item \url{https://sounkou-bioinfo.github.io/Rducks/}
   \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rducks/issues}
 }
 
