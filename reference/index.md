@@ -7,8 +7,6 @@
   : BIT logical operations
 - [`rducks_argument_type_mapping()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_argument_type_mapping.md)
   : Describe how Rducks argument values are passed to R callbacks
-- [`rducks_arrow_udf_spec()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_arrow_udf_spec.md)
-  : Plan an Arrow-batch UDF shape
 - [`rducks_as_date()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_timestamp()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_time()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
@@ -42,8 +40,6 @@
   : Construct DuckDB ENUM values
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
-- [`rducks_has_nanoarrow()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_has_nanoarrow.md)
-  : Check for nanoarrow support
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
   : Construct exact DuckDB HUGEINT values
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)

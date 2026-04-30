@@ -5,13 +5,7 @@ Create an Rducks UDF specification
 ## Usage
 
 ``` r
-rducks_udf_spec(
-  name,
-  fun,
-  args,
-  returns,
-  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow")
-)
+rducks_udf_spec(name, fun, args, returns, mode = "row")
 ```
 
 ## Arguments
@@ -35,9 +29,7 @@ rducks_udf_spec(
 - mode:
 
   Registration mode. `"row"` is implemented now and calls the R function
-  once per row through the native Rducks DuckDB extension. The
-  `"nanoarrow_lapply"` and `"arrow_nanoarrow"` modes are reserved for
-  future batch UDF paths.
+  once per row through the native Rducks DuckDB extension.
 
 ## Value
 

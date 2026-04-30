@@ -3,6 +3,8 @@
 Loads the bundled Rducks DuckDB extension. The current direct R callback
 execution mode requires single-thread DuckDB execution; pass
 `threads = "single"` to set `PRAGMA threads=1` explicitly.
+Registration-time checks enforce the setting, and native execution
+guards defensively refuse to call R from DuckDB worker threads.
 
 ## Usage
 

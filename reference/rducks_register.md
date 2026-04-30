@@ -13,7 +13,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = c("row", "nanoarrow_lapply", "arrow_nanoarrow"),
+  mode = "row",
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -48,8 +48,6 @@ rducks_register(
 
   Registration mode. `"row"` is implemented now and calls the R function
   once per row through the native Rducks DuckDB extension.
-  `"nanoarrow_lapply"` and `"arrow_nanoarrow"` are reserved for future
-  batch UDF paths.
 
 - null_handling:
 

@@ -51,7 +51,7 @@ execution and requires single-thread DuckDB execution.</p>
 <span>  <span class="va">fun</span>,</span>
 <span>  <span class="va">args</span>,</span>
 <span>  <span class="va">returns</span>,</span>
-<span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"row"</span>, <span class="st">"nanoarrow_lapply"</span>, <span class="st">"arrow_nanoarrow"</span><span class="op">)</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"row"</span>,</span>
 <span>  null_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"default"</span>, <span class="st">"special"</span><span class="op">)</span>,</span>
 <span>  exception_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rethrow"</span>, <span class="st">"return_null"</span><span class="op">)</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span></span>
@@ -86,9 +86,7 @@ objects such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code
 
 <dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
 <dd><p>Registration mode. <code>"row"</code> is implemented now and calls the R
-function once per row through the native Rducks DuckDB extension.
-<code>"nanoarrow_lapply"</code> and <code>"arrow_nanoarrow"</code> are reserved for future batch
-UDF paths.</p></dd>
+function once per row through the native Rducks DuckDB extension.</p></dd>
 
 
 <dt id="arg-null-handling">null_handling<a class="anchor" aria-label="anchor" href="#arg-null-handling"></a></dt>

@@ -81,29 +81,29 @@
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object. Keep it if you want to soft-unregister the UDF later with <code>rducks_unregister(reg_plus_one)</code>.</p>
-<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. The names <code>mode = "nanoarrow_lapply"</code> and <code>mode = "arrow_nanoarrow"</code> are reserved for future batch UDF paths.</p>
+<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Future chunk or Arrow-backed execution modes will be added only when they execute real UDFs.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
 </h2>
-<p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers row-oriented scalar R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The row-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "row"</code> calls R once per row; <code>mode = "nanoarrow_lapply"</code> and <code>mode = "arrow_nanoarrow"</code> are reserved for future batch UDF paths. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
-<p>Direct R callbacks require single-thread DuckDB execution, so call <code>rducks_enable(con, threads = "single")</code> or set <code>PRAGMA threads=1</code> before registering R UDFs.</p>
+<p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers row-oriented scalar R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The row-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "row"</code> calls R once per row. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
+<p>Direct R callbacks require single-thread DuckDB execution, so call <code>rducks_enable(con, threads = "single")</code> or set <code>PRAGMA threads=1</code> before registering R UDFs. Rducks checks this at registration time and the native extension also checks the execution thread before each direct R callback, refusing to call R from a DuckDB worker thread.</p>
 <p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the row-mode callback boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with native structural checks via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
 <div class="section level3">
 <h3 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
 </h3>
-<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>row</code> is implemented now. <code>nanoarrow_lapply</code> and <code>arrow_nanoarrow</code> are reserved contracts for future batch paths and intentionally error if used with <code><a href="reference/rducks_register.html">rducks_register()</a></code>.</p>
+<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>row</code> is public and implemented now.</p>
 <table class="table">
 <colgroup>
+<col width="1%">
 <col width="3%">
-<col width="2%">
-<col width="12%">
-<col width="18%">
-<col width="16%">
+<col width="5%">
 <col width="13%">
 <col width="17%">
-<col width="16%">
+<col width="10%">
+<col width="25%">
+<col width="22%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -115,38 +115,16 @@
 <th align="left">threading</th>
 <th align="left">copy_semantics</th>
 </tr></thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td align="left"><code>row</code></td>
 <td align="left">implemented</td>
 <td align="left">one R call per row</td>
 <td align="left">one scalar/composite R value per declared argument</td>
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">one output value per callback invocation</td>
-<td align="left">requires single-thread DuckDB execution for direct R callbacks</td>
+<td align="left">requires single-thread DuckDB execution; native execution-thread guard refuses worker-thread R calls</td>
 <td align="left">row values are boxed/copied into R objects; exact/exotic types use Rducks value classes</td>
-</tr>
-<tr>
-<td align="left"><code>nanoarrow_lapply</code></td>
-<td align="left">reserved</td>
-<td align="left">planned one R call per DuckDB vector chunk</td>
-<td align="left">planned nanoarrow-backed chunk arrays converted to R vectors/lists before calling the R function</td>
-<td align="left">planned R vector/list result with exactly the chunk length and declared return type</td>
-<td align="left">planned no recycling: result length must match the input chunk length</td>
-<td align="left">requires the future main-R-thread pump before multi-threaded DuckDB execution is enabled</td>
-<td align="left">planned convenience path; may materialize R vectors/lists from nanoarrow arrays</td>
-</tr>
-<tr>
-<td align="left"><code>arrow_nanoarrow</code></td>
-<td align="left">reserved</td>
-<td align="left">planned one R call per DuckDB vector chunk or ArrowArrayStream batch</td>
-<td align="left">planned nanoarrow ArrowArray/ArrowSchema objects or stream wrappers</td>
-<td align="left">planned nanoarrow-compatible Arrow array with declared return schema and chunk length</td>
-<td align="left">planned output array length must match the input chunk length</td>
-<td align="left">requires the future main-R-thread pump and explicit Arrow C Data Interface ownership rules</td>
-<td align="left">planned lower-level path preserving Arrow C Data Interface buffers where safe</td>
-</tr>
-</tbody>
+</tr></tbody>
 </table>
 </div>
 </div>
