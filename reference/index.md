@@ -6,7 +6,7 @@
   [`rducks_bits_xor()`](https://sounkou-bioinfo.github.io/Rducks/reference/Ops.rducks_bits.md)
   : BIT logical operations
 - [`rducks_argument_type_mapping()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_argument_type_mapping.md)
-  : Describe how Rducks argument values are passed to R callbacks
+  : Describe how Rducks argument values are passed to R functions
 - [`rducks_as_date()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_timestamp()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_time()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)

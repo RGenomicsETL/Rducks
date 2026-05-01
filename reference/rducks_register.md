@@ -63,11 +63,11 @@ rducks_register(
 - exception_handling:
 
   Either `"rethrow"` to report R errors to DuckDB, or `"return_null"` to
-  turn callback errors into SQL NULL values.
+  turn R errors into SQL NULL values.
 
 - side_effects:
 
-  Logical scalar. Use `TRUE` for callbacks with randomness, counters,
+  Logical scalar. Use `TRUE` for functions with randomness, counters,
   I/O, mutation, or other side effects so DuckDB does not treat the
   function as pure.
 

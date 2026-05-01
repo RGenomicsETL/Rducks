@@ -1,9 +1,9 @@
-# Describe how Rducks argument values are passed to R callbacks
+# Describe how Rducks argument values are passed to R functions
 
 `rducks_argument_type_mapping()` is the package-level source of truth
 for the R value shape used when DuckDB argument values are marshalled
-into an R callback. It is used by registration checks and the nanoarrow
-scalar marshalling adapter.
+into an R function call. It is used by registration checks and the
+nanoarrow scalar marshalling adapter.
 
 ## Usage
 
@@ -28,8 +28,8 @@ A data frame with one row per requested type token.
 ## Details
 
 With `null_handling = "default"`, top-level SQL `NULL` inputs
-short-circuit to a SQL `NULL` result and the R callback is not called.
-The `sql_null_in_callback` column describes the value passed only when
+short-circuit to a SQL `NULL` result and the R function is not called.
+The `sql_null_in_function` column describes the value passed only when
 `null_handling = "special"`. This value is type-specific: ordinary R
 scalar types receive typed `NA` values, while exact/exotic value
 classes, binary values, and top-level composite values receive R `NULL`.
@@ -40,5 +40,5 @@ representation; nested composite `NULL` values are represented as R
 
 The default table contains all scalar types supported by the nanoarrow
 scalar marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
-descriptors can be requested explicitly to inspect their recursive R
-callback shapes.
+descriptors can be requested explicitly to inspect their recursive R R
+function shapes.

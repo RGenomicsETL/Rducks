@@ -6,8 +6,8 @@ functions as DuckDB user-defined functions.
 ## Details
 
 The design keeps the DuckDB extension as the canonical execution surface
-and uses R for ergonomic registration, callback lifetime management, and
-scalar callback execution over DuckDB chunks.
+and uses R for ergonomic registration, R function lifetime management,
+and scalar function execution over DuckDB chunks.
 
 ## See also
 

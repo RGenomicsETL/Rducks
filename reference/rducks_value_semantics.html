@@ -73,8 +73,8 @@ Rducks value-class binary operation behavior, and error semantics.</p>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>With <code>null_handling = "default"</code>, top-level SQL <code>NULL</code> inputs short-circuit
-to SQL <code>NULL</code> and the R callback is not called. The
-<code>sql_null_input_special</code> column describes what the callback receives with
+to SQL <code>NULL</code> and the R R function is not called. The
+<code>sql_null_input_special</code> column describes what the R function receives with
 <code>null_handling = "special"</code>.</p>
 <p>Return semantics are stated from R back to DuckDB. In scalar mode, top-level
 <code>NULL</code> returns map to SQL <code>NULL</code>; type-specific R <code>NA</code> values also map to SQL

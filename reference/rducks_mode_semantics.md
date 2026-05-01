@@ -2,7 +2,7 @@
 
 `rducks_mode_semantics()` is the package-level schema for execution-mode
 semantics. `mode = "scalar"` is currently the only public mode: Rducks
-calls the R callback once for each DuckDB row. Scalar mode is
+calls the R function once for each DuckDB row. Scalar mode is
 implemented on top of DuckDB Arrow C Data export/import plus nanoarrow.
 A future vectorized mode should call R once per DuckDB chunk and will be
 added only when implemented.
