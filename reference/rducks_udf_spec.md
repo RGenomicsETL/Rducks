@@ -5,7 +5,7 @@ Create an Rducks UDF specification
 ## Usage
 
 ``` r
-rducks_udf_spec(name, fun, args, returns, mode = "row")
+rducks_udf_spec(name, fun, args, returns, mode = "scalar")
 ```
 
 ## Arguments
@@ -28,8 +28,9 @@ rducks_udf_spec(name, fun, args, returns, mode = "row")
 
 - mode:
 
-  Registration mode. `"row"` is implemented now and calls the R function
-  once per row through the native Rducks DuckDB extension.
+  Registration mode. `"scalar"` is implemented now and calls the R
+  function once per DuckDB row through the native Rducks DuckDB
+  extension.
 
 ## Value
 

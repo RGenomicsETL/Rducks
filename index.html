@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Register R User-Defined Functions in DuckDB">
-<meta name="description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow row marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
-<meta property="og:description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow row marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
+<meta name="description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
+<meta property="og:description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -49,13 +49,13 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current nanoarrow row-mode callback bridge over DuckDB Arrow C Data.</p>
+<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current nanoarrow scalar-mode callback bridge over DuckDB Arrow C Data.</p>
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
 </h2>
-<p>Rducks has two native boundaries: an R package that owns callback lifetime and registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, and current row-mode callback execution.</p>
-<p>When you call <code>rducks_enable(con, threads = "single")</code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection and explicitly sets <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>. Current row-mode R callbacks call back into R on the calling R thread. If DuckDB later runs UDF chunks on worker threads, the extension queues those callback requests back to the calling R thread instead of touching the R API from the worker.</p>
-<p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that row-mode marshalling is available, and preserves the R callback. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the callback reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>. During query execution, that generic DuckDB callback exports input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow row adapter on the calling R thread, imports the returned Arrow C Data back into a DuckDB chunk, and attaches the result to the DuckDB output vector.</p>
+<p>Rducks has two native boundaries: an R package that owns callback lifetime and registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, and current scalar-mode callback execution.</p>
+<p>When you call <code>rducks_enable(con, threads = "single")</code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection and explicitly sets <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>. Current scalar-mode R callbacks call back into R on the calling R thread. If DuckDB later runs UDF chunks on worker threads, the extension queues those callback requests back to the calling R thread instead of touching the R API from the worker.</p>
+<p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that scalar-mode marshalling is available, and preserves the R callback. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the callback reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>. During query execution, that generic DuckDB callback exports input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow scalar adapter on the calling R thread, imports the returned Arrow C Data back into a DuckDB chunk, and attaches the result to the DuckDB output vector.</p>
 </div>
 <div class="section level2">
 <h2 id="getting-started">Getting started<a class="anchor" aria-label="anchor" href="#getting-started"></a>
@@ -74,26 +74,26 @@
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"row"</span></span>
+<span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB.</p>
-<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Internally this row adapter is already nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to row calls in R, then imported back to DuckDB. Future batch/chunk modes will be added only when they actually invoke callbacks once per batch or chunk.</p>
+<p>The implemented mode is <code>mode = "scalar"</code>, which calls the R function once per DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to scalar R calls, then imported back to DuckDB. A future vectorized mode should call R once per DuckDB chunk and will be added only when implemented.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
 </h2>
-<p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers row-oriented scalar R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The row-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "row"</code> calls R once per row. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
+<p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers scalar-mode R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The scalar-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "scalar"</code> calls R once per DuckDB row. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
 <p>Direct R callbacks require the R API work to happen on the calling R thread, so call <code>rducks_enable(con, threads = "single")</code> or set <code>external_threads=1</code> and <code>PRAGMA threads=1</code> before registering R UDFs. Rducks checks this at registration time. During execution, worker-thread UDF chunks are queued back to the calling R thread and drained there before results are written back to DuckDB.</p>
-<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the row-mode callback boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with native structural checks via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
+<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the scalar-mode callback boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with native structural checks via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
 <div class="section level3">
 <h3 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
 </h3>
-<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>row</code> is public and implemented now.</p>
+<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>scalar</code> is public and implemented now.</p>
 <table class="table">
 <colgroup>
 <col width="1%">
@@ -103,7 +103,7 @@
 <col width="12%">
 <col width="7%">
 <col width="39%">
-<col width="22%">
+<col width="24%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -116,14 +116,14 @@
 <th align="left">copy_semantics</th>
 </tr></thead>
 <tbody><tr>
-<td align="left"><code>row</code></td>
+<td align="left"><code>scalar</code></td>
 <td align="left">implemented</td>
 <td align="left">one R call per row</td>
 <td align="left">one scalar/composite R value per declared argument</td>
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">one output value per callback invocation</td>
 <td align="left">R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution</td>
-<td align="left">DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow row adapter materializes one R row value per callback</td>
+<td align="left">DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R callback value per DuckDB row</td>
 </tr></tbody>
 </table>
 </div>
@@ -153,7 +153,7 @@
 </h3>
 <details><summary>
 Expand for argument values passed to R functions
-</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented nanoarrow row marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R callback. The <code>SQL NULL in callback</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact/exotic value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
+</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented nanoarrow scalar marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R callback. The <code>SQL NULL in callback</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact/exotic value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
 <table class="table">
 <colgroup>
 <col width="16%">
@@ -404,7 +404,7 @@ Expand for argument values passed to R functions
 </h3>
 <details><summary>
 Expand for NULL, NA, NaN, Inf, and value-class semantics
-</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document row-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
+</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document scalar-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
 <table class="table">
 <colgroup>
 <col width="11%">

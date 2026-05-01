@@ -14,7 +14,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = "row",
+  mode = "scalar",
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -47,8 +47,10 @@ rducks_register(
 
 - mode:
 
-  Registration mode. `"row"` is implemented now and calls the R function
-  once per DuckDB row through the nanoarrow row adapter.
+  Registration mode. `"scalar"` is implemented now and calls the R
+  function once per DuckDB row through the nanoarrow scalar adapter. A
+  future vectorized mode should call the R function once per DuckDB
+  chunk.
 
 - null_handling:
 

@@ -12,7 +12,7 @@
   [`rducks_as_time()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_interval_between()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
-  : Convert R date/time values to Rducks row-mode shapes
+  : Convert R date/time values to Rducks scalar-mode shapes
 - [`rducks_bigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bigint.md)
   : Construct exact DuckDB BIGINT values
 - [`rducks_bits()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md)
