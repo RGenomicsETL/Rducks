@@ -233,7 +233,7 @@ Expand for argument values passed to R functions
 <td align="left">rducks_bigint</td>
 <td align="left">rducks_bigint scalar</td>
 <td align="left">NULL</td>
-<td align="left">boxed scalar</td>
+<td align="left">boxed exact Rducks value object</td>
 <td align="left">exact signed 64-bit integer string</td>
 </tr>
 <tr>
@@ -241,7 +241,7 @@ Expand for argument values passed to R functions
 <td align="left">rducks_ubigint</td>
 <td align="left">rducks_ubigint scalar</td>
 <td align="left">NULL</td>
-<td align="left">boxed scalar</td>
+<td align="left">boxed exact Rducks value object</td>
 <td align="left">exact unsigned 64-bit integer string</td>
 </tr>
 <tr>
@@ -280,7 +280,7 @@ Expand for argument values passed to R functions
 <td align="left"><code>DATE</code></td>
 <td align="left">Date</td>
 <td align="left">Date scalar</td>
-<td align="left">NA_real_ (unclassed)</td>
+<td align="left">Date NA</td>
 <td align="left">boxed scalar</td>
 <td align="left">days since 1970-01-01</td>
 </tr>
@@ -296,7 +296,7 @@ Expand for argument values passed to R functions
 <td align="left"><code>TIMESTAMP</code></td>
 <td align="left">POSIXct</td>
 <td align="left">POSIXct scalar</td>
-<td align="left">NA_real_ (unclassed)</td>
+<td align="left">POSIXct NA</td>
 <td align="left">boxed scalar</td>
 <td align="left">microseconds converted to seconds</td>
 </tr>
@@ -405,11 +405,11 @@ Expand for argument values passed to R functions
 <details><summary>
 Expand for NULL, NA, NaN, Inf, and value-class semantics
 </summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document scalar-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
-<table class="table">
+<table style="width:100%;" class="table">
 <colgroup>
 <col width="11%">
 <col width="4%">
-<col width="18%">
+<col width="21%">
 <col width="9%">
 <col width="9%">
 <col width="24%">
@@ -545,11 +545,11 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <tr>
 <td align="left"><code>MAP(VARCHAR, INTEGER)</code></td>
 <td align="left">NULL</td>
-<td align="left">keys and values recurse; scalar NA values become SQL NULL child entries</td>
+<td align="left">values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error</td>
 <td align="left">recursive child semantics</td>
 <td align="left">recursive child semantics</td>
 <td align="left">no descriptor-level Rducks binary ops; child value classes keep their own ops</td>
-<td align="left">keys/values length mismatch and child type mismatches error</td>
+<td align="left">keys/values length mismatch, NULL/NA keys, and child type mismatches error</td>
 </tr>
 </tbody>
 </table></details>

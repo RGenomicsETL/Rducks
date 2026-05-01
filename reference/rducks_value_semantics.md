@@ -33,7 +33,7 @@ semantics.
 ## Details
 
 With `null_handling = "default"`, top-level SQL `NULL` inputs
-short-circuit to SQL `NULL` and the R R function is not called. The
+short-circuit to SQL `NULL` and the R function is not called. The
 `sql_null_input_special` column describes what the R function receives
 with `null_handling = "special"`.
 

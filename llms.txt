@@ -184,15 +184,15 @@ nested composite `NULL` values are represented as R `NULL`.
 | `USMALLINT` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
 | `INTEGER` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
 | `UINTEGER` | numeric | numeric(1) | NA_real\_ | boxed scalar | R double |
-| `BIGINT` | rducks_bigint | rducks_bigint scalar | NULL | boxed scalar | exact signed 64-bit integer string |
-| `UBIGINT` | rducks_ubigint | rducks_ubigint scalar | NULL | boxed scalar | exact unsigned 64-bit integer string |
+| `BIGINT` | rducks_bigint | rducks_bigint scalar | NULL | boxed exact Rducks value object | exact signed 64-bit integer string |
+| `UBIGINT` | rducks_ubigint | rducks_ubigint scalar | NULL | boxed exact Rducks value object | exact unsigned 64-bit integer string |
 | `FLOAT` | numeric | numeric(1) | NA_real\_ | boxed scalar | widened to R double |
 | `DOUBLE` | numeric | numeric(1) | NA_real\_ | boxed scalar |  |
 | `VARCHAR` | character | character(1) | NA_character\_ | string copied into R | string copied into R |
 | `BLOB` | raw | raw vector | NULL | bytes copied into R | bytes copied into R |
-| `DATE` | Date | Date scalar | NA_real\_ (unclassed) | boxed scalar | days since 1970-01-01 |
+| `DATE` | Date | Date scalar | Date NA | boxed scalar | days since 1970-01-01 |
 | `TIME` | numeric | numeric(1) seconds | NA_real\_ | boxed scalar | microseconds converted to seconds |
-| `TIMESTAMP` | POSIXct | POSIXct scalar | NA_real\_ (unclassed) | boxed scalar | microseconds converted to seconds |
+| `TIMESTAMP` | POSIXct | POSIXct scalar | POSIXct NA | boxed scalar | microseconds converted to seconds |
 | `HUGEINT` | rducks_hugeint | rducks_hugeint | NULL | boxed exact Rducks value object | exact Rducks value class |
 | `UHUGEINT` | rducks_uhugeint | rducks_uhugeint | NULL | boxed exact Rducks value object | exact Rducks value class |
 | `UUID` | rducks_uuid | rducks_uuid | NULL | boxed exact Rducks value object | exact Rducks value class |
@@ -233,7 +233,7 @@ time, timestamp, exact, and exotic return paths reject them.
 | `ENUM('red', 'blue')` | NULL | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error |
 | `UNION(code INTEGER, label VARCHAR)` | NULL | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error |
 | `STRUCT(amount DECIMAL(10, 2), id BIGINT)` | NULL | field values recurse; scalar field NA values become SQL NULL fields | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | missing fields and field type mismatches error |
-| `MAP(VARCHAR, INTEGER)` | NULL | keys and values recurse; scalar NA values become SQL NULL child entries | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch and child type mismatches error |
+| `MAP(VARCHAR, INTEGER)` | NULL | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error |
 
 ## Composite input examples
 
