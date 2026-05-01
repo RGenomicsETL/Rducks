@@ -49,7 +49,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current row-mode callback bridge directly against R.</p>
+<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current Arrow-backed row-mode callback bridge.</p>
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
 </h2>
@@ -81,7 +81,7 @@
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object. Keep it if you want to soft-unregister the UDF later with <code>rducks_unregister(reg_plus_one)</code>.</p>
-<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Internally this row adapter is Arrow/nanoarrow-backed. Future chunk execution modes will be added only when they execute real UDFs.</p>
+<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Internally this row adapter is already Arrow/nanoarrow-backed: DuckDB chunks are exported to Arrow, adapted to row calls in R, then imported back to DuckDB. Future batch/chunk modes will be added only when they actually invoke callbacks once per batch or chunk.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 <div class="section level2">
@@ -94,16 +94,16 @@
 <h3 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
 </h3>
 <p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>row</code> is public and implemented now.</p>
-<table class="table">
+<table style="width:100%;" class="table">
 <colgroup>
 <col width="1%">
 <col width="2%">
 <col width="3%">
-<col width="10%">
+<col width="9%">
 <col width="13%">
-<col width="8%">
-<col width="42%">
-<col width="17%">
+<col width="7%">
+<col width="41%">
+<col width="20%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -123,7 +123,7 @@
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">one output value per callback invocation</td>
 <td align="left">R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution</td>
-<td align="left">row values are boxed/copied into R objects; exact/exotic types use Rducks value classes</td>
+<td align="left">DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback</td>
 </tr></tbody>
 </table>
 </div>
@@ -727,8 +727,8 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 </h2>
 <p>The package builds its DuckDB extension during installation using <code>configure</code> or <code>configure.win</code>. The extension metadata footer is appended by <code>tools/append_extension_metadata.R</code>.</p>
 <p>DuckDB C API headers are refreshed explicitly with:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.0</span></code></pre></div>
-<p>See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<p>The Arrow path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
