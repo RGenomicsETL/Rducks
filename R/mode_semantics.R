@@ -9,7 +9,7 @@ rducks_mode_semantics_rows <- list(
     length_semantics = "one output value per callback invocation",
     error_semantics = "callback or marshalling errors abort the query unless exception_handling = 'return_null'",
     threading = "R API work runs on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution",
-    copy_semantics = "row values are boxed/copied into R objects; exact/exotic types use Rducks value classes",
+    copy_semantics = "DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback",
     notes = "current production path"
   )
 )
@@ -18,8 +18,9 @@ rducks_mode_semantics_rows <- list(
 #'
 #' `rducks_mode_semantics()` is the package-level schema for execution-mode
 #' semantics. `mode = "row"` is currently the only public mode: Rducks calls the
-#' R callback once for each DuckDB row. Future chunk or Arrow-backed execution
-#' modes will be added only when they execute real UDFs.
+#' R callback once for each DuckDB row. Row mode is already implemented on top
+#' of DuckDB Arrow C Data export/import plus nanoarrow. Future batch/chunk modes
+#' will be added only when they actually invoke callbacks once per batch/chunk.
 #'
 #' @param mode Optional character vector of mode names. When `NULL`, all known
 #'   modes are returned.

@@ -542,7 +542,12 @@ rducks_arrow_enum_array_to_values <- function(array, schema, levels) {
   for (i in seq_len(n)) {
     if (!isTRUE(valid[[i]])) next
     start <- (offset + i - 1L) * width + 1L
-    idx <- readBin(bytes[start + seq_len(width) - 1L], integer(), size = width, endian = "little", signed = FALSE)
+    idx <- 0
+    multiplier <- 1
+    for (byte in bytes[start + seq_len(width) - 1L]) {
+      idx <- idx + as.integer(byte) * multiplier
+      multiplier <- multiplier * 256
+    }
     if (idx < 0L || idx >= length(levels)) {
       stop("enum index is outside declared levels", call. = FALSE)
     }
@@ -555,11 +560,24 @@ rducks_arrow_enum_storage_array <- function(chars, levels, schema) {
   storage_schema <- rducks_arrow_enum_storage_schema(schema)
   valid <- !is.na(chars)
   idx <- match(chars, levels) - 1L
-  idx[!valid] <- NA_integer_
+  idx[!valid] <- 0L
   if (any(is.na(idx) & valid)) stop("enum values must be present in levels", call. = FALSE)
-  array <- nanoarrow::as_nanoarrow_array(idx, schema = storage_schema)
-  nanoarrow::nanoarrow_array_set_schema(array, storage_schema)
-  array
+  width <- rducks_arrow_enum_index_width(schema)
+  data <- raw(length(chars) * width)
+  for (i in seq_along(chars)) {
+    value <- as.integer(idx[[i]])
+    start <- (i - 1L) * width + 1L
+    for (byte_index in seq_len(width)) {
+      data[[start + byte_index - 1L]] <- as.raw(value %% 256L)
+      value <- value %/% 256L
+    }
+  }
+  array <- nanoarrow::nanoarrow_array_init(storage_schema)
+  nanoarrow::nanoarrow_array_modify(array, list(
+    length = length(chars),
+    null_count = sum(!valid),
+    buffers = list(rducks_arrow_validity_buffer(valid), data)
+  ))
 }
 
 rducks_arrow_map_array_to_values <- function(type, array, schema = NULL) {

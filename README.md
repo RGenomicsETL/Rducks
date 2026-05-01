@@ -6,7 +6,7 @@
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as
 an R package plus a DuckDB extension. The loaded DuckDB extension
 registers callbacks on a DuckDB connection and performs the current
-row-mode callback bridge directly against R.
+Arrow-backed row-mode callback bridge.
 
 ## How it works
 
@@ -65,8 +65,10 @@ you want to soft-unregister the UDF later with
 `rducks_unregister(reg_plus_one)`.
 
 The implemented mode is `mode = "row"`, which calls the R function once
-per row. Internally this row adapter is Arrow/nanoarrow-backed. Future
-chunk execution modes will be added only when they execute real UDFs.
+per row. Internally this row adapter is already Arrow/nanoarrow-backed:
+DuckDB chunks are exported to Arrow, adapted to row calls in R, then
+imported back to DuckDB. Future batch/chunk modes will be added only
+when they actually invoke callbacks once per batch or chunk.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
@@ -112,9 +114,9 @@ ordinary R values against those descriptors before marshalling.
 The table below is produced by `rducks_mode_semantics()`. Only `row` is
 public and implemented now.
 
-| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                                                                   | copy_semantics                                                                          |
-|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
-| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
+| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                                                                   | copy_semantics                                                                                               |
+|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
+| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback |
 
 ## Type descriptors
 
@@ -417,7 +419,10 @@ appended by `tools/append_extension_metadata.R`.
 DuckDB C API headers are refreshed explicitly with:
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 ```
 
-See `docs/BUILD.md` for the extension build and metadata details.
+The Arrow path requires DuckDB’s unstable C extension API, so the
+extension metadata uses `C_STRUCT_UNSTABLE` and must match the bundled
+DuckDB header/runtime version. See `docs/BUILD.md` for the extension
+build and metadata details.

@@ -18,6 +18,7 @@ semantics for each mode.
 \description{
 \code{rducks_mode_semantics()} is the package-level schema for execution-mode
 semantics. \code{mode = "row"} is currently the only public mode: Rducks calls the
-R callback once for each DuckDB row. Future chunk or Arrow-backed execution
-modes will be added only when they execute real UDFs.
+R callback once for each DuckDB row. Row mode is already implemented on top
+of DuckDB Arrow C Data export/import plus nanoarrow. Future batch/chunk modes
+will be added only when they actually invoke callbacks once per batch/chunk.
 }

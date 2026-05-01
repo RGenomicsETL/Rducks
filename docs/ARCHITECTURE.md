@@ -14,13 +14,13 @@ R functions as DuckDB UDFs.
    - owns SQL registration and DuckDB function objects
    - stores per-UDF metadata in `extra_info`
    - exposes one generic DuckDB scalar callback per execution family
-   - performs current row-mode marshalling and R callback execution
+   - exports/imports chunks through DuckDB Arrow C Data APIs
    - manages a synchronous main-R-thread queue for worker-thread callback requests
 
 3. **Arrow/nanoarrow bridge layer**
-   - planned canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow APIs
+   - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow APIs
    - typed Rducks conversion rules for exact/exotic values
-   - batch callback paths that avoid one R call per row
+   - row adapter that invokes the R callback once per DuckDB row
 
 ## Scalar UDF execution model
 
@@ -28,11 +28,11 @@ R functions as DuckDB UDFs.
 DuckDB
   -> rducks_generic_scalar_callback(info, input, output)
       -> metadata from extra_info
-      -> vector/chunk decoding
-      -> direct R call if on the calling R thread
+      -> DuckDB chunk -> Arrow C Data export
+      -> nanoarrow-backed row adapter on the calling R thread
       -> queued synchronous request if on a DuckDB worker
       -> main thread drains queued requests without workers touching the R API
-      -> output vector write-back
+      -> Arrow C Data -> DuckDB chunk import
 ```
 
 ## Pump model
@@ -85,7 +85,8 @@ created them. If a future pump allows the worker to return before the main R
 thread has consumed the input, the request must copy into owned Arrow buffers
 instead of exporting a borrowed view.
 
-Rducks should use the in-process Arrow C Data Interface for batch UDFs:
+Rducks uses the in-process Arrow C Data Interface for the row adapter and should
+reuse it for any future batch UDFs:
 
 - `ArrowArray`
 - `ArrowSchema`

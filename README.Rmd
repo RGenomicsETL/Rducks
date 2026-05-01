@@ -18,8 +18,8 @@ library(Rducks)
 
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R
 package plus a DuckDB extension. The loaded DuckDB extension registers callbacks
-on a DuckDB connection and performs the current row-mode callback bridge directly
-against R.
+on a DuckDB connection and performs the current Arrow-backed row-mode callback
+bridge.
 
 ## How it works
 
@@ -71,8 +71,10 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 to soft-unregister the UDF later with `rducks_unregister(reg_plus_one)`.
 
 The implemented mode is `mode = "row"`, which calls the R function once per row.
-Internally this row adapter is Arrow/nanoarrow-backed. Future chunk execution
-modes will be added only when they execute real UDFs.
+Internally this row adapter is already Arrow/nanoarrow-backed: DuckDB chunks are
+exported to Arrow, adapted to row calls in R, then imported back to DuckDB.
+Future batch/chunk modes will be added only when they actually invoke callbacks
+once per batch or chunk.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
 and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
@@ -417,10 +419,12 @@ The package builds its DuckDB extension during installation using `configure` or
 DuckDB C API headers are refreshed explicitly with:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 ```
 
-See `docs/BUILD.md` for the extension build and metadata details.
+The Arrow path requires DuckDB's unstable C extension API, so the extension
+metadata uses `C_STRUCT_UNSTABLE` and must match the bundled DuckDB header/runtime
+version. See `docs/BUILD.md` for the extension build and metadata details.
 
 ```{r cleanup, include=FALSE}
 dbDisconnect(con, shutdown = TRUE)
