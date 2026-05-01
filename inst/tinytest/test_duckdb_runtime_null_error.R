@@ -1,6 +1,6 @@
 library(Rducks)
 
-if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
@@ -58,4 +58,4 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   })
   invisible(rducks_register(con, "rducks_counter", counter, character(), "i32", side_effects = TRUE))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_counter() AS x FROM range(5)")$x, 1:5)
-}
+})

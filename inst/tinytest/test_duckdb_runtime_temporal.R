@@ -1,6 +1,6 @@
 library(Rducks)
 
-if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
@@ -29,4 +29,4 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_timestamp_bad() AS x"), "Rducks")
   invisible(rducks_register(con, "rducks_timestamp_edge_bad", function() 9223372036854.775, character(), TIMESTAMP))
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_timestamp_edge_bad() AS x"), "Rducks")
-}
+})

@@ -30,7 +30,7 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{returns}{Return type specification.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per DuckDB row through the Arrow-backed row adapter.}
+function once per DuckDB row through the nanoarrow row adapter.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared
@@ -46,8 +46,9 @@ counters, I/O, mutation, or other side effects so DuckDB does not treat the
 function as pure.}
 }
 \value{
-Object of class \code{rducks_registration}. Keep this object if you want
-to soft-unregister the UDF later with \code{\link[=rducks_unregister]{rducks_unregister()}}.
+Object of class \code{rducks_registration} containing the connection,
+normalized signature, and registration options. The UDF remains registered
+in DuckDB even if this object is discarded.
 }
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks

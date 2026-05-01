@@ -48,32 +48,6 @@ static bool rducks_register_scalar_surface(duckdb_connection con) {
     return rc == DuckDBSuccess;
 }
 
-static bool rducks_register_unregister_surface(duckdb_connection con) {
-    duckdb_scalar_function fn = duckdb_create_scalar_function();
-    duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
-    duckdb_logical_type bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
-    duckdb_state rc;
-    if (!fn || !varchar_type || !bool_type) {
-        if (fn) duckdb_destroy_scalar_function(&fn);
-        if (varchar_type) duckdb_destroy_logical_type(&varchar_type);
-        if (bool_type) duckdb_destroy_logical_type(&bool_type);
-        return false;
-    }
-    duckdb_scalar_function_set_name(fn, "rducks_unregister_scalar");
-    duckdb_scalar_function_add_parameter(fn, varchar_type);
-    duckdb_scalar_function_add_parameter(fn, varchar_type);
-    duckdb_scalar_function_add_parameter(fn, varchar_type);
-    duckdb_scalar_function_set_return_type(fn, bool_type);
-    duckdb_scalar_function_set_volatile(fn);
-    duckdb_scalar_function_set_function(fn, rducks_unregister_scalar_scalar);
-    rc = duckdb_register_scalar_function(con, fn);
-    duckdb_destroy_scalar_function(&fn);
-    duckdb_destroy_logical_type(&varchar_type);
-    duckdb_destroy_logical_type(&bool_type);
-    return rc == DuckDBSuccess;
-}
-
-
 static bool rducks_register_main_thread_token_surface(duckdb_connection con) {
     duckdb_scalar_function fn = duckdb_create_scalar_function();
     duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
@@ -146,7 +120,7 @@ DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_ext
     }
     if (!g_registration_surface_ready) {
         if (!rducks_register_version(g_connection) || !rducks_register_main_thread_token_surface(g_connection) ||
-            !rducks_register_scalar_surface(g_connection) || !rducks_register_unregister_surface(g_connection)) {
+            !rducks_register_scalar_surface(g_connection)) {
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");
             }

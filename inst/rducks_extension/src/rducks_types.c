@@ -12,9 +12,6 @@ static rducks_type_id_t rducks_scalar_type_id_from_token(const char *raw_token) 
     while (*raw_token == ' ' || *raw_token == '\t' || *raw_token == '\n' || *raw_token == '\r') {
         raw_token++;
     }
-    if (strncmp(raw_token, "duckdb_", 7U) == 0 || strncmp(raw_token, "DUCKDB_", 7U) == 0) {
-        raw_token += 7;
-    }
     len = strlen(raw_token);
     while (len > 0 && (raw_token[len - 1U] == ' ' || raw_token[len - 1U] == '\t' ||
                        raw_token[len - 1U] == '\n' || raw_token[len - 1U] == '\r')) {
@@ -27,75 +24,27 @@ static rducks_type_id_t rducks_scalar_type_id_from_token(const char *raw_token) 
     token[len] = '\0';
     rducks_ascii_lower_inplace(token);
 
-    if (strcmp(token, "bool") == 0 || strcmp(token, "logical") == 0 || strcmp(token, "boolean") == 0) {
-        return RDUCKS_TYPE_BOOL;
-    }
-    if (strcmp(token, "i8") == 0 || strcmp(token, "int8") == 0 || strcmp(token, "tinyint") == 0 ||
-        strcmp(token, "byte") == 0) {
-        return RDUCKS_TYPE_I8;
-    }
-    if (strcmp(token, "u8") == 0 || strcmp(token, "uint8") == 0 || strcmp(token, "utinyint") == 0 ||
-        strcmp(token, "unsigned_byte") == 0) {
-        return RDUCKS_TYPE_U8;
-    }
-    if (strcmp(token, "i16") == 0 || strcmp(token, "int16") == 0 || strcmp(token, "smallint") == 0) {
-        return RDUCKS_TYPE_I16;
-    }
-    if (strcmp(token, "u16") == 0 || strcmp(token, "uint16") == 0 || strcmp(token, "usmallint") == 0) {
-        return RDUCKS_TYPE_U16;
-    }
-    if (strcmp(token, "i32") == 0 || strcmp(token, "int") == 0 || strcmp(token, "integer") == 0 ||
-        strcmp(token, "int32") == 0) {
-        return RDUCKS_TYPE_I32;
-    }
-    if (strcmp(token, "u32") == 0 || strcmp(token, "uint") == 0 || strcmp(token, "uint32") == 0 ||
-        strcmp(token, "uinteger") == 0) {
-        return RDUCKS_TYPE_U32;
-    }
-    if (strcmp(token, "i64") == 0 || strcmp(token, "int64") == 0 || strcmp(token, "bigint") == 0) {
-        return RDUCKS_TYPE_I64;
-    }
-    if (strcmp(token, "u64") == 0 || strcmp(token, "uint64") == 0 || strcmp(token, "ubigint") == 0) {
-        return RDUCKS_TYPE_U64;
-    }
-    if (strcmp(token, "f32") == 0 || strcmp(token, "float") == 0) {
-        return RDUCKS_TYPE_F32;
-    }
-    if (strcmp(token, "f64") == 0 || strcmp(token, "double") == 0 || strcmp(token, "numeric") == 0 ||
-        strcmp(token, "real") == 0) {
-        return RDUCKS_TYPE_F64;
-    }
-    if (strcmp(token, "varchar") == 0 || strcmp(token, "string") == 0 || strcmp(token, "character") == 0 ||
-        strcmp(token, "cstring") == 0) {
-        return RDUCKS_TYPE_VARCHAR;
-    }
-    if (strcmp(token, "blob") == 0 || strcmp(token, "raw") == 0 || strcmp(token, "binary") == 0) {
-        return RDUCKS_TYPE_BLOB;
-    }
-    if (strcmp(token, "date") == 0) {
-        return RDUCKS_TYPE_DATE;
-    }
-    if (strcmp(token, "time") == 0) {
-        return RDUCKS_TYPE_TIME;
-    }
-    if (strcmp(token, "timestamp") == 0 || strcmp(token, "posixct") == 0 || strcmp(token, "datetime") == 0) {
-        return RDUCKS_TYPE_TIMESTAMP;
-    }
-    if (strcmp(token, "hugeint") == 0) {
-        return RDUCKS_TYPE_HUGEINT;
-    }
-    if (strcmp(token, "uhugeint") == 0) {
-        return RDUCKS_TYPE_UHUGEINT;
-    }
-    if (strcmp(token, "uuid") == 0) {
-        return RDUCKS_TYPE_UUID;
-    }
-    if (strcmp(token, "interval") == 0) {
-        return RDUCKS_TYPE_INTERVAL;
-    }
-    if (strcmp(token, "bit") == 0) {
-        return RDUCKS_TYPE_BIT;
-    }
+    if (strcmp(token, "bool") == 0) return RDUCKS_TYPE_BOOL;
+    if (strcmp(token, "i8") == 0) return RDUCKS_TYPE_I8;
+    if (strcmp(token, "u8") == 0) return RDUCKS_TYPE_U8;
+    if (strcmp(token, "i16") == 0) return RDUCKS_TYPE_I16;
+    if (strcmp(token, "u16") == 0) return RDUCKS_TYPE_U16;
+    if (strcmp(token, "i32") == 0) return RDUCKS_TYPE_I32;
+    if (strcmp(token, "u32") == 0) return RDUCKS_TYPE_U32;
+    if (strcmp(token, "i64") == 0) return RDUCKS_TYPE_I64;
+    if (strcmp(token, "u64") == 0) return RDUCKS_TYPE_U64;
+    if (strcmp(token, "f32") == 0) return RDUCKS_TYPE_F32;
+    if (strcmp(token, "f64") == 0) return RDUCKS_TYPE_F64;
+    if (strcmp(token, "varchar") == 0) return RDUCKS_TYPE_VARCHAR;
+    if (strcmp(token, "blob") == 0) return RDUCKS_TYPE_BLOB;
+    if (strcmp(token, "date") == 0) return RDUCKS_TYPE_DATE;
+    if (strcmp(token, "time") == 0) return RDUCKS_TYPE_TIME;
+    if (strcmp(token, "timestamp") == 0) return RDUCKS_TYPE_TIMESTAMP;
+    if (strcmp(token, "hugeint") == 0) return RDUCKS_TYPE_HUGEINT;
+    if (strcmp(token, "uhugeint") == 0) return RDUCKS_TYPE_UHUGEINT;
+    if (strcmp(token, "uuid") == 0) return RDUCKS_TYPE_UUID;
+    if (strcmp(token, "interval") == 0) return RDUCKS_TYPE_INTERVAL;
+    if (strcmp(token, "bit") == 0) return RDUCKS_TYPE_BIT;
     return RDUCKS_TYPE_INVALID;
 }
 

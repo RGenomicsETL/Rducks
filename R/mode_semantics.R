@@ -9,7 +9,7 @@ rducks_mode_semantics_rows <- list(
     length_semantics = "one output value per callback invocation",
     error_semantics = "callback or marshalling errors abort the query unless exception_handling = 'return_null'",
     threading = "R API work runs on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution",
-    copy_semantics = "DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback",
+    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow row adapter materializes one R row value per callback",
     notes = "current production path"
   )
 )

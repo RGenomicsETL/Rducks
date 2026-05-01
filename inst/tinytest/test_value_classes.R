@@ -131,10 +131,3 @@ expect_equal(as.character(!rducks_bits("1010")), "0101")
 expect_equal(rducks_value_type(enum), "ENUM('low', 'medium', 'high')")
 expect_equal(rducks_duckdb_literal(enum[1]), "'low'::ENUM('low', 'medium', 'high')")
 expect_error(rducks_duckdb_literal(union), "UNION literals")
-
-cb <- rducks_callback(function(x, y) x + y)
-expect_inherits(cb, "rducks_callback")
-expect_equal(rducks_callback_invoke(cb, list(2, 3)), 5)
-rducks_callback_close(cb)
-
-expect_equal(rducks_pump(), 0L)

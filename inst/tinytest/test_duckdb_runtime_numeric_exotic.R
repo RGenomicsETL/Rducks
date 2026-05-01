@@ -1,6 +1,6 @@
 library(Rducks)
 
-if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
@@ -17,10 +17,7 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   invisible(rducks_register(con, "rducks_u16", function(x) x + 1L, "u16", "u16"))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_u16(41::USMALLINT) AS x")$x, 42L)
 
-  expect_warning(
-    invisible(rducks_register(con, "rducks_u32", function(x) x + 1, "u32", "u32")),
-    "R numeric"
-  )
+  invisible(rducks_register(con, "rducks_u32", function(x) x + 1, "u32", "u32"))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_u32(41::UINTEGER) AS x")$x, 42)
 
   invisible(rducks_register(con, "rducks_u64", function(x) x + rducks_ubigint("1"), "u64", "u64"))
@@ -49,4 +46,4 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_true(is.na(DBI::dbGetQuery(con, "SELECT rducks_decimal_null() AS x")$x))
   invisible(rducks_register(con, "rducks_decimal_list_null", function() list(rducks_decimal("1.23", 10, 2), rducks_decimal(NA_character_, 10, 2)), character(), LIST(DECIMAL(10, 2))))
   expect_equal(DBI::dbGetQuery(con, "SELECT list_sum(rducks_decimal_list_null()) AS x")$x, 1.23)
-}
+})

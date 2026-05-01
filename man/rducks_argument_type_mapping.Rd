@@ -19,7 +19,7 @@ A data frame with one row per requested type token.
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
-callback. It is used by registration checks and the Arrow-backed row
+callback. It is used by registration checks and the nanoarrow row
 marshalling adapter.
 }
 \details{
@@ -33,8 +33,8 @@ scalar lists/arrays, SQL \code{NULL} elements are represented as typed \code{NA}
 where the child type has an R \code{NA} representation; nested composite \code{NULL}
 values are represented as R \code{NULL}.
 
-The default table contains all scalar types supported by the Arrow-backed
-row marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
+The default table contains all scalar types supported by the nanoarrow row
+marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
 descriptors can be requested explicitly to inspect their recursive R
 callback shapes.
 }

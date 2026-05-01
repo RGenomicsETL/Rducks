@@ -1,6 +1,6 @@
 library(Rducks)
 
-if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
@@ -17,4 +17,4 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
 
   invisible(rducks_register(con, "rducks_blob", function(x) c(x, as.raw(0xff)), "blob", "blob"))
   expect_equal(DBI::dbGetQuery(con, "SELECT hex(rducks_blob(from_hex('00AA'))) AS x")$x, "00AAFF")
-}
+})

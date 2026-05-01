@@ -1,160 +1,63 @@
-rducks_scalar_types <- local({
-  table <- list(
-    bool = list(c = "bool", duckdb = "BOOLEAN", r = "logical"),
-    i8 = list(c = "int8_t", duckdb = "TINYINT", r = "integer"),
-    u8 = list(c = "uint8_t", duckdb = "UTINYINT", r = "integer"),
-    i16 = list(c = "int16_t", duckdb = "SMALLINT", r = "integer"),
-    u16 = list(c = "uint16_t", duckdb = "USMALLINT", r = "integer"),
-    i32 = list(c = "int32_t", duckdb = "INTEGER", r = "integer"),
-    u32 = list(c = "uint32_t", duckdb = "UINTEGER", r = "numeric"),
-    i64 = list(c = "int64_t", duckdb = "BIGINT", r = "rducks_bigint"),
-    u64 = list(c = "uint64_t", duckdb = "UBIGINT", r = "rducks_ubigint"),
-    f32 = list(c = "float", duckdb = "FLOAT", r = "numeric"),
-    f64 = list(c = "double", duckdb = "DOUBLE", r = "numeric"),
-    varchar = list(c = "const char *", duckdb = "VARCHAR", r = "character"),
-    blob = list(c = "rducks_blob_t", duckdb = "BLOB", r = "raw"),
-    date = list(c = "rducks_date_t", duckdb = "DATE", r = "Date"),
-    time = list(c = "rducks_time_t", duckdb = "TIME", r = "numeric"),
-    timestamp = list(c = "rducks_timestamp_t", duckdb = "TIMESTAMP", r = "POSIXct")
-  )
-  aliases <- c(
-    logical = "bool",
-    boolean = "bool",
-    tinyint = "i8",
-    int8 = "i8",
-    byte = "i8",
-    utinyint = "u8",
-    uint8 = "u8",
-    unsigned_byte = "u8",
-    smallint = "i16",
-    int16 = "i16",
-    usmallint = "u16",
-    uint16 = "u16",
-    int = "i32",
-    integer = "i32",
-    int32 = "i32",
-    uint = "u32",
-    uint32 = "u32",
-    uinteger = "u32",
-    int64 = "i64",
-    bigint = "i64",
-    uint64 = "u64",
-    ubigint = "u64",
-    float = "f32",
-    double = "f64",
-    numeric = "f64",
-    real = "f64",
-    string = "varchar",
-    character = "varchar",
-    cstring = "varchar",
-    raw = "blob",
-    binary = "blob",
-    posixct = "timestamp",
-    datetime = "timestamp"
-  )
-  list(table = table, aliases = aliases)
-})
-
-rducks_scalar_argument_mapping_specs <- list(
-  bool = list(
-    r_value = "logical(1)", sql_null = "NA", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+rducks_scalar_type_table <- data.frame(
+  rducks_type = c(
+    "bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
+    "f32", "f64", "varchar", "blob", "date", "time", "timestamp",
+    "hugeint", "uhugeint", "uuid", "interval", "bit"
   ),
-  i8 = list(
-    r_value = "integer(1)", sql_null = "NA_integer_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  duckdb_sql = c(
+    "BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER",
+    "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP",
+    "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT"
   ),
-  u8 = list(
-    r_value = "integer(1)", sql_null = "NA_integer_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  argument_kind = c(rep("scalar", 16L), rep("exotic", 5L)),
+  r_type = c(
+    "logical", "integer", "integer", "integer", "integer", "integer", "numeric",
+    "rducks_bigint", "rducks_ubigint", "numeric", "numeric", "character", "raw",
+    "Date", "numeric", "POSIXct", "rducks_hugeint", "rducks_uhugeint",
+    "rducks_uuid", "rducks_interval", "rducks_bits"
   ),
-  i16 = list(
-    r_value = "integer(1)", sql_null = "NA_integer_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  r_value_passed_to_fun = c(
+    "logical(1)", "integer(1)", "integer(1)", "integer(1)", "integer(1)", "integer(1)",
+    "numeric(1)", "rducks_bigint scalar", "rducks_ubigint scalar", "numeric(1)",
+    "numeric(1)", "character(1)", "raw vector", "Date scalar", "numeric(1) seconds",
+    "POSIXct scalar", "rducks_hugeint", "rducks_uhugeint", "rducks_uuid",
+    "rducks_interval", "rducks_bits"
   ),
-  u16 = list(
-    r_value = "integer(1)", sql_null = "NA_integer_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  sql_null_in_callback = c(
+    "NA", rep("NA_integer_", 5L), "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_",
+    "NA_character_", "NULL", "NA_real_ (unclassed)", "NA_real_", "NA_real_ (unclassed)",
+    rep("NULL", 5L)
   ),
-  i32 = list(
-    r_value = "integer(1)", sql_null = "NA_integer_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  copy_semantics = c(
+    rep("boxed scalar", 11L), "string copied into R", "bytes copied into R", rep("boxed scalar", 3L),
+    rep("boxed exact Rducks value object", 5L)
   ),
-  u32 = list(
-    r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "R double", uses_r_double_for_integer = TRUE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
+  uses_r_double_for_integer = c(rep(FALSE, 6L), TRUE, rep(FALSE, 14L)),
+  uses_r_double_for_float = c(rep(FALSE, 9L), TRUE, rep(FALSE, 11L)),
+  precision_may_be_lost = FALSE,
+  notes = c(
+    "", "", "", "", "", "", "R double", "exact signed 64-bit integer string",
+    "exact unsigned 64-bit integer string", "widened to R double", "", "string copied into R",
+    "bytes copied into R", "days since 1970-01-01", "microseconds converted to seconds",
+    "microseconds converted to seconds", rep("exact Rducks value class", 5L)
   ),
-  i64 = list(
-    r_value = "rducks_bigint scalar", sql_null = "NULL", copy = "boxed exact Rducks value object",
-    notes = "exact signed 64-bit integer string", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  u64 = list(
-    r_value = "rducks_ubigint scalar", sql_null = "NULL", copy = "boxed exact Rducks value object",
-    notes = "exact unsigned 64-bit integer string", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  f32 = list(
-    r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "widened to R double", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = TRUE, precision_may_be_lost = FALSE
-  ),
-  f64 = list(
-    r_value = "numeric(1)", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "", uses_r_double_for_integer = FALSE, uses_r_double_for_float = FALSE,
-    precision_may_be_lost = FALSE
-  ),
-  varchar = list(
-    r_value = "character(1)", sql_null = "NA_character_", copy = "string copied into R",
-    notes = "string copied into R", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  blob = list(
-    r_value = "raw vector", sql_null = "NULL", copy = "bytes copied into R",
-    notes = "bytes copied into R", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  date = list(
-    r_value = "Date scalar", sql_null = "NA_real_ (unclassed)", copy = "boxed scalar",
-    notes = "days since 1970-01-01", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  time = list(
-    r_value = "numeric(1) seconds", sql_null = "NA_real_", copy = "boxed scalar",
-    notes = "microseconds converted to seconds", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  ),
-  timestamp = list(
-    r_value = "POSIXct scalar", sql_null = "NA_real_ (unclassed)", copy = "boxed scalar",
-    notes = "microseconds converted to seconds", uses_r_double_for_integer = FALSE,
-    uses_r_double_for_float = FALSE, precision_may_be_lost = FALSE
-  )
+  stringsAsFactors = FALSE,
+  check.names = FALSE
 )
 
-rducks_exotic_scalar_types <- list(
-  hugeint = list(duckdb = "HUGEINT", r = "rducks_hugeint"),
-  uhugeint = list(duckdb = "UHUGEINT", r = "rducks_uhugeint"),
-  uuid = list(duckdb = "UUID", r = "rducks_uuid"),
-  interval = list(duckdb = "INTERVAL", r = "rducks_interval"),
-  bit = list(duckdb = "BIT", r = "rducks_bits")
-)
+rducks_scalar_type_row <- function(token) {
+  token <- rducks_type_normalize_scalar(token)
+  row <- rducks_scalar_type_table[rducks_scalar_type_table$rducks_type == token, , drop = FALSE]
+  row.names(row) <- NULL
+  row
+}
 
 rducks_all_scalar_type_names <- function() {
-  c(names(rducks_scalar_types$table), names(rducks_exotic_scalar_types))
+  rducks_scalar_type_table$rducks_type
 }
 
 rducks_type_normalize_scalar <- function(token, original = token) {
   token <- tolower(trimws(token))
-  if (token %in% names(rducks_scalar_types$aliases)) {
-    token <- unname(rducks_scalar_types$aliases[[token]])
-  }
   if (!token %in% rducks_all_scalar_type_names()) {
     stop("unsupported scalar Rducks type token: ", original, call. = FALSE)
   }
@@ -162,11 +65,7 @@ rducks_type_normalize_scalar <- function(token, original = token) {
 }
 
 rducks_scalar_duckdb_sql <- function(token) {
-  token <- rducks_type_normalize_scalar(token)
-  if (token %in% names(rducks_scalar_types$table)) {
-    return(rducks_scalar_types$table[[token]]$duckdb)
-  }
-  rducks_exotic_scalar_types[[token]]$duckdb
+  rducks_scalar_type_row(token)$duckdb_sql[[1L]]
 }
 
 rducks_reject_character_composite_type <- function(token) {
@@ -180,9 +79,9 @@ rducks_reject_character_composite_type <- function(token) {
 
 #' Normalize an Rducks type token
 #'
-#' Character input is limited to scalar aliases. Composite, DECIMAL, ENUM, and
-#' UNION types are represented by constructed `rducks_type` objects rather than
-#' quoted type strings.
+#' Character input is limited to canonical scalar tokens such as `i32`, `f64`,
+#' and `varchar`. Composite, DECIMAL, ENUM, and UNION types are represented by
+#' constructed `rducks_type` objects rather than quoted type strings.
 #'
 #' @param x Character scalar scalar-type token or a `rducks_type` object.
 #' @return Canonical scalar token for character input, or the object's wire
@@ -223,24 +122,6 @@ rducks_as_type_list <- function(x) {
     return(lapply(x, rducks_type_object))
   }
   stop("types must be scalar tokens, a rducks_type object, or a list of rducks_type objects", call. = FALSE)
-}
-
-rducks_type_is_composite <- function(x) {
-  inherits(x, "rducks_type") && !identical(rducks_type_kind(x), "scalar")
-}
-
-rducks_type_info <- function(x) {
-  type <- if (inherits(x, "rducks_type")) x else rducks_type_object(x)
-  token <- rducks_type_token(type)
-  out <- rducks_scalar_types$table[[token]] %||% rducks_exotic_scalar_types[[token]] %||% list()
-  out$token <- token
-  out$duckdb_sql <- rducks_type_duckdb_sql(type)
-  out$kind <- rducks_type_kind(type)
-  out$children <- rducks_type_children(type)
-  out$child_names <- rducks_type_child_names(type)
-  out$size <- rducks_type_size(type)
-  out$parameters <- rducks_type_parameters(type)
-  out
 }
 
 rducks_type_scalar_leaves <- function(type) {
@@ -315,86 +196,123 @@ NULL
 #' @rdname rducks_type_objects
 #' @export
 rducks_is_type <- function(x) {
-  if (exists("RDUCKS_type_object_is", inherits = TRUE)) {
-    return(isTRUE(.Call(RDUCKS_type_object_is, x)))
-  }
-  if (!inherits(x, "rducks_type")) {
-    return(FALSE)
-  }
   ok_scalar <- function(value) is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value)
-  ok_scalar(rducks_type_token(x)) &&
-    ok_scalar(rducks_type_duckdb_sql(x)) &&
-    ok_scalar(rducks_type_kind(x)) &&
-    is.list(rducks_type_children(x)) &&
-    is.character(rducks_type_child_names(x)) &&
-    length(rducks_type_child_names(x)) == length(rducks_type_children(x)) &&
-    is.integer(rducks_type_size(x)) && length(rducks_type_size(x)) == 1L &&
-    is.list(rducks_type_parameters(x))
+  ok_names <- function(value) is.character(value) && length(value) > 0L && !anyNA(value) && all(nzchar(value)) && !anyDuplicated(value)
+  rec <- function(x, depth = 0L) {
+    if (depth > 64L || !inherits(x, "rducks_type") || !inherits(x, "S7_object") || !is.list(x)) {
+      return(FALSE)
+    }
+    if (is.null(attr(x, "S7_class", exact = TRUE))) {
+      return(FALSE)
+    }
+    required <- c("token", "duckdb_sql", "kind", "children", "child_names", "size", "parameters")
+    if (!all(required %in% names(x))) {
+      return(FALSE)
+    }
+    for (name in required) {
+      if (!identical(x[[name]], attr(x, name, exact = TRUE))) {
+        return(FALSE)
+      }
+    }
+    token <- x$token
+    duckdb_sql <- x$duckdb_sql
+    kind <- x$kind
+    children <- x$children
+    child_names <- x$child_names
+    size <- x$size
+    parameters <- x$parameters
+    if (!ok_scalar(token) || !ok_scalar(duckdb_sql) || !ok_scalar(kind) ||
+        !is.list(children) || !is.character(child_names) || length(child_names) != length(children) ||
+        !is.integer(size) || length(size) != 1L || !is.list(parameters)) {
+      return(FALSE)
+    }
+    n_children <- length(children)
+    size_value <- size[[1L]]
+    kind_ok <- switch(kind,
+      scalar = n_children == 0L,
+      decimal = {
+        width <- parameters$width
+        scale <- parameters$scale
+        n_children == 0L && is.na(size_value) && is.integer(width) && length(width) == 1L &&
+          is.integer(scale) && length(scale) == 1L && !is.na(width) && !is.na(scale) &&
+          width >= 1L && width <= 38L && scale >= 0L && scale <= width
+      },
+      enum = n_children == 0L && is.na(size_value) && ok_names(parameters$levels),
+      list = n_children == 1L && identical(child_names, "child") && is.na(size_value),
+      array = n_children == 1L && identical(child_names, "child") && !is.na(size_value) && size_value > 0L,
+      struct = n_children > 0L && is.na(size_value) && ok_names(child_names),
+      map = n_children == 2L && identical(child_names, c("key", "value")) && is.na(size_value),
+      union = n_children > 0L && is.na(size_value) && ok_names(child_names),
+      FALSE
+    )
+    isTRUE(kind_ok) && all(vapply(children, rec, logical(1), depth = depth + 1L))
+  }
+  rec(x)
 }
 
 #' @rdname rducks_type_objects
 #' @export
-BOOLEAN <- rducks_type_object("BOOLEAN")
+BOOLEAN <- rducks_type_object("bool")
 #' @rdname rducks_type_objects
 #' @export
-TINYINT <- rducks_type_object("TINYINT")
+TINYINT <- rducks_type_object("i8")
 #' @rdname rducks_type_objects
 #' @export
-UTINYINT <- rducks_type_object("UTINYINT")
+UTINYINT <- rducks_type_object("u8")
 #' @rdname rducks_type_objects
 #' @export
-SMALLINT <- rducks_type_object("SMALLINT")
+SMALLINT <- rducks_type_object("i16")
 #' @rdname rducks_type_objects
 #' @export
-USMALLINT <- rducks_type_object("USMALLINT")
+USMALLINT <- rducks_type_object("u16")
 #' @rdname rducks_type_objects
 #' @export
-INTEGER <- rducks_type_object("INTEGER")
+INTEGER <- rducks_type_object("i32")
 #' @rdname rducks_type_objects
 #' @export
-UINTEGER <- rducks_type_object("UINTEGER")
+UINTEGER <- rducks_type_object("u32")
 #' @rdname rducks_type_objects
 #' @export
-BIGINT <- rducks_type_object("BIGINT")
+BIGINT <- rducks_type_object("i64")
 #' @rdname rducks_type_objects
 #' @export
-UBIGINT <- rducks_type_object("UBIGINT")
+UBIGINT <- rducks_type_object("u64")
 #' @rdname rducks_type_objects
 #' @export
-FLOAT <- rducks_type_object("FLOAT")
+FLOAT <- rducks_type_object("f32")
 #' @rdname rducks_type_objects
 #' @export
-DOUBLE <- rducks_type_object("DOUBLE")
+DOUBLE <- rducks_type_object("f64")
 #' @rdname rducks_type_objects
 #' @export
-VARCHAR <- rducks_type_object("VARCHAR")
+VARCHAR <- rducks_type_object("varchar")
 #' @rdname rducks_type_objects
 #' @export
-BLOB <- rducks_type_object("BLOB")
+BLOB <- rducks_type_object("blob")
 #' @rdname rducks_type_objects
 #' @export
-DATE <- rducks_type_object("DATE")
+DATE <- rducks_type_object("date")
 #' @rdname rducks_type_objects
 #' @export
-TIME <- rducks_type_object("TIME")
+TIME <- rducks_type_object("time")
 #' @rdname rducks_type_objects
 #' @export
-TIMESTAMP <- rducks_type_object("TIMESTAMP")
+TIMESTAMP <- rducks_type_object("timestamp")
 #' @rdname rducks_type_objects
 #' @export
-HUGEINT <- rducks_type_object("HUGEINT")
+HUGEINT <- rducks_type_object("hugeint")
 #' @rdname rducks_type_objects
 #' @export
-UHUGEINT <- rducks_type_object("UHUGEINT")
+UHUGEINT <- rducks_type_object("uhugeint")
 #' @rdname rducks_type_objects
 #' @export
-UUID <- rducks_type_object("UUID")
+UUID <- rducks_type_object("uuid")
 #' @rdname rducks_type_objects
 #' @export
-INTERVAL <- rducks_type_object("INTERVAL")
+INTERVAL <- rducks_type_object("interval")
 #' @rdname rducks_type_objects
 #' @export
-BIT <- rducks_type_object("BIT")
+BIT <- rducks_type_object("bit")
 
 #' @rdname rducks_type_objects
 #' @export
@@ -592,75 +510,9 @@ print.rducks_type_list <- function(x, ...) {
   ARRAY(x, i)
 }
 
-rducks_argument_type_kind <- function(token) {
-  if (inherits(token, "rducks_type")) {
-    return(rducks_type_kind(token))
-  }
-  rducks_type_kind_from_token(token)
-}
-
 rducks_scalar_argument_mapping_row <- function(token) {
   token <- rducks_type_normalize_scalar(token)
-  info <- rducks_scalar_types$table[[token]]
-  spec <- rducks_scalar_argument_mapping_specs[[token]]
-  if (!is.null(info) && !is.null(spec)) {
-    return(data.frame(
-      rducks_type = token,
-      duckdb_sql = info$duckdb,
-      argument_kind = "scalar",
-      r_type = info$r,
-      r_value_passed_to_fun = spec$r_value,
-      sql_null_in_callback = spec$sql_null,
-      copy_semantics = spec$copy,
-      uses_r_double_for_integer = spec$uses_r_double_for_integer,
-      uses_r_double_for_float = spec$uses_r_double_for_float,
-      precision_may_be_lost = spec$precision_may_be_lost,
-      notes = spec$notes,
-      stringsAsFactors = FALSE,
-      check.names = FALSE
-    ))
-  }
-  info <- rducks_exotic_scalar_types[[token]]
-  if (!is.null(info)) {
-    return(data.frame(
-      rducks_type = token,
-      duckdb_sql = info$duckdb,
-      argument_kind = "exotic",
-      r_type = info$r,
-      r_value_passed_to_fun = info$r,
-      sql_null_in_callback = "NULL",
-      copy_semantics = "boxed exact Rducks value object",
-      uses_r_double_for_integer = FALSE,
-      uses_r_double_for_float = FALSE,
-      precision_may_be_lost = FALSE,
-      notes = "exact Rducks value class",
-      stringsAsFactors = FALSE,
-      check.names = FALSE
-    ))
-  }
-  stop("missing scalar argument type mapping for: ", token, call. = FALSE)
-}
-
-rducks_sequence_child_type <- function(token) {
-  if (inherits(token, "rducks_type")) {
-    if (!rducks_type_kind(token) %in% c("list", "array")) {
-      stop("type is not a list or array: ", rducks_type_token(token), call. = FALSE)
-    }
-    return(rducks_type_token(rducks_type_children(token)[[1L]]))
-  }
-  type <- rducks_type_object(token)
-  rducks_sequence_child_type(type)
-}
-
-rducks_map_child_types <- function(token) {
-  if (inherits(token, "rducks_type")) {
-    if (!identical(rducks_type_kind(token), "map")) {
-      stop("type is not a map: ", rducks_type_token(token), call. = FALSE)
-    }
-    return(vapply(rducks_type_children(token), rducks_type_token, character(1)))
-  }
-  type <- rducks_type_object(token)
-  rducks_map_child_types(type)
+  rducks_scalar_type_row(token)
 }
 
 rducks_scalar_vector_description <- function(token, len = NULL) {
@@ -815,23 +667,17 @@ rducks_check_argument_type_mapping <- function(mapping) {
   if (length(missing)) {
     stop("argument type mapping is missing columns: ", paste(missing, collapse = ", "), call. = FALSE)
   }
-  scalar_tokens <- names(rducks_scalar_types$table)
-  spec_tokens <- names(rducks_scalar_argument_mapping_specs)
-  if (!setequal(scalar_tokens, spec_tokens)) {
-    stop("scalar argument type mapping must cover exactly the scalar type table", call. = FALSE)
-  }
-  scalar_rows <- mapping[mapping$argument_kind == "scalar", , drop = FALSE]
-  if (nrow(scalar_rows)) {
-    for (i in seq_len(nrow(scalar_rows))) {
-      token <- scalar_rows$rducks_type[[i]]
-      info <- rducks_scalar_types$table[[token]] %||% rducks_exotic_scalar_types[[token]]
-      if (is.null(info)) {
-        stop("unknown scalar argument type mapping row: ", token, call. = FALSE)
+  if (nrow(mapping)) {
+    for (i in seq_len(nrow(mapping))) {
+      token <- mapping$rducks_type[[i]]
+      if (!token %in% rducks_all_scalar_type_names() || !mapping$argument_kind[[i]] %in% c("scalar", "exotic")) {
+        next
       }
-      if (!identical(scalar_rows$duckdb_sql[[i]], info$duckdb)) {
+      row <- rducks_scalar_type_row(token)
+      if (!identical(mapping$duckdb_sql[[i]], row$duckdb_sql[[1L]])) {
         stop("DuckDB SQL mapping mismatch for scalar type: ", token, call. = FALSE)
       }
-      if (!identical(scalar_rows$r_type[[i]], info$r)) {
+      if (!identical(mapping$r_type[[i]], row$r_type[[1L]])) {
         stop("R type mapping mismatch for scalar type: ", token, call. = FALSE)
       }
     }
@@ -843,7 +689,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #'
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
-#' callback. It is used by registration checks and the Arrow-backed row
+#' callback. It is used by registration checks and the nanoarrow row
 #' marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
@@ -856,8 +702,8 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' where the child type has an R `NA` representation; nested composite `NULL`
 #' values are represented as R `NULL`.
 #'
-#' The default table contains all scalar types supported by the Arrow-backed
-#' row marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
+#' The default table contains all scalar types supported by the nanoarrow row
+#' marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R
 #' callback shapes.
 #'

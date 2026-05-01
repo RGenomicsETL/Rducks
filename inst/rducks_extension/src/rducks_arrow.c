@@ -22,7 +22,7 @@ static int rducks_allocate_arrow_options(duckdb_arrow_options *out_options, int 
         return 1;
     }
 
-    snprintf(err_msg, err_cap, "failed to get DuckDB Arrow options");
+    snprintf(err_msg, err_cap, "failed to get DuckDB Arrow C Data options");
     return 0;
 }
 
@@ -41,13 +41,13 @@ static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs
     if (count > 0) {
         types = (duckdb_logical_type *)calloc(count, sizeof(duckdb_logical_type));
         if (!types) {
-            snprintf(err_msg, err_cap, "out of memory allocating Arrow schema type list");
+            snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema type list");
             return 0;
         }
         for (size_t i = 0; i < count; i++) {
             types[i] = rducks_create_logical_type_for_desc(descs[i]);
             if (!types[i]) {
-                snprintf(err_msg, err_cap, "failed to allocate DuckDB logical type for Arrow schema");
+                snprintf(err_msg, err_cap, "failed to allocate DuckDB logical type for nanoarrow schema");
                 for (size_t j = 0; j < count; j++) {
                     if (types[j]) duckdb_destroy_logical_type(&types[j]);
                 }
@@ -75,7 +75,7 @@ static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create Arrow schema", err_msg, err_cap);
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create Arrow C Data schema", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
             return 0;
         }
@@ -95,7 +95,7 @@ static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta
         if (!names || !owned_names) {
             free(names);
             free(owned_names);
-            snprintf(err_msg, err_cap, "out of memory allocating Arrow schema names");
+            snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema names");
             return 0;
         }
         for (size_t i = 0; i < meta->arity; i++) {
@@ -106,7 +106,7 @@ static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta
                 for (size_t j = 0; j < i; j++) free(owned_names[j]);
                 free(owned_names);
                 free(names);
-                snprintf(err_msg, err_cap, "out of memory allocating Arrow schema name");
+                snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema name");
                 return 0;
             }
             names[i] = owned_names[i];
@@ -147,7 +147,7 @@ static int rducks_fill_input_arrow_array(SEXP array_xptr, duckdb_data_chunk inpu
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to export input chunk to Arrow", err_msg, err_cap);
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to export input chunk to Arrow C Data", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
             return 0;
         }
@@ -193,13 +193,13 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     idx_t result_size;
 
     if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
-        snprintf(err_msg, err_cap, "Rducks Arrow row wrapper must return a nanoarrow_array");
+        snprintf(err_msg, err_cap, "Rducks nanoarrow row wrapper must return a nanoarrow_array");
         return 0;
     }
 
     result_array = nanoarrow_array_from_xptr(result_array_xptr);
     if (result_array->length != (int64_t)expected_size) {
-        snprintf(err_msg, err_cap, "Rducks Arrow callback returned %lld rows, expected %llu",
+        snprintf(err_msg, err_cap, "Rducks nanoarrow callback returned %lld rows, expected %llu",
                  (long long)result_array->length, (unsigned long long)expected_size);
         return 0;
     }
@@ -211,7 +211,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow result schema", err_msg, err_cap);
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow C Data result schema", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
             return 0;
         }
@@ -222,7 +222,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow result chunk", err_msg, err_cap);
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow C Data result chunk", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
             duckdb_destroy_arrow_converted_schema(&converted_schema);
             return 0;
@@ -231,13 +231,13 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     }
 
     if (!result_chunk) {
-        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for Arrow callback result");
+        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for nanoarrow callback result");
         duckdb_destroy_arrow_converted_schema(&converted_schema);
         return 0;
     }
     result_size = duckdb_data_chunk_get_size(result_chunk);
     if (result_size != expected_size) {
-        snprintf(err_msg, err_cap, "DuckDB imported %llu Arrow result rows, expected %llu",
+        snprintf(err_msg, err_cap, "DuckDB imported %llu Arrow C Data result rows, expected %llu",
                  (unsigned long long)result_size, (unsigned long long)expected_size);
         duckdb_destroy_data_chunk(&result_chunk);
         duckdb_destroy_arrow_converted_schema(&converted_schema);
@@ -294,7 +294,7 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
     protect_count++;
 
     if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks Arrow callback or marshal error");
+        snprintf(err_msg, err_cap, "Rducks nanoarrow callback or marshal error");
         goto fail;
     }
 
@@ -302,7 +302,7 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
         if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
             snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
         } else {
-            snprintf(err_msg, err_cap, "Rducks Arrow callback or marshal error");
+            snprintf(err_msg, err_cap, "Rducks nanoarrow callback or marshal error");
         }
         goto fail;
     }

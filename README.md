@@ -6,7 +6,7 @@
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as
 an R package plus a DuckDB extension. The loaded DuckDB extension
 registers callbacks on a DuckDB connection and performs the current
-Arrow-backed row-mode callback bridge.
+nanoarrow row-mode callback bridge over DuckDB Arrow C Data.
 
 ## How it works
 
@@ -27,14 +27,14 @@ When you call `rducks_register()`, Rducks normalizes the declared DuckDB
 type objects, checks that row-mode marshalling is available, and
 preserves the R callback. Registration then crosses back through SQL:
 Rducks calls the extension function `rducks_register_scalar(...)`,
-passing the callback token, type descriptor tokens, and
+passing the callback reference, type descriptor tokens, and
 NULL/exception/side-effect flags. The extension registers one DuckDB
 scalar function implementation and stores the per-UDF metadata in DuckDB
 `extra_info`. During query execution, that generic DuckDB callback
 exports input chunks through the DuckDB Arrow C Data API, calls the
-private nanoarrow row adapter on the main R thread, imports the returned
-Arrow data back into a DuckDB chunk, and attaches the result to the
-DuckDB output vector.
+private nanoarrow row adapter on the calling R thread, imports the
+returned Arrow C Data back into a DuckDB chunk, and attaches the result
+to the DuckDB output vector.
 
 ## Getting started
 
@@ -60,15 +60,16 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 #> 1 42
 ```
 
-`rducks_register()` returns an `rducks_registration` object. Keep it if
-you want to soft-unregister the UDF later with
-`rducks_unregister(reg_plus_one)`.
+`rducks_register()` returns an `rducks_registration` object that records
+the connection, normalized signature, and registration options. You do
+not need to keep this object for the UDF to keep working in DuckDB.
 
 The implemented mode is `mode = "row"`, which calls the R function once
-per row. Internally this row adapter is already Arrow/nanoarrow-backed:
-DuckDB chunks are exported to Arrow, adapted to row calls in R, then
-imported back to DuckDB. Future batch/chunk modes will be added only
-when they actually invoke callbacks once per batch or chunk.
+per row. Internally this row adapter is already nanoarrow-backed over
+DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data,
+adapted to row calls in R, then imported back to DuckDB. Future
+batch/chunk modes will be added only when they actually invoke callbacks
+once per batch or chunk.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
@@ -114,9 +115,9 @@ ordinary R values against those descriptors before marshalling.
 The table below is produced by `rducks_mode_semantics()`. Only `row` is
 public and implemented now.
 
-| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                                                                   | copy_semantics                                                                                               |
-|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
-| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback |
+| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                                                                   | copy_semantics                                                                                                                |
+|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------|
+| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow row adapter materializes one R row value per callback |
 
 ## Type descriptors
 
@@ -147,10 +148,10 @@ Expand for argument values passed to R functions
 </summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()`
-helper and reflects the currently implemented Arrow-backed row
-marshalling path. With `null_handling = "default"`, any top-level SQL
-`NULL` input makes DuckDB return SQL `NULL` without calling the R
-callback. The `SQL NULL in callback` column below applies when
+helper and reflects the currently implemented nanoarrow row marshalling
+path. With `null_handling = "default"`, any top-level SQL `NULL` input
+makes DuckDB return SQL `NULL` without calling the R callback. The
+`SQL NULL in callback` column below applies when
 `null_handling = "special"`. It is type-specific: ordinary R scalar
 types receive typed `NA` values, while exact/exotic value classes,
 binary values, and top-level composite values receive R `NULL`. Within
@@ -167,8 +168,8 @@ nested composite `NULL` values are represented as R `NULL`.
 | `USMALLINT`                          | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
 | `INTEGER`                            | integer         | integer(1)                                             | NA_integer\_          | boxed scalar                    |                                                                  |
 | `UINTEGER`                           | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    | R double                                                         |
-| `BIGINT`                             | rducks_bigint   | rducks_bigint scalar                                   | NULL                  | boxed exact Rducks value object | exact signed 64-bit integer string                               |
-| `UBIGINT`                            | rducks_ubigint  | rducks_ubigint scalar                                  | NULL                  | boxed exact Rducks value object | exact unsigned 64-bit integer string                             |
+| `BIGINT`                             | rducks_bigint   | rducks_bigint scalar                                   | NULL                  | boxed scalar                    | exact signed 64-bit integer string                               |
+| `UBIGINT`                            | rducks_ubigint  | rducks_ubigint scalar                                  | NULL                  | boxed scalar                    | exact unsigned 64-bit integer string                             |
 | `FLOAT`                              | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    | widened to R double                                              |
 | `DOUBLE`                             | numeric         | numeric(1)                                             | NA_real\_             | boxed scalar                    |                                                                  |
 | `VARCHAR`                            | character       | character(1)                                           | NA_character\_        | string copied into R            | string copied into R                                             |
@@ -383,33 +384,6 @@ dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 #> 3 0.5728534
 ```
 
-## Soft unregistering
-
-DuckDB currently exposes extension scalar functions as internal catalog
-entries, so `DROP FUNCTION` cannot remove them. `rducks_unregister()`
-replaces the UDF overload with an inactive stub and releases Rducks’
-R-side callback reference.
-
-``` r
-reg_temp <- rducks_register(
-  con,
-  name = "r_temp",
-  fun = function(x) x + 1L,
-  args = INTEGER,
-  returns = INTEGER
-)
-
-dbGetQuery(con, "SELECT r_temp(1::INTEGER) AS x")
-#>   x
-#> 1 2
-rducks_unregister(reg_temp)
-tryCatch(
-  dbGetQuery(con, "SELECT r_temp(1::INTEGER) AS x"),
-  error = function(e) conditionMessage(e)
-)
-#> [1] "Invalid Error: Invalid Input Error: Rducks UDF r_temp has been unregistered\nℹ Context: rapi_execute\nℹ Error type: INVALID"
-```
-
 ## Build notes
 
 The package builds its DuckDB extension during installation using
@@ -422,7 +396,7 @@ DuckDB C API headers are refreshed explicitly with:
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 ```
 
-The Arrow path requires DuckDB’s unstable C extension API, so the
-extension metadata uses `C_STRUCT_UNSTABLE` and must match the bundled
-DuckDB header/runtime version. See `docs/BUILD.md` for the extension
-build and metadata details.
+The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API,
+so the extension metadata uses `C_STRUCT_UNSTABLE` and must match the
+bundled DuckDB header/runtime version. See `docs/BUILD.md` for the
+extension build and metadata details.

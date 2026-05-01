@@ -5,6 +5,7 @@
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,16 +14,6 @@
 #else
 #include <pthread.h>
 #endif
-
-SEXP RDUCKS_callback_register(SEXP fun);
-SEXP RDUCKS_callback_close(SEXP xptr);
-SEXP RDUCKS_callback_invoke(SEXP xptr, SEXP args);
-SEXP RDUCKS_pump(void);
-SEXP RDUCKS_callback_fun_addr(SEXP xptr);
-SEXP RDUCKS_type_object_new(SEXP token, SEXP duckdb_sql, SEXP kind, SEXP children,
-                            SEXP child_names, SEXP size, SEXP parameters,
-                            SEXP s7_class, SEXP class_vector);
-SEXP RDUCKS_type_object_is(SEXP x);
 
 SEXP RDUCKS_current_thread_token(void) {
     char buf[128];
@@ -42,14 +33,14 @@ SEXP RDUCKS_current_thread_token(void) {
     return Rf_mkString(buf);
 }
 
+SEXP RDUCKS_sexp_addr(SEXP x) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)(uintptr_t)x);
+    return Rf_mkString(buf);
+}
+
 static const R_CallMethodDef CallEntries[] = {
-    {"RDUCKS_callback_register", (DL_FUNC) &RDUCKS_callback_register, 1},
-    {"RDUCKS_callback_close",    (DL_FUNC) &RDUCKS_callback_close,    1},
-    {"RDUCKS_callback_invoke",   (DL_FUNC) &RDUCKS_callback_invoke,   2},
-    {"RDUCKS_pump",              (DL_FUNC) &RDUCKS_pump,              0},
-    {"RDUCKS_callback_fun_addr", (DL_FUNC) &RDUCKS_callback_fun_addr, 1},
-    {"RDUCKS_type_object_new",   (DL_FUNC) &RDUCKS_type_object_new,   9},
-    {"RDUCKS_type_object_is",    (DL_FUNC) &RDUCKS_type_object_is,    1},
+    {"RDUCKS_sexp_addr", (DL_FUNC) &RDUCKS_sexp_addr, 1},
     {"RDUCKS_current_thread_token", (DL_FUNC) &RDUCKS_current_thread_token, 0},
     {NULL, NULL, 0}
 };

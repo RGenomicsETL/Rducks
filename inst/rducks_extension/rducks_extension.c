@@ -96,10 +96,6 @@ typedef struct rducks_r_scalar_meta {
     rducks_exception_handling_t exception_handling;
 } rducks_r_scalar_meta_t;
 
-typedef struct rducks_inactive_scalar_meta {
-    char *name;
-} rducks_inactive_scalar_meta_t;
-
 static duckdb_database g_database = NULL;
 static duckdb_connection g_connection = NULL;
 static int g_registration_surface_ready = 0;

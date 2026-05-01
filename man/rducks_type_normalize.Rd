@@ -14,7 +14,7 @@ Canonical scalar token for character input, or the object's wire
 token for a \code{rducks_type}.
 }
 \description{
-Character input is limited to scalar aliases. Composite, DECIMAL, ENUM, and
-UNION types are represented by constructed \code{rducks_type} objects rather than
-quoted type strings.
+Character input is limited to canonical scalar tokens such as \code{i32}, \code{f64},
+and \code{varchar}. Composite, DECIMAL, ENUM, and UNION types are represented by
+constructed \code{rducks_type} objects rather than quoted type strings.
 }

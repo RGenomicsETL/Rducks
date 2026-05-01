@@ -11,7 +11,7 @@ Rducks builds its own small DuckDB extension during R package installation.
 
 There is no external DuckDB extension dependency and no runtime code-generation
 dependency. Current row callbacks are handled by the Rducks extension using
-DuckDB chunk-to-Arrow APIs and nanoarrow.
+DuckDB Arrow C Data APIs and nanoarrow.
 
 ## Header vendoring
 
@@ -56,8 +56,8 @@ native object/shared-library leftovers.
 
 ## Unstable DuckDB C API and metadata
 
-Rducks uses DuckDB's unstable C extension API because the current Arrow-backed
-row path calls API members that are behind `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`,
+Rducks uses DuckDB's unstable C extension API because the current DuckDB Arrow C
+Data row path calls API members that are behind `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`,
 including `duckdb_data_chunk_to_arrow()`, `duckdb_data_chunk_from_arrow()`,
 `duckdb_to_arrow_schema()`, and `duckdb_schema_from_arrow()`.
 
@@ -76,10 +76,11 @@ This adds compile flags like:
 ```
 
 Unlike DuckDB's CMake/extension-ci-tools flow, Rducks appends its own metadata
-footer with `tools/append_extension_metadata.R`. Because the Arrow path uses
-unstable function-pointer slots, the footer must advertise `C_STRUCT_UNSTABLE`.
-A stable `C_STRUCT` footer is not a compatibility workaround here: it can cause
-DuckDB to validate the extension against the stable v1.2 C extension struct while
-Rducks calls newer Arrow entries. `C_STRUCT_UNSTABLE` intentionally makes the
+footer with `tools/append_extension_metadata.R`. Because the DuckDB Arrow C Data
+path uses unstable function-pointer slots, the footer must advertise
+`C_STRUCT_UNSTABLE`. A stable `C_STRUCT` footer is not a compatibility workaround
+here: it can cause DuckDB to validate the extension against the stable v1.2 C
+extension struct while Rducks calls newer DuckDB Arrow C Data entries.
+`C_STRUCT_UNSTABLE` intentionally makes the
 loader require the exact DuckDB version recorded in
 `inst/rducks_extension/duckdb_capi/duckdb_headers.json`.

@@ -15,10 +15,10 @@ R functions as DuckDB UDFs.
    - stores per-UDF metadata in `extra_info`
    - exposes one generic DuckDB scalar callback per execution family
    - exports/imports chunks through DuckDB Arrow C Data APIs
-   - manages a synchronous main-R-thread queue for worker-thread callback requests
+   - manages a synchronous calling-R-thread queue for worker-thread callback requests
 
-3. **Arrow/nanoarrow bridge layer**
-   - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow APIs
+3. **nanoarrow bridge layer**
+   - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow C Data APIs
    - typed Rducks conversion rules for exact/exotic values
    - row adapter that invokes the R callback once per DuckDB row
 
@@ -31,23 +31,20 @@ DuckDB
       -> DuckDB chunk -> Arrow C Data export
       -> nanoarrow-backed row adapter on the calling R thread
       -> queued synchronous request if on a DuckDB worker
-      -> main thread drains queued requests without workers touching the R API
+      -> calling R thread drains queued requests without workers touching the R API
       -> Arrow C Data -> DuckDB chunk import
 ```
 
 ## Pump model
 
 A DuckDB worker must never call R directly. Worker paths enqueue a native request
-and wait. A main-thread pump drains requests, calls R with error containment,
-writes the native result slot, then signals the waiting worker.
+and wait. The calling-R-thread pump drains requests, calls R with error
+containment, writes the native result slot, then signals the waiting worker.
 
-Current pump triggers are deliberately narrow:
-
-- direct main-thread UDF entry/exit drains queued worker requests
-- explicit `rducks_pump()` remains a public hook for package-local requests
-
-Future hooks can add DuckDB progress callbacks or input-handler fallbacks once
-those paths are proven under blocking UDF loads.
+Current pump triggers are deliberately narrow: direct calling-R-thread UDF
+entry/exit drains queued worker requests. Future hooks can add DuckDB progress
+callbacks or input-handler fallbacks once those paths are proven under blocking
+UDF loads.
 
 ## First safe mode
 
@@ -68,11 +65,11 @@ signals the waiting worker after the output vector has been filled. Broader
 multi-threaded sync UDF support still needs stress testing under blocking UDF
 loads before being documented as stable.
 
-## Arrow/nanoarrow direction and lifetime model
+## nanoarrow direction and lifetime model
 
-Rducks should follow the Arrow PyCapsule ownership pattern in R terms: use named
+Rducks should follow Arrow C Data ownership rules in R terms: use named
 `externalptr` objects, explicit owner/protected slots, idempotent finalizers, and
-move-only consumption. A worker-to-main request that carries Arrow data should
+move-only consumption. A worker-to-main request that carries Arrow C Data should
 answer four questions at every boundary:
 
 - who owns the `ArrowArray`/`ArrowSchema`/request object now
@@ -81,17 +78,17 @@ answer four questions at every boundary:
 - who nulls `release` after the object has been consumed by DuckDB or R
 
 Borrowed DuckDB chunk views must not outlive the DuckDB callback stack that
-created them. If a future pump allows the worker to return before the main R
-thread has consumed the input, the request must copy into owned Arrow buffers
+created them. If a future pump allows the worker to return before the calling R
+thread has consumed the input, the request must copy into owned nanoarrow buffers
 instead of exporting a borrowed view.
 
-Rducks uses the in-process Arrow C Data Interface for the row adapter and should
-reuse it for any future batch UDFs:
+Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for the row
+adapter and should reuse that path for any future batch UDFs:
 
 - `ArrowArray`
 - `ArrowSchema`
 - `ArrowArrayStream`
 
 This is distinct from Arrow IPC, which is for transport/storage rather than the
-zero-copy in-process path. The R package may use the optional `nanoarrow` package
-for R-side pointer objects and ownership helpers.
+zero-copy in-process path. The R package uses `nanoarrow` for R-side pointer
+objects and ownership helpers; it does not depend on the R `arrow` package.

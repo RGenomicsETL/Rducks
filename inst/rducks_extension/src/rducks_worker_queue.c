@@ -112,35 +112,14 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
     if (meta->fun && meta->fun != R_NilValue && rducks_is_main_thread()) {
         R_ReleaseObject(meta->fun);
     }
-    /* Without the future main-thread pump, an off-main DuckDB destructor cannot
-     * safely call R_ReleaseObject(). Prefer a preserved-object leak over an
-     * unsafe off-main R API call. */
+    /* Without a calling-R-thread release queue, an off-main DuckDB destructor
+     * cannot safely call R_ReleaseObject(). Prefer a preserved-object leak over
+     * an unsafe off-main R API call. */
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
     }
     free(meta->args);
     rducks_type_desc_destroy(meta->return_desc);
     free(meta);
-}
-
-static void rducks_inactive_scalar_meta_destroy(void *ptr) {
-    rducks_inactive_scalar_meta_t *meta = (rducks_inactive_scalar_meta_t *)ptr;
-    if (!meta) return;
-    free(meta->name);
-    free(meta);
-}
-
-static void rducks_inactive_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    (void)input;
-    (void)output;
-    rducks_inactive_scalar_meta_t *meta =
-        (rducks_inactive_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
-    char err[256];
-    if (meta && meta->name) {
-        snprintf(err, sizeof(err), "Rducks UDF %s has been unregistered", meta->name);
-    } else {
-        snprintf(err, sizeof(err), "Rducks UDF has been unregistered");
-    }
-    duckdb_scalar_function_set_error(info, err);
 }
 

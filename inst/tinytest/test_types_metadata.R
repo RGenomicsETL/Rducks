@@ -1,6 +1,7 @@
 library(Rducks)
 
-expect_equal(rducks_type_normalize("integer"), "i32")
+expect_equal(rducks_type_normalize("i32"), "i32")
+expect_error(rducks_type_normalize("integer"), "unsupported scalar")
 expect_equal(rducks_type_normalize(INTEGER), "i32")
 expect_equal(rducks_type_normalize(INTEGER[]), "list<i32>")
 expect_equal(rducks_type_normalize(INTEGER[3]), "i32[3]")
