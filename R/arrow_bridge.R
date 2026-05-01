@@ -884,8 +884,15 @@ S7::method(rducks_arrow_scalar_array_to_values, rducks_date_type_class) <- funct
   nanoarrow::convert_array(array, to = as.Date(character()))
 }
 
+rducks_arrow_time_array_to_values <- function(array) {
+  micros <- rducks_arrow_fixed_width_array_to_decimal(array, 8L, signed = TRUE)
+  out <- as.numeric(micros) / 1000000
+  out[is.na(micros)] <- NA_real_
+  out
+}
+
 S7::method(rducks_arrow_scalar_array_to_values, rducks_time_type_class) <- function(type, array, schema = NULL) {
-  as.numeric(nanoarrow::convert_array(array))
+  rducks_arrow_time_array_to_values(array)
 }
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_timestamp_type_class) <- function(type, array, schema = NULL) {
