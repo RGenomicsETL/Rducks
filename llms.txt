@@ -15,9 +15,10 @@ row-mode callback execution.
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
 bundled `rducks.duckdb_extension` into that DuckDB connection and
 explicitly sets `external_threads=1` plus `PRAGMA threads=1`. Current
-row-mode R callbacks call back into R directly, so callbacks must
-execute on the calling R thread until the future main-thread pump is
-implemented.
+row-mode R callbacks call back into R on the calling R thread. If DuckDB
+later runs UDF chunks on worker threads, the extension queues those
+callback requests back to the calling R thread instead of touching the R
+API from the worker.
 
 When you call
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
@@ -87,12 +88,12 @@ supported child types. The default `mode = "row"` calls R once per row.
 Registration also supports `null_handling`, `exception_handling`, and
 `side_effects` controls.
 
-Direct R callbacks require DuckDB to execute callbacks on the calling R
+Direct R callbacks require the R API work to happen on the calling R
 thread, so call `rducks_enable(con, threads = "single")` or set
 `external_threads=1` and `PRAGMA threads=1` before registering R UDFs.
-Rducks checks this at registration time and the native extension also
-checks the execution thread before each direct R callback, refusing to
-call R from a DuckDB worker thread.
+Rducks checks this at registration time. During execution, worker-thread
+UDF chunks are queued back to the calling R thread and drained there
+before results are written back to DuckDB.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values:
