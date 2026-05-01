@@ -40,9 +40,9 @@ ordinary scalar types and \code{NULL} for exact/exotic, binary, and composite
 values).}
 
 \item{exception_handling}{Either \code{"rethrow"} to report R errors to DuckDB, or
-\code{"return_null"} to turn callback errors into SQL NULL values.}
+\code{"return_null"} to turn R errors into SQL NULL values.}
 
-\item{side_effects}{Logical scalar. Use \code{TRUE} for callbacks with randomness,
+\item{side_effects}{Logical scalar. Use \code{TRUE} for functions with randomness,
 counters, I/O, mutation, or other side effects so DuckDB does not treat the
 function as pure.}
 }

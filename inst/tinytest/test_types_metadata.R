@@ -57,7 +57,7 @@ expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "u64"], "rducks
 expect_equal(rducks_duckdb_types(scalar_mapping$rducks_type), scalar_mapping$duckdb_sql)
 expect_true(all(c(
   "rducks_type", "duckdb_sql", "argument_kind", "r_type",
-  "r_value_passed_to_fun", "sql_null_in_callback", "copy_semantics",
+  "r_value_passed_to_fun", "sql_null_in_function", "copy_semantics",
   "uses_r_double_for_integer", "uses_r_double_for_float", "precision_may_be_lost",
   "notes"
 ) %in% names(scalar_mapping)))

@@ -14,7 +14,7 @@ rducks_extension_path <- function() {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the bundled Rducks DuckDB extension. The current direct R callback
+#' Loads the bundled Rducks DuckDB extension. The current direct R function
 #' execution mode requires R API work to happen on the calling R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
 #' explicitly for registration. During execution, worker-thread UDF chunks are
@@ -43,7 +43,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
       sprintf("SELECT rducks_set_main_thread_token(%s) AS ok", rducks_sql_string(main_thread_token))
     )$ok[[1L]]
     if (!isTRUE(ok)) {
-      stop("failed to initialize Rducks main-thread callback guard", call. = FALSE)
+      stop("failed to initialize Rducks main-thread guard", call. = FALSE)
     }
   }
 
@@ -81,7 +81,7 @@ rducks_assert_single_thread <- function(con) {
   external_threads <- rducks_connection_external_threads(con)
   if (!identical(threads, 1L) || !identical(external_threads, 1L)) {
     stop(
-      "direct Rducks callbacks require DuckDB to execute callbacks on the calling R thread; ",
+      "direct Rducks functions require DuckDB to execute R code on the calling R thread; ",
       "call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 ",
       "before registering R UDFs",
       call. = FALSE

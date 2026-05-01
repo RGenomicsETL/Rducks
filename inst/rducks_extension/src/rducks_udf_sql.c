@@ -12,7 +12,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
     duckdb_state rc;
-    if (!rducks_allow_direct_r_callback(err, err_cap)) {
+    if (!rducks_allow_direct_r_execution(err, err_cap)) {
         return false;
     }
     if (!g_connection || !name || !name[0] || !Rf_isFunction(fun)) {

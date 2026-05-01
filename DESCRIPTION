@@ -8,7 +8,7 @@ Authors@R: c(
 Description: R package and DuckDB extension bridge for registering R functions
     as DuckDB user-defined functions. The package is designed around
     a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar
-    marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue
+    marshalling over DuckDB Arrow C Data, and a calling-R-thread execution queue
     for safe interaction with R from DuckDB execution.
 License: GPL (>= 3)
 Encoding: UTF-8

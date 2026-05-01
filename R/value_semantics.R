@@ -7,8 +7,8 @@ rducks_value_semantics_scalar <- function(type) {
     duckdb_sql = rducks_type_duckdb_sql(type),
     kind = rducks_type_kind(type),
     r_type = input_mapping$r_type[[1L]],
-    sql_null_input_default = "short-circuit to SQL NULL result; callback is not called",
-    sql_null_input_special = input_mapping$sql_null_in_callback[[1L]],
+    sql_null_input_default = "short-circuit to SQL NULL result; R function is not called",
+    sql_null_input_special = input_mapping$sql_null_in_function[[1L]],
     sql_nan_inf_input = "not representable for this DuckDB type",
     r_null_return = "SQL NULL",
     r_na_return = "SQL NULL when represented by the declared R type",
@@ -52,7 +52,7 @@ rducks_value_semantics_scalar <- function(type) {
       r_na_return = "NA_real_ -> SQL NULL",
       r_nan_return = "preserved as DuckDB NaN",
       r_inf_return = "preserved as DuckDB +/-Inf",
-      binary_ops = "ordinary R numeric semantics in the callback",
+      binary_ops = "ordinary R numeric semantics in the R function",
       error_semantics = "NA is NULL; NaN and Inf are valid FLOAT values"
     ),
     f64 = list(
@@ -60,7 +60,7 @@ rducks_value_semantics_scalar <- function(type) {
       r_na_return = "NA_real_ -> SQL NULL",
       r_nan_return = "preserved as DuckDB NaN",
       r_inf_return = "preserved as DuckDB +/-Inf",
-      binary_ops = "ordinary R numeric semantics in the callback",
+      binary_ops = "ordinary R numeric semantics in the R function",
       error_semantics = "NA is NULL; NaN and Inf are valid DOUBLE values"
     ),
     varchar = list(
@@ -137,8 +137,8 @@ rducks_value_semantics_constructed <- function(type) {
     duckdb_sql = rducks_type_duckdb_sql(type),
     kind = kind,
     r_type = input_mapping$r_type[[1L]],
-    sql_null_input_default = "short-circuit to SQL NULL result; callback is not called",
-    sql_null_input_special = input_mapping$sql_null_in_callback[[1L]],
+    sql_null_input_default = "short-circuit to SQL NULL result; R function is not called",
+    sql_null_input_special = input_mapping$sql_null_in_function[[1L]],
     sql_nan_inf_input = "recursive: only FLOAT/DOUBLE children can carry NaN/Inf",
     r_null_return = "SQL NULL for the top-level value; nested NULLs map recursively",
     r_na_return = "recursive child semantics",
@@ -223,8 +223,8 @@ rducks_value_semantics_empty <- function() {
 #' contract close to the type descriptors used by the marshaller.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
-#' to SQL `NULL` and the R callback is not called. The
-#' `sql_null_input_special` column describes what the callback receives with
+#' to SQL `NULL` and the R R function is not called. The
+#' `sql_null_input_special` column describes what the R function receives with
 #' `null_handling = "special"`.
 #'
 #' Return semantics are stated from R back to DuckDB. In scalar mode, top-level

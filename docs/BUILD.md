@@ -10,7 +10,7 @@ Rducks builds its own small DuckDB extension during R package installation.
 - `tools/append_extension_metadata.R`
 
 There is no external DuckDB extension dependency and no runtime code-generation
-dependency. Current scalar callbacks are handled by the Rducks extension using
+dependency. Current scalar R functions are handled by the Rducks extension using
 DuckDB Arrow C Data APIs and nanoarrow.
 
 ## Header vendoring

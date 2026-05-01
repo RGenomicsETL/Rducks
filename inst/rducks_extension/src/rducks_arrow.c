@@ -199,7 +199,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
 
     result_array = nanoarrow_array_from_xptr(result_array_xptr);
     if (result_array->length != (int64_t)expected_size) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow callback returned %lld rows, expected %llu",
+        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar adapter returned %lld rows, expected %llu",
                  (long long)result_array->length, (unsigned long long)expected_size);
         return 0;
     }
@@ -231,7 +231,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     }
 
     if (!result_chunk) {
-        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for nanoarrow callback result");
+        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for nanoarrow scalar result");
         duckdb_destroy_arrow_converted_schema(&converted_schema);
         return 0;
     }
@@ -294,7 +294,7 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
     protect_count++;
 
     if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow callback or marshal error");
+        snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
         goto fail;
     }
 
@@ -302,7 +302,7 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
         if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
             snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
         } else {
-            snprintf(err_msg, err_cap, "Rducks nanoarrow callback or marshal error");
+            snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
         }
         goto fail;
     }
@@ -325,7 +325,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     if (rducks_is_main_thread()) {
         rducks_drain_worker_requests();
         if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
-            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar callback failed");
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
             return;
         }
         rducks_drain_worker_requests();
@@ -338,7 +338,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     req.output = output;
     rducks_request_enqueue_and_wait(&req);
     if (!req.ok) {
-        duckdb_scalar_function_set_error(info, req.err[0] ? req.err : "Rducks main-thread callback request failed");
+        duckdb_scalar_function_set_error(info, req.err[0] ? req.err : "Rducks main-thread R execution request failed");
     }
 }
 

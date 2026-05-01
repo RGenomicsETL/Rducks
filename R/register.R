@@ -37,8 +37,8 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
 #'   ordinary scalar types and `NULL` for exact/exotic, binary, and composite
 #'   values).
 #' @param exception_handling Either `"rethrow"` to report R errors to DuckDB, or
-#'   `"return_null"` to turn callback errors into SQL NULL values.
-#' @param side_effects Logical scalar. Use `TRUE` for callbacks with randomness,
+#'   `"return_null"` to turn R errors into SQL NULL values.
+#' @param side_effects Logical scalar. Use `TRUE` for functions with randomness,
 #'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
 #'   function as pure.
 #' @return Object of class `rducks_registration` containing the connection,

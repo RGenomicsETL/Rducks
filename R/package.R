@@ -4,8 +4,8 @@
 #' functions as DuckDB user-defined functions.
 #'
 #' The design keeps the DuckDB extension as the canonical execution surface and
-#' uses R for ergonomic registration, callback lifetime management, and scalar
-#' callback execution over DuckDB chunks.
+#' uses R for ergonomic registration, R function lifetime management, and scalar
+#' function execution over DuckDB chunks.
 #'
 #' @keywords internal
 "_PACKAGE"

@@ -2,7 +2,7 @@
 % Please edit documentation in R/types.R
 \name{rducks_argument_type_mapping}
 \alias{rducks_argument_type_mapping}
-\title{Describe how Rducks argument values are passed to R callbacks}
+\title{Describe how Rducks argument values are passed to R functions}
 \usage{
 rducks_argument_type_mapping(x = NULL)
 }
@@ -19,13 +19,13 @@ A data frame with one row per requested type token.
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
-callback. It is used by registration checks and the nanoarrow scalar
+function call. It is used by registration checks and the nanoarrow scalar
 marshalling adapter.
 }
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
-to a SQL \code{NULL} result and the R callback is not called. The
-\code{sql_null_in_callback} column describes the value passed only when
+to a SQL \code{NULL} result and the R function is not called. The
+\code{sql_null_in_function} column describes the value passed only when
 \code{null_handling = "special"}. This value is type-specific: ordinary R scalar
 types receive typed \code{NA} values, while exact/exotic value classes, binary
 values, and top-level composite values receive R \code{NULL}. Within homogeneous
@@ -36,5 +36,5 @@ values are represented as R \code{NULL}.
 The default table contains all scalar types supported by the nanoarrow scalar
 marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
 descriptors can be requested explicitly to inspect their recursive R
-callback shapes.
+R function shapes.
 }

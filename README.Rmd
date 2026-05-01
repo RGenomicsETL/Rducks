@@ -17,30 +17,30 @@ library(Rducks)
 # Rducks
 
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R
-package plus a DuckDB extension. The loaded DuckDB extension registers callbacks
-on a DuckDB connection and performs the current nanoarrow scalar-mode callback
+package plus a DuckDB extension. The loaded DuckDB extension registers R functions
+on a DuckDB connection and performs the current nanoarrow scalar-mode execution
 bridge over DuckDB Arrow C Data.
 
 ## How it works
 
-Rducks has two native boundaries: an R package that owns callback lifetime and
+Rducks has two native boundaries: an R package that owns R function lifetime and
 registration ergonomics, and a loaded DuckDB extension that owns SQL function
-registration, DuckDB chunk access, and current scalar-mode callback execution.
+registration, DuckDB chunk access, and current scalar-mode R function execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the bundled
 `rducks.duckdb_extension` into that DuckDB connection and explicitly sets
-`external_threads=1` plus `PRAGMA threads=1`. Current scalar-mode R callbacks
-call back into R on the calling R thread. If DuckDB later runs UDF chunks on worker
-threads, the extension queues those callback requests back to the calling R
-thread instead of touching the R API from the worker.
+`external_threads=1` plus `PRAGMA threads=1`. This is a constraint of R's C API:
+Rducks keeps all R API work on the calling R thread. If DuckDB later runs UDF
+chunks on worker threads, the extension queues those R execution requests back to
+the calling R thread instead of touching the R API from the worker.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB type
 objects, checks that scalar-mode marshalling is available, and preserves the R
-callback. Registration then crosses back through SQL: Rducks calls the extension
-function `rducks_register_scalar(...)`, passing the callback reference, type
+function. Registration then crosses back through SQL: Rducks calls the extension
+function `rducks_register_scalar(...)`, passing the R function reference, type
 descriptor tokens, and NULL/exception/side-effect flags. The extension registers
 one DuckDB scalar function implementation and stores the per-UDF metadata in
-DuckDB `extra_info`. During query execution, that generic DuckDB callback exports
+DuckDB `extra_info`. During query execution, that generic DuckDB scalar-function entry point exports
 input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow
 scalar adapter on the calling R thread, imports the returned Arrow C Data back
 into a DuckDB chunk, and attaches the result to the DuckDB output vector.
@@ -95,17 +95,17 @@ outputs are accepted as constructed type objects such as `TYPE[]`, `TYPE[N]`,
 default `mode = "scalar"` calls R once per DuckDB row. Registration also supports
 `null_handling`, `exception_handling`, and `side_effects` controls.
 
-Direct R callbacks require the R API work to happen on the calling R thread, so
-call `rducks_enable(con, threads = "single")` or set `external_threads=1` and
+Direct R functions require R API work to happen on the calling R thread. This is
+R's thread-affinity rule, not a DuckDB data-race issue. Call
+`rducks_enable(con, threads = "single")` or set `external_threads=1` and
 `PRAGMA threads=1` before registering R UDFs. Rducks checks this at registration
-time. During execution, worker-thread UDF chunks are queued back to the calling R
-thread and drained there before results are written back to DuckDB.
+time.
 
 Rducks also provides explicit R value classes for exact or DuckDB-specific
 values: `rducks_bigint()`, `rducks_ubigint()`, `rducks_uuid()`,
 `rducks_interval()`, `rducks_decimal()`, `rducks_hugeint()`,
 `rducks_uhugeint()`, `rducks_bits()`, `rducks_enum()`, and `rducks_union()`.
-These classes preserve exact representation at the scalar-mode callback boundary.
+These classes preserve exact representation at the scalar-mode R function boundary.
 Constructed DuckDB type objects are formal S7-backed
 Rducks descriptors with native structural checks via `rducks_is_type()`.
 Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals,
@@ -161,7 +161,7 @@ rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))
 The table is produced by the exported `rducks_argument_type_mapping()` helper
 and reflects the currently implemented nanoarrow scalar marshalling path. With
 `null_handling = "default"`, any top-level SQL `NULL` input makes DuckDB return
-SQL `NULL` without calling the R callback. The `SQL NULL in callback` column
+SQL `NULL` without calling the R function. The `SQL NULL in function` column
 below applies when `null_handling = "special"`. It is type-specific: ordinary
 R scalar types receive typed `NA` values, while exact/exotic value classes,
 binary values, and top-level composite values receive R `NULL`. Within
@@ -187,7 +187,7 @@ knitr::kable(
     argument_type = paste0("`", argument_type_mapping$duckdb_sql, "`"),
     r_type = argument_type_mapping$r_type,
     r_value_passed_to_fun = argument_type_mapping$r_value_passed_to_fun,
-    sql_null_in_callback = argument_type_mapping$sql_null_in_callback,
+    sql_null_in_function = argument_type_mapping$sql_null_in_function,
     copy_semantics = argument_type_mapping$copy_semantics,
     notes = argument_type_mapping$notes,
     check.names = FALSE
@@ -314,7 +314,7 @@ dbGetQuery(con, paste(
 ## NULL handling
 
 By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL `NULL`,
-the R callback is not called and the SQL result is `NULL`.
+the R function is not called and the SQL result is `NULL`.
 
 Use `null_handling = "special"` to pass the type-specific missing value shown
 in `rducks_argument_type_mapping()` to the R function for SQL `NULL` inputs.
@@ -336,7 +336,7 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 
 ## Exceptions and side effects
 
-Set `exception_handling = "return_null"` to turn callback errors into SQL
+Set `exception_handling = "return_null"` to turn R errors into SQL
 `NULL`.
 
 ```{r exception-handling}
@@ -352,7 +352,7 @@ reg_error_null <- rducks_register(
 dbGetQuery(con, "SELECT r_error_null(1::INTEGER) AS x")
 ```
 
-Set `side_effects = TRUE` for callbacks with counters, randomness, I/O, or
+Set `side_effects = TRUE` for functions with counters, randomness, I/O, or
 mutation so DuckDB reruns the function for each row.
 
 ```{r side-effects}

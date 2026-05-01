@@ -8,9 +8,9 @@ static int rducks_is_main_thread(void) {
     return strcmp(current, expected) == 0;
 }
 
-static int rducks_allow_direct_r_callback(char *err, size_t err_cap) {
+static int rducks_allow_direct_r_execution(char *err, size_t err_cap) {
     if (!rducks_is_main_thread()) {
-        snprintf(err, err_cap, "direct Rducks callbacks reached a non-main DuckDB execution thread");
+        snprintf(err, err_cap, "direct Rducks R execution reached a non-main DuckDB execution thread");
         return 0;
     }
     return 1;

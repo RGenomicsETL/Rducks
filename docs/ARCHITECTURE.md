@@ -7,26 +7,26 @@ R functions as DuckDB UDFs.
 
 1. **R wrapper layer**
    - validates user-facing registration calls
-   - preserves R callback functions
+   - preserves R functions
    - loads/enables the DuckDB extension on a connection
 
 2. **DuckDB extension layer**
    - owns SQL registration and DuckDB function objects
    - stores per-UDF metadata in `extra_info`
-   - exposes one generic DuckDB scalar callback per execution family
+   - exposes one generic DuckDB scalar-function entry point per execution family
    - exports/imports chunks through DuckDB Arrow C Data APIs
-   - manages a synchronous calling-R-thread queue for worker-thread callback requests
+   - manages a synchronous calling-R-thread queue for worker-thread R execution requests
 
 3. **nanoarrow bridge layer**
    - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow C Data APIs
    - typed Rducks conversion rules for exact/exotic values
-   - scalar adapter that invokes the R callback once per DuckDB row
+   - scalar adapter that invokes the R function once per DuckDB row
 
 ## Scalar UDF execution model
 
 ```text
 DuckDB
-  -> rducks_generic_scalar_callback(info, input, output)
+  -> rducks_r_scalar_udf(info, input, output)
       -> metadata from extra_info
       -> DuckDB chunk -> Arrow C Data export
       -> nanoarrow-backed scalar adapter on the calling R thread
@@ -43,23 +43,23 @@ containment, writes the native result slot, then signals the waiting worker.
 
 Current pump triggers are deliberately narrow: direct calling-R-thread UDF
 entry/exit drains queued worker requests. Future hooks can add DuckDB progress
-callbacks or input-handler fallbacks once those paths are proven under blocking
+progress hooks or input-handler fallbacks once those paths are proven under blocking
 UDF loads.
 
 ## First safe mode
 
-The first direct-callback scalar mode uses:
+The first direct-R-function scalar mode uses:
 
 ```sql
 SET external_threads=1;
 PRAGMA threads=1;
 ```
 
-Rducks requires this mode before registering direct R callbacks; that
+Rducks requires this mode before registering direct R functions; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the
-execution thread before every callback. Worker-thread chunks enqueue a
+execution thread before every R function execution. Worker-thread chunks enqueue a
 synchronous request and wait; the calling R thread drains those requests and
 signals the waiting worker after the output vector has been filled. Broader
 multi-threaded sync UDF support still needs stress testing under blocking UDF
@@ -77,7 +77,7 @@ answer four questions at every boundary:
 - who calls `release()` if the object is abandoned
 - who nulls `release` after the object has been consumed by DuckDB or R
 
-Borrowed DuckDB chunk views must not outlive the DuckDB callback stack that
+Borrowed DuckDB chunk views must not outlive the DuckDB UDF stack that
 created them. If a future pump allows the worker to return before the calling R
 thread has consumed the input, the request must copy into owned nanoarrow buffers
 instead of exporting a borrowed view.

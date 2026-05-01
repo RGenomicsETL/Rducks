@@ -8,7 +8,7 @@ This repo owns:
 
 - R package wrappers for enabling the extension and registering R UDFs
 - DuckDB extension registration and execution bridge
-- native scalar-mode UDF registration and callback marshalling
+- native scalar-mode UDF registration and R function marshalling
 - nanoarrow scalar adapter over DuckDB Arrow C Data
 
 ## Rules
@@ -16,7 +16,7 @@ This repo owns:
 - Do not manually edit generated `.Rd` files. Update roxygen comments and run `make rd`.
 - Keep the native DuckDB extension contract canonical; R wrappers should not redefine SQL semantics.
 - Do not call R APIs from DuckDB worker threads. Use calling-R-thread direct calls or queued requests.
-- Treat callback lifetime explicitly: preserve R functions while native code can call them.
+- Treat R function lifetime explicitly: preserve R functions while native code can call them.
 - Keep marshalling paths in-process via DuckDB Arrow C Data and nanoarrow, not Arrow IPC.
 - Prefer small staged native modules over a monolithic extension source.
 

@@ -23,7 +23,7 @@ rducks_scalar_type_table <- data.frame(
     "POSIXct scalar", "rducks_hugeint", "rducks_uhugeint", "rducks_uuid",
     "rducks_interval", "rducks_bits"
   ),
-  sql_null_in_callback = c(
+  sql_null_in_function = c(
     "NA", rep("NA_integer_", 5L), "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_",
     "NA_character_", "NULL", "NA_real_ (unclassed)", "NA_real_", "NA_real_ (unclassed)",
     rep("NULL", 5L)
@@ -645,7 +645,7 @@ rducks_composite_argument_mapping_row <- function(token) {
     argument_kind = kind,
     r_type = r_type,
     r_value_passed_to_fun = r_value,
-    sql_null_in_callback = "NULL",
+    sql_null_in_function = "NULL",
     copy_semantics = if (kind %in% c("decimal", "enum", "union")) "boxed exact Rducks value object" else if (identical(r_type, "vector")) "R vector allocation" else "recursive R allocation",
     uses_r_double_for_integer = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_integer),
     uses_r_double_for_float = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_float),
@@ -659,7 +659,7 @@ rducks_composite_argument_mapping_row <- function(token) {
 rducks_check_argument_type_mapping <- function(mapping) {
   required <- c(
     "rducks_type", "duckdb_sql", "argument_kind", "r_type",
-    "r_value_passed_to_fun", "sql_null_in_callback", "copy_semantics",
+    "r_value_passed_to_fun", "sql_null_in_function", "copy_semantics",
     "uses_r_double_for_integer", "uses_r_double_for_float", "precision_may_be_lost",
     "notes"
   )
@@ -685,16 +685,16 @@ rducks_check_argument_type_mapping <- function(mapping) {
   invisible(TRUE)
 }
 
-#' Describe how Rducks argument values are passed to R callbacks
+#' Describe how Rducks argument values are passed to R functions
 #'
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
-#' callback. It is used by registration checks and the nanoarrow scalar
+#' function call. It is used by registration checks and the nanoarrow scalar
 #' marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
-#' to a SQL `NULL` result and the R callback is not called. The
-#' `sql_null_in_callback` column describes the value passed only when
+#' to a SQL `NULL` result and the R function is not called. The
+#' `sql_null_in_function` column describes the value passed only when
 #' `null_handling = "special"`. This value is type-specific: ordinary R scalar
 #' types receive typed `NA` values, while exact/exotic value classes, binary
 #' values, and top-level composite values receive R `NULL`. Within homogeneous
@@ -705,7 +705,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' The default table contains all scalar types supported by the nanoarrow scalar
 #' marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R
-#' callback shapes.
+#' R function shapes.
 #'
 #' @param x Optional scalar type tokens or constructed `rducks_type` objects.
 #'   When `NULL`, all currently implemented scalar-mode scalar argument mappings
@@ -734,7 +734,7 @@ rducks_argument_type_mapping <- function(x = NULL) {
     data.frame(
       rducks_type = character(), duckdb_sql = character(), argument_kind = character(),
       r_type = character(), r_value_passed_to_fun = character(),
-      sql_null_in_callback = character(), copy_semantics = character(),
+      sql_null_in_function = character(), copy_semantics = character(),
       uses_r_double_for_integer = logical(), uses_r_double_for_float = logical(),
       precision_may_be_lost = logical(), notes = character(),
       stringsAsFactors = FALSE, check.names = FALSE
