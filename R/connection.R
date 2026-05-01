@@ -15,10 +15,10 @@ rducks_extension_path <- function() {
 #' Enable Rducks on a DuckDB connection
 #'
 #' Loads the bundled Rducks DuckDB extension. The current direct R callback
-#' execution mode requires DuckDB to execute callbacks on the calling R thread;
-#' pass `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
-#' explicitly. Registration-time checks enforce the setting, and native execution
-#' guards defensively refuse to call R from DuckDB worker threads.
+#' execution mode requires R API work to happen on the calling R thread; pass
+#' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
+#' explicitly for registration. During execution, worker-thread UDF chunks are
+#' queued back to the calling R thread instead of calling R from workers.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to [rducks_extension_path()].
@@ -34,6 +34,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 
   path_sql <- rducks_sql_string(normalizePath(extension_path, mustWork = TRUE))
   DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
+  DBI::dbExecute(con, "SET arrow_lossless_conversion=true")
 
   main_thread_token <- rducks_main_thread_token()
   if (nzchar(main_thread_token)) {

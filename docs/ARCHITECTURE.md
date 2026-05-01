@@ -14,8 +14,8 @@ R functions as DuckDB UDFs.
    - owns SQL registration and DuckDB function objects
    - stores per-UDF metadata in `extra_info`
    - exposes one generic DuckDB scalar callback per execution family
-   - performs current direct row-mode marshalling and R callback execution
-   - will manage a main-R-thread pump for worker-thread callback requests
+   - performs current row-mode marshalling and R callback execution
+   - manages a synchronous main-R-thread queue for worker-thread callback requests
 
 3. **Arrow/nanoarrow bridge layer**
    - planned canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow APIs
@@ -30,8 +30,8 @@ DuckDB
       -> metadata from extra_info
       -> vector/chunk decoding
       -> direct R call if on the calling R thread
-      -> execution-thread guard errors before touching R if execution reaches a DuckDB worker
-      -> queued sync request if on a DuckDB worker once the pump exists
+      -> queued synchronous request if on a DuckDB worker
+      -> main thread drains queued requests without workers touching the R API
       -> output vector write-back
 ```
 
@@ -41,12 +41,13 @@ A DuckDB worker must never call R directly. Worker paths enqueue a native reques
 and wait. A main-thread pump drains requests, calls R with error containment,
 writes the native result slot, then signals the waiting worker.
 
-Pump triggers are staged deliberately:
+Current pump triggers are deliberately narrow:
 
-- direct main-thread UDF entry/exit
-- explicit `rducks_pump()`
-- DuckDB progress callback hook where available
-- optional input-handler fallback only as opportunistic support
+- direct main-thread UDF entry/exit drains queued worker requests
+- explicit `rducks_pump()` remains a public hook for package-local requests
+
+Future hooks can add DuckDB progress callbacks or input-handler fallbacks once
+those paths are proven under blocking UDF loads.
 
 ## First safe mode
 
@@ -61,10 +62,11 @@ Rducks requires this mode before registering direct R callbacks; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the
-execution thread before every direct R callback as a defensive backstop,
-rejecting worker-thread calls before touching the R API. Multi-threaded sync UDFs
-require the pump queue to be proven under blocking UDF loads before being
-documented as stable.
+execution thread before every callback. Worker-thread chunks enqueue a
+synchronous request and wait; the calling R thread drains those requests and
+signals the waiting worker after the output vector has been filled. Broader
+multi-threaded sync UDF support still needs stress testing under blocking UDF
+loads before being documented as stable.
 
 ## Arrow/nanoarrow direction and lifetime model
 

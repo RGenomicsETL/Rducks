@@ -19,7 +19,10 @@ Imports:
     DBI,
     duckdb (>= 1.5.0),
     methods,
+    nanoarrow,
     S7
+LinkingTo:
+    nanoarrow
 Suggests:
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/

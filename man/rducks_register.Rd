@@ -49,6 +49,7 @@ to soft-unregister the UDF later with \code{\link[=rducks_unregister]{rducks_unr
 }
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
-extension. The current implemented path is direct callback execution on the
-calling R thread and requires \code{external_threads=1} plus \verb{PRAGMA threads=1}.
+extension. Registration requires \code{external_threads=1} plus
+\verb{PRAGMA threads=1}; during execution, worker-thread UDF chunks are queued back
+to the calling R thread.
 }

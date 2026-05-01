@@ -1,0 +1,119 @@
+library(Rducks)
+
+expect_equal(rducks_type_normalize("integer"), "i32")
+expect_equal(rducks_type_normalize(INTEGER), "i32")
+expect_equal(rducks_type_normalize(INTEGER[]), "list<i32>")
+expect_equal(rducks_type_normalize(INTEGER[3]), "i32[3]")
+expect_equal(rducks_type_normalize(STRUCT(a = INTEGER, b = VARCHAR)), "struct<a:i32;b:varchar>")
+expect_equal(rducks_type_normalize(MAP(VARCHAR, INTEGER)), "map<varchar;i32>")
+expect_equal(
+  rducks_duckdb_types(c("i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp")),
+  c("TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP")
+)
+expect_equal(rducks_duckdb_signature("f", c("i32", "f64"), "bool"), "f(INTEGER, DOUBLE) -> BOOLEAN")
+expect_true("rducks_argument_type_mapping" %in% getNamespaceExports("Rducks"))
+expect_true(rducks_is_type(INTEGER))
+expect_true(rducks_is_type(INTEGER[]))
+expect_true(rducks_is_type(INTEGER[3]))
+expect_true(rducks_is_type(STRUCT(a = INTEGER[], b = MAP(VARCHAR, INTEGER))))
+expect_inherits(INTEGER, "rducks_scalar_type")
+expect_inherits(INTEGER[], "rducks_list_type")
+expect_inherits(INTEGER[3], "rducks_array_type")
+expect_inherits(STRUCT(a = INTEGER), "rducks_struct_type")
+expect_inherits(MAP(VARCHAR, INTEGER), "rducks_map_type")
+expect_inherits(DECIMAL(10, 2), "rducks_decimal_type")
+expect_inherits(ENUM(c("red", "blue")), "rducks_enum_type")
+expect_inherits(UNION(i = INTEGER, s = VARCHAR), "rducks_union_type")
+expect_true(rducks_is_type(STRUCT(x = LIST(UNION(i = INTEGER, e = ENUM(c("red", "blue")))), y = MAP(VARCHAR, DECIMAL(10, 2)))))
+expect_identical(rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))), rducks_enum("red", c("red", "blue")))
+expect_identical(rducks_check_return(UNION(i = INTEGER, s = VARCHAR), rducks_union("i", 1L)), rducks_union("i", 1L))
+expect_error(rducks_check_return(ENUM(c("red", "blue")), "green"), "enum values")
+expect_error(rducks_check_return(UNION(i = INTEGER), rducks_union("s", "x")), "union tag")
+expect_equal(rducks_type_kind(UNION(i = INTEGER, s = VARCHAR)), "union")
+expect_equal(rducks_type_sql(DECIMAL(10, 2)), "DECIMAL(10, 2)")
+expect_equal(rducks_type_parameters(ENUM(c("red", "blue")))$levels, c("red", "blue"))
+expect_equal(rducks_type_child_names(STRUCT(a = INTEGER, b = VARCHAR)), c("a", "b"))
+expect_equal(vapply(rducks_type_children(MAP(VARCHAR, INTEGER)), rducks_type_sql, character(1)), c("VARCHAR", "INTEGER"))
+expect_equal(as.character(UNION(i = INTEGER, s = VARCHAR)), "UNION(i INTEGER, s VARCHAR)")
+expect_equal(length(UNION(i = INTEGER, s = VARCHAR)), 1L)
+printed_type <- capture.output(print(UNION(i = INTEGER, s = VARCHAR)))
+expect_true(any(grepl("children", printed_type, fixed = TRUE)))
+printed_type_list <- capture.output(print(c(INTEGER, DOUBLE)))
+expect_true(any(grepl("rducks_type_list", printed_type_list, fixed = TRUE)))
+expect_equal(rducks_argument_type_mapping(UUID)$argument_kind, "exotic")
+expect_equal(rducks_argument_type_mapping(STRUCT(x = DECIMAL(10, 2)))$argument_kind, "struct")
+bad_type <- INTEGER
+attr(bad_type, "kind") <- "wat"
+expect_false(rducks_is_type(bad_type))
+
+scalar_mapping <- rducks_argument_type_mapping()
+expect_equal(
+  scalar_mapping$rducks_type,
+  c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid", "interval", "bit")
+)
+expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "i64"], "rducks_bigint")
+expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "u64"], "rducks_ubigint")
+expect_equal(rducks_duckdb_types(scalar_mapping$rducks_type), scalar_mapping$duckdb_sql)
+expect_true(all(c(
+  "rducks_type", "duckdb_sql", "argument_kind", "r_type",
+  "r_value_passed_to_fun", "sql_null_in_callback", "copy_semantics",
+  "uses_r_double_for_integer", "uses_r_double_for_float", "precision_may_be_lost",
+  "notes"
+) %in% names(scalar_mapping)))
+
+value_semantics <- rducks_value_semantics()
+expect_true(all(scalar_mapping$rducks_type %in% value_semantics$rducks_type))
+expect_true(all(c(
+  "rducks_type", "duckdb_sql", "kind", "r_type", "sql_null_input_default",
+  "sql_null_input_special", "sql_nan_inf_input", "r_null_return", "r_na_return",
+  "r_nan_return", "r_inf_return", "binary_ops", "error_semantics", "notes"
+) %in% names(value_semantics)))
+expect_equal(value_semantics$r_nan_return[value_semantics$rducks_type == "f64"], "preserved as DuckDB NaN")
+expect_equal(value_semantics$r_inf_return[value_semantics$rducks_type == "i32"], "error")
+custom_semantics <- rducks_value_semantics(list(BIGINT, DECIMAL(5, 2), INTERVAL, BIT, UNION(i = INTEGER)))
+expect_true(any(grepl("rducks_bigint", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("rducks_decimal", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("rducks_interval", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("NA bits", custom_semantics$binary_ops, fixed = TRUE)))
+expect_true(any(grepl("selected child", custom_semantics$r_na_return, fixed = TRUE)))
+
+composite_types <- list(LIST(INTEGER), INTEGER[], BIGINT[3], STRUCT(a = INTEGER, b = VARCHAR), MAP(VARCHAR, INTEGER))
+composite_mapping <- rducks_argument_type_mapping(composite_types)
+expect_equal(
+  composite_mapping$duckdb_sql,
+  c("INTEGER[]", "INTEGER[]", "BIGINT[3]", "STRUCT(a INTEGER, b VARCHAR)", "MAP(VARCHAR, INTEGER)")
+)
+expect_equal(composite_mapping$argument_kind, c("list", "list", "array", "struct", "map"))
+expect_equal(composite_mapping$r_value_passed_to_fun[[1L]], "integer vector")
+expect_equal(composite_mapping$r_value_passed_to_fun[[3L]], "rducks_bigint vector of length 3")
+expect_false(composite_mapping$precision_may_be_lost[[3L]])
+
+for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
+  token <- rducks_type_normalize(type)
+  symbol <- paste0("rducks_mapping_spec_", gsub("[^A-Za-z0-9]", "_", token))
+  spec <- rducks_udf_spec(symbol, function(x) 1L, type, INTEGER)
+  expect_equal(spec$argument_type_mapping$rducks_type, token)
+  expect_equal(spec$mode, "row")
+  expect_equal(spec$returns, "i32")
+}
+expect_equal(rducks_udf_spec("row_mode", function(x) x, INTEGER, INTEGER, mode = "row")$mode, "row")
+expect_error(rducks_udf_spec("bad_mode", function(x) x, INTEGER, INTEGER, mode = "legacy"), "arg")
+mode_semantics <- rducks_mode_semantics()
+expect_equal(mode_semantics$mode, "row")
+expect_equal(mode_semantics$status[mode_semantics$mode == "row"], "implemented")
+expect_error(rducks_type_normalize("list<i32>"), "constructors")
+expect_error(rducks_udf_spec("bad_mapping", function(x) x, LIST("nope"), INTEGER), "unsupported")
+expect_identical(rducks_check_argument(INTEGER, 1L, name = "x"), 1L)
+expect_identical(rducks_check_argument(BIGINT, rducks_bigint("1"), name = "x"), rducks_bigint("1"))
+expect_identical(rducks_check_argument(INTEGER[], c(1L, NA_integer_), name = "x"), c(1L, NA_integer_))
+expect_identical(rducks_check_return(INTEGER[3], c(1L, 2L, 3L)), c(1L, 2L, 3L))
+expect_identical(rducks_check_return(STRUCT(a = INTEGER, b = VARCHAR), list(a = 1L, b = "x")), list(a = 1L, b = "x"))
+expect_identical(rducks_check_return(MAP(VARCHAR, INTEGER), list(keys = c("a", "b"), values = c(1L, 2L))), list(keys = c("a", "b"), values = c(1L, 2L)))
+expect_error(rducks_check_argument(INTEGER, "x", name = "x"), "INTEGER")
+expect_error(rducks_check_return(INTEGER, NaN), "finite")
+expect_error(rducks_check_return(INTEGER, Inf), "finite")
+expect_error(rducks_check_return(INTEGER, 1.5), "whole")
+expect_identical(rducks_check_return(DOUBLE, Inf), Inf)
+expect_true(is.nan(rducks_check_return(DOUBLE, NaN)))
+expect_error(rducks_check_return(INTEGER[3], c(1L, 2L)), "length 3")
+expect_error(rducks_check_return(STRUCT(a = INTEGER), list(b = 1L)), "field")

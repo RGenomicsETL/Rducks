@@ -56,8 +56,9 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #' Register an R UDF in DuckDB
 #'
 #' Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
-#' extension. The current implemented path is direct callback execution on the
-#' calling R thread and requires `external_threads=1` plus `PRAGMA threads=1`.
+#' extension. Registration requires `external_threads=1` plus
+#' `PRAGMA threads=1`; during execution, worker-thread UDF chunks are queued back
+#' to the calling R thread.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -97,7 +98,8 @@ rducks_register <- function(con, name, fun, args, returns,
   rducks_assert_row_marshalling_supported(spec)
   rducks_warn_type_mapping(spec)
   rducks_assert_single_thread(con)
-  callback <- rducks_callback(fun)
+  arrow_fun <- rducks_make_arrow_row_wrapper(fun, spec, null_handling, exception_handling)
+  callback <- rducks_callback(arrow_fun)
   ok <- FALSE
   on.exit({
     if (!ok) rducks_callback_close(callback)

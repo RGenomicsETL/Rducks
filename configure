@@ -20,7 +20,7 @@ if [ ! -f "${SRC_FILE}" ]; then
 fi
 
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
-RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT}"
+RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
 if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
   echo "ERROR: USE_UNSTABLE_C_API must be 0 or 1 (got '${USE_UNSTABLE_C_API}')"
   exit 1
@@ -40,6 +40,11 @@ R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
 R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
 R_LDFLAGS=`"${R_HOME}/bin/R" CMD config LDFLAGS`
 R_LD_FLAGS=`"${R_HOME}/bin/R" CMD config --ldflags`
+NANOARROW_INCLUDE=`"${R_HOME}/bin/Rscript" -e 'cat(system.file("include", package = "nanoarrow"))'`
+if [ -z "${NANOARROW_INCLUDE}" ] || [ ! -f "${NANOARROW_INCLUDE}/nanoarrow/r.h" ]; then
+  echo "ERROR: nanoarrow headers not found. Install the nanoarrow R package."
+  exit 1
+fi
 
 case " ${R_CPPFLAGS} ${R_INCLUDE_FLAGS} ${R_CFLAGS} ${R_CPICFLAGS} " in
   *DUCKDB_EXTENSION_API_VERSION_UNSTABLE*)
@@ -56,19 +61,23 @@ if [ -z "${EXT_VERSION}" ]; then
   EXT_VERSION="0.0.0"
 fi
 
-DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-DUCKDB_API_MINOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MINOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-DUCKDB_API_PATCH=`awk '/DUCKDB_EXTENSION_API_VERSION_PATCH/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-if [ -n "${DUCKDB_API_MAJOR}" ] && [ -n "${DUCKDB_API_MINOR}" ] && [ -n "${DUCKDB_API_PATCH}" ]; then
-  DUCKDB_VERSION="v${DUCKDB_API_MAJOR}.${DUCKDB_API_MINOR}.${DUCKDB_API_PATCH}"
-else
-  DUCKDB_VERSION="v1.2.0"
+DUCKDB_HEADERS_JSON="${EXT_DIR}/duckdb_capi/duckdb_headers.json"
+DUCKDB_VERSION=`awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "${DUCKDB_HEADERS_JSON}" 2>/dev/null || true`
+if [ -z "${DUCKDB_VERSION}" ]; then
+  DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  DUCKDB_API_MINOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MINOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  DUCKDB_API_PATCH=`awk '/DUCKDB_EXTENSION_API_VERSION_PATCH/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
+  if [ -n "${DUCKDB_API_MAJOR}" ] && [ -n "${DUCKDB_API_MINOR}" ] && [ -n "${DUCKDB_API_PATCH}" ]; then
+    DUCKDB_VERSION="v${DUCKDB_API_MAJOR}.${DUCKDB_API_MINOR}.${DUCKDB_API_PATCH}"
+  else
+    DUCKDB_VERSION="v1.2.0"
+  fi
 fi
 
 ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE}"
 UNSTABLE_CPPFLAGS=""
 if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
-  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION}"
+  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
 fi
 
 OS_NAME=`uname -s`
@@ -95,7 +104,7 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2 -fPIC"
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -I${EXT_DIR}/duckdb_capi"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE}"
 
 if [ "${OS_NAME}" = "Darwin" ]; then
   SHARED_FLAGS="-shared -fPIC -undefined dynamic_lookup"

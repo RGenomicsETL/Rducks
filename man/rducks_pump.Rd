@@ -7,10 +7,11 @@
 rducks_pump()
 }
 \value{
-Currently does not return; errors until the native queue exists.
+Integer count of package-local requests processed.
 }
 \description{
-This is the planned main-R-thread pump for native DuckDB worker requests. It
-currently errors because the DuckDB extension request queue is not implemented
-yet.
+Worker-thread DuckDB UDF requests are drained internally by the loaded Rducks
+extension whenever execution reaches the calling R thread. This helper is kept
+as a public pump hook and currently returns the number of package-local
+requests processed by the R package runtime.
 }

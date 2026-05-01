@@ -10,6 +10,8 @@
 #include <Rinternals.h>
 #include <R_ext/Arith.h>
 
+#include <nanoarrow/r.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -100,6 +102,7 @@ typedef struct rducks_inactive_scalar_meta {
 
 static duckdb_database g_database = NULL;
 static duckdb_connection g_connection = NULL;
+static duckdb_arrow_options g_fallback_arrow_options = NULL;
 static int g_registration_surface_ready = 0;
 static char g_main_thread_token[128];
 static int g_main_thread_token_set = 0;
@@ -1211,6 +1214,95 @@ static int rducks_allow_direct_r_callback(char *err, size_t err_cap) {
     }
     return 1;
 }
+
+typedef struct rducks_udf_request {
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk input;
+    duckdb_vector output;
+    int done;
+    int ok;
+    char err[256];
+    struct rducks_udf_request *next;
+} rducks_udf_request_t;
+
+static rducks_udf_request_t *g_request_head = NULL;
+static rducks_udf_request_t *g_request_tail = NULL;
+static int g_request_pump_depth = 0;
+
+#ifdef _WIN32
+static SRWLOCK g_request_lock = SRWLOCK_INIT;
+static CONDITION_VARIABLE g_request_cv = CONDITION_VARIABLE_INIT;
+static void rducks_request_lock(void) { AcquireSRWLockExclusive(&g_request_lock); }
+static void rducks_request_unlock(void) { ReleaseSRWLockExclusive(&g_request_lock); }
+static void rducks_request_wait(void) { SleepConditionVariableSRW(&g_request_cv, &g_request_lock, INFINITE, 0); }
+static void rducks_request_signal(void) { WakeAllConditionVariable(&g_request_cv); }
+#else
+static pthread_mutex_t g_request_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_request_cv = PTHREAD_COND_INITIALIZER;
+static void rducks_request_lock(void) { pthread_mutex_lock(&g_request_lock); }
+static void rducks_request_unlock(void) { pthread_mutex_unlock(&g_request_lock); }
+static void rducks_request_wait(void) { pthread_cond_wait(&g_request_cv, &g_request_lock); }
+static void rducks_request_signal(void) { pthread_cond_broadcast(&g_request_cv); }
+#endif
+
+static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                   char *err, size_t err_cap);
+
+static void rducks_request_enqueue_and_wait(rducks_udf_request_t *req) {
+    req->done = 0;
+    req->ok = 0;
+    req->err[0] = '\0';
+    req->next = NULL;
+
+    rducks_request_lock();
+    if (g_request_tail) {
+        g_request_tail->next = req;
+    } else {
+        g_request_head = req;
+    }
+    g_request_tail = req;
+    rducks_request_signal();
+    while (!req->done) {
+        rducks_request_wait();
+    }
+    rducks_request_unlock();
+}
+
+static rducks_udf_request_t *rducks_request_pop(void) {
+    rducks_udf_request_t *req;
+    rducks_request_lock();
+    req = g_request_head;
+    if (req) {
+        g_request_head = req->next;
+        if (!g_request_head) g_request_tail = NULL;
+        req->next = NULL;
+    }
+    rducks_request_unlock();
+    return req;
+}
+
+static void rducks_request_finish(rducks_udf_request_t *req) {
+    rducks_request_lock();
+    req->done = 1;
+    rducks_request_signal();
+    rducks_request_unlock();
+}
+
+static int rducks_drain_worker_requests(void) {
+    int count = 0;
+    if (!rducks_is_main_thread() || g_request_pump_depth) return 0;
+    g_request_pump_depth++;
+    for (;;) {
+        rducks_udf_request_t *req = rducks_request_pop();
+        if (!req) break;
+        req->ok = rducks_r_scalar_execute(req->meta, req->input, req->output, req->err, sizeof(req->err));
+        rducks_request_finish(req);
+        count++;
+    }
+    g_request_pump_depth--;
+    return count;
+}
+
 static void rducks_r_scalar_meta_destroy(void *ptr) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)ptr;
     if (!meta) {
@@ -2400,74 +2492,373 @@ static SEXP rducks_build_row_call(SEXP fun, SEXP args, int *protect_count) {
     return call;
 }
 
-static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
-    char state_err[256];
-    idx_t n;
-    state_err[0] = '\0';
-    if (!rducks_allow_direct_r_callback(state_err, sizeof(state_err))) {
-        duckdb_scalar_function_set_error(info, state_err[0] ? state_err : "direct Rducks callback thread-safety guard failed");
-        return;
+static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const char *fallback,
+                                         char *err_msg, size_t err_cap) {
+    const char *msg = NULL;
+    if (error_data && duckdb_error_data_has_error(error_data)) {
+        msg = duckdb_error_data_message(error_data);
     }
+    snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : fallback);
+}
+
+static int rducks_allocate_arrow_options(duckdb_arrow_options *out_options, int *borrowed,
+                                         char *err_msg, size_t err_cap) {
+    duckdb_arrow_options options = NULL;
+    if (!out_options || !borrowed) return 0;
+    *out_options = NULL;
+    *borrowed = 0;
+
+    duckdb_connection_get_arrow_options(g_connection, &options);
+    if (options) {
+        *out_options = options;
+        return 1;
+    }
+
+    if (!g_fallback_arrow_options) {
+        snprintf(err_msg, err_cap, "failed to allocate DuckDB Arrow options");
+        return 0;
+    }
+
+    *out_options = g_fallback_arrow_options;
+    *borrowed = 1;
+    return 1;
+}
+
+static void rducks_release_arrow_options(duckdb_arrow_options *options, int borrowed) {
+    if (!borrowed && options && *options) duckdb_destroy_arrow_options(options);
+}
+
+static void rducks_initialize_fallback_arrow_options(void) {
+    duckdb_result result;
+    if (g_fallback_arrow_options || !g_connection) return;
+    duckdb_connection_get_arrow_options(g_connection, &g_fallback_arrow_options);
+    if (g_fallback_arrow_options) return;
+    memset(&result, 0, sizeof(result));
+    if (duckdb_query(g_connection, "SELECT 1", &result) == DuckDBSuccess) {
+        g_fallback_arrow_options = duckdb_result_get_arrow_options(&result);
+    }
+    duckdb_destroy_result(&result);
+}
+
+static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs, size_t count,
+                                    const char **names, char *err_msg, size_t err_cap) {
+    duckdb_arrow_options options = NULL;
+    int borrowed_options = 0;
+    duckdb_logical_type *types = NULL;
+    duckdb_error_data error_data = NULL;
+    struct ArrowSchema *schema = nanoarrow_output_schema_from_xptr(schema_xptr);
+
+    if (count > 0) {
+        types = (duckdb_logical_type *)calloc(count, sizeof(duckdb_logical_type));
+        if (!types) {
+            snprintf(err_msg, err_cap, "out of memory allocating Arrow schema type list");
+            return 0;
+        }
+        for (size_t i = 0; i < count; i++) {
+            types[i] = rducks_create_logical_type_for_desc(descs[i]);
+            if (!types[i]) {
+                snprintf(err_msg, err_cap, "failed to allocate DuckDB logical type for Arrow schema");
+                for (size_t j = 0; j < count; j++) {
+                    if (types[j]) duckdb_destroy_logical_type(&types[j]);
+                }
+                free(types);
+                return 0;
+            }
+        }
+    }
+
+    if (!rducks_allocate_arrow_options(&options, &borrowed_options, err_msg, err_cap)) {
+        for (size_t i = 0; i < count; i++) {
+            if (types[i]) duckdb_destroy_logical_type(&types[i]);
+        }
+        free(types);
+        return 0;
+    }
+
+    error_data = duckdb_to_arrow_schema(options, types, names, (idx_t)count, schema);
+    rducks_release_arrow_options(&options, borrowed_options);
+    for (size_t i = 0; i < count; i++) {
+        if (types[i]) duckdb_destroy_logical_type(&types[i]);
+    }
+    free(types);
+
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create Arrow schema", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+    return 1;
+}
+
+static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta_t *meta,
+                                          char *err_msg, size_t err_cap) {
+    const char **names = NULL;
+    char **owned_names = NULL;
+    int ok;
+    if (meta->arity > 0) {
+        names = (const char **)calloc(meta->arity, sizeof(char *));
+        owned_names = (char **)calloc(meta->arity, sizeof(char *));
+        if (!names || !owned_names) {
+            free(names);
+            free(owned_names);
+            snprintf(err_msg, err_cap, "out of memory allocating Arrow schema names");
+            return 0;
+        }
+        for (size_t i = 0; i < meta->arity; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "arg%zu", i + 1U);
+            owned_names[i] = rducks_strdup_len(buf, strlen(buf));
+            if (!owned_names[i]) {
+                for (size_t j = 0; j < i; j++) free(owned_names[j]);
+                free(owned_names);
+                free(names);
+                snprintf(err_msg, err_cap, "out of memory allocating Arrow schema name");
+                return 0;
+            }
+            names[i] = owned_names[i];
+        }
+    }
+
+    ok = rducks_fill_arrow_schema(schema_xptr, meta->args, meta->arity, names, err_msg, err_cap);
+    if (owned_names) {
+        for (size_t i = 0; i < meta->arity; i++) free(owned_names[i]);
+    }
+    free(owned_names);
+    free(names);
+    return ok;
+}
+
+static int rducks_fill_output_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta_t *meta,
+                                           char *err_msg, size_t err_cap) {
+    rducks_type_desc_t *descs[1];
+    const char *names[1];
+    descs[0] = meta->return_desc;
+    names[0] = "result";
+    return rducks_fill_arrow_schema(schema_xptr, descs, 1, names, err_msg, err_cap);
+}
+
+static int rducks_fill_input_arrow_array(SEXP array_xptr, duckdb_data_chunk input,
+                                         char *err_msg, size_t err_cap) {
+    duckdb_arrow_options options = NULL;
+    int borrowed_options = 0;
+    duckdb_error_data error_data = NULL;
+    struct ArrowArray *array = nanoarrow_output_array_from_xptr(array_xptr);
+
+    if (!rducks_allocate_arrow_options(&options, &borrowed_options, err_msg, err_cap)) {
+        return 0;
+    }
+
+    error_data = duckdb_data_chunk_to_arrow(options, input, array);
+    rducks_release_arrow_options(&options, borrowed_options);
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to export input chunk to Arrow", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+    return 1;
+}
+
+static SEXP rducks_arrow_array_schema_xptr(SEXP array_xptr, SEXP fallback_schema_xptr) {
+    SEXP schema_xptr = R_ExternalPtrTag(array_xptr);
+    if (schema_xptr == R_NilValue) return fallback_schema_xptr;
+    if (!Rf_inherits(schema_xptr, "nanoarrow_schema")) return fallback_schema_xptr;
+    return schema_xptr;
+}
+
+static void rducks_last_arrow_error_to_buffer(char *err_msg, size_t err_cap) {
+    SEXP pkg;
+    SEXP ns;
+    SEXP state;
+    SEXP msg;
+    if (!err_msg || err_cap == 0U) return;
+    pkg = PROTECT(Rf_mkString("Rducks"));
+    ns = PROTECT(R_FindNamespace(pkg));
+    state = Rf_findVarInFrame(ns, Rf_install(".rducks_state"));
+    if (state != R_UnboundValue && Rf_isEnvironment(state)) {
+        msg = Rf_findVarInFrame(state, Rf_install("last_arrow_error"));
+        if (msg != R_UnboundValue && TYPEOF(msg) == STRSXP && XLENGTH(msg) > 0 && STRING_ELT(msg, 0) != NA_STRING) {
+            snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(msg, 0)));
+        }
+    }
+    UNPROTECT(2);
+}
+
+static int rducks_copy_imported_result_vector(rducks_type_desc_t *return_desc, duckdb_vector imported,
+                                              duckdb_vector output, idx_t count,
+                                              char *err_msg, size_t err_cap) {
+    if (return_desc && return_desc->kind == RDUCKS_KIND_ENUM) {
+        duckdb_selection_vector sel = duckdb_create_selection_vector(count);
+        if (!sel) {
+            snprintf(err_msg, err_cap, "failed to allocate DuckDB selection vector for enum result copy");
+            return 0;
+        }
+        sel_t *sel_data = duckdb_selection_vector_get_data_ptr(sel);
+        for (idx_t i = 0; i < count; i++) sel_data[i] = (sel_t)i;
+        duckdb_vector_copy_sel(imported, output, sel, count, 0, 0);
+        duckdb_destroy_selection_vector(sel);
+        return 1;
+    }
+    duckdb_vector_reference_vector(output, imported);
+    return 1;
+}
+
+static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema_xptr, rducks_type_desc_t *return_desc,
+                                      idx_t expected_size, duckdb_vector output, char *err_msg, size_t err_cap) {
+    struct ArrowArray *result_array;
+    struct ArrowSchema *result_schema;
+    SEXP result_schema_xptr;
+    duckdb_arrow_converted_schema converted_schema = NULL;
+    duckdb_data_chunk result_chunk = NULL;
+    duckdb_error_data error_data = NULL;
+    idx_t result_size;
+
+    if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
+        snprintf(err_msg, err_cap, "Rducks Arrow row wrapper must return a nanoarrow_array");
+        return 0;
+    }
+
+    result_array = nanoarrow_array_from_xptr(result_array_xptr);
+    if (result_array->length != (int64_t)expected_size) {
+        snprintf(err_msg, err_cap, "Rducks Arrow callback returned %lld rows, expected %llu",
+                 (long long)result_array->length, (unsigned long long)expected_size);
+        return 0;
+    }
+
+    result_schema_xptr = rducks_arrow_array_schema_xptr(result_array_xptr, output_schema_xptr);
+    result_schema = nanoarrow_schema_from_xptr(result_schema_xptr);
+
+    error_data = duckdb_schema_from_arrow(g_connection, result_schema, &converted_schema);
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow result schema", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+
+    error_data = duckdb_data_chunk_from_arrow(g_connection, result_array, converted_schema, &result_chunk);
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow result chunk", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            duckdb_destroy_arrow_converted_schema(&converted_schema);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+
+    if (!result_chunk) {
+        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for Arrow callback result");
+        duckdb_destroy_arrow_converted_schema(&converted_schema);
+        return 0;
+    }
+    result_size = duckdb_data_chunk_get_size(result_chunk);
+    if (result_size != expected_size) {
+        snprintf(err_msg, err_cap, "DuckDB imported %llu Arrow result rows, expected %llu",
+                 (unsigned long long)result_size, (unsigned long long)expected_size);
+        duckdb_destroy_data_chunk(&result_chunk);
+        duckdb_destroy_arrow_converted_schema(&converted_schema);
+        return 0;
+    }
+
+    if (!rducks_copy_imported_result_vector(return_desc, duckdb_data_chunk_get_vector(result_chunk, 0), output,
+                                            result_size, err_msg, err_cap)) {
+        duckdb_destroy_data_chunk(&result_chunk);
+        duckdb_destroy_arrow_converted_schema(&converted_schema);
+        return 0;
+    }
+    duckdb_destroy_data_chunk(&result_chunk);
+    duckdb_destroy_arrow_converted_schema(&converted_schema);
+    return 1;
+}
+
+static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                   char *err_msg, size_t err_cap) {
+    idx_t n;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP input_schema_xptr;
+    SEXP input_array_xptr;
+    SEXP output_schema_xptr;
+    SEXP n_sexp;
+    SEXP call;
+    SEXP result;
+
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        duckdb_scalar_function_set_error(info, "Rducks scalar metadata missing");
-        return;
+        snprintf(err_msg, err_cap, "Rducks scalar metadata missing");
+        return 0;
     }
     n = duckdb_data_chunk_get_size(input);
-    duckdb_vector_ensure_validity_writable(output);
 
-    for (idx_t row = 0; row < n; row++) {
-        int protect_count = 0;
-        int err = 0;
-        int has_null = 0;
-        SEXP args;
-        SEXP call;
-        SEXP result;
+    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_schema(input_schema_xptr, meta, err_msg, err_cap)) goto fail;
 
-        args = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
-        protect_count++;
+    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_array(input_array_xptr, input, err_msg, err_cap)) goto fail;
+    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
 
-        for (size_t col = 0; col < meta->arity; col++) {
-            duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
-            if (rducks_vector_row_is_null(vector, row)) {
-                has_null = 1;
-                if (meta->null_handling == RDUCKS_NULL_DEFAULT) {
-                    break;
-                }
-            }
-            SEXP value = PROTECT(rducks_build_top_level_arg(meta->args[col], vector, row));
-            protect_count++;
-            SET_VECTOR_ELT(args, (R_xlen_t)col, value);
-        }
+    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_output_arrow_schema(output_schema_xptr, meta, err_msg, err_cap)) goto fail;
 
-        if (has_null && meta->null_handling == RDUCKS_NULL_DEFAULT) {
-            rducks_output_set_null(output, row);
-            UNPROTECT(protect_count);
-            continue;
-        }
+    n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    protect_count++;
+    call = PROTECT(Rf_lang5(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
+    protect_count++;
+    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
+    protect_count++;
 
-        call = rducks_build_row_call(meta->fun, args, &protect_count);
-        result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &err));
-        protect_count++;
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks Arrow callback or marshal error");
+        rducks_last_arrow_error_to_buffer(err_msg, err_cap);
+        goto fail;
+    }
 
-        if (err) {
-            if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
-                rducks_output_set_null(output, row);
-                UNPROTECT(protect_count);
-                continue;
-            }
-            UNPROTECT(protect_count);
-            duckdb_scalar_function_set_error(info, "Rducks callback raised an error");
+    if (!rducks_import_arrow_result(result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
+
+    UNPROTECT(protect_count);
+    return 1;
+
+fail:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
+static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
+    char err_msg[256];
+    err_msg[0] = '\0';
+
+    if (rducks_is_main_thread()) {
+        rducks_drain_worker_requests();
+        if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar callback failed");
             return;
         }
+        rducks_drain_worker_requests();
+        return;
+    }
 
-        if (!rducks_write_value_to_vector(meta->return_desc, output, row, result)) {
-            UNPROTECT(protect_count);
-            duckdb_scalar_function_set_error(info, "Rducks failed to marshal callback result");
-            return;
-        }
-
-        UNPROTECT(protect_count);
+    rducks_udf_request_t req;
+    req.meta = meta;
+    req.input = input;
+    req.output = output;
+    rducks_request_enqueue_and_wait(&req);
+    if (!req.ok) {
+        duckdb_scalar_function_set_error(info, req.err[0] ? req.err : "Rducks main-thread callback request failed");
     }
 }
 
@@ -2765,6 +3156,7 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
             return;
         }
         rducks_set_main_thread_token(token);
+        rducks_initialize_fallback_arrow_options();
         free(token);
         out[i] = true;
     }
@@ -2903,6 +3295,9 @@ DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_ext
                 access->set_error(info, "failed to open Rducks persistent connection");
             }
             return false;
+        }
+        if (g_fallback_arrow_options) {
+            duckdb_destroy_arrow_options(&g_fallback_arrow_options);
         }
         g_database = database;
         g_registration_surface_ready = 0;

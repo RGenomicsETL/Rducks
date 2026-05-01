@@ -8,7 +8,7 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes row-shaped NA/NULL values",
     length_semantics = "one output value per callback invocation",
     error_semantics = "callback or marshalling errors abort the query unless exception_handling = 'return_null'",
-    threading = "requires callbacks to execute on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1, and native guards refuse worker-thread R calls",
+    threading = "R API work runs on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution",
     copy_semantics = "row values are boxed/copied into R objects; exact/exotic types use Rducks value classes",
     notes = "current production path"
   )

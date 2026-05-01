@@ -93,6 +93,39 @@ rducks_decimal_type_class <- S7::new_class("rducks_decimal_type", package = NULL
 rducks_enum_type_class <- S7::new_class("rducks_enum_type", package = NULL, parent = rducks_type_class)
 rducks_union_type_class <- S7::new_class("rducks_union_type", package = NULL, parent = rducks_type_class)
 
+rducks_logical_scalar_type_class <- S7::new_class("rducks_logical_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_r_integer_scalar_type_class <- S7::new_class("rducks_r_integer_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_r_numeric_scalar_type_class <- S7::new_class("rducks_r_numeric_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_exact_integer_scalar_type_class <- S7::new_class("rducks_exact_integer_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_floating_scalar_type_class <- S7::new_class("rducks_floating_scalar_type", package = NULL, parent = rducks_r_numeric_scalar_type_class)
+rducks_character_scalar_type_class <- S7::new_class("rducks_character_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_binary_scalar_type_class <- S7::new_class("rducks_binary_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_temporal_scalar_type_class <- S7::new_class("rducks_temporal_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_uuid_scalar_type_class <- S7::new_class("rducks_uuid_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_interval_scalar_type_class <- S7::new_class("rducks_interval_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+
+rducks_bool_type_class <- S7::new_class("rducks_bool_type", package = NULL, parent = rducks_logical_scalar_type_class)
+rducks_i8_type_class <- S7::new_class("rducks_i8_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
+rducks_u8_type_class <- S7::new_class("rducks_u8_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
+rducks_i16_type_class <- S7::new_class("rducks_i16_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
+rducks_u16_type_class <- S7::new_class("rducks_u16_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
+rducks_i32_type_class <- S7::new_class("rducks_i32_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
+rducks_u32_type_class <- S7::new_class("rducks_u32_type", package = NULL, parent = rducks_r_numeric_scalar_type_class)
+rducks_i64_type_class <- S7::new_class("rducks_i64_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
+rducks_u64_type_class <- S7::new_class("rducks_u64_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
+rducks_f32_type_class <- S7::new_class("rducks_f32_type", package = NULL, parent = rducks_floating_scalar_type_class)
+rducks_f64_type_class <- S7::new_class("rducks_f64_type", package = NULL, parent = rducks_floating_scalar_type_class)
+rducks_varchar_type_class <- S7::new_class("rducks_varchar_type", package = NULL, parent = rducks_character_scalar_type_class)
+rducks_blob_type_class <- S7::new_class("rducks_blob_type", package = NULL, parent = rducks_binary_scalar_type_class)
+rducks_date_type_class <- S7::new_class("rducks_date_type", package = NULL, parent = rducks_temporal_scalar_type_class)
+rducks_time_type_class <- S7::new_class("rducks_time_type", package = NULL, parent = rducks_temporal_scalar_type_class)
+rducks_timestamp_type_class <- S7::new_class("rducks_timestamp_type", package = NULL, parent = rducks_temporal_scalar_type_class)
+rducks_hugeint_type_class <- S7::new_class("rducks_hugeint_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
+rducks_uhugeint_type_class <- S7::new_class("rducks_uhugeint_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
+rducks_uuid_type_class <- S7::new_class("rducks_uuid_type", package = NULL, parent = rducks_uuid_scalar_type_class)
+rducks_interval_type_class <- S7::new_class("rducks_interval_type", package = NULL, parent = rducks_interval_scalar_type_class)
+rducks_bit_type_class <- S7::new_class("rducks_bit_type", package = NULL, parent = rducks_binary_scalar_type_class)
+
 rducks_validate_type_list_s7 <- function(self) {
   if (!all(vapply(unclass(self), inherits, logical(1), what = "rducks_type"))) {
     "all elements must be rducks_type objects"
@@ -106,9 +139,36 @@ rducks_type_list_class <- S7::new_class(
   validator = rducks_validate_type_list_s7
 )
 
-rducks_type_class_for_kind <- function(kind) {
+rducks_scalar_type_class_for_token <- function(token) {
+  switch(rducks_type_normalize_scalar(token),
+    bool = rducks_bool_type_class,
+    i8 = rducks_i8_type_class,
+    u8 = rducks_u8_type_class,
+    i16 = rducks_i16_type_class,
+    u16 = rducks_u16_type_class,
+    i32 = rducks_i32_type_class,
+    u32 = rducks_u32_type_class,
+    i64 = rducks_i64_type_class,
+    u64 = rducks_u64_type_class,
+    f32 = rducks_f32_type_class,
+    f64 = rducks_f64_type_class,
+    varchar = rducks_varchar_type_class,
+    blob = rducks_blob_type_class,
+    date = rducks_date_type_class,
+    time = rducks_time_type_class,
+    timestamp = rducks_timestamp_type_class,
+    hugeint = rducks_hugeint_type_class,
+    uhugeint = rducks_uhugeint_type_class,
+    uuid = rducks_uuid_type_class,
+    interval = rducks_interval_type_class,
+    bit = rducks_bit_type_class,
+    stop("unknown scalar Rducks type token: ", token, call. = FALSE)
+  )
+}
+
+rducks_type_class_for_kind <- function(kind, token = NULL) {
   switch(kind,
-    scalar = rducks_scalar_type_class,
+    scalar = rducks_scalar_type_class_for_token(token),
     list = rducks_list_type_class,
     array = rducks_array_type_class,
     struct = rducks_struct_type_class,
@@ -117,23 +177,6 @@ rducks_type_class_for_kind <- function(kind) {
     enum = rducks_enum_type_class,
     union = rducks_union_type_class,
     stop("unknown Rducks type kind: ", kind, call. = FALSE)
-  )
-}
-
-rducks_type_class_vector_for_kind <- function(kind) {
-  c(
-    switch(kind,
-      scalar = "rducks_scalar_type",
-      list = "rducks_list_type",
-      array = "rducks_array_type",
-      struct = "rducks_struct_type",
-      map = "rducks_map_type",
-      decimal = "rducks_decimal_type",
-      enum = "rducks_enum_type",
-      union = "rducks_union_type",
-      stop("unknown Rducks type kind: ", kind, call. = FALSE)
-    ),
-    "rducks_type", "list", "S7_object"
   )
 }
 
@@ -147,13 +190,7 @@ rducks_type_construct_s7 <- function(token, duckdb_sql, kind, children, child_na
     size = size,
     parameters = parameters
   )
-  class <- rducks_type_class_for_kind(kind)
-  if (exists("RDUCKS_type_object_new", inherits = TRUE)) {
-    return(.Call(
-      RDUCKS_type_object_new, token, duckdb_sql, kind, children, child_names, size, parameters,
-      class, rducks_type_class_vector_for_kind(kind)
-    ))
-  }
+  class <- rducks_type_class_for_kind(kind, token)
   class(data, token = token, duckdb_sql = duckdb_sql, kind = kind,
         children = children, child_names = child_names, size = size, parameters = parameters)
 }

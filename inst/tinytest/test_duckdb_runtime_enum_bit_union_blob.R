@@ -1,0 +1,20 @@
+library(Rducks)
+
+if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+
+  invisible(rducks_register(con, "rducks_enum_echo", function(x) x, ENUM(c("red", "blue")), ENUM(c("red", "blue"))))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_enum_echo('red'::ENUM('red','blue'))::VARCHAR AS x")$x, "red")
+
+  invisible(rducks_register(con, "rducks_bit_not", function(x) !x, BIT, BIT))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_bit_not('1010'::BIT)::VARCHAR AS x")$x, "0101")
+
+  invisible(rducks_register(con, "rducks_union_flip", function(x) if (identical(x$tag, "code")) rducks_union("label", paste0("c", x$value)) else rducks_union("code", 1L), UNION(code = INTEGER, label = VARCHAR), UNION(code = INTEGER, label = VARCHAR)))
+  expect_equal(as.character(DBI::dbGetQuery(con, "SELECT union_tag(rducks_union_flip(union_value(code := 42)::UNION(code INTEGER, label VARCHAR))) AS x")$x), "label")
+  expect_equal(DBI::dbGetQuery(con, "SELECT union_extract(rducks_union_flip(union_value(code := 42)::UNION(code INTEGER, label VARCHAR)), 'label') AS x")$x, "c42")
+
+  invisible(rducks_register(con, "rducks_blob", function(x) c(x, as.raw(0xff)), "blob", "blob"))
+  expect_equal(DBI::dbGetQuery(con, "SELECT hex(rducks_blob(from_hex('00AA'))) AS x")$x, "00AAFF")
+}
