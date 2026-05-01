@@ -27,7 +27,7 @@ contract close to the type descriptors used by the marshaller.
 }
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
-to SQL \code{NULL} and the R R function is not called. The
+to SQL \code{NULL} and the R function is not called. The
 \code{sql_null_input_special} column describes what the R function receives with
 \code{null_handling = "special"}.
 

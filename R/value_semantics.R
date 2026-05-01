@@ -187,8 +187,8 @@ rducks_value_semantics_constructed <- function(type) {
       error_semantics = "missing fields and field type mismatches error"
     ),
     map = list(
-      r_na_return = "keys and values recurse; scalar NA values become SQL NULL child entries",
-      error_semantics = "keys/values length mismatch and child type mismatches error"
+      r_na_return = "values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error",
+      error_semantics = "keys/values length mismatch, NULL/NA keys, and child type mismatches error"
     ),
     list()
   )
@@ -223,7 +223,7 @@ rducks_value_semantics_empty <- function() {
 #' contract close to the type descriptors used by the marshaller.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
-#' to SQL `NULL` and the R R function is not called. The
+#' to SQL `NULL` and the R function is not called. The
 #' `sql_null_input_special` column describes what the R function receives with
 #' `null_handling = "special"`.
 #'

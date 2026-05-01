@@ -25,11 +25,12 @@ rducks_scalar_type_table <- data.frame(
   ),
   sql_null_in_function = c(
     "NA", rep("NA_integer_", 5L), "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_",
-    "NA_character_", "NULL", "NA_real_ (unclassed)", "NA_real_", "NA_real_ (unclassed)",
+    "NA_character_", "NULL", "Date NA", "NA_real_", "POSIXct NA",
     rep("NULL", 5L)
   ),
   copy_semantics = c(
-    rep("boxed scalar", 11L), "string copied into R", "bytes copied into R", rep("boxed scalar", 3L),
+    rep("boxed scalar", 7L), rep("boxed exact Rducks value object", 2L), rep("boxed scalar", 2L),
+    "string copied into R", "bytes copied into R", rep("boxed scalar", 3L),
     rep("boxed exact Rducks value object", 5L)
   ),
   uses_r_double_for_integer = c(rep(FALSE, 6L), TRUE, rep(FALSE, 14L)),

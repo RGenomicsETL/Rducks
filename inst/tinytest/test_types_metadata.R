@@ -54,6 +54,9 @@ expect_equal(
 )
 expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "i64"], "rducks_bigint")
 expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "u64"], "rducks_ubigint")
+expect_equal(scalar_mapping$copy_semantics[scalar_mapping$rducks_type == "i64"], "boxed exact Rducks value object")
+expect_equal(scalar_mapping$sql_null_in_function[scalar_mapping$rducks_type == "date"], "Date NA")
+expect_equal(scalar_mapping$sql_null_in_function[scalar_mapping$rducks_type == "timestamp"], "POSIXct NA")
 expect_equal(rducks_duckdb_types(scalar_mapping$rducks_type), scalar_mapping$duckdb_sql)
 expect_true(all(c(
   "rducks_type", "duckdb_sql", "argument_kind", "r_type",
