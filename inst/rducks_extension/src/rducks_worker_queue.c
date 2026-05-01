@@ -30,6 +30,19 @@ static rducks_udf_request_t *g_request_head = NULL;
 static rducks_udf_request_t *g_request_tail = NULL;
 static int g_request_pump_depth = 0;
 
+typedef struct rducks_thread_stats {
+    unsigned long long udf_entries_main;
+    unsigned long long udf_entries_worker;
+    unsigned long long queued_requests;
+    unsigned long long drained_requests;
+    unsigned long long r_execute_main;
+    unsigned long long r_execute_off_main;
+    unsigned long long current_queue_depth;
+    unsigned long long max_queue_depth;
+} rducks_thread_stats_t;
+
+static rducks_thread_stats_t g_thread_stats;
+
 #ifdef _WIN32
 static SRWLOCK g_request_lock = SRWLOCK_INIT;
 static CONDITION_VARIABLE g_request_cv = CONDITION_VARIABLE_INIT;
@@ -49,6 +62,46 @@ static void rducks_request_signal(void) { pthread_cond_broadcast(&g_request_cv);
 static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
                                    char *err, size_t err_cap);
 
+static void rducks_thread_stats_reset(void) {
+    rducks_request_lock();
+    memset(&g_thread_stats, 0, sizeof(g_thread_stats));
+    rducks_request_unlock();
+}
+
+static void rducks_thread_stats_format(char *buf, size_t cap) {
+    rducks_thread_stats_t stats;
+    if (!buf || cap == 0U) return;
+    rducks_request_lock();
+    stats = g_thread_stats;
+    rducks_request_unlock();
+    snprintf(buf, cap,
+             "udf_entries_main=%llu,udf_entries_worker=%llu,queued_requests=%llu,drained_requests=%llu,"
+             "r_execute_main=%llu,r_execute_off_main=%llu,current_queue_depth=%llu,max_queue_depth=%llu",
+             stats.udf_entries_main, stats.udf_entries_worker, stats.queued_requests, stats.drained_requests,
+             stats.r_execute_main, stats.r_execute_off_main, stats.current_queue_depth, stats.max_queue_depth);
+    buf[cap - 1U] = '\0';
+}
+
+static void rducks_stats_note_udf_entry(int is_main) {
+    rducks_request_lock();
+    if (is_main) {
+        g_thread_stats.udf_entries_main++;
+    } else {
+        g_thread_stats.udf_entries_worker++;
+    }
+    rducks_request_unlock();
+}
+
+static void rducks_stats_note_r_execute(int is_main) {
+    rducks_request_lock();
+    if (is_main) {
+        g_thread_stats.r_execute_main++;
+    } else {
+        g_thread_stats.r_execute_off_main++;
+    }
+    rducks_request_unlock();
+}
+
 static void rducks_request_enqueue_and_wait(rducks_udf_request_t *req) {
     req->done = 0;
     req->ok = 0;
@@ -62,6 +115,11 @@ static void rducks_request_enqueue_and_wait(rducks_udf_request_t *req) {
         g_request_head = req;
     }
     g_request_tail = req;
+    g_thread_stats.queued_requests++;
+    g_thread_stats.current_queue_depth++;
+    if (g_thread_stats.current_queue_depth > g_thread_stats.max_queue_depth) {
+        g_thread_stats.max_queue_depth = g_thread_stats.current_queue_depth;
+    }
     rducks_request_signal();
     while (!req->done) {
         rducks_request_wait();
@@ -77,6 +135,9 @@ static rducks_udf_request_t *rducks_request_pop(void) {
         g_request_head = req->next;
         if (!g_request_head) g_request_tail = NULL;
         req->next = NULL;
+        if (g_thread_stats.current_queue_depth > 0) {
+            g_thread_stats.current_queue_depth--;
+        }
     }
     rducks_request_unlock();
     return req;
@@ -97,6 +158,9 @@ static int rducks_drain_worker_requests(void) {
         rducks_udf_request_t *req = rducks_request_pop();
         if (!req) break;
         req->ok = rducks_r_scalar_execute(req->meta, req->input, req->output, req->err, sizeof(req->err));
+        rducks_request_lock();
+        g_thread_stats.drained_requests++;
+        rducks_request_unlock();
         rducks_request_finish(req);
         count++;
     }

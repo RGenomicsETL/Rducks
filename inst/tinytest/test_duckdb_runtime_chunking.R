@@ -37,10 +37,14 @@ local({
     side_effects = TRUE
   ))
 
-  result <- DBI::dbGetQuery(con, "SELECT sum(rducks_chunk_probe(i::DOUBLE)) AS x FROM range(5000) t(i)")
-  expect_equal(result$x, 12497500)
-  expect_equal(sum(chunk_sizes), 5000L)
-  expect_equal(user_calls, 5000L)
+  n <- 1000000L
+  result <- DBI::dbGetQuery(con, sprintf(
+    "SELECT sum(rducks_chunk_probe(i::DOUBLE)) AS x FROM range(%d) t(i)",
+    n
+  ))
+  expect_equal(result$x, n * (n - 1) / 2)
+  expect_equal(sum(chunk_sizes), n)
+  expect_equal(user_calls, n)
   expect_true(length(chunk_sizes) < user_calls)
   expect_true(max(chunk_sizes) > 1L)
 })
