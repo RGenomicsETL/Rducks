@@ -48,13 +48,15 @@ rducks_register(
 - mode:
 
   Registration mode. `"row"` is implemented now and calls the R function
-  once per row through the native Rducks DuckDB extension.
+  once per DuckDB row through the Arrow-backed row adapter.
 
 - null_handling:
 
   Either `"default"` for NULL-in/NULL-out without calling the R
-  function, or `"special"` to call the R function with NA-like R values
-  for NULL inputs.
+  function, or `"special"` to call the R function with the declared
+  type's missing-value shape for NULL inputs (for example typed `NA` for
+  ordinary scalar types and `NULL` for exact/exotic, binary, and
+  composite values).
 
 - exception_handling:
 

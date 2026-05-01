@@ -1,8 +1,7 @@
 # Generic helpers for Rducks value classes
 
 These helpers provide a small common interface for Rducks' exact value
-classes used to represent DuckDB-specific values before native UDF
-marshalling for those types is enabled.
+classes used to represent DuckDB-specific values.
 
 ## Usage
 

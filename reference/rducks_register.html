@@ -89,13 +89,15 @@ objects such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code
 
 <dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
 <dd><p>Registration mode. <code>"row"</code> is implemented now and calls the R
-function once per row through the native Rducks DuckDB extension.</p></dd>
+function once per DuckDB row through the Arrow-backed row adapter.</p></dd>
 
 
 <dt id="arg-null-handling">null_handling<a class="anchor" aria-label="anchor" href="#arg-null-handling"></a></dt>
 <dd><p>Either <code>"default"</code> for NULL-in/NULL-out without calling
-the R function, or <code>"special"</code> to call the R function with NA-like R
-values for NULL inputs.</p></dd>
+the R function, or <code>"special"</code> to call the R function with the declared
+type's missing-value shape for NULL inputs (for example typed <code>NA</code> for
+ordinary scalar types and <code>NULL</code> for exact/exotic, binary, and composite
+values).</p></dd>
 
 
 <dt id="arg-exception-handling">exception_handling<a class="anchor" aria-label="anchor" href="#arg-exception-handling"></a></dt>
