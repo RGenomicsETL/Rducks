@@ -1,3 +1,7 @@
+rducks_arrow_error <- function(message) {
+  structure(as.character(message)[[1L]], class = "rducks_arrow_error")
+}
+
 rducks_arrow_top_level_null_is_r_null <- function(type) {
   inherits(type, c(
     "rducks_i64_type", "rducks_u64_type", "rducks_blob_type",
@@ -515,6 +519,38 @@ rducks_arrow_enum_storage_schema <- function(schema) {
   out
 }
 
+rducks_arrow_enum_index_width <- function(schema) {
+  parsed <- try(nanoarrow::nanoarrow_schema_parse(schema), silent = TRUE)
+  storage_type <- if (inherits(parsed, "try-error")) NULL else parsed$storage_type %||% parsed$type
+  switch(
+    storage_type,
+    int8 = 1L, uint8 = 1L,
+    int16 = 2L, uint16 = 2L,
+    int32 = 4L, uint32 = 4L,
+    int64 = 8L, uint64 = 8L,
+    1L
+  )
+}
+
+rducks_arrow_enum_array_to_values <- function(array, schema, levels) {
+  n <- as.integer(array$length)
+  offset <- as.integer(array$offset %||% 0L)
+  valid <- rducks_arrow_validity(array, n)
+  bytes <- as.raw(array$buffers[[2L]])
+  width <- rducks_arrow_enum_index_width(schema)
+  out <- rep(NA_character_, n)
+  for (i in seq_len(n)) {
+    if (!isTRUE(valid[[i]])) next
+    start <- (offset + i - 1L) * width + 1L
+    idx <- readBin(bytes[start + seq_len(width) - 1L], integer(), size = width, endian = "little", signed = FALSE)
+    if (idx < 0L || idx >= length(levels)) {
+      stop("enum index is outside declared levels", call. = FALSE)
+    }
+    out[[i]] <- levels[[idx + 1L]]
+  }
+  rducks_enum(out, levels = levels)
+}
+
 rducks_arrow_enum_storage_array <- function(chars, levels, schema) {
   storage_schema <- rducks_arrow_enum_storage_schema(schema)
   valid <- !is.na(chars)
@@ -809,7 +845,8 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
     return(rducks_arrow_decimal_array_to_values(array, params$width, params$scale))
   }
   if (inherits(type, "rducks_enum_type")) {
-    return(rducks_enum(nanoarrow::convert_array(array, to = character()), levels = rducks_type_parameters(type)$levels))
+    levels <- rducks_type_parameters(type)$levels
+    return(rducks_arrow_enum_array_to_values(array, schema, levels))
   }
   if (inherits(type, "rducks_list_type")) {
     return(rducks_arrow_list_array_to_values(type, array, schema))
@@ -1237,7 +1274,7 @@ rducks_make_arrow_row_wrapper <- function(fun, spec, null_handling, exception_ha
     }, error = function(e) {
       msg <- paste0("Rducks Arrow callback or marshal error: ", conditionMessage(e))
       .rducks_state$last_arrow_error <- msg
-      stop(msg, call. = FALSE)
+      rducks_arrow_error(msg)
     })
   }
 }

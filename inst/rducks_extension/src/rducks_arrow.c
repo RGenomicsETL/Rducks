@@ -298,6 +298,15 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
         goto fail;
     }
 
+    if (Rf_inherits(result, "rducks_arrow_error")) {
+        if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
+            snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
+        } else {
+            snprintf(err_msg, err_cap, "Rducks Arrow callback or marshal error");
+        }
+        goto fail;
+    }
+
     if (!rducks_import_arrow_result(result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
 
     UNPROTECT(protect_count);
