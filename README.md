@@ -12,7 +12,7 @@ row-mode callback bridge directly against R.
 
 Rducks has two native boundaries: an R package that owns callback
 lifetime and registration ergonomics, and a loaded DuckDB extension that
-owns SQL function registration, DuckDB vector access, and current
+owns SQL function registration, DuckDB chunk access, and current
 row-mode callback execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
@@ -30,9 +30,11 @@ Rducks calls the extension function `rducks_register_scalar(...)`,
 passing the callback token, type descriptor tokens, and
 NULL/exception/side-effect flags. The extension registers one DuckDB
 scalar function implementation and stores the per-UDF metadata in DuckDB
-`extra_info`. During query execution, that generic DuckDB callback reads
-input vectors, constructs the row callback values, calls the R function
-with `R_tryEvalSilent()`, and writes the result into the output vector.
+`extra_info`. During query execution, that generic DuckDB callback
+exports input chunks through the DuckDB Arrow C Data API, calls the
+private nanoarrow row adapter on the main R thread, imports the returned
+Arrow data back into a DuckDB chunk, and attaches the result to the
+DuckDB output vector.
 
 ## Getting started
 
@@ -63,8 +65,8 @@ you want to soft-unregister the UDF later with
 `rducks_unregister(reg_plus_one)`.
 
 The implemented mode is `mode = "row"`, which calls the R function once
-per row. Future chunk or Arrow-backed execution modes will be added only
-when they execute real UDFs.
+per row. Internally this row adapter is Arrow/nanoarrow-backed. Future
+chunk execution modes will be added only when they execute real UDFs.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
@@ -110,9 +112,9 @@ ordinary R values against those descriptors before marshalling.
 The table below is produced by `rducks_mode_semantics()`. Only `row` is
 public and implemented now.
 
-| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                         | copy_semantics                                                                          |
-|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
-| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | requires callbacks to execute on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1, and native guards refuse worker-thread R calls | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
+| mode  | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                         | threading                                                                                                                                                                                                                   | copy_semantics                                                                          |
+|:------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
+| `row` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per callback invocation | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | row values are boxed/copied into R objects; exact/exotic types use Rducks value classes |
 
 ## Type descriptors
 
@@ -143,14 +145,16 @@ Expand for argument values passed to R functions
 </summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()`
-helper and reflects the currently implemented row-mode native
+helper and reflects the currently implemented Arrow-backed row
 marshalling path. With `null_handling = "default"`, any top-level SQL
 `NULL` input makes DuckDB return SQL `NULL` without calling the R
 callback. The `SQL NULL in callback` column below applies when
-`null_handling = "special"`. For composite inputs, top-level `NULL`
-values are passed as R `NULL`; `NULL` elements in homogeneous scalar
-lists/arrays are represented as typed `NA` values, while nested
-composite `NULL` values are represented as R `NULL`.
+`null_handling = "special"`. It is type-specific: ordinary R scalar
+types receive typed `NA` values, while exact/exotic value classes,
+binary values, and top-level composite values receive R `NULL`. Within
+homogeneous scalar lists/arrays, SQL `NULL` elements are represented as
+typed `NA` values where the child type has an R `NA` representation;
+nested composite `NULL` values are represented as R `NULL`.
 
 | argument_type                        | r_type          | r_value_passed_to_fun                                  | sql_null_in_callback  | copy_semantics                  | notes                                                            |
 |:-------------------------------------|:----------------|:-------------------------------------------------------|:----------------------|:--------------------------------|:-----------------------------------------------------------------|
@@ -291,8 +295,10 @@ dbGetQuery(con, paste(
 By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL
 `NULL`, the R callback is not called and the SQL result is `NULL`.
 
-Use `null_handling = "special"` to pass an R NA-like value to the R
-function for SQL `NULL` inputs.
+Use `null_handling = "special"` to pass the type-specific missing value
+shown in `rducks_argument_type_mapping()` to the R function for SQL
+`NULL` inputs. For ordinary scalar types this is usually a typed `NA`;
+for exact/exotic, binary, and composite inputs it is R `NULL`.
 
 ``` r
 reg_null_special <- rducks_register(

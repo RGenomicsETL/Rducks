@@ -45,7 +45,7 @@ rducks_assert_row_marshalling_supported <- function(spec) {
   unsupported <- unsupported[nzchar(unsupported)]
   if (length(unsupported)) {
     stop(
-      "row-mode native marshalling is not implemented yet for: ",
+      "row-mode marshalling is not implemented yet for: ",
       paste(unique(unsupported), collapse = ", "),
       call. = FALSE
     )
@@ -68,10 +68,12 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
 #' @param mode Registration mode. `"row"` is implemented now and calls the R
-#'   function once per row through the native Rducks DuckDB extension.
+#'   function once per DuckDB row through the Arrow-backed row adapter.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
-#'   the R function, or `"special"` to call the R function with NA-like R
-#'   values for NULL inputs.
+#'   the R function, or `"special"` to call the R function with the declared
+#'   type's missing-value shape for NULL inputs (for example typed `NA` for
+#'   ordinary scalar types and `NULL` for exact/exotic, binary, and composite
+#'   values).
 #' @param exception_handling Either `"rethrow"` to report R errors to DuckDB, or
 #'   `"return_null"` to turn callback errors into SQL NULL values.
 #' @param side_effects Logical scalar. Use `TRUE` for callbacks with randomness,

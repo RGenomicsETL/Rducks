@@ -680,26 +680,42 @@ print.rducks_union <- function(x, ...) {
 #' Generic helpers for Rducks value classes
 #'
 #' These helpers provide a small common interface for Rducks' exact value
-#' classes used to represent DuckDB-specific values before native UDF marshalling
-#' for those types is enabled.
+#' classes used to represent DuckDB-specific values.
 #'
 #' @param x A value object.
 #' @param ... Reserved for methods.
 #' @return `rducks_value_type()` returns a DuckDB type string.
 #' @export
-rducks_value_type <- function(x, ...) UseMethod("rducks_value_type")
-
-#' @export
-rducks_value_type.default <- function(x, ...) {
-  stop("no Rducks DuckDB type mapping for objects of class: ", paste(class(x), collapse = ", "), call. = FALSE)
-}
+rducks_value_type <- S7::new_generic(
+  "rducks_value_type",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
 #' @rdname rducks_value_type
 #' @export
-rducks_duckdb_literal <- function(x, ...) UseMethod("rducks_duckdb_literal")
+rducks_duckdb_literal <- S7::new_generic(
+  "rducks_duckdb_literal",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_duckdb_literal.default <- function(x, ...) {
+rducks_bigint_value_class <- S7::new_S3_class("rducks_bigint")
+rducks_ubigint_value_class <- S7::new_S3_class("rducks_ubigint")
+rducks_uuid_value_class <- S7::new_S3_class("rducks_uuid")
+rducks_hugeint_value_class <- S7::new_S3_class("rducks_hugeint")
+rducks_uhugeint_value_class <- S7::new_S3_class("rducks_uhugeint")
+rducks_decimal_value_class <- S7::new_S3_class("rducks_decimal")
+rducks_interval_value_class <- S7::new_S3_class("rducks_interval")
+rducks_bits_value_class <- S7::new_S3_class("rducks_bits")
+rducks_enum_value_class <- S7::new_S3_class("rducks_enum")
+rducks_union_value_class <- S7::new_S3_class("rducks_union")
+
+S7::method(rducks_value_type, S7::class_any) <- function(x, ...) {
+  stop("no Rducks DuckDB type mapping for objects of class: ", paste(class(x), collapse = ", "), call. = FALSE)
+}
+
+S7::method(rducks_duckdb_literal, S7::class_any) <- function(x, ...) {
   stop("no DuckDB literal method for objects of class: ", paste(class(x), collapse = ", "), call. = FALSE)
 }
 
@@ -710,71 +726,59 @@ rducks_scalar_literal_check <- function(x) {
   invisible(NULL)
 }
 
-#' @export
-rducks_value_type.rducks_bigint <- function(x, ...) "BIGINT"
+S7::method(rducks_value_type, rducks_bigint_value_class) <- function(x, ...) "BIGINT"
 
-#' @export
-rducks_duckdb_literal.rducks_bigint <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_bigint_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return("NULL::BIGINT")
   paste0(rducks_sql_quote(unclass(x)), "::BIGINT")
 }
 
-#' @export
-rducks_value_type.rducks_ubigint <- function(x, ...) "UBIGINT"
+S7::method(rducks_value_type, rducks_ubigint_value_class) <- function(x, ...) "UBIGINT"
 
-#' @export
-rducks_duckdb_literal.rducks_ubigint <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_ubigint_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return("NULL::UBIGINT")
   paste0(rducks_sql_quote(unclass(x)), "::UBIGINT")
 }
 
-#' @export
-rducks_value_type.rducks_uuid <- function(x, ...) "UUID"
+S7::method(rducks_value_type, rducks_uuid_value_class) <- function(x, ...) "UUID"
 
-#' @export
-rducks_duckdb_literal.rducks_uuid <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_uuid_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return("NULL::UUID")
   paste0(rducks_sql_quote(unclass(x)), "::UUID")
 }
 
-#' @export
-rducks_value_type.rducks_hugeint <- function(x, ...) "HUGEINT"
+S7::method(rducks_value_type, rducks_hugeint_value_class) <- function(x, ...) "HUGEINT"
 
-#' @export
-rducks_duckdb_literal.rducks_hugeint <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_hugeint_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return("NULL::HUGEINT")
   paste0(rducks_sql_quote(unclass(x)), "::HUGEINT")
 }
 
-#' @export
-rducks_value_type.rducks_uhugeint <- function(x, ...) "UHUGEINT"
+S7::method(rducks_value_type, rducks_uhugeint_value_class) <- function(x, ...) "UHUGEINT"
 
-#' @export
-rducks_duckdb_literal.rducks_uhugeint <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_uhugeint_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return("NULL::UHUGEINT")
   paste0(rducks_sql_quote(unclass(x)), "::UHUGEINT")
 }
 
-#' @export
-rducks_value_type.rducks_decimal <- function(x, ...) sprintf("DECIMAL(%d, %d)", x$width, x$scale)
+S7::method(rducks_value_type, rducks_decimal_value_class) <- function(x, ...) {
+  sprintf("DECIMAL(%d, %d)", x$width, x$scale)
+}
 
-#' @export
-rducks_duckdb_literal.rducks_decimal <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_decimal_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x$value)) return(paste0("NULL::", rducks_value_type(x)))
   paste0(rducks_sql_quote(x$value), "::", rducks_value_type(x))
 }
 
-#' @export
-rducks_value_type.rducks_interval <- function(x, ...) "INTERVAL"
+S7::method(rducks_value_type, rducks_interval_value_class) <- function(x, ...) "INTERVAL"
 
-#' @export
-rducks_duckdb_literal.rducks_interval <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_interval_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x$months) || is.na(x$days) || is.na(x$micros)) return("NULL::INTERVAL")
   sprintf(
@@ -783,31 +787,25 @@ rducks_duckdb_literal.rducks_interval <- function(x, ...) {
   )
 }
 
-#' @export
-rducks_value_type.rducks_bits <- function(x, ...) "BIT"
+S7::method(rducks_value_type, rducks_bits_value_class) <- function(x, ...) "BIT"
 
-#' @export
-rducks_duckdb_literal.rducks_bits <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_bits_value_class) <- function(x, ...) {
   paste0(rducks_sql_quote(as.character(x)), "::BIT")
 }
 
-#' @export
-rducks_value_type.rducks_enum <- function(x, ...) {
+S7::method(rducks_value_type, rducks_enum_value_class) <- function(x, ...) {
   paste0("ENUM(", paste(vapply(levels(x), rducks_sql_quote, character(1)), collapse = ", "), ")")
 }
 
-#' @export
-rducks_duckdb_literal.rducks_enum <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_enum_value_class) <- function(x, ...) {
   rducks_scalar_literal_check(x)
   if (is.na(x)) return(paste0("NULL::", rducks_value_type(x)))
   paste0(rducks_sql_quote(as.character(x)), "::", rducks_value_type(x))
 }
 
-#' @export
-rducks_value_type.rducks_union <- function(x, ...) paste0("UNION member ", x$tag)
+S7::method(rducks_value_type, rducks_union_value_class) <- function(x, ...) paste0("UNION member ", x$tag)
 
-#' @export
-rducks_duckdb_literal.rducks_union <- function(x, ...) {
+S7::method(rducks_duckdb_literal, rducks_union_value_class) <- function(x, ...) {
   stop("DuckDB UNION literals require a declared union type and are not generated by rducks_duckdb_literal()", call. = FALSE)
 }
 

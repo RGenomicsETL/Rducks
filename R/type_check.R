@@ -75,9 +75,20 @@ rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
 
 rducks_check_sequence_value <- function(type, x, size = NULL, what = "value") {
   child <- rducks_type_children(type)[[1L]]
+  child_kind <- rducks_type_kind(child)
   rducks_check_length(x, size, what)
-  if (identical(rducks_type_kind(child), "scalar") && !identical(rducks_type_token(child), "blob")) {
+  if (identical(child_kind, "scalar") && !identical(rducks_type_token(child), "blob")) {
     rducks_check_value(child, x, what = what)
+    return(invisible(TRUE))
+  }
+  if (child_kind %in% c("decimal", "enum")) {
+    if (is.list(x) && !inherits(x, c("rducks_decimal", "rducks_enum"))) {
+      for (i in seq_along(x)) {
+        rducks_check_value(child, x[[i]], what = sprintf("%s[[%d]]", what, i))
+      }
+    } else {
+      rducks_check_value(child, x, what = what)
+    }
     return(invisible(TRUE))
   }
   if (!is.list(x)) {

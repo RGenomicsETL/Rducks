@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       USE_UNSTABLE_C_API: "1"
-      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT
+      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
         env:
           GITHUB_PAT: ${{ github.token }}
         run: |
-          install.packages(c("DBI", "duckdb", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "nanoarrow", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks

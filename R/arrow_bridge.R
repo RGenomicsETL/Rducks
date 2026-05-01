@@ -366,7 +366,20 @@ rducks_arrow_bool8_array_to_logical <- function(array) {
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
   bytes <- as.raw(array$buffers[[2L]])
-  out <- bytes[offset + seq_len(n)] != as.raw(0)
+  byte_rows <- offset + seq_len(n)
+  byte_values <- if (length(bytes) >= max(byte_rows)) as.integer(bytes[byte_rows]) else integer()
+  byte_per_value <- length(byte_values) == n && all(byte_values %in% c(0L, 1L))
+  if (byte_per_value) {
+    out <- byte_values != 0L
+  } else {
+    out <- logical(n)
+    for (i in seq_len(n)) {
+      bit <- offset + i - 1L
+      byte_index <- bit %/% 8L + 1L
+      bit_index <- bit %% 8L
+      out[[i]] <- bitwAnd(as.integer(bytes[[byte_index]]), bitwShiftL(1L, bit_index)) != 0L
+    }
+  }
   out[!valid] <- NA
   out
 }
@@ -593,18 +606,125 @@ rducks_arrow_union_array <- function(type, results, schema) {
   )
 }
 
+rducks_arrow_sequence_slice <- function(type, values, rows) {
+  if (!length(rows)) {
+    return(values[integer()])
+  }
+  if (inherits(type, "rducks_scalar_type") || inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
+    return(values[rows])
+  }
+  values[rows]
+}
+
+rducks_arrow_list_array_to_values <- function(type, array, schema = NULL) {
+  n <- as.integer(array$length)
+  offset <- as.integer(array$offset %||% 0L)
+  valid <- rducks_arrow_validity(array, n)
+  offsets <- as.integer(as.vector(array$buffers[[2L]]))
+  child_type <- rducks_type_children(type)[[1L]]
+  child_schema <- if (is.null(schema)) NULL else schema$children[[1L]]
+  child_values <- rducks_arrow_array_to_values(child_type, array$children[[1L]], child_schema)
+  out <- vector("list", n)
+  for (i in seq_len(n)) {
+    if (!isTRUE(valid[[i]])) next
+    start <- offsets[[offset + i]] + 1L
+    end <- offsets[[offset + i + 1L]]
+    rows <- if (end >= start) start:end else integer()
+    out[[i]] <- rducks_arrow_sequence_slice(child_type, child_values, rows)
+  }
+  out
+}
+
+rducks_arrow_array_array_to_values <- function(type, array, schema = NULL) {
+  n <- as.integer(array$length)
+  offset <- as.integer(array$offset %||% 0L)
+  valid <- rducks_arrow_validity(array, n)
+  size <- as.integer(rducks_type_size(type))
+  child_type <- rducks_type_children(type)[[1L]]
+  child_schema <- if (is.null(schema)) NULL else schema$children[[1L]]
+  child_values <- rducks_arrow_array_to_values(child_type, array$children[[1L]], child_schema)
+  out <- vector("list", n)
+  for (i in seq_len(n)) {
+    if (!isTRUE(valid[[i]])) next
+    start <- (offset + i - 1L) * size + 1L
+    rows <- start + seq_len(size) - 1L
+    out[[i]] <- rducks_arrow_sequence_slice(child_type, child_values, rows)
+  }
+  out
+}
+
+rducks_arrow_struct_array_to_values <- function(type, array, schema = NULL) {
+  n <- as.integer(array$length)
+  valid <- rducks_arrow_validity(array, n)
+  children <- rducks_type_children(type)
+  child_names <- rducks_type_child_names(type)
+  child_values <- vector("list", length(children))
+  child_nulls <- vector("list", length(children))
+  for (j in seq_along(children)) {
+    child_schema <- if (is.null(schema)) NULL else schema$children[[j]]
+    child_values[[j]] <- rducks_arrow_array_to_values(children[[j]], array$children[[j]], child_schema)
+    child_nulls[[j]] <- if (inherits(children[[j]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(array$children[[j]], n)
+  }
+  out <- vector("list", n)
+  for (i in seq_len(n)) {
+    if (!isTRUE(valid[[i]])) next
+    row <- vector("list", length(children))
+    names(row) <- child_names
+    for (j in seq_along(children)) {
+      row[j] <- list(rducks_arrow_value_at(children[[j]], child_values[[j]], child_nulls[[j]], i))
+    }
+    out[[i]] <- row
+  }
+  out
+}
+
+rducks_arrow_import_child_schema <- function(type, schema) {
+  out <- nanoarrow::as_nanoarrow_schema(schema)
+  if (inherits(type, "rducks_enum_type")) {
+    return(rducks_arrow_enum_storage_schema(out))
+  }
+  if (inherits(type, c("rducks_list_type", "rducks_array_type"))) {
+    out$children[[1L]] <- rducks_arrow_import_child_schema(rducks_type_children(type)[[1L]], out$children[[1L]])
+    return(out)
+  }
+  if (inherits(type, "rducks_struct_type")) {
+    children <- rducks_type_children(type)
+    for (i in seq_along(children)) {
+      out$children[[i]] <- rducks_arrow_import_child_schema(children[[i]], out$children[[i]])
+    }
+    return(out)
+  }
+  if (inherits(type, "rducks_map_type")) {
+    children <- rducks_type_children(type)
+    entries <- out$children[[1L]]
+    entries$children[[1L]] <- rducks_arrow_import_child_schema(children[[1L]], entries$children[[1L]])
+    entries$children[[2L]] <- rducks_arrow_import_child_schema(children[[2L]], entries$children[[2L]])
+    out$children[[1L]] <- entries
+    return(out)
+  }
+  if (inherits(type, "rducks_union_type")) {
+    children <- rducks_type_children(type)
+    for (i in seq_along(children)) {
+      out$children[[i]] <- rducks_arrow_import_child_schema(children[[i]], out$children[[i]])
+    }
+    return(out)
+  }
+  out
+}
+
 rducks_arrow_import_schema <- function(type, output_schema) {
-  if (!inherits(type, "rducks_enum_type")) return(output_schema)
   schema <- nanoarrow::as_nanoarrow_schema(output_schema)
-  schema$children[[1L]] <- rducks_arrow_enum_storage_schema(schema$children[[1L]])
+  schema$children[[1L]] <- rducks_arrow_import_child_schema(type, schema$children[[1L]])
   schema
 }
 
-rducks_arrow_scalar_array_to_values <- function(type, array, schema = NULL) {
-  UseMethod("rducks_arrow_scalar_array_to_values")
-}
+rducks_arrow_scalar_array_to_values <- S7::new_generic(
+  "rducks_arrow_scalar_array_to_values",
+  "type",
+  function(type, array, schema = NULL) S7::S7_dispatch()
+)
 
-rducks_arrow_scalar_array_to_values.rducks_bool_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_bool_type_class) <- function(type, array, schema = NULL) {
   if (identical(rducks_arrow_schema_extension_name(schema), "arrow.bool8")) {
     rducks_arrow_bool8_array_to_logical(array)
   } else {
@@ -612,55 +732,55 @@ rducks_arrow_scalar_array_to_values.rducks_bool_type <- function(type, array, sc
   }
 }
 
-rducks_arrow_scalar_array_to_values.rducks_r_integer_scalar_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_r_integer_scalar_type_class) <- function(type, array, schema = NULL) {
   as.integer(nanoarrow::convert_array(array, to = integer()))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_u32_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_u32_type_class) <- function(type, array, schema = NULL) {
   as.numeric(nanoarrow::convert_array(array, to = numeric()))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_i64_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_i64_type_class) <- function(type, array, schema = NULL) {
   rducks_bigint(rducks_arrow_fixed_width_array_to_decimal(array, 8L, signed = TRUE))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_u64_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_u64_type_class) <- function(type, array, schema = NULL) {
   rducks_ubigint(rducks_arrow_fixed_width_array_to_decimal(array, 8L, signed = FALSE))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_floating_scalar_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_floating_scalar_type_class) <- function(type, array, schema = NULL) {
   as.numeric(nanoarrow::convert_array(array, to = numeric()))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_varchar_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_varchar_type_class) <- function(type, array, schema = NULL) {
   as.character(nanoarrow::convert_array(array, to = character()))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_blob_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_blob_type_class) <- function(type, array, schema = NULL) {
   as.list(nanoarrow::convert_array(array))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_date_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_date_type_class) <- function(type, array, schema = NULL) {
   nanoarrow::convert_array(array, to = as.Date(character()))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_time_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_time_type_class) <- function(type, array, schema = NULL) {
   as.numeric(nanoarrow::convert_array(array))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_timestamp_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_timestamp_type_class) <- function(type, array, schema = NULL) {
   nanoarrow::convert_array(array, to = as.POSIXct(character(), tz = "UTC"))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_hugeint_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_hugeint_type_class) <- function(type, array, schema = NULL) {
   rducks_hugeint(rducks_arrow_fixed_width_array_to_decimal(array, 16L, signed = TRUE))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_uhugeint_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_uhugeint_type_class) <- function(type, array, schema = NULL) {
   rducks_uhugeint(rducks_arrow_fixed_width_array_to_decimal(array, 16L, signed = FALSE))
 }
 
-rducks_arrow_scalar_array_to_values.rducks_uuid_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_uuid_type_class) <- function(type, array, schema = NULL) {
   if (identical(rducks_arrow_schema_extension_name(schema), "arrow.uuid")) {
     rducks_uuid(rducks_arrow_uuid_array_to_character(array))
   } else {
@@ -668,15 +788,15 @@ rducks_arrow_scalar_array_to_values.rducks_uuid_type <- function(type, array, sc
   }
 }
 
-rducks_arrow_scalar_array_to_values.rducks_interval_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_interval_type_class) <- function(type, array, schema = NULL) {
   rducks_arrow_interval_array_to_values(array)
 }
 
-rducks_arrow_scalar_array_to_values.rducks_bit_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_bit_type_class) <- function(type, array, schema = NULL) {
   rducks_arrow_bit_array_to_values(array)
 }
 
-rducks_arrow_scalar_array_to_values.rducks_scalar_type <- function(type, array, schema = NULL) {
+S7::method(rducks_arrow_scalar_array_to_values, rducks_scalar_type_class) <- function(type, array, schema = NULL) {
   nanoarrow::convert_array(array)
 }
 
@@ -690,6 +810,15 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
   }
   if (inherits(type, "rducks_enum_type")) {
     return(rducks_enum(nanoarrow::convert_array(array, to = character()), levels = rducks_type_parameters(type)$levels))
+  }
+  if (inherits(type, "rducks_list_type")) {
+    return(rducks_arrow_list_array_to_values(type, array, schema))
+  }
+  if (inherits(type, "rducks_array_type")) {
+    return(rducks_arrow_array_array_to_values(type, array, schema))
+  }
+  if (inherits(type, "rducks_struct_type")) {
+    return(rducks_arrow_struct_array_to_values(type, array, schema))
   }
   if (inherits(type, "rducks_map_type")) {
     return(rducks_arrow_map_array_to_values(type, array, schema))
@@ -762,11 +891,27 @@ rducks_arrow_results_as_character <- function(results) {
   vapply(results, function(x) if (is.null(x)) NA_character_ else as.character(x)[[1L]], character(1))
 }
 
-rducks_arrow_scalar_values_to_array <- function(type, results, schema) {
-  UseMethod("rducks_arrow_scalar_values_to_array")
+rducks_arrow_sequence_value_at <- function(type, value, j) {
+  if (inherits(type, "rducks_scalar_type")) {
+    if (inherits(type, c("rducks_blob_type", "rducks_bit_type"))) return(value[[j]])
+    return(value[j])
+  }
+  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
+    if (is.list(value) && !inherits(value, c("rducks_decimal", "rducks_enum", "rducks_interval"))) {
+      return(value[[j]])
+    }
+    return(value[j])
+  }
+  value[[j]]
 }
 
-rducks_arrow_scalar_values_to_array.rducks_bool_type <- function(type, results, schema) {
+rducks_arrow_scalar_values_to_array <- S7::new_generic(
+  "rducks_arrow_scalar_values_to_array",
+  "type",
+  function(type, results, schema) S7::S7_dispatch()
+)
+
+S7::method(rducks_arrow_scalar_values_to_array, rducks_bool_type_class) <- function(type, results, schema) {
   values <- rducks_arrow_results_as_logical(results)
   if (identical(rducks_arrow_schema_extension_name(schema), "arrow.bool8")) {
     rducks_arrow_bool8_array(values, schema)
@@ -775,61 +920,61 @@ rducks_arrow_scalar_values_to_array.rducks_bool_type <- function(type, results, 
   }
 }
 
-rducks_arrow_scalar_values_to_array.rducks_r_integer_scalar_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_r_integer_scalar_type_class) <- function(type, results, schema) {
   nanoarrow::as_nanoarrow_array(rducks_arrow_results_as_integer(results), schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_u32_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_u32_type_class) <- function(type, results, schema) {
   nanoarrow::as_nanoarrow_array(rducks_arrow_results_as_numeric(results), schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_f32_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_f32_type_class) <- function(type, results, schema) {
   rducks_arrow_float_array(rducks_arrow_results_as_numeric(results), schema, 4L)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_f64_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_f64_type_class) <- function(type, results, schema) {
   rducks_arrow_float_array(rducks_arrow_results_as_numeric(results), schema, 8L)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_varchar_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_varchar_type_class) <- function(type, results, schema) {
   nanoarrow::as_nanoarrow_array(rducks_arrow_results_as_character(results), schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_date_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_date_type_class) <- function(type, results, schema) {
   values <- as.Date(rducks_arrow_results_as_numeric(results), origin = "1970-01-01")
   nanoarrow::as_nanoarrow_array(values, schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_time_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_time_type_class) <- function(type, results, schema) {
   rducks_arrow_time_array(rducks_arrow_results_as_numeric(results), schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_timestamp_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_timestamp_type_class) <- function(type, results, schema) {
   values <- as.POSIXct(rducks_arrow_results_as_numeric(results), origin = "1970-01-01", tz = "UTC")
   rducks_arrow_timestamp_array(values, schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_i64_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_i64_type_class) <- function(type, results, schema) {
   values <- rducks_bigint(rducks_arrow_results_as_character(results))
   rducks_arrow_fixed_width_array(values, schema, 8L, signed = TRUE)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_u64_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_u64_type_class) <- function(type, results, schema) {
   values <- rducks_ubigint(rducks_arrow_results_as_character(results))
   rducks_arrow_fixed_width_array(values, schema, 8L, signed = FALSE)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_hugeint_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_hugeint_type_class) <- function(type, results, schema) {
   values <- rducks_hugeint(rducks_arrow_results_as_character(results))
   rducks_arrow_fixed_width_array(values, schema, 16L, signed = TRUE)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_uhugeint_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_uhugeint_type_class) <- function(type, results, schema) {
   values <- rducks_uhugeint(rducks_arrow_results_as_character(results))
   rducks_arrow_fixed_width_array(values, schema, 16L, signed = FALSE)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_uuid_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_uuid_type_class) <- function(type, results, schema) {
   values <- rducks_uuid(rducks_arrow_results_as_character(results))
   parsed <- try(nanoarrow::nanoarrow_schema_parse(schema), silent = TRUE)
   if (!inherits(parsed, "try-error") && parsed$type %in% c("fixed_size_binary", "binary")) {
@@ -838,20 +983,67 @@ rducks_arrow_scalar_values_to_array.rducks_uuid_type <- function(type, results, 
   nanoarrow::as_nanoarrow_array(as.character(values), schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_interval_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_interval_type_class) <- function(type, results, schema) {
   rducks_arrow_interval_array(results, schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_bit_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_bit_type_class) <- function(type, results, schema) {
   rducks_arrow_bit_array(results, schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_blob_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_blob_type_class) <- function(type, results, schema) {
   nanoarrow::as_nanoarrow_array(results, schema = schema)
 }
 
-rducks_arrow_scalar_values_to_array.rducks_scalar_type <- function(type, results, schema) {
+S7::method(rducks_arrow_scalar_values_to_array, rducks_scalar_type_class) <- function(type, results, schema) {
   nanoarrow::as_nanoarrow_array(results, schema = schema)
+}
+
+rducks_arrow_map_array <- function(type, results, schema) {
+  n <- length(results)
+  children <- rducks_type_children(type)
+  key_type <- children[[1L]]
+  value_type <- children[[2L]]
+  entry_schema <- schema$children[[1L]]
+  valid <- !vapply(results, is.null, logical(1))
+  lengths <- vapply(results, function(x) {
+    if (is.null(x)) return(0L)
+    if (!is.list(x) || is.null(x$keys) || is.null(x$values)) {
+      stop("MAP values must be list(keys = ..., values = ...)", call. = FALSE)
+    }
+    if (length(x$keys) != length(x$values)) {
+      stop("MAP keys and values must have equal length", call. = FALSE)
+    }
+    length(x$keys)
+  }, integer(1))
+  offsets <- c(0L, cumsum(lengths))
+  flat_keys <- vector("list", sum(lengths))
+  flat_values <- vector("list", sum(lengths))
+  pos <- 1L
+  for (value in results) {
+    if (is.null(value)) next
+    for (j in seq_len(length(value$keys))) {
+      flat_keys[pos] <- list(rducks_arrow_sequence_value_at(key_type, value$keys, j))
+      flat_values[pos] <- list(rducks_arrow_sequence_value_at(value_type, value$values, j))
+      pos <- pos + 1L
+    }
+  }
+  key_array <- rducks_arrow_values_to_array(key_type, flat_keys, entry_schema$children[[1L]])
+  value_array <- rducks_arrow_values_to_array(value_type, flat_values, entry_schema$children[[2L]])
+  entry_array <- nanoarrow::nanoarrow_array_init(entry_schema)
+  entry_array <- nanoarrow::nanoarrow_array_modify(entry_array, list(
+    length = sum(lengths),
+    null_count = 0L,
+    buffers = list(NULL),
+    children = list(key = key_array, value = value_array)
+  ))
+  array <- nanoarrow::nanoarrow_array_init(schema)
+  nanoarrow::nanoarrow_array_modify(array, list(
+    length = n,
+    null_count = sum(!valid),
+    buffers = list(rducks_arrow_validity_buffer(valid), as.integer(offsets)),
+    children = list(entries = entry_array)
+  ))
 }
 
 rducks_arrow_values_to_array <- function(type, results, schema) {
@@ -885,7 +1077,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     for (value in results) {
       if (is.null(value)) next
       for (j in seq_len(length(value))) {
-        flat[pos] <- list(if (inherits(value, "rducks_decimal") || inherits(value, "rducks_interval")) value[j] else value[[j]])
+        flat[pos] <- list(rducks_arrow_sequence_value_at(child_type, value, j))
         pos <- pos + 1L
       }
     }
@@ -911,7 +1103,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
         next
       }
       for (j in seq_len(size)) {
-        flat[pos] <- list(if (inherits(value, "rducks_decimal") || inherits(value, "rducks_interval")) value[j] else value[[j]])
+        flat[pos] <- list(rducks_arrow_sequence_value_at(child_type, value, j))
         pos <- pos + 1L
       }
     }
@@ -951,14 +1143,10 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
 
   # MAP is delegated to nanoarrow's schema-guided constructor. This keeps the
   # native path Arrow-based while the R adapter normalizes row objects.
-  prepared <- results
   if (inherits(type, "rducks_map_type")) {
-    prepared <- lapply(results, function(x) {
-      if (is.null(x)) return(NULL)
-      data.frame(key = I(x$keys), value = I(x$values))
-    })
+    return(rducks_arrow_map_array(type, results, schema))
   }
-  nanoarrow::as_nanoarrow_array(prepared, schema = schema)
+  nanoarrow::as_nanoarrow_array(results, schema = schema)
 }
 
 rducks_arrow_result_array <- function(type, results, output_schema, n) {

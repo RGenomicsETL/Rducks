@@ -30,11 +30,13 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{returns}{Return type specification.}
 
 \item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per row through the native Rducks DuckDB extension.}
+function once per DuckDB row through the Arrow-backed row adapter.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
-the R function, or \code{"special"} to call the R function with NA-like R
-values for NULL inputs.}
+the R function, or \code{"special"} to call the R function with the declared
+type's missing-value shape for NULL inputs (for example typed \code{NA} for
+ordinary scalar types and \code{NULL} for exact/exotic, binary, and composite
+values).}
 
 \item{exception_handling}{Either \code{"rethrow"} to report R errors to DuckDB, or
 \code{"return_null"} to turn callback errors into SQL NULL values.}

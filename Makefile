@@ -1,6 +1,6 @@
 PKG := Rducks
 USE_UNSTABLE_C_API ?= 1
-RDUCKS_EXTENSION_ABI_TYPE ?= C_STRUCT
+RDUCKS_EXTENSION_ABI_TYPE ?= C_STRUCT_UNSTABLE
 
 .PHONY: rd catalog test install check build clean
 

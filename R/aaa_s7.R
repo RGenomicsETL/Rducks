@@ -223,72 +223,114 @@ rducks_type_method_error <- function(x, method) {
 #'   `rducks_type_kind()` returns the descriptor kind; child and parameter
 #'   helpers return descriptor metadata.
 #' @export
-rducks_type_token <- function(x, ...) UseMethod("rducks_type_token")
+rducks_type_token <- S7::new_generic(
+  "rducks_type_token",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_type_token.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_token()")
+S7::method(rducks_type_token, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_token()")
+}
 
-#' @export
-rducks_type_token.rducks_type <- function(x, ...) rducks_type_prop(x, "token")
+S7::method(rducks_type_token, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "token")
+}
 
 #' @rdname rducks_type_token
 #' @export
-rducks_type_sql <- function(x, ...) UseMethod("rducks_type_sql")
+rducks_type_sql <- S7::new_generic(
+  "rducks_type_sql",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_type_sql.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_sql()")
+S7::method(rducks_type_sql, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_sql()")
+}
 
-#' @export
-rducks_type_sql.rducks_type <- function(x, ...) rducks_type_prop(x, "duckdb_sql")
+S7::method(rducks_type_sql, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "duckdb_sql")
+}
 
 rducks_type_duckdb_sql <- function(x) rducks_type_sql(x)
 
 #' @rdname rducks_type_token
 #' @export
-rducks_type_kind <- function(x, ...) UseMethod("rducks_type_kind")
+rducks_type_kind <- S7::new_generic(
+  "rducks_type_kind",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_type_kind.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_kind()")
+S7::method(rducks_type_kind, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_kind()")
+}
 
-#' @export
-rducks_type_kind.rducks_type <- function(x, ...) rducks_type_prop(x, "kind")
-
-#' @rdname rducks_type_token
-#' @export
-rducks_type_children <- function(x, ...) UseMethod("rducks_type_children")
-
-#' @export
-rducks_type_children.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_children()")
-
-#' @export
-rducks_type_children.rducks_type <- function(x, ...) rducks_type_prop(x, "children")
+S7::method(rducks_type_kind, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "kind")
+}
 
 #' @rdname rducks_type_token
 #' @export
-rducks_type_child_names <- function(x, ...) UseMethod("rducks_type_child_names")
+rducks_type_children <- S7::new_generic(
+  "rducks_type_children",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_type_child_names.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_child_names()")
+S7::method(rducks_type_children, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_children()")
+}
 
-#' @export
-rducks_type_child_names.rducks_type <- function(x, ...) rducks_type_prop(x, "child_names")
-
-#' @rdname rducks_type_token
-#' @export
-rducks_type_size <- function(x, ...) UseMethod("rducks_type_size")
-
-#' @export
-rducks_type_size.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_size()")
-
-#' @export
-rducks_type_size.rducks_type <- function(x, ...) rducks_type_prop(x, "size")
+S7::method(rducks_type_children, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "children")
+}
 
 #' @rdname rducks_type_token
 #' @export
-rducks_type_parameters <- function(x, ...) UseMethod("rducks_type_parameters")
+rducks_type_child_names <- S7::new_generic(
+  "rducks_type_child_names",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
 
-#' @export
-rducks_type_parameters.default <- function(x, ...) rducks_type_method_error(x, "rducks_type_parameters()")
+S7::method(rducks_type_child_names, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_child_names()")
+}
 
+S7::method(rducks_type_child_names, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "child_names")
+}
+
+#' @rdname rducks_type_token
 #' @export
-rducks_type_parameters.rducks_type <- function(x, ...) rducks_type_prop(x, "parameters")
+rducks_type_size <- S7::new_generic(
+  "rducks_type_size",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
+
+S7::method(rducks_type_size, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_size()")
+}
+
+S7::method(rducks_type_size, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "size")
+}
+
+#' @rdname rducks_type_token
+#' @export
+rducks_type_parameters <- S7::new_generic(
+  "rducks_type_parameters",
+  "x",
+  function(x, ...) S7::S7_dispatch()
+)
+
+S7::method(rducks_type_parameters, S7::class_any) <- function(x, ...) {
+  rducks_type_method_error(x, "rducks_type_parameters()")
+}
+
+S7::method(rducks_type_parameters, rducks_type_class) <- function(x, ...) {
+  rducks_type_prop(x, "parameters")
+}

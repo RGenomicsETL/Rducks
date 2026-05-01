@@ -19,18 +19,22 @@ A data frame with one row per requested type token.
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
-callback. It is used by registration checks and native row marshalling.
+callback. It is used by registration checks and the Arrow-backed row
+marshalling adapter.
 }
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
 to a SQL \code{NULL} result and the R callback is not called. The
 \code{sql_null_in_callback} column describes the value passed only when
-\code{null_handling = "special"}. For composite inputs, top-level \code{NULL} values
-are passed as R \code{NULL}; \code{NULL} elements in homogeneous scalar lists/arrays
-are represented as typed \code{NA} values, while nested composite \code{NULL} values
-are represented as R \code{NULL}.
+\code{null_handling = "special"}. This value is type-specific: ordinary R scalar
+types receive typed \code{NA} values, while exact/exotic value classes, binary
+values, and top-level composite values receive R \code{NULL}. Within homogeneous
+scalar lists/arrays, SQL \code{NULL} elements are represented as typed \code{NA} values
+where the child type has an R \code{NA} representation; nested composite \code{NULL}
+values are represented as R \code{NULL}.
 
-The default table contains all scalar types supported by row-mode native
-marshalling. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite descriptors can be
-requested explicitly to inspect their recursive R callback shapes.
+The default table contains all scalar types supported by the Arrow-backed
+row marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
+descriptors can be requested explicitly to inspect their recursive R
+callback shapes.
 }

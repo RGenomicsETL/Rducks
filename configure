@@ -26,9 +26,9 @@ if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; the
   exit 1
 fi
 case "${RDUCKS_EXTENSION_ABI_TYPE}" in
-  C_STRUCT|C_STRUCT_UNSTABLE) ;;
+  C_STRUCT_UNSTABLE) ;;
   *)
-    echo "ERROR: RDUCKS_EXTENSION_ABI_TYPE must be C_STRUCT or C_STRUCT_UNSTABLE (got '${RDUCKS_EXTENSION_ABI_TYPE}')"
+    echo "ERROR: Rducks uses DuckDB Arrow C APIs and must be built with RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE (got '${RDUCKS_EXTENSION_ABI_TYPE}')"
     exit 1
     ;;
 esac
@@ -74,8 +74,12 @@ if [ -z "${DUCKDB_VERSION}" ]; then
   fi
 fi
 
-ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE}"
+ABI_TYPE="C_STRUCT_UNSTABLE"
 UNSTABLE_CPPFLAGS=""
+if [ "${USE_UNSTABLE_C_API}" != "1" ]; then
+  echo "ERROR: Rducks uses DuckDB Arrow C APIs and requires USE_UNSTABLE_C_API=1"
+  exit 1
+fi
 if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
   UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
 fi

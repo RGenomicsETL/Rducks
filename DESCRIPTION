@@ -7,8 +7,9 @@ Authors@R: c(
   )
 Description: Experimental R package and DuckDB extension bridge for registering
     R functions as DuckDB user-defined functions. The package is designed around
-    a loaded DuckDB extension, generated per-signature native trampolines, and a
-    main-R-thread callback pump for safe interaction with R from DuckDB execution.
+    a loaded DuckDB extension, declarative type descriptors, Arrow-backed row
+    marshalling, and a main-R-thread callback pump for safe interaction with R
+    from DuckDB execution.
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
