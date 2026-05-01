@@ -18,12 +18,6 @@
 - [`rducks_bits()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md)
   [`rducks_bits_raw()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md)
   : Construct DuckDB BIT values
-- [`rducks_callback()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_callback.md)
-  : Register an R callback token
-- [`rducks_callback_close()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_callback_close.md)
-  : Close an Rducks callback token
-- [`rducks_callback_invoke()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_callback_invoke.md)
-  : Invoke an Rducks callback token
 - [`rducks_check_value()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   [`rducks_check_argument()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   [`rducks_check_return()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
@@ -46,8 +40,6 @@
   : Construct DuckDB INTERVAL values
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
   : Describe Rducks execution mode semantics
-- [`rducks_pump()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_pump.md)
-  : Pump pending Rducks callback requests
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
 - [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md)
@@ -98,8 +90,6 @@
   : Construct exact DuckDB UHUGEINT values
 - [`rducks_union()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_union.md)
   : Construct DuckDB UNION values
-- [`rducks_unregister()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_unregister.md)
-  : Soft-unregister an Rducks registration
 - [`rducks_uuid()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uuid.md)
   : Construct DuckDB UUID values
 - [`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md)

@@ -89,7 +89,7 @@ objects such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code
 
 <dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
 <dd><p>Registration mode. <code>"row"</code> is implemented now and calls the R
-function once per DuckDB row through the Arrow-backed row adapter.</p></dd>
+function once per DuckDB row through the nanoarrow row adapter.</p></dd>
 
 
 <dt id="arg-null-handling">null_handling<a class="anchor" aria-label="anchor" href="#arg-null-handling"></a></dt>
@@ -113,8 +113,9 @@ function as pure.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Object of class <code>rducks_registration</code>. Keep this object if you want
-to soft-unregister the UDF later with <code><a href="rducks_unregister.html">rducks_unregister()</a></code>.</p>
+    <p>Object of class <code>rducks_registration</code> containing the connection,
+normalized signature, and registration options. The UDF remains registered
+in DuckDB even if this object is discarded.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -1,8 +1,9 @@
 # Normalize an Rducks type token
 
-Character input is limited to scalar aliases. Composite, DECIMAL, ENUM,
-and UNION types are represented by constructed `rducks_type` objects
-rather than quoted type strings.
+Character input is limited to canonical scalar tokens such as `i32`,
+`f64`, and `varchar`. Composite, DECIMAL, ENUM, and UNION types are
+represented by constructed `rducks_type` objects rather than quoted type
+strings.
 
 ## Usage
 

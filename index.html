@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Register R User-Defined Functions in DuckDB">
-<meta name="description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, Arrow-backed row marshalling, and a main-R-thread callback pump for safe interaction with R from DuckDB execution.">
-<meta property="og:description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, Arrow-backed row marshalling, and a main-R-thread callback pump for safe interaction with R from DuckDB execution.">
+<meta name="description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow row marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
+<meta property="og:description" content="Experimental R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow row marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue for safe interaction with R from DuckDB execution.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -49,13 +49,13 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current Arrow-backed row-mode callback bridge.</p>
+<p>Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers callbacks on a DuckDB connection and performs the current nanoarrow row-mode callback bridge over DuckDB Arrow C Data.</p>
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
 </h2>
 <p>Rducks has two native boundaries: an R package that owns callback lifetime and registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, and current row-mode callback execution.</p>
 <p>When you call <code>rducks_enable(con, threads = "single")</code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection and explicitly sets <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>. Current row-mode R callbacks call back into R on the calling R thread. If DuckDB later runs UDF chunks on worker threads, the extension queues those callback requests back to the calling R thread instead of touching the R API from the worker.</p>
-<p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that row-mode marshalling is available, and preserves the R callback. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the callback token, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>. During query execution, that generic DuckDB callback exports input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow row adapter on the main R thread, imports the returned Arrow data back into a DuckDB chunk, and attaches the result to the DuckDB output vector.</p>
+<p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that row-mode marshalling is available, and preserves the R callback. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the callback reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>. During query execution, that generic DuckDB callback exports input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow row adapter on the calling R thread, imports the returned Arrow C Data back into a DuckDB chunk, and attaches the result to the DuckDB output vector.</p>
 </div>
 <div class="section level2">
 <h2 id="getting-started">Getting started<a class="anchor" aria-label="anchor" href="#getting-started"></a>
@@ -80,8 +80,8 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
-<p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object. Keep it if you want to soft-unregister the UDF later with <code>rducks_unregister(reg_plus_one)</code>.</p>
-<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Internally this row adapter is already Arrow/nanoarrow-backed: DuckDB chunks are exported to Arrow, adapted to row calls in R, then imported back to DuckDB. Future batch/chunk modes will be added only when they actually invoke callbacks once per batch or chunk.</p>
+<p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB.</p>
+<p>The implemented mode is <code>mode = "row"</code>, which calls the R function once per row. Internally this row adapter is already nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to row calls in R, then imported back to DuckDB. Future batch/chunk modes will be added only when they actually invoke callbacks once per batch or chunk.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 <div class="section level2">
@@ -94,16 +94,16 @@
 <h3 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
 </h3>
 <p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code>. Only <code>row</code> is public and implemented now.</p>
-<table style="width:100%;" class="table">
+<table class="table">
 <colgroup>
 <col width="1%">
 <col width="2%">
 <col width="3%">
 <col width="9%">
-<col width="13%">
+<col width="12%">
 <col width="7%">
-<col width="41%">
-<col width="20%">
+<col width="39%">
+<col width="22%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -123,7 +123,7 @@
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">one output value per callback invocation</td>
 <td align="left">R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution</td>
-<td align="left">DuckDB chunks are exported/imported through Arrow; the row adapter materializes one R row value per callback</td>
+<td align="left">DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow row adapter materializes one R row value per callback</td>
 </tr></tbody>
 </table>
 </div>
@@ -153,7 +153,7 @@
 </h3>
 <details><summary>
 Expand for argument values passed to R functions
-</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented Arrow-backed row marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R callback. The <code>SQL NULL in callback</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact/exotic value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
+</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented nanoarrow row marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R callback. The <code>SQL NULL in callback</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact/exotic value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
 <table class="table">
 <colgroup>
 <col width="16%">
@@ -233,7 +233,7 @@ Expand for argument values passed to R functions
 <td align="left">rducks_bigint</td>
 <td align="left">rducks_bigint scalar</td>
 <td align="left">NULL</td>
-<td align="left">boxed exact Rducks value object</td>
+<td align="left">boxed scalar</td>
 <td align="left">exact signed 64-bit integer string</td>
 </tr>
 <tr>
@@ -241,7 +241,7 @@ Expand for argument values passed to R functions
 <td align="left">rducks_ubigint</td>
 <td align="left">rducks_ubigint scalar</td>
 <td align="left">NULL</td>
-<td align="left">boxed exact Rducks value object</td>
+<td align="left">boxed scalar</td>
 <td align="left">exact unsigned 64-bit integer string</td>
 </tr>
 <tr>
@@ -700,35 +700,12 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt; 3 0.5728534</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="soft-unregistering">Soft unregistering<a class="anchor" aria-label="anchor" href="#soft-unregistering"></a>
-</h2>
-<p>DuckDB currently exposes extension scalar functions as internal catalog entries, so <code>DROP FUNCTION</code> cannot remove them. <code><a href="reference/rducks_unregister.html">rducks_unregister()</a></code> replaces the UDF overload with an inactive stub and releases Rducks’ R-side callback reference.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_temp</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_temp"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_temp(1::INTEGER) AS x"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   x</span></span>
-<span><span class="co">#&gt; 1 2</span></span>
-<span><span class="fu"><a href="reference/rducks_unregister.html">rducks_unregister</a></span><span class="op">(</span><span class="va">reg_temp</span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_temp(1::INTEGER) AS x"</span><span class="op">)</span>,</span>
-<span>  error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "Invalid Error: Invalid Input Error: Rducks UDF r_temp has been unregistered\nℹ Context: rapi_execute\nℹ Error type: INVALID"</span></span></code></pre></div>
-</div>
-<div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
 <p>The package builds its DuckDB extension during installation using <code>configure</code> or <code>configure.win</code>. The extension metadata footer is appended by <code>tools/append_extension_metadata.R</code>.</p>
 <p>DuckDB C API headers are refreshed explicitly with:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
-<p>The Arrow path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<p>The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

@@ -2,8 +2,8 @@
 
 `rducks_argument_type_mapping()` is the package-level source of truth
 for the R value shape used when DuckDB argument values are marshalled
-into an R callback. It is used by registration checks and the
-Arrow-backed row marshalling adapter.
+into an R callback. It is used by registration checks and the nanoarrow
+row marshalling adapter.
 
 ## Usage
 
@@ -38,7 +38,7 @@ represented as typed `NA` values where the child type has an R `NA`
 representation; nested composite `NULL` values are represented as R
 `NULL`.
 
-The default table contains all scalar types supported by the
-Arrow-backed row marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and
-composite descriptors can be requested explicitly to inspect their
-recursive R callback shapes.
+The default table contains all scalar types supported by the nanoarrow
+row marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
+descriptors can be requested explicitly to inspect their recursive R
+callback shapes.

@@ -48,7 +48,7 @@ rducks_register(
 - mode:
 
   Registration mode. `"row"` is implemented now and calls the R function
-  once per DuckDB row through the Arrow-backed row adapter.
+  once per DuckDB row through the nanoarrow row adapter.
 
 - null_handling:
 
@@ -71,6 +71,6 @@ rducks_register(
 
 ## Value
 
-Object of class `rducks_registration`. Keep this object if you want to
-soft-unregister the UDF later with
-[`rducks_unregister()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_unregister.md).
+Object of class `rducks_registration` containing the connection,
+normalized signature, and registration options. The UDF remains
+registered in DuckDB even if this object is discarded.
