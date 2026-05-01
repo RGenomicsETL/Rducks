@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Register R User-Defined Functions in DuckDB">
-<meta name="description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread execution queue for safe interaction with R from DuckDB execution.">
-<meta property="og:description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread execution queue for safe interaction with R from DuckDB execution.">
+<meta name="description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread execution discipline for safe interaction with R from DuckDB execution.">
+<meta property="og:description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions. The package is designed around a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar marshalling over DuckDB Arrow C Data, and a calling-R-thread execution discipline for safe interaction with R from DuckDB execution.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -53,8 +53,8 @@
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
 </h2>
-<p>Rducks has two native boundaries: an R package that owns R function lifetime and registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, and current scalar-mode R function execution.</p>
-<p>When you call <code>rducks_enable(con, threads = "single")</code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection and explicitly sets <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>. This is a constraint of R’s C API: Rducks keeps all R API work on the calling R thread. If DuckDB later runs UDF chunks on worker threads, the extension queues those R execution requests back to the calling R thread instead of touching the R API from the worker.</p>
+<p>Rducks has two native boundaries: an R package that owns registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, R function preservation while DuckDB owns the UDF, and current scalar-mode R function execution.</p>
+<p>When you call <code>rducks_enable(con, threads = "single")</code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection and explicitly sets <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>. This is a constraint of R’s C API: Rducks keeps R API work on the calling R thread and supports direct R function execution only under that single-threaded DuckDB UDF configuration.</p>
 <p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that scalar-mode marshalling is available, and preserves the R function. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the R function reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>. During query execution, that generic DuckDB scalar-function entry point exports input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow scalar adapter on the calling R thread, imports the returned Arrow C Data back into a DuckDB chunk, and attaches the result to the DuckDB output vector.</p>
 </div>
 <div class="section level2">
@@ -89,7 +89,7 @@
 </h2>
 <p>Rducks currently builds <code>rducks.duckdb_extension</code> at install time, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers scalar-mode R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>. The scalar-mode input/output type set is <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. The default <code>mode = "scalar"</code> calls R once per DuckDB row. Registration also supports <code>null_handling</code>, <code>exception_handling</code>, and <code>side_effects</code> controls.</p>
 <p>Direct R functions require R API work to happen on the calling R thread. This is R’s thread-affinity rule, not a DuckDB data-race issue. Call <code>rducks_enable(con, threads = "single")</code> or set <code>external_threads=1</code> and <code>PRAGMA threads=1</code> before registering R UDFs. Rducks checks this at registration time.</p>
-<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the scalar-mode R function boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with native structural checks via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
+<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. These classes preserve exact representation at the scalar-mode R function boundary. Constructed DuckDB type objects are formal S7-backed Rducks descriptors with structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>. Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals, and unions can be nested through the constructors rather than quoted type strings. <code><a href="reference/rducks_check_value.html">rducks_check_argument()</a></code> and <code><a href="reference/rducks_check_value.html">rducks_check_return()</a></code> can validate ordinary R values against those descriptors before marshalling.</p>
 <div class="section level3">
 <h3 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
 </h3>
@@ -99,11 +99,11 @@
 <col width="1%">
 <col width="2%">
 <col width="3%">
-<col width="9%">
-<col width="12%">
-<col width="6%">
-<col width="39%">
-<col width="24%">
+<col width="10%">
+<col width="13%">
+<col width="7%">
+<col width="33%">
+<col width="26%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -122,7 +122,7 @@
 <td align="left">one scalar/composite R value per declared argument</td>
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">one output value per R function call</td>
-<td align="left">R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution</td>
+<td align="left">R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1, and registration enforces this supported configuration</td>
 <td align="left">DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row</td>
 </tr></tbody>
 </table>

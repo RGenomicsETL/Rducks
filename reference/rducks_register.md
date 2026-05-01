@@ -2,8 +2,7 @@
 
 Registers a scalar R function as a DuckDB SQL function using the loaded
 Rducks extension. Registration requires `external_threads=1` plus
-`PRAGMA threads=1`; during execution, worker-thread UDF chunks are
-queued back to the calling R thread.
+`PRAGMA threads=1` so direct R execution stays on the calling R thread.
 
 ## Usage
 
