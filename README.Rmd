@@ -18,32 +18,32 @@ library(Rducks)
 
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as an R
 package plus a DuckDB extension. The loaded DuckDB extension registers callbacks
-on a DuckDB connection and performs the current nanoarrow row-mode callback
+on a DuckDB connection and performs the current nanoarrow scalar-mode callback
 bridge over DuckDB Arrow C Data.
 
 ## How it works
 
 Rducks has two native boundaries: an R package that owns callback lifetime and
 registration ergonomics, and a loaded DuckDB extension that owns SQL function
-registration, DuckDB chunk access, and current row-mode callback execution.
+registration, DuckDB chunk access, and current scalar-mode callback execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the bundled
 `rducks.duckdb_extension` into that DuckDB connection and explicitly sets
-`external_threads=1` plus `PRAGMA threads=1`. Current row-mode R callbacks call
-back into R on the calling R thread. If DuckDB later runs UDF chunks on worker
+`external_threads=1` plus `PRAGMA threads=1`. Current scalar-mode R callbacks
+call back into R on the calling R thread. If DuckDB later runs UDF chunks on worker
 threads, the extension queues those callback requests back to the calling R
 thread instead of touching the R API from the worker.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB type
-objects, checks that row-mode marshalling is available, and preserves the R
+objects, checks that scalar-mode marshalling is available, and preserves the R
 callback. Registration then crosses back through SQL: Rducks calls the extension
 function `rducks_register_scalar(...)`, passing the callback reference, type
 descriptor tokens, and NULL/exception/side-effect flags. The extension registers
 one DuckDB scalar function implementation and stores the per-UDF metadata in
 DuckDB `extra_info`. During query execution, that generic DuckDB callback exports
 input chunks through the DuckDB Arrow C Data API, calls the private nanoarrow
-row adapter on the calling R thread, imports the returned Arrow C Data back into
-a DuckDB chunk, and attaches the result to the DuckDB output vector.
+scalar adapter on the calling R thread, imports the returned Arrow C Data back
+into a DuckDB chunk, and attaches the result to the DuckDB output vector.
 
 ## Getting started
 
@@ -61,7 +61,7 @@ reg_plus_one <- rducks_register(
   fun = function(x) x + 1,
   args = DOUBLE,
   returns = DOUBLE,
-  mode = "row"
+  mode = "scalar"
 )
 
 dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
@@ -71,12 +71,11 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 connection, normalized signature, and registration options. You do not need to
 keep this object for the UDF to keep working in DuckDB.
 
-The implemented mode is `mode = "row"`, which calls the R function once per row.
-Internally this row adapter is already nanoarrow-backed over DuckDB Arrow C Data:
-DuckDB chunks are exported through Arrow C Data, adapted to row calls in R, then
-imported back to DuckDB.
-Future batch/chunk modes will be added only when they actually invoke callbacks
-once per batch or chunk.
+The implemented mode is `mode = "scalar"`, which calls the R function once per
+DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow
+C Data: DuckDB chunks are exported through Arrow C Data, adapted to scalar R
+calls, then imported back to DuckDB. A future vectorized mode should call R once
+per DuckDB chunk and will be added only when implemented.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
 and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
@@ -85,15 +84,15 @@ strings.
 ## Current scope
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads it into
-DuckDB with `rducks_enable()`, and registers row-oriented scalar R UDFs with
-`rducks_register()`. The row-mode input/output type set is `BOOLEAN`,
+DuckDB with `rducks_enable()`, and registers scalar-mode R UDFs with
+`rducks_register()`. The scalar-mode input/output type set is `BOOLEAN`,
 `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`,
 `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`,
 `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
 `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`. Composite inputs and
 outputs are accepted as constructed type objects such as `TYPE[]`, `TYPE[N]`,
 `STRUCT(...)`, and `MAP(...)`, recursively over supported child types. The
-default `mode = "row"` calls R once per row. Registration also supports
+default `mode = "scalar"` calls R once per DuckDB row. Registration also supports
 `null_handling`, `exception_handling`, and `side_effects` controls.
 
 Direct R callbacks require the R API work to happen on the calling R thread, so
@@ -106,7 +105,7 @@ Rducks also provides explicit R value classes for exact or DuckDB-specific
 values: `rducks_bigint()`, `rducks_ubigint()`, `rducks_uuid()`,
 `rducks_interval()`, `rducks_decimal()`, `rducks_hugeint()`,
 `rducks_uhugeint()`, `rducks_bits()`, `rducks_enum()`, and `rducks_union()`.
-These classes preserve exact representation at the row-mode callback boundary.
+These classes preserve exact representation at the scalar-mode callback boundary.
 Constructed DuckDB type objects are formal S7-backed
 Rducks descriptors with native structural checks via `rducks_is_type()`.
 Descriptors are recursive, so lists, arrays, structs, maps, enums, decimals,
@@ -116,7 +115,7 @@ ordinary R values against those descriptors before marshalling.
 
 ### Execution mode semantics
 
-The table below is produced by `rducks_mode_semantics()`. Only `row` is public
+The table below is produced by `rducks_mode_semantics()`. Only `scalar` is public
 and implemented now.
 
 ```{r mode-semantics, echo=FALSE, results="asis"}
@@ -160,7 +159,7 @@ rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))
 <summary>Expand for argument values passed to R functions</summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()` helper
-and reflects the currently implemented nanoarrow row marshalling path. With
+and reflects the currently implemented nanoarrow scalar marshalling path. With
 `null_handling = "default"`, any top-level SQL `NULL` input makes DuckDB return
 SQL `NULL` without calling the R callback. The `SQL NULL in callback` column
 below applies when `null_handling = "special"`. It is type-specific: ordinary
@@ -206,7 +205,7 @@ knitr::kable(
 <summary>Expand for NULL, NA, NaN, Inf, and value-class semantics</summary>
 
 The table below is produced by `rducks_value_semantics()`, the exported schema
-that Rducks uses to document row-mode missing and non-finite value behavior.
+that Rducks uses to document scalar-mode missing and non-finite value behavior.
 Top-level R `NULL` returns map to SQL `NULL`. R `NA` values map to SQL `NULL`
 when represented by the declared R type. `NaN` and `Inf` are values only for
 `FLOAT` and `DOUBLE`; integer, date, time, timestamp, exact, and exotic return

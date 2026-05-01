@@ -1,12 +1,12 @@
-rducks_assert_row_marshalling_supported <- function(spec) {
+rducks_assert_scalar_marshalling_supported <- function(spec) {
   types <- c(spec$arg_types %||% rducks_as_type_list(spec$args), list(spec$return_type %||% rducks_as_type(spec$returns)))
   unsupported <- vapply(types, function(type) {
-    if (rducks_row_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
+    if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
   }, character(1))
   unsupported <- unsupported[nzchar(unsupported)]
   if (length(unsupported)) {
     stop(
-      "row-mode marshalling is not implemented yet for: ",
+      "scalar-mode marshalling is not implemented yet for: ",
       paste(unique(unsupported), collapse = ", "),
       call. = FALSE
     )
@@ -28,8 +28,9 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   objects such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
-#' @param mode Registration mode. `"row"` is implemented now and calls the R
-#'   function once per DuckDB row through the nanoarrow row adapter.
+#' @param mode Registration mode. `"scalar"` is implemented now and calls the R
+#'   function once per DuckDB row through the nanoarrow scalar adapter. A future
+#'   vectorized mode should call the R function once per DuckDB chunk.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -45,7 +46,7 @@ rducks_assert_row_marshalling_supported <- function(spec) {
 #'   in DuckDB even if this object is discarded.
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
-                            mode = "row",
+                            mode = "scalar",
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
                             side_effects = FALSE) {
@@ -59,9 +60,9 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
-  rducks_assert_row_marshalling_supported(spec)
+  rducks_assert_scalar_marshalling_supported(spec)
   rducks_assert_single_thread(con)
-  arrow_fun <- rducks_make_arrow_row_wrapper(fun, spec, null_handling, exception_handling)
+  arrow_fun <- rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
   # The SQL registration call below is synchronous. `arrow_fun` is live in this
   # R frame until the DuckDB extension receives the address and preserves the
   # function in per-UDF metadata with R_PreserveObject().

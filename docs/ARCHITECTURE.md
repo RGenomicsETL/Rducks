@@ -20,7 +20,7 @@ R functions as DuckDB UDFs.
 3. **nanoarrow bridge layer**
    - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow C Data APIs
    - typed Rducks conversion rules for exact/exotic values
-   - row adapter that invokes the R callback once per DuckDB row
+   - scalar adapter that invokes the R callback once per DuckDB row
 
 ## Scalar UDF execution model
 
@@ -29,7 +29,7 @@ DuckDB
   -> rducks_generic_scalar_callback(info, input, output)
       -> metadata from extra_info
       -> DuckDB chunk -> Arrow C Data export
-      -> nanoarrow-backed row adapter on the calling R thread
+      -> nanoarrow-backed scalar adapter on the calling R thread
       -> queued synchronous request if on a DuckDB worker
       -> calling R thread drains queued requests without workers touching the R API
       -> Arrow C Data -> DuckDB chunk import
@@ -82,8 +82,8 @@ created them. If a future pump allows the worker to return before the calling R
 thread has consumed the input, the request must copy into owned nanoarrow buffers
 instead of exporting a borrowed view.
 
-Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for the row
-adapter and should reuse that path for any future batch UDFs:
+Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for the scalar
+adapter and should reuse that path for any future vectorized UDFs:
 
 - `ArrowArray`
 - `ArrowSchema`

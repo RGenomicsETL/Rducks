@@ -8,7 +8,7 @@ local({
 
   reg1 <- rducks_register(con, "rducks_plus_one", function(x) x + 1, DOUBLE, DOUBLE)
   expect_inherits(reg1, "rducks_registration")
-  expect_equal(reg1$spec$mode, "row")
+  expect_equal(reg1$spec$mode, "scalar")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_plus_one(41.0) AS x")$x, 42)
 
   invisible(rducks_register(

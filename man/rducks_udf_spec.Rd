@@ -4,7 +4,7 @@
 \alias{rducks_udf_spec}
 \title{Create an Rducks UDF specification}
 \usage{
-rducks_udf_spec(name, fun, args, returns, mode = "row")
+rducks_udf_spec(name, fun, args, returns, mode = "scalar")
 }
 \arguments{
 \item{name}{SQL function name.}
@@ -15,8 +15,8 @@ rducks_udf_spec(name, fun, args, returns, mode = "row")
 
 \item{returns}{Rducks return type object or scalar type token.}
 
-\item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per row through the native Rducks DuckDB extension.}
+\item{mode}{Registration mode. \code{"scalar"} is implemented now and calls the R
+function once per DuckDB row through the native Rducks DuckDB extension.}
 }
 \value{
 Object of class \code{rducks_udf_spec}.

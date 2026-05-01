@@ -5,9 +5,9 @@ Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
     email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
   )
-Description: Experimental R package and DuckDB extension bridge for registering
-    R functions as DuckDB user-defined functions. The package is designed around
-    a loaded DuckDB extension, declarative type descriptors, nanoarrow row
+Description: R package and DuckDB extension bridge for registering R functions
+    as DuckDB user-defined functions. The package is designed around
+    a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar
     marshalling over DuckDB Arrow C Data, and a calling-R-thread callback queue
     for safe interaction with R from DuckDB execution.
 License: GPL (>= 3)

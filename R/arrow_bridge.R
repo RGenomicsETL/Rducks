@@ -924,7 +924,7 @@ S7::method(rducks_arrow_scalar_array_to_values, rducks_bit_type_class) <- functi
 }
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_scalar_type_class) <- function(type, array, schema = NULL) {
-  nanoarrow::convert_array(array)
+  stop("unsupported scalar type for Rducks scalar-mode nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
@@ -954,7 +954,7 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
   if (inherits(type, "rducks_union_type")) {
     return(rducks_arrow_union_array_to_values(type, array, schema))
   }
-  nanoarrow::convert_array(array)
+  stop("unsupported Rducks type for scalar-mode nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_value_at <- function(type, values, nulls, i) {
@@ -1289,8 +1289,6 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     return(rducks_arrow_union_array(type, results, schema))
   }
 
-  # MAP is delegated to nanoarrow's schema-guided constructor. This keeps the
-  # native path on DuckDB Arrow C Data while the R adapter normalizes row objects.
   if (inherits(type, "rducks_map_type")) {
     return(rducks_arrow_map_array(type, results, schema))
   }
@@ -1315,7 +1313,7 @@ rducks_arrow_result_array <- function(type, results, output_schema, n) {
   out
 }
 
-rducks_make_arrow_row_wrapper <- function(fun, spec, null_handling, exception_handling) {
+rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling) {
   arg_types <- spec$arg_types
   return_type <- spec$return_type
   force(fun)

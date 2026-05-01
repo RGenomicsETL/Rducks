@@ -8,11 +8,11 @@ rducks_match_mode <- function(mode) {
 #' @param fun R function.
 #' @param args Rducks type objects or scalar type tokens.
 #' @param returns Rducks return type object or scalar type token.
-#' @param mode Registration mode. `"row"` is implemented now and calls the R
-#'   function once per row through the native Rducks DuckDB extension.
+#' @param mode Registration mode. `"scalar"` is implemented now and calls the R
+#'   function once per DuckDB row through the native Rducks DuckDB extension.
 #' @return Object of class `rducks_udf_spec`.
 #' @export
-rducks_udf_spec <- function(name, fun, args, returns, mode = "row") {
+rducks_udf_spec <- function(name, fun, args, returns, mode = "scalar") {
   mode <- rducks_match_mode(mode)
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)

@@ -8,7 +8,7 @@ rducks_argument_type_mapping(x = NULL)
 }
 \arguments{
 \item{x}{Optional scalar type tokens or constructed \code{rducks_type} objects.
-When \code{NULL}, all currently implemented row-mode scalar argument mappings
+When \code{NULL}, all currently implemented scalar-mode scalar argument mappings
 are returned. Composite mappings should be requested with constructors such
 as \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, and
 \code{MAP(VARCHAR, INTEGER)}.}
@@ -19,7 +19,7 @@ A data frame with one row per requested type token.
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
-callback. It is used by registration checks and the nanoarrow row
+callback. It is used by registration checks and the nanoarrow scalar
 marshalling adapter.
 }
 \details{
@@ -33,7 +33,7 @@ scalar lists/arrays, SQL \code{NULL} elements are represented as typed \code{NA}
 where the child type has an R \code{NA} representation; nested composite \code{NULL}
 values are represented as R \code{NULL}.
 
-The default table contains all scalar types supported by the nanoarrow row
+The default table contains all scalar types supported by the nanoarrow scalar
 marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
 descriptors can be requested explicitly to inspect their recursive R
 callback shapes.

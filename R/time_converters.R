@@ -50,10 +50,10 @@ rducks_parse_time_string <- function(x) {
   rducks_check_time_seconds(out)
 }
 
-#' Convert R date/time values to Rducks row-mode shapes
+#' Convert R date/time values to Rducks scalar-mode shapes
 #'
 #' These helpers normalize common R date/time inputs to the R value shapes used
-#' by Rducks row-mode marshalling for DuckDB `DATE`, `TIME`, `TIMESTAMP`, and
+#' by Rducks scalar-mode marshalling for DuckDB `DATE`, `TIME`, `TIMESTAMP`, and
 #' `INTERVAL` values.
 #'
 #' @param x,start,end R date/time value. Supported inputs include `Date`,

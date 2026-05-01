@@ -557,7 +557,7 @@ rducks_sequence_value_description <- function(child, len = NULL) {
   if (is.null(len)) "list of element values" else paste("list of length", len)
 }
 
-rducks_row_mapping_supported <- function(type) {
+rducks_scalar_mapping_supported <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
@@ -567,14 +567,14 @@ rducks_row_mapping_supported <- function(type) {
     return(TRUE)
   }
   if (kind %in% c("list", "array", "struct", "map", "union")) {
-    return(all(vapply(rducks_type_children(type), rducks_row_mapping_supported, logical(1))))
+    return(all(vapply(rducks_type_children(type), rducks_scalar_mapping_supported, logical(1))))
   }
   FALSE
 }
 
 rducks_unsupported_duckdb_types <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
-  if (rducks_row_mapping_supported(type)) {
+  if (rducks_scalar_mapping_supported(type)) {
     return(character())
   }
   children <- rducks_type_children(type)
@@ -591,7 +591,7 @@ rducks_composite_argument_mapping_row <- function(token) {
   kind <- rducks_type_kind(type)
   unsupported <- rducks_unsupported_duckdb_types(type)
   if (length(unsupported)) {
-    stop("row-mode argument marshalling is not available for ", paste(unsupported, collapse = ", "), call. = FALSE)
+    stop("scalar-mode argument marshalling is not available for ", paste(unsupported, collapse = ", "), call. = FALSE)
   }
   children <- rducks_type_children(type)
   duckdb_sql <- rducks_type_duckdb_sql(type)
@@ -633,7 +633,7 @@ rducks_composite_argument_mapping_row <- function(token) {
   unsupported_leaves <- leaves[!leaves %in% rducks_all_scalar_type_names()]
   if (length(unsupported_leaves)) {
     stop(
-      "row-mode argument marshalling is not available for ",
+      "scalar-mode argument marshalling is not available for ",
       paste(vapply(unsupported_leaves, rducks_scalar_duckdb_sql, character(1)), collapse = ", "),
       call. = FALSE
     )
@@ -689,7 +689,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #'
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
-#' callback. It is used by registration checks and the nanoarrow row
+#' callback. It is used by registration checks and the nanoarrow scalar
 #' marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
@@ -702,13 +702,13 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' where the child type has an R `NA` representation; nested composite `NULL`
 #' values are represented as R `NULL`.
 #'
-#' The default table contains all scalar types supported by the nanoarrow row
+#' The default table contains all scalar types supported by the nanoarrow scalar
 #' marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R
 #' callback shapes.
 #'
 #' @param x Optional scalar type tokens or constructed `rducks_type` objects.
-#'   When `NULL`, all currently implemented row-mode scalar argument mappings
+#'   When `NULL`, all currently implemented scalar-mode scalar argument mappings
 #'   are returned. Composite mappings should be requested with constructors such
 #'   as `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, and
 #'   `MAP(VARCHAR, INTEGER)`.

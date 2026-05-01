@@ -7,7 +7,7 @@
 - Signature: `rducks_enable(con, extension_path, threads)`
 - Returns: `duckdb_connection invisibly`
 
-Load the Rducks DuckDB extension into a connection. Row-mode R UDF registration requires explicit single-thread setup via threads = 'single'.
+Load the Rducks DuckDB extension into a connection. Scalar-mode R UDF registration requires explicit single-thread setup via threads = 'single'.
 
 ## `rducks_register`
 
@@ -16,7 +16,7 @@ Load the Rducks DuckDB extension into a connection. Row-mode R UDF registration 
 - Signature: `rducks_register(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)`
 - Returns: `rducks_registration`
 
-Register an R function as a DuckDB UDF. The implemented mode = 'row' preserves the R callback in the loaded Rducks DuckDB extension and executes through the nanoarrow row adapter over DuckDB Arrow C Data. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.
+Register an R function as a DuckDB UDF. The implemented mode = 'scalar' preserves the R callback in the loaded Rducks DuckDB extension and executes through the nanoarrow scalar adapter over DuckDB Arrow C Data. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.
 
 ## `rducks_is_type`
 

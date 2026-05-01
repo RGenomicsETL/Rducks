@@ -8,7 +8,7 @@ rducks_value_semantics(x = NULL)
 }
 \arguments{
 \item{x}{Optional scalar type tokens or constructed \code{rducks_type} objects.
-When \code{NULL}, all currently implemented row-mode scalar type semantics are
+When \code{NULL}, all currently implemented scalar-mode scalar type semantics are
 returned. Constructed descriptors such as \code{DECIMAL(10, 2)},
 \code{ENUM(c("a", "b"))}, \code{UNION(i = INTEGER, s = VARCHAR)}, \code{INTEGER[]},
 \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, and \code{MAP(VARCHAR, INTEGER)} can be
@@ -20,8 +20,8 @@ describing SQL NULL input handling, R missing/non-finite return handling,
 Rducks value-class binary operation behavior, and error semantics.
 }
 \description{
-\code{rducks_value_semantics()} is the package-level schema for row-mode missing
-and non-finite value handling. It is intended to be rendered directly in
+\code{rducks_value_semantics()} is the package-level schema for scalar-mode
+missing and non-finite value handling. It is intended to be rendered directly in
 README and pkgdown documentation, and to keep the documented NULL/NA/NaN/Inf
 contract close to the type descriptors used by the marshaller.
 }
@@ -31,7 +31,7 @@ to SQL \code{NULL} and the R callback is not called. The
 \code{sql_null_input_special} column describes what the callback receives with
 \code{null_handling = "special"}.
 
-Return semantics are stated from R back to DuckDB. In row mode, top-level
+Return semantics are stated from R back to DuckDB. In scalar mode, top-level
 \code{NULL} returns map to SQL \code{NULL}; type-specific R \code{NA} values also map to SQL
 \code{NULL} where a missing representation exists. \code{NaN} and \code{Inf} are values only
 for \code{FLOAT} and \code{DOUBLE}; integer, date, time, timestamp, exact, and exotic

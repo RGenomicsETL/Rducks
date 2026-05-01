@@ -10,7 +10,7 @@ rducks_register(
   fun,
   args,
   returns,
-  mode = "row",
+  mode = "scalar",
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -29,8 +29,9 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 
 \item{returns}{Return type specification.}
 
-\item{mode}{Registration mode. \code{"row"} is implemented now and calls the R
-function once per DuckDB row through the nanoarrow row adapter.}
+\item{mode}{Registration mode. \code{"scalar"} is implemented now and calls the R
+function once per DuckDB row through the nanoarrow scalar adapter. A future
+vectorized mode should call the R function once per DuckDB chunk.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared

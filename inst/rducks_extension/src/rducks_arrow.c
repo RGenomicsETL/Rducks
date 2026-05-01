@@ -193,7 +193,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     idx_t result_size;
 
     if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow row wrapper must return a nanoarrow_array");
+        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper must return a nanoarrow_array");
         return 0;
     }
 
