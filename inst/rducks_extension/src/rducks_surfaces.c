@@ -141,9 +141,6 @@ DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_ext
             }
             return false;
         }
-        if (g_fallback_arrow_options) {
-            duckdb_destroy_arrow_options(&g_fallback_arrow_options);
-        }
         g_database = database;
         g_registration_surface_ready = 0;
     }

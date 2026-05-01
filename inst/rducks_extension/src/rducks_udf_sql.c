@@ -294,7 +294,6 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
             return;
         }
         rducks_set_main_thread_token(token);
-        rducks_initialize_fallback_arrow_options();
         free(token);
         out[i] = true;
     }

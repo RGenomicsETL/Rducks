@@ -102,7 +102,6 @@ typedef struct rducks_inactive_scalar_meta {
 
 static duckdb_database g_database = NULL;
 static duckdb_connection g_connection = NULL;
-static duckdb_arrow_options g_fallback_arrow_options = NULL;
 static int g_registration_surface_ready = 0;
 static char g_main_thread_token[128];
 static int g_main_thread_token_set = 0;
