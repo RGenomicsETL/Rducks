@@ -8,7 +8,7 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values",
     length_semantics = "one output value per R function call",
     error_semantics = "R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
-    threading = "R API work runs on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution",
+    threading = "R API work runs on the calling R thread; rducks_enable(..., threads = 'single') sets external_threads=1 and threads=1, and registration enforces this supported configuration",
     copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row",
     notes = "current production path; a vectorized mode should call R once per DuckDB chunk and is not exposed until implemented"
   )

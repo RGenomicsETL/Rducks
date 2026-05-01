@@ -7,7 +7,7 @@ R functions as DuckDB UDFs.
 
 1. **R wrapper layer**
    - validates user-facing registration calls
-   - preserves R functions
+   - prepares R function wrappers for registration
    - loads/enables the DuckDB extension on a connection
 
 2. **DuckDB extension layer**
@@ -15,7 +15,7 @@ R functions as DuckDB UDFs.
    - stores per-UDF metadata in `extra_info`
    - exposes one generic DuckDB scalar-function entry point per execution family
    - exports/imports chunks through DuckDB Arrow C Data APIs
-   - manages a synchronous calling-R-thread queue for worker-thread R execution requests
+   - preserves R functions while DuckDB owns registered UDF metadata
 
 3. **nanoarrow bridge layer**
    - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow C Data APIs
@@ -30,21 +30,16 @@ DuckDB
       -> metadata from extra_info
       -> DuckDB chunk -> Arrow C Data export
       -> nanoarrow-backed scalar adapter on the calling R thread
-      -> queued synchronous request if on a DuckDB worker
-      -> calling R thread drains queued requests without workers touching the R API
       -> Arrow C Data -> DuckDB chunk import
 ```
 
-## Pump model
+## Thread model
 
-A DuckDB worker must never call R directly. Worker paths enqueue a native request
-and wait. The calling-R-thread pump drains requests, calls R with error
-containment, writes the native result slot, then signals the waiting worker.
-
-Current pump triggers are deliberately narrow: direct calling-R-thread UDF
-entry/exit drains queued worker requests. Future hooks can add DuckDB progress
-progress hooks or input-handler fallbacks once those paths are proven under blocking
-UDF loads.
+A DuckDB worker must never call R directly. The supported public configuration
+therefore keeps direct R function execution on the calling R thread by requiring
+`external_threads=1` and `PRAGMA threads=1` at registration. Native request-queue
+code is an internal guard/future integration path, not a documented
+multi-threaded execution contract.
 
 ## First safe mode
 
@@ -59,18 +54,16 @@ Rducks requires this mode before registering direct R functions; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the
-execution thread before every R function execution. Worker-thread chunks enqueue a
-synchronous request and wait; the calling R thread drains those requests and
-signals the waiting worker after the output vector has been filled. Broader
-multi-threaded sync UDF support still needs stress testing under blocking UDF
-loads before being documented as stable.
+execution thread before every R function execution. Broader multi-threaded sync
+UDF support still needs a proven pump/progress mechanism under blocking UDF loads
+before being documented as stable.
 
 ## nanoarrow direction and lifetime model
 
 Rducks should follow Arrow C Data ownership rules in R terms: use named
 `externalptr` objects, explicit owner/protected slots, idempotent finalizers, and
-move-only consumption. A worker-to-main request that carries Arrow C Data should
-answer four questions at every boundary:
+move-only consumption. Any future worker-to-calling-thread request that carries
+Arrow C Data should answer four questions at every boundary:
 
 - who owns the `ArrowArray`/`ArrowSchema`/request object now
 - whether the pointer is borrowed from DuckDB memory or owns independent buffers

@@ -10,18 +10,17 @@ nanoarrow scalar-mode execution bridge over DuckDB Arrow C Data.
 
 ## How it works
 
-Rducks has two native boundaries: an R package that owns R function
-lifetime and registration ergonomics, and a loaded DuckDB extension that
-owns SQL function registration, DuckDB chunk access, and current
-scalar-mode R function execution.
+Rducks has two native boundaries: an R package that owns registration
+ergonomics, and a loaded DuckDB extension that owns SQL function
+registration, DuckDB chunk access, R function preservation while DuckDB
+owns the UDF, and current scalar-mode R function execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
 bundled `rducks.duckdb_extension` into that DuckDB connection and
 explicitly sets `external_threads=1` plus `PRAGMA threads=1`. This is a
-constraint of R’s C API: Rducks keeps all R API work on the calling R
-thread. If DuckDB later runs UDF chunks on worker threads, the extension
-queues those R execution requests back to the calling R thread instead
-of touching the R API from the worker.
+constraint of R’s C API: Rducks keeps R API work on the calling R thread
+and supports direct R function execution only under that single-threaded
+DuckDB UDF configuration.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB
 type objects, checks that scalar-mode marshalling is available, and
@@ -102,10 +101,10 @@ DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
 `rducks_hugeint()`, `rducks_uhugeint()`, `rducks_bits()`,
 `rducks_enum()`, and `rducks_union()`. These classes preserve exact
 representation at the scalar-mode R function boundary. Constructed
-DuckDB type objects are formal S7-backed Rducks descriptors with native
-structural checks via `rducks_is_type()`. Descriptors are recursive, so
-lists, arrays, structs, maps, enums, decimals, and unions can be nested
-through the constructors rather than quoted type strings.
+DuckDB type objects are formal S7-backed Rducks descriptors with
+structural validation via `rducks_is_type()`. Descriptors are recursive,
+so lists, arrays, structs, maps, enums, decimals, and unions can be
+nested through the constructors rather than quoted type strings.
 `rducks_check_argument()` and `rducks_check_return()` can validate
 ordinary R values against those descriptors before marshalling.
 
@@ -114,9 +113,9 @@ ordinary R values against those descriptors before marshalling.
 The table below is produced by `rducks_mode_semantics()`. Only `scalar`
 is public and implemented now.
 
-| mode     | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                     | threading                                                                                                                                                                                                                   | copy_semantics                                                                                                                          |
-|:---------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------|
-| `scalar` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1 for registration, and worker-thread UDF chunks are queued back to the calling R thread during execution | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row |
+| mode     | status      | call_granularity   | input_shape                                        | return_shape                                                          | length_semantics                     | threading                                                                                                                                                                   | copy_semantics                                                                                                                          |
+|:---------|:------------|:-------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------|
+| `scalar` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1, and registration enforces this supported configuration | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row |
 
 ## Type descriptors
 

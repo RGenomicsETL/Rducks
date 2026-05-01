@@ -54,6 +54,5 @@ in DuckDB even if this object is discarded.
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
 extension. Registration requires \code{external_threads=1} plus
-\verb{PRAGMA threads=1}; during execution, worker-thread UDF chunks are queued back
-to the calling R thread.
+\verb{PRAGMA threads=1} so direct R execution stays on the calling R thread.
 }

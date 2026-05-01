@@ -24,6 +24,5 @@ rducks_enable(
 Loads the bundled Rducks DuckDB extension. The current direct R function
 execution mode requires R API work to happen on the calling R thread; pass
 \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
-explicitly for registration. During execution, worker-thread UDF chunks are
-queued back to the calling R thread instead of calling R from workers.
+explicitly for the supported direct R function configuration.
 }
