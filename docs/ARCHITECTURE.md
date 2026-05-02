@@ -47,6 +47,35 @@ enters a scalar Rducks UDF on a non-calling execution thread, the extension
 errors immediately rather than queueing work through an unproven main-thread
 pump.
 
+Thread-safety means preserving this invariant, not making R itself callable from
+DuckDB worker threads. A future concurrent UDF design should declare that chunks
+may be evaluated concurrently, while the execution plan chooses how that happens
+(for example, an out-of-process compute backend). The public UDF contract should
+say what concurrency is allowed, not expose process pools, worker threads, or a
+specific queue implementation as scalar-function semantics.
+
+## R API and DuckDB-worker boundary discipline
+
+Keep the following layers separate when changing the native path:
+
+1. **DuckDB-only layer**: may inspect/copy DuckDB vectors, build owned native
+   request/result buffers, enqueue native work, wait, and write DuckDB output.
+   It must not allocate `SEXP`s, call `Rf_*`, create nanoarrow R external
+   pointers, preserve/release R objects, or evaluate R calls.
+2. **R-thread layer**: may allocate R objects, call R functions, create
+   nanoarrow external pointers, run return validation, and release preserved R
+   objects. It must run on the recorded R thread.
+3. **Ownership bridge**: moves data between those layers through owned C memory
+   such as copied Arrow C Data buffers or explicit native column buffers. It
+   must not pass borrowed DuckDB vectors or transient `SEXP` objects across
+   threads.
+
+The current RC path is deliberately a calling-R-thread path and therefore mixes
+R API calls with direct DuckDB vector reads/writes in one callback-local loop.
+That is acceptable only because off-thread entry is rejected before execution.
+Do not reuse RC direct-buffer helpers as worker-safe building blocks without
+first splitting them along the boundaries above.
+
 ## First safe mode
 
 The supported scalar-mode R UDF path uses:

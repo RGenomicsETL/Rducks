@@ -1,4 +1,16 @@
-/* Included by ../rducks_extension.c. */
+/* Included by ../rducks_extension.c.
+ *
+ * RC scalar execution is intentionally a calling-R-thread implementation today.
+ * This file mixes DuckDB vector access with R API calls because
+ * rducks_r_scalar_udf() rejects non-calling-thread execution before entering the
+ * evaluator. Do not treat these helpers as worker-thread safe.
+ *
+ * Any future concurrent UDF implementation must split this path into explicit
+ * phases:
+ *   1. worker-safe DuckDB/vector snapshot or result import code with no R API;
+ *   2. main-R-thread evaluation and R/nanoarrow external-pointer handling;
+ *   3. worker-safe DuckDB output writes from owned, non-SEXP result memory.
+ */
 
 #define RDUCKS_RC_BUNDLE_FUN 0
 #define RDUCKS_RC_BUNDLE_ARG_TYPES 1
