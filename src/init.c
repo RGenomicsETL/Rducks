@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <string.h>
 
+SEXP RDUCKS_decimal_string_add_small(SEXP x, SEXP addend_sexp);
+SEXP RDUCKS_decimal_string_multiply_small(SEXP x, SEXP multiplier_sexp);
+SEXP RDUCKS_decimal_string_from_unsigned_bytes(SEXP bytes_sexp);
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -42,6 +46,9 @@ SEXP RDUCKS_sexp_addr(SEXP x) {
 static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_sexp_addr", (DL_FUNC) &RDUCKS_sexp_addr, 1},
     {"RDUCKS_current_thread_token", (DL_FUNC) &RDUCKS_current_thread_token, 0},
+    {"RDUCKS_decimal_string_add_small", (DL_FUNC) &RDUCKS_decimal_string_add_small, 2},
+    {"RDUCKS_decimal_string_multiply_small", (DL_FUNC) &RDUCKS_decimal_string_multiply_small, 2},
+    {"RDUCKS_decimal_string_from_unsigned_bytes", (DL_FUNC) &RDUCKS_decimal_string_from_unsigned_bytes, 1},
     {NULL, NULL, 0}
 };
 

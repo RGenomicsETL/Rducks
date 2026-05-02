@@ -162,65 +162,15 @@ rducks_arrow_decimal_storage_string <- function(x, scale) {
 }
 
 rducks_arrow_add_decimal_string_small <- function(x, addend) {
-  x <- trimws(as.character(x))
-  x <- sub("^0+", "", x)
-  if (!nzchar(x)) x <- "0"
-  digits <- rev(as.integer(strsplit(x, "", fixed = TRUE)[[1L]]))
-  carry <- as.integer(addend)
-  out <- integer(max(length(digits), 1L) + 8L)
-  pos <- 1L
-  while (pos <= length(digits) || carry > 0L) {
-    digit <- if (pos <= length(digits)) digits[[pos]] else 0L
-    value <- digit + carry
-    out[[pos]] <- value %% 10L
-    carry <- value %/% 10L
-    pos <- pos + 1L
-  }
-  ans <- paste0(rev(out[seq_len(pos - 1L)]), collapse = "")
-  ans <- sub("^0+", "", ans)
-  if (!nzchar(ans)) "0" else ans
+  .Call(RDUCKS_decimal_string_add_small, x, as.integer(addend))
 }
 
 rducks_arrow_multiply_decimal_string_small <- function(x, multiplier) {
-  if (is.na(x)) return(NA_character_)
-  x <- trimws(as.character(x))
-  sign <- ""
-  if (startsWith(x, "+")) x <- substring(x, 2L)
-  if (startsWith(x, "-")) {
-    sign <- "-"
-    x <- substring(x, 2L)
-  }
-  digits <- rev(as.integer(strsplit(sub("^0+", "", x), "", fixed = TRUE)[[1L]]))
-  if (!length(digits) || anyNA(digits)) return("0")
-  carry <- 0L
-  out <- integer(length(digits) + 8L)
-  pos <- 1L
-  for (digit in digits) {
-    value <- digit * multiplier + carry
-    out[[pos]] <- value %% 10L
-    carry <- value %/% 10L
-    pos <- pos + 1L
-  }
-  while (carry > 0L) {
-    out[[pos]] <- carry %% 10L
-    carry <- carry %/% 10L
-    pos <- pos + 1L
-  }
-  chars <- rev(out[seq_len(pos - 1L)])
-  chars <- chars[!(seq_along(chars) == 1L & chars == 0L)]
-  ans <- paste0(chars, collapse = "")
-  ans <- sub("^0+", "", ans)
-  if (!nzchar(ans)) ans <- "0"
-  paste0(sign, ans)
+  .Call(RDUCKS_decimal_string_multiply_small, x, as.integer(multiplier))
 }
 
 rducks_arrow_decimal_string_from_unsigned_bytes <- function(bytes) {
-  out <- "0"
-  for (byte in rev(as.integer(bytes))) {
-    out <- rducks_arrow_multiply_decimal_string_small(out, 256L)
-    out <- rducks_arrow_add_decimal_string_small(out, byte)
-  }
-  out
+  .Call(RDUCKS_decimal_string_from_unsigned_bytes, bytes)
 }
 
 rducks_arrow_decimal_string_from_twos_complement <- function(bytes, signed = TRUE) {

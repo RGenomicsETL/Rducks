@@ -197,7 +197,7 @@ params_used <- data.frame(
   stringsAsFactors = FALSE
 )
 write_bench(params_used, "params")
-#> [1] "bench-results/rducks-20260502-191654/params.csv"
+#> [1] "bench-results/rducks-20260502-193443/params.csv"
 params_used
 #>                               parameter value
 #> sf                                   sf 0.001
@@ -252,7 +252,7 @@ reuse_guard <- data.frame(
   stringsAsFactors = FALSE
 )
 write_bench(reuse_guard, "buffer-reuse-guard")
-#> [1] "bench-results/rducks-20260502-191654/buffer-reuse-guard.csv"
+#> [1] "bench-results/rducks-20260502-193443/buffer-reuse-guard.csv"
 reuse_guard
 #>      output retained_arg retained_arg_ok
 #> 1 1,2,3,4,5            0            TRUE
@@ -332,33 +332,33 @@ for (n in micro_n) {
 micro_results <- do.call(rbind, micro_rows)
 micro_summary <- summarise_bench(micro_results)
 write_bench(micro_results, "micro-results")
-#> [1] "bench-results/rducks-20260502-191654/micro-results.csv"
+#> [1] "bench-results/rducks-20260502-193443/micro-results.csv"
 write_bench(micro_summary, "micro-summary")
-#> [1] "bench-results/rducks-20260502-191654/micro-summary.csv"
+#> [1] "bench-results/rducks-20260502-193443/micro-summary.csv"
 micro_summary
 #>                                label reps min_sec median_sec  mean_sec max_sec
 #> 1        micro/native-double/n=10000    3   0.001      0.001 0.0010000   0.001
-#> 2      micro/R-double-direct/n=10000    3   0.261      0.267 0.2673333   0.274
-#> 3     micro/RC-double-direct/n=10000    3   0.192      0.197 0.1956667   0.198
-#> 4     micro/R-varchar-direct/n=10000    3   0.302      0.303 0.3030000   0.304
-#> 5    micro/RC-varchar-direct/n=10000    3   0.206      0.206 0.2063333   0.207
-#> 6        micro/R-blob-direct/n=10000    3   0.271      0.272 0.2726667   0.275
-#> 7       micro/RC-blob-direct/n=10000    3   0.194      0.194 0.1943333   0.195
-#> 8   micro/R-decimal-fallback/n=10000    3   9.789      9.889 9.8600000   9.902
-#> 9  micro/RC-decimal-fallback/n=10000    3   9.767      9.841 9.8403333   9.913
-#> 10   micro/R-struct-fallback/n=10000    3   0.348      0.356 0.3566667   0.366
-#> 11  micro/RC-struct-fallback/n=10000    3   0.292      0.304 0.3000000   0.304
+#> 2      micro/R-double-direct/n=10000    3   0.261      0.263 0.2656667   0.273
+#> 3     micro/RC-double-direct/n=10000    3   0.194      0.194 0.1943333   0.195
+#> 4     micro/R-varchar-direct/n=10000    3   0.296      0.299 0.2993333   0.303
+#> 5    micro/RC-varchar-direct/n=10000    3   0.201      0.201 0.2020000   0.204
+#> 6        micro/R-blob-direct/n=10000    3   0.263      0.264 0.2670000   0.274
+#> 7       micro/RC-blob-direct/n=10000    3   0.190      0.191 0.1910000   0.192
+#> 8   micro/R-decimal-fallback/n=10000    3   3.092      3.113 3.1073333   3.117
+#> 9  micro/RC-decimal-fallback/n=10000    3   2.977      2.994 2.9910000   3.002
+#> 10   micro/R-struct-fallback/n=10000    3   0.351      0.353 0.3550000   0.361
+#> 11  micro/RC-struct-fallback/n=10000    3   0.289      0.292 0.3063333   0.338
 #>    rss_delta_after_gc_mb duckdb_mem_delta_after_gc_mb
 #> 1                0.15625                            0
-#> 2                0.31250                            0
+#> 2                0.46875                            0
 #> 3                0.00000                            0
 #> 4                0.00000                            0
 #> 5                0.00000                            0
 #> 6                0.00000                            0
 #> 7                0.00000                            0
-#> 8                0.62500                            0
+#> 8                0.46875                            0
 #> 9                0.00000                            0
-#> 10               0.15625                            0
+#> 10               0.31250                            0
 #> 11               0.00000                            0
 ```
 
@@ -539,25 +539,25 @@ if (tpch_available) {
   tpch_summary
 }
 #>                                  label reps min_sec median_sec    mean_sec
-#> 1                       tpch/q1-native    3   0.002      0.002 0.002000000
-#> 2             tpch/q1-R-direct-compute    3   0.349      0.355 0.358000000
-#> 3            tpch/q1-RC-direct-compute    3   0.243      0.246 0.247000000
-#> 4 tpch/q1-RC-direct-compute-and-filter    3   0.461      0.471 0.469666667
-#> 5                 tpch/shipmode-native    3   0.001      0.002 0.001666667
-#> 6               tpch/shipmode-R-direct    3   0.182      0.182 0.183000000
-#> 7              tpch/shipmode-RC-direct    3   0.129      0.130 0.130666667
-#> 8              tpch/decimal-R-fallback    3   6.106      6.137 6.134333333
-#> 9             tpch/decimal-RC-fallback    3   5.982      6.041 6.028000000
+#> 1                       tpch/q1-native    3   0.001      0.002 0.001666667
+#> 2             tpch/q1-R-direct-compute    3   0.344      0.346 0.346000000
+#> 3            tpch/q1-RC-direct-compute    3   0.236      0.237 0.239000000
+#> 4 tpch/q1-RC-direct-compute-and-filter    3   0.458      0.458 0.460000000
+#> 5                 tpch/shipmode-native    3   0.001      0.001 0.001000000
+#> 6               tpch/shipmode-R-direct    3   0.180      0.181 0.182000000
+#> 7              tpch/shipmode-RC-direct    3   0.124      0.125 0.138666667
+#> 8              tpch/decimal-R-fallback    3   1.881      1.887 1.898000000
+#> 9             tpch/decimal-RC-fallback    3   1.810      1.823 1.835666667
 #>   max_sec rss_delta_after_gc_mb duckdb_mem_delta_after_gc_mb
-#> 1   0.002               0.15625                            0
-#> 2   0.370               0.00000                            0
-#> 3   0.252               0.00000                            0
-#> 4   0.477               0.00000                            0
-#> 5   0.002               0.00000                            0
+#> 1   0.002               0.00000                            0
+#> 2   0.348               0.00000                            0
+#> 3   0.244               0.00000                            0
+#> 4   0.464               0.15625                            0
+#> 5   0.001               0.00000                            0
 #> 6   0.185               0.00000                            0
-#> 7   0.133               0.00000                            0
-#> 8   6.160               0.00000                            0
-#> 9   6.061               0.00000                            0
+#> 7   0.167               0.00000                            0
+#> 8   1.926               0.00000                            0
+#> 9   1.874               0.00000                            0
 ```
 
 ``` r
@@ -578,15 +578,15 @@ if (tpch_available) {
 #> 8              tpch/decimal-R-fallback
 #> 9             tpch/decimal-RC-fallback
 #>                                                                                    explain_file
-#> 1                       bench-results/rducks-20260502-191654/tpch-q1-native-explain-analyze.txt
-#> 2             bench-results/rducks-20260502-191654/tpch-q1-R-direct-compute-explain-analyze.txt
-#> 3            bench-results/rducks-20260502-191654/tpch-q1-RC-direct-compute-explain-analyze.txt
-#> 4 bench-results/rducks-20260502-191654/tpch-q1-RC-direct-compute-and-filter-explain-analyze.txt
-#> 5                 bench-results/rducks-20260502-191654/tpch-shipmode-native-explain-analyze.txt
-#> 6               bench-results/rducks-20260502-191654/tpch-shipmode-R-direct-explain-analyze.txt
-#> 7              bench-results/rducks-20260502-191654/tpch-shipmode-RC-direct-explain-analyze.txt
-#> 8              bench-results/rducks-20260502-191654/tpch-decimal-R-fallback-explain-analyze.txt
-#> 9             bench-results/rducks-20260502-191654/tpch-decimal-RC-fallback-explain-analyze.txt
+#> 1                       bench-results/rducks-20260502-193443/tpch-q1-native-explain-analyze.txt
+#> 2             bench-results/rducks-20260502-193443/tpch-q1-R-direct-compute-explain-analyze.txt
+#> 3            bench-results/rducks-20260502-193443/tpch-q1-RC-direct-compute-explain-analyze.txt
+#> 4 bench-results/rducks-20260502-193443/tpch-q1-RC-direct-compute-and-filter-explain-analyze.txt
+#> 5                 bench-results/rducks-20260502-193443/tpch-shipmode-native-explain-analyze.txt
+#> 6               bench-results/rducks-20260502-193443/tpch-shipmode-R-direct-explain-analyze.txt
+#> 7              bench-results/rducks-20260502-193443/tpch-shipmode-RC-direct-explain-analyze.txt
+#> 8              bench-results/rducks-20260502-193443/tpch-decimal-R-fallback-explain-analyze.txt
+#> 9             bench-results/rducks-20260502-193443/tpch-decimal-RC-fallback-explain-analyze.txt
 ```
 
 ``` r
@@ -670,22 +670,22 @@ leak_slopes <- do.call(rbind, lapply(split(leak_results, leak_results$label), fu
 }))
 
 write_bench(leak_results, "leak-results")
-#> [1] "bench-results/rducks-20260502-191654/leak-results.csv"
+#> [1] "bench-results/rducks-20260502-193443/leak-results.csv"
 write_bench(leak_slopes, "leak-slopes")
-#> [1] "bench-results/rducks-20260502-191654/leak-slopes.csv"
+#> [1] "bench-results/rducks-20260502-193443/leak-slopes.csv"
 leak_slopes
 #>                                             label iterations
 #> leak/RC-decimal-fallback leak/RC-decimal-fallback          5
 #> leak/RC-double-direct       leak/RC-double-direct          5
 #> leak/RC-struct-fallback   leak/RC-struct-fallback          5
 #>                          rss_slope_mb_per_iter duckdb_mem_slope_mb_per_iter
-#> leak/RC-decimal-fallback          2.542115e-14                            0
-#> leak/RC-double-direct             2.542115e-14                            0
-#> leak/RC-struct-fallback           2.542115e-14                            0
+#> leak/RC-decimal-fallback          1.271057e-14                            0
+#> leak/RC-double-direct             1.271057e-14                            0
+#> leak/RC-struct-fallback           1.271057e-14                            0
 #>                          ncells_slope_per_iter vcells_slope_per_iter
-#> leak/RC-decimal-fallback                  17.6                  45.0
+#> leak/RC-decimal-fallback                  15.9                -366.5
 #> leak/RC-double-direct                     17.6                  45.0
-#> leak/RC-struct-fallback                   20.9                  48.6
+#> leak/RC-struct-fallback                   14.3                  41.4
 ```
 
 # R profiling
@@ -730,116 +730,112 @@ rprof_heads <- lapply(rprof_heads, function(x) {
 })
 rprof_top <- do.call(rbind, rprof_heads)
 write_bench(rprof_top, "rprof-top")
-#> [1] "bench-results/rducks-20260502-191654/rprof-top.csv"
+#> [1] "bench-results/rducks-20260502-193443/rprof-top.csv"
 rprof_top
-#>                                        function_name self.time self.pct
-#> 1                                       "doTryCatch"      0.04    14.29
-#> 2                                               "[["      0.03    10.71
-#> 3                   "rducks_check_scalar_udf_return"      0.02     7.14
-#> 4                                       ".External2"      0.02     7.14
-#> 5                        "rducks_check_scalar_value"      0.02     7.14
-#> 6                                     "[[.S7_object"      0.02     7.14
-#> 7                                             "%in%"      0.02     7.14
-#> 8                                         "obj_type"      0.02     7.14
-#> 9                                         "tryCatch"      0.01     3.57
-#> 10                              "rducks_check_value"      0.01     3.57
-#> 11                                 "S7::S7_dispatch"      0.01     3.57
-#> 12                        "method(rducks_type_token,      0.01     3.57
-#> 13             "as_nanoarrow_array.nanoarrow_buffer"      0.01     3.57
-#> 14                                       "invisible"      0.01     3.57
-#> 15                                          "isTRUE"      0.01     3.57
-#> 16                                      "NextMethod"      0.01     3.57
-#> 17       "rducks_scalar_udf_return_needs_length_one"      0.01     3.57
-#> 18                                    "sys.function"      0.08    32.00
-#> 19                                              "[["      0.05    20.00
-#> 20                                      ".External2"      0.02     8.00
-#> 21                               "check_subsettable"      0.02     8.00
-#> 22                                        "obj_type"      0.02     8.00
-#> 23                                     "<Anonymous>"      0.01     4.00
-#> 24                                 "S7::S7_dispatch"      0.01     4.00
-#> 25                       "rducks_check_scalar_value"      0.01     4.00
-#> 26                                "rducks_type_kind"      0.01     4.00
-#> 27                                "rducks_type_prop"      0.01     4.00
-#> 28                                            "%in%"      0.01     4.00
-#> 29                                             "sub"      3.13    31.30
-#> 30                                          "paste0"      1.04    10.40
-#> 31                                             "rev"      0.54     5.40
-#> 32                                       "is.factor"      0.52     5.20
-#> 33                                       "match.arg"      0.39     3.90
-#> 34           "rducks_arrow_add_decimal_string_small"      0.37     3.70
-#> 35                                            "eval"      0.35     3.50
-#> 36                                           "mysub"      0.32     3.20
-#> 37                                             "FUN"      0.21     2.10
-#> 38                                          "trimws"      0.21     2.10
-#> 39                                        "strsplit"      0.21     2.10
-#> 40      "rducks_arrow_multiply_decimal_string_small"      0.20     2.00
-#> 41                                      "sys.parent"      0.17     1.70
-#> 42                                    "sys.function"      0.16     1.60
-#> 43                                          "vapply"      0.14     1.40
-#> 44                                           "grepl"      0.14     1.40
-#> 45                                      "startsWith"      0.13     1.30
-#> 46                                     "rev.default"      0.09     0.90
-#> 47                                             "max"      0.09     0.90
-#> 48                                       "sys.frame"      0.09     0.90
-#> 49 "rducks_arrow_decimal_string_from_unsigned_bytes"      0.08     0.80
-#> 50                                               "c"      0.08     0.80
-#> 51                                     "<Anonymous>"      0.07     0.70
-#> 52                                         "formals"      0.07     0.70
-#> 53                          "rducks_add_abs_integer"      0.07     0.70
-#>    total.time total.pct mem.total                     query
-#> 1        0.28    100.00     354.8     rprof-R-double-direct
-#> 2        0.08     28.57     104.1     rprof-R-double-direct
-#> 3        0.21     75.00     272.7     rprof-R-double-direct
-#> 4        0.13     46.43     155.8     rprof-R-double-direct
-#> 5        0.09     32.14     137.8     rprof-R-double-direct
-#> 6        0.05     17.86      52.1     rprof-R-double-direct
-#> 7        0.02      7.14      17.3     rprof-R-double-direct
-#> 8        0.02      7.14      33.6     rprof-R-double-direct
-#> 9        0.28    100.00     354.8     rprof-R-double-direct
-#> 10       0.18     64.29     242.3     rprof-R-double-direct
-#> 11       0.14     50.00     173.2     rprof-R-double-direct
-#> 12       0.03     10.71      52.4     rprof-R-double-direct
-#> 13       0.01      3.57       0.3     rprof-R-double-direct
-#> 14       0.01      3.57      16.4     rprof-R-double-direct
-#> 15       0.01      3.57      17.0     rprof-R-double-direct
-#> 16       0.01      3.57      17.2     rprof-R-double-direct
-#> 17       0.01      3.57      12.9     rprof-R-double-direct
-#> 18       0.08     32.00      46.1    rprof-RC-double-direct
-#> 19       0.08     32.00     144.1    rprof-RC-double-direct
-#> 20       0.13     52.00     207.3    rprof-RC-double-direct
-#> 21       0.03     12.00      53.9    rprof-RC-double-direct
-#> 22       0.02      8.00      26.7    rprof-RC-double-direct
-#> 23       0.25    100.00     288.4    rprof-RC-double-direct
-#> 24       0.22     88.00     253.4    rprof-RC-double-direct
-#> 25       0.13     52.00      99.9    rprof-RC-double-direct
-#> 26       0.11     44.00     171.6    rprof-RC-double-direct
-#> 27       0.09     36.00     162.3    rprof-RC-double-direct
-#> 28       0.01      4.00      17.6    rprof-RC-double-direct
-#> 29       4.50     45.00    4055.0 rprof-RC-decimal-fallback
-#> 30       1.36     13.60    1249.5 rprof-RC-decimal-fallback
-#> 31       1.11     11.10    1051.2 rprof-RC-decimal-fallback
-#> 32       1.97     19.70    1751.3 rprof-RC-decimal-fallback
-#> 33       1.25     12.50    1058.2 rprof-RC-decimal-fallback
-#> 34       3.82     38.20    3431.2 rprof-RC-decimal-fallback
-#> 35      10.00    100.00    9054.8 rprof-RC-decimal-fallback
-#> 36       3.35     33.50    3056.7 rprof-RC-decimal-fallback
-#> 37      10.00    100.00    9054.8 rprof-RC-decimal-fallback
-#> 38       4.81     48.10    4300.4 rprof-RC-decimal-fallback
-#> 39       0.48      4.80     457.4 rprof-RC-decimal-fallback
-#> 40       2.94     29.40    2609.1 rprof-RC-decimal-fallback
-#> 41       0.17      1.70     159.8 rprof-RC-decimal-fallback
-#> 42       0.33      3.30     280.5 rprof-RC-decimal-fallback
-#> 43       1.49     14.90    1359.2 rprof-RC-decimal-fallback
-#> 44       0.15      1.50     150.2 rprof-RC-decimal-fallback
-#> 45       0.13      1.30     106.6 rprof-RC-decimal-fallback
-#> 46       0.11      1.10     115.5 rprof-RC-decimal-fallback
-#> 47       0.09      0.90      36.9 rprof-RC-decimal-fallback
-#> 48       0.09      0.90      52.0 rprof-RC-decimal-fallback
-#> 49       6.86     68.60    6124.5 rprof-RC-decimal-fallback
-#> 50       0.08      0.80      77.9 rprof-RC-decimal-fallback
-#> 51       9.94     99.40    8986.2 rprof-RC-decimal-fallback
-#> 52       0.33      3.30     286.2 rprof-RC-decimal-fallback
-#> 53       0.13      1.30     132.0 rprof-RC-decimal-fallback
+#>                                  function_name self.time self.pct total.time
+#> 1                               "sys.function"      0.06    22.22       0.06
+#> 2                                 "doTryCatch"      0.02     7.41       0.27
+#> 3                                 ".External2"      0.02     7.41       0.12
+#> 4                  "rducks_check_scalar_value"      0.02     7.41       0.12
+#> 5                                         "[["      0.02     7.41       0.06
+#> 6                   "method(rducks_type_token,      0.02     7.41       0.05
+#> 7                                       "%in%"      0.02     7.41       0.02
+#> 8                            "S7::S7_dispatch"      0.01     3.70       0.19
+#> 9                      "rducks_arrow_value_at"      0.01     3.70       0.02
+#> 10                                         "c"      0.01     3.70       0.01
+#> 11                                   "is.list"      0.01     3.70       0.01
+#> 12                                     "is.na"      0.01     3.70       0.01
+#> 13                                "NextMethod"      0.01     3.70       0.01
+#> 14                              "obj_dispatch"      0.01     3.70       0.01
+#> 15                              "parent.frame"      0.01     3.70       0.01
+#> 16 "rducks_scalar_udf_return_needs_length_one"      0.01     3.70       0.01
+#> 17                              "sys.function"      0.05    26.32       0.05
+#> 18                          "rducks_type_prop"      0.03    15.79       0.07
+#> 19                 "rducks_check_scalar_value"      0.02    10.53       0.14
+#> 20                                        "[["      0.02    10.53       0.04
+#> 21                              "[[.S7_object"      0.02    10.53       0.02
+#> 22                        "rducks_check_value"      0.01     5.26       0.19
+#> 23                         "rducks_type_token"      0.01     5.26       0.11
+#> 24                                ".External2"      0.01     5.26       0.09
+#> 25                                     "class"      0.01     5.26       0.01
+#> 26                                    "isTRUE"      0.01     5.26       0.01
+#> 27                                       "sub"      0.69    22.48       0.94
+#> 28                                    "paste0"      0.27     8.79       0.29
+#> 29                                       "FUN"      0.26     8.47       3.07
+#> 30                                     "grepl"      0.18     5.86       0.19
+#> 31                                    "vapply"      0.11     3.58       1.48
+#> 32                                 "match.arg"      0.11     3.58       0.26
+#> 33                                     "mysub"      0.09     2.93       0.75
+#> 34                                      "eval"      0.08     2.61       3.07
+#> 35           "rducks_normalize_integer_string"      0.08     2.61       0.53
+#> 36                                    "trimws"      0.07     2.28       1.08
+#> 37                    "rducks_add_abs_integer"      0.07     2.28       0.10
+#> 38                                 "structure"      0.06     1.95       0.10
+#> 39                                "startsWith"      0.06     1.95       0.06
+#> 40           "rducks_normalize_decimal_string"      0.05     1.63       1.83
+#> 41                      "rducks_decimal_arith"      0.05     1.63       1.24
+#> 42                                 "is.factor"      0.05     1.63       0.44
+#> 43                              "sys.function"      0.04     1.30       0.08
+#> 44                              "as.character"      0.04     1.30       0.05
+#> 45                                  "strsplit"      0.04     1.30       0.04
+#> 46                                "sys.parent"      0.04     1.30       0.04
+#> 47        "rducks_decimal_from_scaled_integer"      0.03     0.98       0.96
+#> 48  "rducks_arrow_unsigned_bytes_from_decimal"      0.03     0.98       0.12
+#> 49                                ".External2"      0.03     0.98       0.10
+#> 50                "rducks_check_decimal_value"      0.03     0.98       0.08
+#> 51                 "rducks_check_decimal_spec"      0.03     0.98       0.05
+#>    total.pct mem.total                     query
+#> 1      22.22      66.8     rprof-R-double-direct
+#> 2     100.00     352.6     rprof-R-double-direct
+#> 3      44.44     146.6     rprof-R-double-direct
+#> 4      44.44     127.1     rprof-R-double-direct
+#> 5      22.22      73.4     rprof-R-double-direct
+#> 6      18.52      37.5     rprof-R-double-direct
+#> 7       7.41       0.4     rprof-R-double-direct
+#> 8      70.37     213.4     rprof-R-double-direct
+#> 9       7.41      36.4     rprof-R-double-direct
+#> 10      3.70      18.2     rprof-R-double-direct
+#> 11      3.70      18.3     rprof-R-double-direct
+#> 12      3.70      17.4     rprof-R-double-direct
+#> 13      3.70      17.5     rprof-R-double-direct
+#> 14      3.70      18.4     rprof-R-double-direct
+#> 15      3.70      13.1     rprof-R-double-direct
+#> 16      3.70      17.8     rprof-R-double-direct
+#> 17     26.32      74.0    rprof-RC-double-direct
+#> 18     36.84     111.3    rprof-RC-double-direct
+#> 19     73.68     183.8    rprof-RC-double-direct
+#> 20     21.05      73.9    rprof-RC-double-direct
+#> 21     10.53      37.2    rprof-RC-double-direct
+#> 22    100.00     259.4    rprof-RC-double-direct
+#> 23     57.89     146.7    rprof-RC-double-direct
+#> 24     47.37     130.5    rprof-RC-double-direct
+#> 25      5.26      19.2    rprof-RC-double-direct
+#> 26      5.26       0.0    rprof-RC-double-direct
+#> 27     30.62     929.8 rprof-RC-decimal-fallback
+#> 28      9.45     297.0 rprof-RC-decimal-fallback
+#> 29    100.00    2958.8 rprof-RC-decimal-fallback
+#> 30      6.19     191.2 rprof-RC-decimal-fallback
+#> 31     48.21    1390.8 rprof-RC-decimal-fallback
+#> 32      8.47     254.7 rprof-RC-decimal-fallback
+#> 33     24.43     727.8 rprof-RC-decimal-fallback
+#> 34    100.00    2958.8 rprof-RC-decimal-fallback
+#> 35     17.26     516.5 rprof-RC-decimal-fallback
+#> 36     35.18    1040.9 rprof-RC-decimal-fallback
+#> 37      3.26      95.3 rprof-RC-decimal-fallback
+#> 38      3.26     107.1 rprof-RC-decimal-fallback
+#> 39      1.95      72.4 rprof-RC-decimal-fallback
+#> 40     59.61    1727.1 rprof-RC-decimal-fallback
+#> 41     40.39    1188.0 rprof-RC-decimal-fallback
+#> 42     14.33     399.5 rprof-RC-decimal-fallback
+#> 43      2.61      59.3 rprof-RC-decimal-fallback
+#> 44      1.63      59.9 rprof-RC-decimal-fallback
+#> 45      1.30      23.8 rprof-RC-decimal-fallback
+#> 46      1.30      36.0 rprof-RC-decimal-fallback
+#> 47     31.27     865.3 rprof-RC-decimal-fallback
+#> 48      3.91     102.6 rprof-RC-decimal-fallback
+#> 49      3.26     118.0 rprof-RC-decimal-fallback
+#> 50      2.61      81.9 rprof-RC-decimal-fallback
+#> 51      1.63      48.5 rprof-RC-decimal-fallback
 ```
 
 # Native leak/profiler commands
@@ -899,5 +895,5 @@ data.frame(
   stringsAsFactors = FALSE
 )
 #>                                               benchmark_artifacts
-#> 1 /root/Rtinycc/Rducks/tools/bench-results/rducks-20260502-191654
+#> 1 /root/Rtinycc/Rducks/tools/bench-results/rducks-20260502-193443
 ```
