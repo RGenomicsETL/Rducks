@@ -84,8 +84,6 @@
   : Rducks type descriptor helpers
 - [`rducks_ubigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ubigint.md)
   : Construct exact DuckDB UBIGINT values
-- [`rducks_udf_spec()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_udf_spec.md)
-  : Create an Rducks UDF specification
 - [`rducks_uhugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uhugeint.md)
   : Construct exact DuckDB UHUGEINT values
 - [`rducks_union()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_union.md)
