@@ -81,7 +81,7 @@
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB.</p>
-<p>The implemented mode is <code>mode = "scalar"</code>, which calls the R function once per DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to scalar R calls, then imported back to DuckDB. A future vectorized mode should call R once per DuckDB chunk and will be added only when implemented.</p>
+<p>The implemented mode is <code>mode = "scalar"</code>, which calls the R function once per DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to scalar R calls, then imported back to DuckDB. <code>eval_mode = "R"</code> uses the R row-loop adapter; <code>eval_mode = "RC"</code> uses the native C row-loop adapter and is covered by R-vs-RC conformance tests. A future vectorized mode should call R once per DuckDB chunk and will be added only when implemented.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 <div class="section level2">

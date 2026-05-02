@@ -52,6 +52,7 @@ extension. Registration requires <code>external_threads=1</code> plus
 <span>  <span class="va">args</span>,</span>
 <span>  <span class="va">returns</span>,</span>
 <span>  mode <span class="op">=</span> <span class="st">"scalar"</span>,</span>
+<span>  eval_mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"R"</span>, <span class="st">"RC"</span><span class="op">)</span>,</span>
 <span>  null_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"default"</span>, <span class="st">"special"</span><span class="op">)</span>,</span>
 <span>  exception_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rethrow"</span>, <span class="st">"return_null"</span><span class="op">)</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span></span>
@@ -88,6 +89,12 @@ objects such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code
 <dd><p>Registration mode. <code>"scalar"</code> is implemented now and calls the R
 function once per DuckDB row through the nanoarrow scalar adapter. A future
 vectorized mode should call the R function once per DuckDB chunk.</p></dd>
+
+
+<dt id="arg-eval-mode">eval_mode<a class="anchor" aria-label="anchor" href="#arg-eval-mode"></a></dt>
+<dd><p>Scalar evaluator implementation. <code>"R"</code> uses the R row-loop
+adapter; <code>"RC"</code> uses the native C row-loop adapter and validates against the
+same scalar-mode semantics.</p></dd>
 
 
 <dt id="arg-null-handling">null_handling<a class="anchor" aria-label="anchor" href="#arg-null-handling"></a></dt>

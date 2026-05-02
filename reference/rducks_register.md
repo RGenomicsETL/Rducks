@@ -15,6 +15,7 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
+  eval_mode = c("R", "RC"),
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -51,6 +52,12 @@ rducks_register(
   function once per DuckDB row through the nanoarrow scalar adapter. A
   future vectorized mode should call the R function once per DuckDB
   chunk.
+
+- eval_mode:
+
+  Scalar evaluator implementation. `"R"` uses the R row-loop adapter;
+  `"RC"` uses the native C row-loop adapter and validates against the
+  same scalar-mode semantics.
 
 - null_handling:
 
