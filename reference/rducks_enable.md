@@ -1,9 +1,9 @@
 # Enable Rducks on a DuckDB connection
 
-Loads the bundled Rducks DuckDB extension. The current direct R function
-execution mode requires R API work to happen on the calling R thread;
+Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
+execution path requires R API work to happen on the calling R thread;
 pass `threads = "single"` to set `external_threads=1` and
-`PRAGMA threads=1` explicitly for the supported direct R function
+`PRAGMA threads=1` explicitly for the supported scalar-mode R UDF
 configuration.
 
 ## Usage
