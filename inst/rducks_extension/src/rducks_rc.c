@@ -162,20 +162,39 @@ static int rducks_rc_direct_supported(rducks_r_scalar_meta_t *meta) {
     return 1;
 }
 
-static int rducks_rc_vector_valid_at(duckdb_vector vector, idx_t row) {
-    uint64_t *validity = duckdb_vector_get_validity(vector);
-    if (!validity) return 1;
-    return duckdb_validity_row_is_valid(validity, row) ? 1 : 0;
+typedef struct rducks_rc_direct_vector_view {
+    duckdb_vector vector;
+    void *data;
+    uint64_t *validity;
+} rducks_rc_direct_vector_view_t;
+
+static void rducks_rc_direct_input_view_init(rducks_rc_direct_vector_view_t *view, duckdb_vector vector) {
+    view->vector = vector;
+    view->data = duckdb_vector_get_data(vector);
+    view->validity = duckdb_vector_get_validity(vector);
 }
 
-static void rducks_rc_output_set_null(duckdb_vector output, idx_t row) {
-    duckdb_vector_ensure_validity_writable(output);
-    duckdb_validity_set_row_invalid(duckdb_vector_get_validity(output), row);
+static void rducks_rc_direct_output_view_init(rducks_rc_direct_vector_view_t *view, duckdb_vector vector) {
+    view->vector = vector;
+    view->data = duckdb_vector_get_data(vector);
+    view->validity = duckdb_vector_get_validity(vector);
 }
 
-static void rducks_rc_output_set_valid_if_needed(duckdb_vector output, idx_t row) {
-    uint64_t *validity = duckdb_vector_get_validity(output);
-    if (validity) duckdb_validity_set_row_valid(validity, row);
+static int rducks_rc_direct_view_valid_at(const rducks_rc_direct_vector_view_t *view, idx_t row) {
+    if (!view->validity) return 1;
+    return duckdb_validity_row_is_valid(view->validity, row) ? 1 : 0;
+}
+
+static void rducks_rc_output_set_null(rducks_rc_direct_vector_view_t *output, idx_t row) {
+    if (!output->validity) {
+        duckdb_vector_ensure_validity_writable(output->vector);
+        output->validity = duckdb_vector_get_validity(output->vector);
+    }
+    duckdb_validity_set_row_invalid(output->validity, row);
+}
+
+static void rducks_rc_output_set_valid_if_needed(rducks_rc_direct_vector_view_t *output, idx_t row) {
+    if (output->validity) duckdb_validity_set_row_valid(output->validity, row);
 }
 
 static SEXP rducks_rc_make_date(double days) {
@@ -240,75 +259,75 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     }
 }
 
-static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row) {
+static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row) {
     SEXP out;
-    if (!rducks_rc_vector_valid_at(vector, row)) return rducks_rc_missing_arg(desc);
+    if (!rducks_rc_direct_view_valid_at(input, row)) return rducks_rc_missing_arg(desc);
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL: {
-        bool *data = (bool *)duckdb_vector_get_data(vector);
+        bool *data = (bool *)input->data;
         out = PROTECT(Rf_allocVector(LGLSXP, 1));
         LOGICAL(out)[0] = data[row] ? TRUE : FALSE;
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_I8: {
-        int8_t *data = (int8_t *)duckdb_vector_get_data(vector);
+        int8_t *data = (int8_t *)input->data;
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = (int)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_U8: {
-        uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
+        uint8_t *data = (uint8_t *)input->data;
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = (int)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_I16: {
-        int16_t *data = (int16_t *)duckdb_vector_get_data(vector);
+        int16_t *data = (int16_t *)input->data;
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = (int)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_U16: {
-        uint16_t *data = (uint16_t *)duckdb_vector_get_data(vector);
+        uint16_t *data = (uint16_t *)input->data;
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = (int)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_I32: {
-        int32_t *data = (int32_t *)duckdb_vector_get_data(vector);
+        int32_t *data = (int32_t *)input->data;
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = (int)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_U32: {
-        uint32_t *data = (uint32_t *)duckdb_vector_get_data(vector);
+        uint32_t *data = (uint32_t *)input->data;
         out = PROTECT(Rf_allocVector(REALSXP, 1));
         REAL(out)[0] = (double)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_F32: {
-        float *data = (float *)duckdb_vector_get_data(vector);
+        float *data = (float *)input->data;
         out = PROTECT(Rf_allocVector(REALSXP, 1));
         REAL(out)[0] = (double)data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_F64: {
-        double *data = (double *)duckdb_vector_get_data(vector);
+        double *data = (double *)input->data;
         out = PROTECT(Rf_allocVector(REALSXP, 1));
         REAL(out)[0] = data[row];
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_VARCHAR: {
-        duckdb_string_t *data = (duckdb_string_t *)duckdb_vector_get_data(vector);
+        duckdb_string_t *data = (duckdb_string_t *)input->data;
         uint32_t len = duckdb_string_t_length(data[row]);
         const char *ptr = duckdb_string_t_data(&data[row]);
         out = PROTECT(Rf_allocVector(STRSXP, 1));
@@ -317,7 +336,7 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, duckdb_vector v
         return out;
     }
     case RDUCKS_TYPE_BLOB: {
-        duckdb_string_t *data = (duckdb_string_t *)duckdb_vector_get_data(vector);
+        duckdb_string_t *data = (duckdb_string_t *)input->data;
         uint32_t len = duckdb_string_t_length(data[row]);
         const char *ptr = duckdb_string_t_data(&data[row]);
         out = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)len));
@@ -326,18 +345,18 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, duckdb_vector v
         return out;
     }
     case RDUCKS_TYPE_DATE: {
-        duckdb_date *data = (duckdb_date *)duckdb_vector_get_data(vector);
+        duckdb_date *data = (duckdb_date *)input->data;
         return rducks_rc_make_date((double)data[row].days);
     }
     case RDUCKS_TYPE_TIME: {
-        duckdb_time *data = (duckdb_time *)duckdb_vector_get_data(vector);
+        duckdb_time *data = (duckdb_time *)input->data;
         out = PROTECT(Rf_allocVector(REALSXP, 1));
         REAL(out)[0] = (double)data[row].micros / 1000000.0;
         UNPROTECT(1);
         return out;
     }
     case RDUCKS_TYPE_TIMESTAMP: {
-        duckdb_timestamp *data = (duckdb_timestamp *)duckdb_vector_get_data(vector);
+        duckdb_timestamp *data = (duckdb_timestamp *)input->data;
         return rducks_rc_make_timestamp((double)data[row].micros / 1000000.0);
     }
     default:
@@ -361,8 +380,8 @@ static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SE
     return 0;
 }
 
-static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, duckdb_vector output, idx_t row, SEXP value,
-                                         char *err_msg, size_t err_cap) {
+static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
+                                         idx_t row, SEXP value, char *err_msg, size_t err_cap) {
     if (rducks_rc_value_is_null_for_output(desc, value)) {
         rducks_rc_output_set_null(output, row);
         return 1;
@@ -370,31 +389,31 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, duckdb_
     rducks_rc_output_set_valid_if_needed(output, row);
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
-        ((bool *)duckdb_vector_get_data(output))[row] = Rf_asLogical(value) == TRUE;
+        ((bool *)output->data)[row] = Rf_asLogical(value) == TRUE;
         return 1;
     case RDUCKS_TYPE_I8:
-        ((int8_t *)duckdb_vector_get_data(output))[row] = (int8_t)Rf_asInteger(value);
+        ((int8_t *)output->data)[row] = (int8_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U8:
-        ((uint8_t *)duckdb_vector_get_data(output))[row] = (uint8_t)Rf_asInteger(value);
+        ((uint8_t *)output->data)[row] = (uint8_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_I16:
-        ((int16_t *)duckdb_vector_get_data(output))[row] = (int16_t)Rf_asInteger(value);
+        ((int16_t *)output->data)[row] = (int16_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U16:
-        ((uint16_t *)duckdb_vector_get_data(output))[row] = (uint16_t)Rf_asInteger(value);
+        ((uint16_t *)output->data)[row] = (uint16_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_I32:
-        ((int32_t *)duckdb_vector_get_data(output))[row] = (int32_t)Rf_asInteger(value);
+        ((int32_t *)output->data)[row] = (int32_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U32:
-        ((uint32_t *)duckdb_vector_get_data(output))[row] = (uint32_t)Rf_asReal(value);
+        ((uint32_t *)output->data)[row] = (uint32_t)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_F32:
-        ((float *)duckdb_vector_get_data(output))[row] = (float)Rf_asReal(value);
+        ((float *)output->data)[row] = (float)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_F64:
-        ((double *)duckdb_vector_get_data(output))[row] = Rf_asReal(value);
+        ((double *)output->data)[row] = Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_VARCHAR: {
         if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1) {
@@ -403,7 +422,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, duckdb_
         }
         SEXP ch = STRING_ELT(value, 0);
         const char *ptr = Rf_translateCharUTF8(ch);
-        duckdb_vector_assign_string_element_len(output, row, ptr, (idx_t)strlen(ptr));
+        duckdb_vector_assign_string_element_len(output->vector, row, ptr, (idx_t)strlen(ptr));
         return 1;
     }
     case RDUCKS_TYPE_BLOB:
@@ -411,16 +430,16 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, duckdb_
             snprintf(err_msg, err_cap, "Rducks RC BLOB output is not a raw vector");
             return 0;
         }
-        duckdb_vector_assign_string_element_len(output, row, (const char *)RAW(value), (idx_t)XLENGTH(value));
+        duckdb_vector_assign_string_element_len(output->vector, row, (const char *)RAW(value), (idx_t)XLENGTH(value));
         return 1;
     case RDUCKS_TYPE_DATE:
-        ((duckdb_date *)duckdb_vector_get_data(output))[row].days = (int32_t)Rf_asReal(value);
+        ((duckdb_date *)output->data)[row].days = (int32_t)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_TIME:
-        ((duckdb_time *)duckdb_vector_get_data(output))[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        ((duckdb_time *)output->data)[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
     case RDUCKS_TYPE_TIMESTAMP:
-        ((duckdb_timestamp *)duckdb_vector_get_data(output))[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        ((duckdb_timestamp *)output->data)[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
     default:
         snprintf(err_msg, err_cap, "Rducks RC direct output unsupported type");
@@ -435,24 +454,38 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
     SEXP fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
     SEXP return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
     SEXP check_return_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN);
+    rducks_rc_direct_vector_view_t *inputs = NULL;
+    rducks_rc_direct_vector_view_t output_view;
+
+    if (meta->arity > 0) {
+        inputs = (rducks_rc_direct_vector_view_t *)calloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
+        if (!inputs) {
+            snprintf(err_msg, err_cap, "out of memory allocating Rducks RC direct input views");
+            return 0;
+        }
+        for (size_t col = 0; col < meta->arity; col++) {
+            rducks_rc_direct_input_view_init(&inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
+        }
+    }
+    rducks_rc_direct_output_view_init(&output_view, output);
 
     for (idx_t row = 0; row < n; row++) {
         int has_null = 0;
         for (size_t col = 0; col < meta->arity; col++) {
-            if (!rducks_rc_vector_valid_at(duckdb_data_chunk_get_vector(input, (idx_t)col), row)) {
+            if (!rducks_rc_direct_view_valid_at(&inputs[col], row)) {
                 has_null = 1;
                 break;
             }
         }
         if (meta->null_handling == RDUCKS_NULL_DEFAULT && has_null) {
-            rducks_rc_output_set_null(output, row);
+            rducks_rc_output_set_null(&output_view, row);
             continue;
         }
 
         SEXP args = PROTECT(Rf_allocList((int)meta->arity));
         SEXP node = args;
         for (size_t col = 0; col < meta->arity; col++) {
-            SEXP arg = PROTECT(rducks_rc_direct_arg(meta->args[col], duckdb_data_chunk_get_vector(input, (idx_t)col), row));
+            SEXP arg = PROTECT(rducks_rc_direct_arg(meta->args[col], &inputs[col], row));
             SETCAR(node, arg);
             UNPROTECT(1);
             node = CDR(node);
@@ -464,10 +497,11 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
         if (r_err) {
             UNPROTECT(1); /* value */
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
-                rducks_rc_output_set_null(output, row);
+                rducks_rc_output_set_null(&output_view, row);
                 continue;
             }
             snprintf(err_msg, err_cap, "Rducks RC R function error");
+            free(inputs);
             return 0;
         }
 
@@ -477,14 +511,17 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
         if (r_err) {
             UNPROTECT(1); /* checked */
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
+            free(inputs);
             return 0;
         }
-        if (!rducks_rc_write_direct_output(meta->return_desc, output, row, checked, err_msg, err_cap)) {
+        if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, checked, err_msg, err_cap)) {
             UNPROTECT(1); /* checked */
+            free(inputs);
             return 0;
         }
         UNPROTECT(1); /* checked */
     }
+    free(inputs);
     return 1;
 }
 

@@ -14,3 +14,5 @@ build/
 inst/rducks_extension/build/
 docs
 pkgdown-site/
+bench-results/
+tools/bench-results/
