@@ -145,6 +145,16 @@ local({
   invisible(rducks_register(con, "eval_error_null_rc", function(x) if (x == 2L) stop("boom") else x, INTEGER, INTEGER, eval_mode = "RC", exception_handling = "return_null", side_effects = TRUE))
   expect_pair_equal("SELECT eval_error_null_r(i::INTEGER) AS r, eval_error_null_rc(i::INTEGER) AS rc FROM range(4) t(i)")
 
+  invisible(rducks_register(con, "eval_error_rethrow_r", function(x) if (x == 2L) stop("boom") else x, INTEGER, INTEGER, eval_mode = "R", side_effects = TRUE))
+  invisible(rducks_register(con, "eval_error_rethrow_rc", function(x) if (x == 2L) stop("boom") else x, INTEGER, INTEGER, eval_mode = "RC", side_effects = TRUE))
+  expect_error(DBI::dbGetQuery(con, "SELECT eval_error_rethrow_r(i::INTEGER) AS x FROM range(4) t(i)"), "Rducks")
+  expect_error(DBI::dbGetQuery(con, "SELECT eval_error_rethrow_rc(i::INTEGER) AS x FROM range(4) t(i)"), "Rducks")
+
+  invisible(rducks_register(con, "eval_bad_return_r", function(x) c(x, x), INTEGER, INTEGER, eval_mode = "R", exception_handling = "return_null", side_effects = TRUE))
+  invisible(rducks_register(con, "eval_bad_return_rc", function(x) c(x, x), INTEGER, INTEGER, eval_mode = "RC", exception_handling = "return_null", side_effects = TRUE))
+  expect_error(DBI::dbGetQuery(con, "SELECT eval_bad_return_r(1::INTEGER) AS x"), "Rducks")
+  expect_error(DBI::dbGetQuery(con, "SELECT eval_bad_return_rc(1::INTEGER) AS x"), "Rducks")
+
   invisible(rducks_register(con, "eval_rng_r", function(x) runif(1), INTEGER, DOUBLE, eval_mode = "R", side_effects = TRUE))
   invisible(rducks_register(con, "eval_rng_rc", function(x) runif(1), INTEGER, DOUBLE, eval_mode = "RC", side_effects = TRUE))
   set.seed(123)
