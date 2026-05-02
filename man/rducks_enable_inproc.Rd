@@ -25,10 +25,13 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread.
+still serialized on the main R thread. The queued backend dispatches both
+scalar evaluator implementations, \code{eval_mode = "R"} and \code{eval_mode = "RC"},
+through that same main-lane execution rule.
 }
 \details{
-Register scalar UDFs while the connection is in the default single-thread
+Register scalar UDFs while the connection is in the registration-safe
 configuration, then call \code{rducks_enable_inproc()} before running queries that
-should use the queued in-process path.
+should use the queued in-process path. Use \code{threads}/\code{external_threads} here
+to adjust DuckDB's thread settings for queued execution.
 }

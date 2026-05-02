@@ -75,9 +75,11 @@ Keep the following layers separate when changing the native path:
    must not pass borrowed DuckDB vectors or transient `SEXP` objects across
    threads.
 
-The current RC path is deliberately a calling-R-thread path and therefore mixes
-R API calls with direct DuckDB vector reads/writes in one callback-local loop.
-That is acceptable only because off-thread entry is rejected before execution.
+The current RC execution helpers are deliberately main-R-lane helpers and
+therefore mix R API calls with direct DuckDB vector reads/writes in one
+callback-local loop. In the `single` backend, DuckDB enters them directly on the
+recorded R thread. In the `concurrent_inproc` backend, an off-main callback must
+queue first; the main R lane drains the request and only then runs those helpers.
 Do not reuse RC direct-buffer helpers as worker-safe building blocks without
 first splitting them along the boundaries above.
 
@@ -90,8 +92,8 @@ The R and RC row-loop code is split into explicit phases:
 3. validate each scalar return;
 4. build an Arrow C Data result chunk.
 
-`eval_mode = "R"` calls this engine directly through an R wrapper. `eval_mode =
-"RC"` keeps its current calling-R-thread direct-buffer fast path and its C
+`eval_mode = "R"` calls this engine through an R wrapper on the recorded R lane.
+`eval_mode = "RC"` keeps its current main-lane direct-buffer fast path and its C
 row-loop fallback, but the fallback bundle now carries the same prepare/result
 helpers plus an R engine object. This does not rule out a future threaded RC
 implementation; it only describes the path that is safe today. A threaded RC
@@ -122,22 +124,23 @@ Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport, not for the current
 callback-local DuckDB ⇄ R handoff.
 
-## First safe mode
+## Registration-safe mode
 
-The supported scalar-mode R UDF path uses:
+The registration-safe scalar-mode R UDF setup uses:
 
 ```sql
 SET external_threads=1;
 PRAGMA threads=1;
 ```
 
-Rducks requires this mode before registering scalar-mode R UDFs; that
+Rducks requires this setup before registering scalar-mode R UDFs; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the
 execution thread before every R function execution. `rducks_enable_inproc()` is
-the explicit opt-in for queued same-process dispatch after registration. The
-queue has timeout/error paths so a missing main-lane drain fails rather than
+the explicit opt-in for queued same-process dispatch after registration, and can
+also adjust DuckDB's `threads`/`external_threads` settings for that queued phase.
+The queue has timeout/error paths so a missing main-lane drain fails rather than
 waiting indefinitely.
 
 ## nanoarrow direction and lifetime model

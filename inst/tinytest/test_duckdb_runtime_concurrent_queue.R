@@ -19,10 +19,14 @@ local({
   expect_equal(after$timeouts, 0)
 
   invisible(rducks_register(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
+  invisible(rducks_register(con, "rducks_queue_plus_one_rc", function(x) x + 1, DOUBLE, DOUBLE, eval_mode = "RC"))
   rducks_enable_inproc(con)
 
   queued_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_result$x, sum((0:9) + 1))
+
+  queued_rc_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_rc(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
+  expect_equal(queued_rc_result$x, sum((0:9) + 1))
 
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] > after$submitted[[1L]])
