@@ -24,18 +24,26 @@
   : Check that an R value is compatible with a DuckDB type
 - [`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md)
   : Construct exact DuckDB DECIMAL values
+- [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md)
+  : Disable in-process queued scalar execution
 - [`rducks_duckdb_signature()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.md)
   : Format a DuckDB scalar function signature
 - [`rducks_duckdb_types()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_types.md)
   : Convert Rducks type tokens to DuckDB SQL types
 - [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
   : Enable Rducks on a DuckDB connection
+- [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+  : Enable in-process queued scalar execution
 - [`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md)
   : Construct DuckDB ENUM values
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
   : Construct exact DuckDB HUGEINT values
+- [`rducks_inproc_self_test()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_self_test.md)
+  : Exercise the in-process queue
+- [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+  : Inspect in-process queue counters
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)
   : Construct DuckDB INTERVAL values
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)

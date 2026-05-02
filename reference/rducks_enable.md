@@ -1,10 +1,11 @@
 # Enable Rducks on a DuckDB connection
 
-Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
-execution path requires R API work to happen on the calling R thread;
-pass `threads = "single"` to set `external_threads=1` and
-`PRAGMA threads=1` explicitly for the supported scalar-mode R UDF
-configuration.
+Loads the bundled Rducks DuckDB extension. The registration-safe
+scalar-mode R UDF path requires R API work to happen on the recorded
+main R thread; pass `threads = "single"` to set `external_threads=1` and
+`PRAGMA threads=1` explicitly. After registering UDFs, call
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+to opt into the extension-owned in-process queue.
 
 ## Usage
 

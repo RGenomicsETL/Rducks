@@ -2,8 +2,10 @@
 
 Registers a scalar R function as a DuckDB SQL function using the loaded
 Rducks extension. Registration requires `external_threads=1` plus
-`PRAGMA threads=1` so scalar-mode R execution stays on the calling R
-thread.
+`PRAGMA threads=1` so native registration and the default scalar
+execution path stay on the calling R thread. After registration, use
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+to opt into queued same-process execution.
 
 ## Usage
 

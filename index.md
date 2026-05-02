@@ -16,10 +16,15 @@ owns the UDF, and current scalar-mode R function execution.
 
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the
 bundled `rducks.duckdb_extension` into that DuckDB connection and
-explicitly sets `external_threads=1` plus `PRAGMA threads=1`. This is a
-constraint of R’s C API: Rducks keeps R API work on the calling R thread
-and supports scalar-mode R UDF execution only under that single-threaded
-DuckDB UDF configuration.
+explicitly sets `external_threads=1` plus `PRAGMA threads=1`. This is
+the registration-safe default for R’s C API: Rducks keeps R API work on
+the recorded main R thread. After registering UDFs,
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+can opt into the extension-owned in-process queue. That queue lets
+worker-side UDF callbacks submit chunk work to the main R execution lane
+and wait without relying on a package-side pump or a hidden DuckDB
+progress callback. It is a liveness/thread-discipline feature, not
+parallel R evaluation.
 
 When you call
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
@@ -73,6 +78,47 @@ chunks, and Rducks adapts those chunks to scalar R calls. A future
 vectorized mode should call R once per DuckDB chunk and will be added
 only when implemented.
 
+### In-process queued execution
+
+Register scalar UDFs in the default single-thread configuration. Then
+call
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+to switch query execution to the explicit in-process queue. R calls are
+still serialized on the recorded main R thread, but queued worker
+requests have timeout/error paths rather than deadlocking indefinitely.
+
+``` r
+
+reg_sleepy <- rducks_register(
+  con,
+  name = "r_sleepy_time",
+  fun = function(x) {
+    Sys.sleep(0.001)
+    Sys.time()
+  },
+  args = DOUBLE,
+  returns = TIMESTAMP,
+  side_effects = TRUE
+)
+
+rducks_enable_inproc(con)
+
+rducks_inproc_self_test(con, 3)
+#> [1] 3
+rducks_inproc_stats(con)
+#>   submitted executed timeouts
+#> 1         3        3        0
+
+dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
+#>                     x
+#> 1 2026-05-02 22:13:13
+rducks_inproc_stats(con)
+#>   submitted executed timeouts
+#> 1         4        4        0
+
+rducks_disable_inproc(con, threads = 1)
+```
+
 ### Scalar evaluation implementations
 
 `mode = "scalar"` has two evaluator implementations selected with
@@ -121,11 +167,16 @@ supported child types. The default `mode = "scalar"` calls R once per
 DuckDB row. Registration also supports `null_handling`,
 `exception_handling`, and `side_effects` controls.
 
-Rducks scalar UDFs require R API work to happen on the calling R thread.
-This is R’s thread-affinity rule, not a DuckDB data-race issue. Call
-`rducks_enable(con, threads = "single")` or set `external_threads=1` and
-`PRAGMA threads=1` before registering R UDFs. Rducks checks this at
-registration time.
+Rducks scalar UDFs require R API work to happen on the recorded main R
+thread. This is R’s thread-affinity rule, not a DuckDB data-race issue.
+Call `rducks_enable(con, threads = "single")` or set
+`external_threads=1` and `PRAGMA threads=1` before registering R UDFs.
+Rducks checks this at registration time. After registration,
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+enables the official same-process queued backend. The queue does not
+make R callbacks parallel; it routes chunk requests through the main R
+execution lane and reports timeouts instead of hanging if that lane is
+unavailable.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values:
@@ -161,7 +212,7 @@ Only `scalar` is public and implemented now.
 
 | mode | status | call_granularity | input_shape | return_shape | length_semantics | threading | copy_semantics |
 |:---|:---|:---|:---|:---|:---|:---|:---|
-| `scalar` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call | R API work runs on the calling R thread; rducks_enable(…, threads = ‘single’) sets external_threads=1 and threads=1, and registration enforces this supported configuration | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row |
+| `scalar` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call | R API work runs on the recorded main R thread; rducks_enable(…, threads = ‘single’) is the registration-safe default, and rducks_enable_inproc() enables an extension-owned in-process queue that still serializes R calls on that main R lane | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row |
 
 ## Type descriptors
 
