@@ -24,6 +24,18 @@ local({
   register_pair("eval_varchar", function(x) paste0(x, ":", nchar(x)), VARCHAR, VARCHAR)
   expect_pair_equal("SELECT eval_varchar_r(x) AS r, eval_varchar_rc(x) AS rc FROM (VALUES ('a'), ('duck'), ('R')) t(x)")
 
+  register_pair("eval_blob", function(x) c(x, as.raw(0xff)), BLOB, BLOB)
+  expect_pair_equal("SELECT hex(eval_blob_r(x)) AS r, hex(eval_blob_rc(x)) AS rc FROM (VALUES (from_hex('00AA')), (from_hex('10'))) t(x)")
+
+  register_pair("eval_date", function(x) x + 1, DATE, DATE)
+  expect_pair_equal("SELECT eval_date_r(x)::VARCHAR AS r, eval_date_rc(x)::VARCHAR AS rc FROM (VALUES (DATE '2020-01-02'), (DATE '1970-01-01')) t(x)")
+
+  register_pair("eval_time", function(x) x + 1, TIME, TIME)
+  expect_pair_equal("SELECT eval_time_r(x)::VARCHAR AS r, eval_time_rc(x)::VARCHAR AS rc FROM (VALUES (TIME '01:02:03'), (TIME '23:59:58')) t(x)")
+
+  register_pair("eval_timestamp", function(x) x + 1, TIMESTAMP, TIMESTAMP)
+  expect_pair_equal("SELECT eval_timestamp_r(x)::VARCHAR AS r, eval_timestamp_rc(x)::VARCHAR AS rc FROM (VALUES (TIMESTAMP '2020-01-02 03:04:05'), (TIMESTAMP '1970-01-01 00:00:00')) t(x)")
+
   register_pair("eval_decimal", function(x) x + rducks_decimal("1.25", 10, 2), DECIMAL(10, 2), DECIMAL(10, 2))
   expect_pair_equal("SELECT eval_decimal_r(x)::VARCHAR AS r, eval_decimal_rc(x)::VARCHAR AS rc FROM (VALUES (1.25::DECIMAL(10,2)), (2.50::DECIMAL(10,2))) t(x)")
 

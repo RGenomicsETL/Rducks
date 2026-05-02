@@ -130,6 +130,364 @@ static SEXP rducks_rc_check_return(SEXP check_return_fun, SEXP return_type, SEXP
     return checked;
 }
 
+
+static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
+    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL:
+    case RDUCKS_TYPE_I8:
+    case RDUCKS_TYPE_U8:
+    case RDUCKS_TYPE_I16:
+    case RDUCKS_TYPE_U16:
+    case RDUCKS_TYPE_I32:
+    case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_F32:
+    case RDUCKS_TYPE_F64:
+    case RDUCKS_TYPE_VARCHAR:
+    case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_DATE:
+    case RDUCKS_TYPE_TIME:
+    case RDUCKS_TYPE_TIMESTAMP:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int rducks_rc_direct_supported(rducks_r_scalar_meta_t *meta) {
+    if (!meta || !rducks_rc_direct_type_supported(meta->return_desc)) return 0;
+    for (size_t i = 0; i < meta->arity; i++) {
+        if (!rducks_rc_direct_type_supported(meta->args[i])) return 0;
+    }
+    return 1;
+}
+
+static int rducks_rc_vector_valid_at(duckdb_vector vector, idx_t row) {
+    uint64_t *validity = duckdb_vector_get_validity(vector);
+    if (!validity) return 1;
+    return duckdb_validity_row_is_valid(validity, row) ? 1 : 0;
+}
+
+static void rducks_rc_output_set_null(duckdb_vector output, idx_t row) {
+    duckdb_vector_ensure_validity_writable(output);
+    duckdb_validity_set_row_invalid(duckdb_vector_get_validity(output), row);
+}
+
+static void rducks_rc_output_set_valid_if_needed(duckdb_vector output, idx_t row) {
+    uint64_t *validity = duckdb_vector_get_validity(output);
+    if (validity) duckdb_validity_set_row_valid(validity, row);
+}
+
+static SEXP rducks_rc_make_date(double days) {
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, 1));
+    SEXP cls = PROTECT(Rf_mkString("Date"));
+    REAL(out)[0] = days;
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(2);
+    return out;
+}
+
+static SEXP rducks_rc_make_timestamp(double seconds) {
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, 1));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    SEXP tzone = PROTECT(Rf_mkString("UTC"));
+    REAL(out)[0] = seconds;
+    SET_STRING_ELT(cls, 0, Rf_mkChar("POSIXct"));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("POSIXt"));
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    Rf_setAttrib(out, Rf_install("tzone"), tzone);
+    UNPROTECT(3);
+    return out;
+}
+
+static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
+    SEXP out;
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL:
+        out = PROTECT(Rf_allocVector(LGLSXP, 1));
+        LOGICAL(out)[0] = NA_LOGICAL;
+        UNPROTECT(1);
+        return out;
+    case RDUCKS_TYPE_I8:
+    case RDUCKS_TYPE_U8:
+    case RDUCKS_TYPE_I16:
+    case RDUCKS_TYPE_U16:
+    case RDUCKS_TYPE_I32:
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = NA_INTEGER;
+        UNPROTECT(1);
+        return out;
+    case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_F32:
+    case RDUCKS_TYPE_F64:
+    case RDUCKS_TYPE_TIME:
+        out = PROTECT(Rf_allocVector(REALSXP, 1));
+        REAL(out)[0] = NA_REAL;
+        UNPROTECT(1);
+        return out;
+    case RDUCKS_TYPE_VARCHAR:
+        out = PROTECT(Rf_allocVector(STRSXP, 1));
+        SET_STRING_ELT(out, 0, NA_STRING);
+        UNPROTECT(1);
+        return out;
+    case RDUCKS_TYPE_DATE:
+        return rducks_rc_make_date(NA_REAL);
+    case RDUCKS_TYPE_TIMESTAMP:
+        return rducks_rc_make_timestamp(NA_REAL);
+    case RDUCKS_TYPE_BLOB:
+    default:
+        return R_NilValue;
+    }
+}
+
+static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t row) {
+    SEXP out;
+    if (!rducks_rc_vector_valid_at(vector, row)) return rducks_rc_missing_arg(desc);
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL: {
+        bool *data = (bool *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(LGLSXP, 1));
+        LOGICAL(out)[0] = data[row] ? TRUE : FALSE;
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_I8: {
+        int8_t *data = (int8_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = (int)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_U8: {
+        uint8_t *data = (uint8_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = (int)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_I16: {
+        int16_t *data = (int16_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = (int)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_U16: {
+        uint16_t *data = (uint16_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = (int)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_I32: {
+        int32_t *data = (int32_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(INTSXP, 1));
+        INTEGER(out)[0] = (int)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_U32: {
+        uint32_t *data = (uint32_t *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(REALSXP, 1));
+        REAL(out)[0] = (double)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_F32: {
+        float *data = (float *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(REALSXP, 1));
+        REAL(out)[0] = (double)data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_F64: {
+        double *data = (double *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(REALSXP, 1));
+        REAL(out)[0] = data[row];
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_VARCHAR: {
+        duckdb_string_t *data = (duckdb_string_t *)duckdb_vector_get_data(vector);
+        uint32_t len = duckdb_string_t_length(data[row]);
+        const char *ptr = duckdb_string_t_data(&data[row]);
+        out = PROTECT(Rf_allocVector(STRSXP, 1));
+        SET_STRING_ELT(out, 0, Rf_mkCharLenCE(ptr, (int)len, CE_UTF8));
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_BLOB: {
+        duckdb_string_t *data = (duckdb_string_t *)duckdb_vector_get_data(vector);
+        uint32_t len = duckdb_string_t_length(data[row]);
+        const char *ptr = duckdb_string_t_data(&data[row]);
+        out = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)len));
+        if (len) memcpy(RAW(out), ptr, len);
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_DATE: {
+        duckdb_date *data = (duckdb_date *)duckdb_vector_get_data(vector);
+        return rducks_rc_make_date((double)data[row].days);
+    }
+    case RDUCKS_TYPE_TIME: {
+        duckdb_time *data = (duckdb_time *)duckdb_vector_get_data(vector);
+        out = PROTECT(Rf_allocVector(REALSXP, 1));
+        REAL(out)[0] = (double)data[row].micros / 1000000.0;
+        UNPROTECT(1);
+        return out;
+    }
+    case RDUCKS_TYPE_TIMESTAMP: {
+        duckdb_timestamp *data = (duckdb_timestamp *)duckdb_vector_get_data(vector);
+        return rducks_rc_make_timestamp((double)data[row].micros / 1000000.0);
+    }
+    default:
+        return R_NilValue;
+    }
+}
+
+static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SEXP value) {
+    if (value == R_NilValue) return 1;
+    if (desc->scalar == RDUCKS_TYPE_F32 || desc->scalar == RDUCKS_TYPE_F64) {
+        if (TYPEOF(value) != REALSXP || XLENGTH(value) < 1) return 0;
+        return ISNA(REAL(value)[0]);
+    }
+    if (desc->scalar == RDUCKS_TYPE_VARCHAR) {
+        return TYPEOF(value) == STRSXP && XLENGTH(value) > 0 && STRING_ELT(value, 0) == NA_STRING;
+    }
+    if (desc->scalar == RDUCKS_TYPE_BLOB) return 0;
+    if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0) return INTEGER(value)[0] == NA_INTEGER;
+    if (TYPEOF(value) == LGLSXP && XLENGTH(value) > 0) return LOGICAL(value)[0] == NA_LOGICAL;
+    if (TYPEOF(value) == REALSXP && XLENGTH(value) > 0) return ISNA(REAL(value)[0]);
+    return 0;
+}
+
+static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, duckdb_vector output, idx_t row, SEXP value,
+                                         char *err_msg, size_t err_cap) {
+    if (rducks_rc_value_is_null_for_output(desc, value)) {
+        rducks_rc_output_set_null(output, row);
+        return 1;
+    }
+    rducks_rc_output_set_valid_if_needed(output, row);
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL:
+        ((bool *)duckdb_vector_get_data(output))[row] = Rf_asLogical(value) == TRUE;
+        return 1;
+    case RDUCKS_TYPE_I8:
+        ((int8_t *)duckdb_vector_get_data(output))[row] = (int8_t)Rf_asInteger(value);
+        return 1;
+    case RDUCKS_TYPE_U8:
+        ((uint8_t *)duckdb_vector_get_data(output))[row] = (uint8_t)Rf_asInteger(value);
+        return 1;
+    case RDUCKS_TYPE_I16:
+        ((int16_t *)duckdb_vector_get_data(output))[row] = (int16_t)Rf_asInteger(value);
+        return 1;
+    case RDUCKS_TYPE_U16:
+        ((uint16_t *)duckdb_vector_get_data(output))[row] = (uint16_t)Rf_asInteger(value);
+        return 1;
+    case RDUCKS_TYPE_I32:
+        ((int32_t *)duckdb_vector_get_data(output))[row] = (int32_t)Rf_asInteger(value);
+        return 1;
+    case RDUCKS_TYPE_U32:
+        ((uint32_t *)duckdb_vector_get_data(output))[row] = (uint32_t)Rf_asReal(value);
+        return 1;
+    case RDUCKS_TYPE_F32:
+        ((float *)duckdb_vector_get_data(output))[row] = (float)Rf_asReal(value);
+        return 1;
+    case RDUCKS_TYPE_F64:
+        ((double *)duckdb_vector_get_data(output))[row] = Rf_asReal(value);
+        return 1;
+    case RDUCKS_TYPE_VARCHAR: {
+        if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1) {
+            snprintf(err_msg, err_cap, "Rducks RC VARCHAR output is not a character scalar");
+            return 0;
+        }
+        SEXP ch = STRING_ELT(value, 0);
+        const char *ptr = Rf_translateCharUTF8(ch);
+        duckdb_vector_assign_string_element_len(output, row, ptr, (idx_t)strlen(ptr));
+        return 1;
+    }
+    case RDUCKS_TYPE_BLOB:
+        if (TYPEOF(value) != RAWSXP) {
+            snprintf(err_msg, err_cap, "Rducks RC BLOB output is not a raw vector");
+            return 0;
+        }
+        duckdb_vector_assign_string_element_len(output, row, (const char *)RAW(value), (idx_t)XLENGTH(value));
+        return 1;
+    case RDUCKS_TYPE_DATE:
+        ((duckdb_date *)duckdb_vector_get_data(output))[row].days = (int32_t)Rf_asReal(value);
+        return 1;
+    case RDUCKS_TYPE_TIME:
+        ((duckdb_time *)duckdb_vector_get_data(output))[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        return 1;
+    case RDUCKS_TYPE_TIMESTAMP:
+        ((duckdb_timestamp *)duckdb_vector_get_data(output))[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        return 1;
+    default:
+        snprintf(err_msg, err_cap, "Rducks RC direct output unsupported type");
+        return 0;
+    }
+}
+
+static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                           char *err_msg, size_t err_cap) {
+    idx_t n = duckdb_data_chunk_get_size(input);
+    SEXP bundle = meta->fun;
+    SEXP fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
+    SEXP return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
+    SEXP check_return_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN);
+
+    for (idx_t row = 0; row < n; row++) {
+        int has_null = 0;
+        for (size_t col = 0; col < meta->arity; col++) {
+            if (!rducks_rc_vector_valid_at(duckdb_data_chunk_get_vector(input, (idx_t)col), row)) {
+                has_null = 1;
+                break;
+            }
+        }
+        if (meta->null_handling == RDUCKS_NULL_DEFAULT && has_null) {
+            rducks_rc_output_set_null(output, row);
+            continue;
+        }
+
+        SEXP args = PROTECT(Rf_allocList((int)meta->arity));
+        SEXP node = args;
+        for (size_t col = 0; col < meta->arity; col++) {
+            SEXP arg = PROTECT(rducks_rc_direct_arg(meta->args[col], duckdb_data_chunk_get_vector(input, (idx_t)col), row));
+            SETCAR(node, arg);
+            UNPROTECT(1);
+            node = CDR(node);
+        }
+
+        int r_err = 0;
+        SEXP value = PROTECT(rducks_rc_call_user(fun, args, &r_err));
+        UNPROTECT(1); /* args */
+        if (r_err) {
+            UNPROTECT(1); /* value */
+            if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
+                rducks_rc_output_set_null(output, row);
+                continue;
+            }
+            snprintf(err_msg, err_cap, "Rducks RC R function error");
+            return 0;
+        }
+
+        r_err = 0;
+        SEXP checked = PROTECT(rducks_rc_check_return(check_return_fun, return_type, value, &r_err));
+        UNPROTECT(1); /* value */
+        if (r_err) {
+            UNPROTECT(1); /* checked */
+            snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
+            return 0;
+        }
+        if (!rducks_rc_write_direct_output(meta->return_desc, output, row, checked, err_msg, err_cap)) {
+            UNPROTECT(1); /* checked */
+            return 0;
+        }
+        UNPROTECT(1); /* checked */
+    }
+    return 1;
+}
+
 static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
                                     char *err_msg, size_t err_cap) {
     idx_t n;
@@ -158,6 +516,9 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
         return 0;
+    }
+    if (rducks_rc_direct_supported(meta)) {
+        return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
     }
     bundle = meta->fun;
     if (!rducks_rc_bundle_valid(bundle)) {

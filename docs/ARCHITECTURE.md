@@ -28,10 +28,15 @@ R functions as DuckDB UDFs.
 DuckDB
   -> rducks_r_scalar_udf(info, input, output)
       -> metadata from extra_info
-      -> DuckDB chunk -> Arrow C Data export
-      -> nanoarrow-backed scalar adapter on the calling R thread
-      -> Arrow C Data -> DuckDB chunk import
+      -> eval_mode = "R": DuckDB chunk -> Arrow C Data -> R row-loop adapter
+      -> eval_mode = "RC": native C row-loop adapter, with direct output writes where implemented
 ```
+
+Both scalar evaluators call the R function once per logical row. `eval_mode =
+"RC"` moves row iteration, call construction, NULL handling, return checking,
+and direct output writes into C; the user function itself is still evaluated by
+R, so S3/S7 dispatch, RNG, lexical scoping, and side effects keep ordinary R
+semantics.
 
 ## Thread model
 
@@ -61,10 +66,18 @@ before being documented as stable.
 
 ## nanoarrow direction and lifetime model
 
-Rducks should follow Arrow C Data ownership rules in R terms: use named
-`externalptr` objects, explicit owner/protected slots, idempotent finalizers, and
-move-only consumption. Any future worker-to-calling-thread request that carries
-Arrow C Data should answer four questions at every boundary:
+Rducks should follow Arrow C Data and DuckDB vector ownership rules in R terms:
+use named `externalptr` objects, explicit owner/protected slots, idempotent
+finalizers, and move-only consumption. Borrowed DuckDB `duckdb_data_chunk` and
+`duckdb_vector` pointers are valid only during the native UDF callback. RC-mode
+per-row R arguments are fresh R objects, not mutable views into DuckDB storage;
+this is required because arbitrary R functions may retain an argument object
+after returning. Direct output writes target DuckDB-owned output vectors and use
+DuckDB's assignment APIs for variable-width values so Rducks does not retain R or
+DuckDB buffer pointers across the callback boundary.
+
+Any future worker-to-calling-thread request that carries Arrow C Data should
+answer four questions at every boundary:
 
 - who owns the `ArrowArray`/`ArrowSchema`/request object now
 - whether the pointer is borrowed from DuckDB memory or owns independent buffers
