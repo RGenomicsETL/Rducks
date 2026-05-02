@@ -4,12 +4,16 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread."><meta property="og:description" content="Switches a Rducks-enabled DuckDB connection to the in-process queued scalar
+still serialized on the main R thread. The queued backend dispatches both
+scalar evaluator implementations, eval_mode = &quot;R&quot; and eval_mode = &quot;RC&quot;,
+through that same main-lane execution rule."><meta property="og:description" content="Switches a Rducks-enabled DuckDB connection to the in-process queued scalar
 backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread."></head><body>
+still serialized on the main R thread. The queued backend dispatches both
+scalar evaluator implementations, eval_mode = &quot;R&quot; and eval_mode = &quot;RC&quot;,
+through that same main-lane execution rule."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -49,7 +53,9 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread.</p>
+still serialized on the main R thread. The queued backend dispatches both
+scalar evaluator implementations, <code>eval_mode = "R"</code> and <code>eval_mode = "RC"</code>,
+through that same main-lane execution rule.</p>
     </div>
 
     <div class="section level2">
@@ -82,9 +88,10 @@ enabling the in-process backend. Use <code>NULL</code> to leave unchanged.</p></
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Register scalar UDFs while the connection is in the default single-thread
+    <p>Register scalar UDFs while the connection is in the registration-safe
 configuration, then call <code>rducks_enable_inproc()</code> before running queries that
-should use the queued in-process path.</p>
+should use the queued in-process path. Use <code>threads</code>/<code>external_threads</code> here
+to adjust DuckDB's thread settings for queued execution.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -6,7 +6,9 @@ worker-side UDF callbacks submit chunk requests to an extension-owned
 queue, and the recorded main R execution lane drains the queue and
 performs all R API work. This is a same-process scheduling mode, not a
 performance promise; R function calls are still serialized on the main R
-thread.
+thread. The queued backend dispatches both scalar evaluator
+implementations, `eval_mode = "R"` and `eval_mode = "RC"`, through that
+same main-lane execution rule.
 
 ## Usage
 
@@ -38,6 +40,8 @@ rducks_enable_inproc(con, threads = NULL, external_threads = threads)
 
 ## Details
 
-Register scalar UDFs while the connection is in the default
-single-thread configuration, then call `rducks_enable_inproc()` before
-running queries that should use the queued in-process path.
+Register scalar UDFs while the connection is in the registration-safe
+configuration, then call `rducks_enable_inproc()` before running queries
+that should use the queued in-process path. Use
+`threads`/`external_threads` here to adjust DuckDB's thread settings for
+queued execution.

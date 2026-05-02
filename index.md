@@ -2,10 +2,10 @@
 
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
 
-Rducks registers R scalar functions as DuckDB SQL functions. It ships as
-an R package plus a DuckDB extension. The loaded DuckDB extension
-registers R functions on a DuckDB connection and performs the current
-nanoarrow scalar-mode execution bridge over DuckDB Arrow C Data.
+Rducks registers R functions as DuckDB SQL functions. It ships as an R
+package plus a DuckDB extension. The loaded DuckDB extension registers R
+functions on a DuckDB connection and performs the current nanoarrow
+scalar-mode execution bridge over DuckDB Arrow C Data.
 
 ## How it works
 
@@ -14,17 +14,14 @@ ergonomics, and a loaded DuckDB extension that owns SQL function
 registration, DuckDB chunk access, R function preservation while DuckDB
 owns the UDF, and current scalar-mode R function execution.
 
-When you call `rducks_enable(con, threads = "single")`, Rducks loads the
-bundled `rducks.duckdb_extension` into that DuckDB connection and
-explicitly sets `external_threads=1` plus `PRAGMA threads=1`. This is
-the registration-safe default for R’s C API: Rducks keeps R API work on
-the recorded main R thread. After registering UDFs,
-[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-can opt into the extension-owned in-process queue. That queue lets
-worker-side UDF callbacks submit chunk work to the main R execution lane
-and wait without relying on a package-side pump or a hidden DuckDB
-progress callback. It is a liveness/thread-discipline feature, not
-parallel R evaluation.
+When you call
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
+Rducks loads the bundled `rducks.duckdb_extension` into that DuckDB
+connection, enables DuckDB’s lossless Arrow conversion, and records the
+current R thread as the only lane allowed to call R. With
+`threads = "single"`, it also sets `external_threads=1` and
+`PRAGMA threads=1`; use that registration-safe setting while adding
+UDFs.
 
 When you call
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
@@ -33,13 +30,29 @@ scalar-mode marshalling is available, and preserves the R function.
 Registration then crosses back through SQL: Rducks calls the extension
 function `rducks_register_scalar(...)`, passing the R function
 reference, type descriptor tokens, and NULL/exception/side-effect flags.
-The extension registers one DuckDB scalar function implementation and
-stores the per-UDF metadata in DuckDB `extra_info`. During query
-execution, that generic DuckDB scalar-function entry point exports input
-chunks through the DuckDB Arrow C Data API, calls the private nanoarrow
-scalar adapter on the calling R thread, imports the returned Arrow C
-Data back into a DuckDB chunk, and attaches the result to the DuckDB
-output vector.
+The extension registers one generic DuckDB scalar function
+implementation and stores the per-UDF metadata in DuckDB `extra_info`.
+
+Query execution has two in-process backends:
+
+- `single` is the direct backend selected by
+  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md).
+  DuckDB enters the scalar UDF on the recorded R thread, and the
+  extension runs the selected scalar evaluator immediately.
+- `concurrent_inproc` is selected by
+  [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+  after registration. A worker-side UDF callback submits the chunk to an
+  extension-owned queue and waits; the recorded main R lane drains the
+  queue, runs the selected scalar evaluator, fills the DuckDB output
+  vector, and wakes the worker. No R API work runs on DuckDB worker
+  threads, and the queue has timeout/error paths rather than a hidden
+  pump.
+
+Both backends support `eval_mode = "R"` and `eval_mode = "RC"`. The R
+evaluator uses DuckDB Arrow C Data plus nanoarrow to adapt DuckDB chunks
+to row-wise R calls. The RC evaluator uses native row-loop code and
+direct DuckDB vector access where implemented, while still evaluating
+the user R function once per logical row on the recorded R lane.
 
 ## Getting started
 
@@ -80,12 +93,14 @@ only when implemented.
 
 ### In-process queued execution
 
-Register scalar UDFs in the default single-thread configuration. Then
-call
+Register scalar UDFs in the registration-safe configuration. Then call
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to switch query execution to the explicit in-process queue. R calls are
-still serialized on the recorded main R thread, but queued worker
-requests have timeout/error paths rather than deadlocking indefinitely.
+to switch query execution to the explicit in-process queue. Pass
+`threads`/`external_threads` there if you want to raise DuckDB’s thread
+settings for queued execution. R calls are still serialized on the
+recorded main R thread, but queued worker requests have timeout/error
+paths rather than deadlocking indefinitely. The queued backend supports
+both scalar evaluators: `eval_mode = "R"` and `eval_mode = "RC"`.
 
 ``` r
 
@@ -111,7 +126,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-02 22:13:13
+#> 1 2026-05-02 22:27:48
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -169,12 +184,14 @@ DuckDB row. Registration also supports `null_handling`,
 
 Rducks scalar UDFs require R API work to happen on the recorded main R
 thread. This is R’s thread-affinity rule, not a DuckDB data-race issue.
-Call `rducks_enable(con, threads = "single")` or set
-`external_threads=1` and `PRAGMA threads=1` before registering R UDFs.
-Rducks checks this at registration time. After registration,
+Register UDFs from the registration-safe configuration created by
+`rducks_enable(con, threads = "single")`, or by setting
+`external_threads=1` and `PRAGMA threads=1` before registration. After
+registration, either keep the `single` backend for direct execution or
+call
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-enables the official same-process queued backend. The queue does not
-make R callbacks parallel; it routes chunk requests through the main R
+for the official same-process queued backend. The queue does not make R
+callbacks parallel; it routes chunk requests through the main R
 execution lane and reports timeouts instead of hanging if that lane is
 unavailable.
 
