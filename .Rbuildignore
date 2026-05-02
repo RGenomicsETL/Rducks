@@ -16,3 +16,4 @@
 ^pkgdown-site$
 ^bench-results$
 ^tools/bench-results$
+^tools/benchmark-results$

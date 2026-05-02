@@ -3,6 +3,8 @@
 
 # Rducks
 
+[![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
+
 Rducks registers R scalar functions as DuckDB SQL functions. It ships as
 an R package plus a DuckDB extension. The loaded DuckDB extension
 registers R functions on a DuckDB connection and performs the current
