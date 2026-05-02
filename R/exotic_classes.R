@@ -17,30 +17,7 @@ rducks_normalize_integer_string <- function(x, unsigned = FALSE, what = "integer
   } else {
     x <- as.character(x)
   }
-
-  out <- trimws(x)
-  missing <- is.na(out)
-  if (any(!missing & !grepl("^[+-]?[0-9]+$", out))) {
-    stop(what, " values must be integer strings", call. = FALSE)
-  }
-  negative <- !missing & startsWith(out, "-")
-  if (unsigned && any(negative)) {
-    stop(what, " values must be unsigned", call. = FALSE)
-  }
-
-  normalize_one <- function(value) {
-    if (is.na(value)) return(NA_character_)
-    sign <- ""
-    if (startsWith(value, "+")) value <- substring(value, 2L)
-    if (startsWith(value, "-")) {
-      sign <- "-"
-      value <- substring(value, 2L)
-    }
-    value <- sub("^0+", "", value)
-    if (!nzchar(value)) return("0")
-    paste0(sign, value)
-  }
-  vapply(out, normalize_one, character(1), USE.NAMES = FALSE)
+  .Call(RDUCKS_normalize_integer_string, x, isTRUE(unsigned), as.character(what)[[1L]])
 }
 
 rducks_check_integer_bounds <- function(x, min, max, what) {
@@ -818,113 +795,16 @@ length.rducks_bits <- function(x) x$length
   rducks_bits(bits[i])
 }
 
-rducks_compare_integer_one <- function(a, b) {
-  if (is.na(a) || is.na(b)) return(NA_integer_)
-  sa <- if (startsWith(a, "-")) -1L else 1L
-  sb <- if (startsWith(b, "-")) -1L else 1L
-  aa <- if (sa < 0L) substring(a, 2L) else a
-  bb <- if (sb < 0L) substring(b, 2L) else b
-  if (identical(aa, "0")) sa <- 1L
-  if (identical(bb, "0")) sb <- 1L
-  if (sa != sb) return(if (sa < sb) -1L else 1L)
-  if (nchar(aa) != nchar(bb)) {
-    out <- if (nchar(aa) < nchar(bb)) -1L else 1L
-    return(out * sa)
-  }
-  if (aa == bb) return(0L)
-  out <- if (aa < bb) -1L else 1L
-  out * sa
-}
-
 rducks_compare_integer_strings <- function(a, b) {
-  n <- max(length(a), length(b))
-  a <- rep(a, length.out = n)
-  b <- rep(b, length.out = n)
-  vapply(seq_len(n), function(i) rducks_compare_integer_one(a[[i]], b[[i]]), integer(1))
-}
-
-rducks_strip_sign <- function(x) {
-  sign <- if (startsWith(x, "-")) -1L else 1L
-  digits <- if (sign < 0L) substring(x, 2L) else x
-  list(sign = if (identical(digits, "0")) 1L else sign, digits = digits)
-}
-
-rducks_add_abs_integer <- function(a, b) {
-  a <- strsplit(a, "", fixed = TRUE)[[1L]]
-  b <- strsplit(b, "", fixed = TRUE)[[1L]]
-  ia <- length(a)
-  ib <- length(b)
-  carry <- 0L
-  out <- character()
-  while (ia > 0L || ib > 0L || carry > 0L) {
-    da <- if (ia > 0L) as.integer(a[[ia]]) else 0L
-    db <- if (ib > 0L) as.integer(b[[ib]]) else 0L
-    sum <- da + db + carry
-    out <- c(as.character(sum %% 10L), out)
-    carry <- sum %/% 10L
-    ia <- ia - 1L
-    ib <- ib - 1L
-  }
-  paste0(out, collapse = "")
-}
-
-rducks_sub_abs_integer <- function(a, b) {
-  a_digits <- strsplit(a, "", fixed = TRUE)[[1L]]
-  b_digits <- strsplit(b, "", fixed = TRUE)[[1L]]
-  ia <- length(a_digits)
-  ib <- length(b_digits)
-  borrow <- 0L
-  out <- character()
-  while (ia > 0L) {
-    da <- as.integer(a_digits[[ia]]) - borrow
-    db <- if (ib > 0L) as.integer(b_digits[[ib]]) else 0L
-    if (da < db) {
-      da <- da + 10L
-      borrow <- 1L
-    } else {
-      borrow <- 0L
-    }
-    out <- c(as.character(da - db), out)
-    ia <- ia - 1L
-    ib <- ib - 1L
-  }
-  result <- sub("^0+", "", paste0(out, collapse = ""))
-  if (nzchar(result)) result else "0"
-}
-
-rducks_integer_add_one <- function(a, b) {
-  if (is.na(a) || is.na(b)) return(NA_character_)
-  pa <- rducks_strip_sign(a)
-  pb <- rducks_strip_sign(b)
-  if (pa$sign == pb$sign) {
-    digits <- rducks_add_abs_integer(pa$digits, pb$digits)
-    out <- if (pa$sign < 0L && !identical(digits, "0")) paste0("-", digits) else digits
-    return(out)
-  }
-  cmp <- rducks_compare_integer_one(pa$digits, pb$digits)
-  if (cmp == 0L) return("0")
-  if (cmp > 0L) {
-    digits <- rducks_sub_abs_integer(pa$digits, pb$digits)
-    sign <- pa$sign
-  } else {
-    digits <- rducks_sub_abs_integer(pb$digits, pa$digits)
-    sign <- pb$sign
-  }
-  if (sign < 0L && !identical(digits, "0")) paste0("-", digits) else digits
+  .Call(RDUCKS_compare_integer_strings, a, b)
 }
 
 rducks_integer_add_strings <- function(a, b) {
-  n <- max(length(a), length(b))
-  a <- rep(a, length.out = n)
-  b <- rep(b, length.out = n)
-  vapply(seq_len(n), function(i) rducks_integer_add_one(a[[i]], b[[i]]), character(1))
+  .Call(RDUCKS_integer_add_strings, a, b)
 }
 
 rducks_integer_negate_strings <- function(x) {
-  vapply(x, function(value) {
-    if (is.na(value) || identical(value, "0")) return(value)
-    if (startsWith(value, "-")) substring(value, 2L) else paste0("-", value)
-  }, character(1), USE.NAMES = FALSE)
+  .Call(RDUCKS_integer_negate_strings, x)
 }
 
 rducks_integer_arith <- function(e1, e2, op, unsigned = FALSE, what = "integer") {

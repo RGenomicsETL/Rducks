@@ -12,6 +12,10 @@
 SEXP RDUCKS_decimal_string_add_small(SEXP x, SEXP addend_sexp);
 SEXP RDUCKS_decimal_string_multiply_small(SEXP x, SEXP multiplier_sexp);
 SEXP RDUCKS_decimal_string_from_unsigned_bytes(SEXP bytes_sexp);
+SEXP RDUCKS_normalize_integer_string(SEXP x, SEXP unsigned_sexp, SEXP what_sexp);
+SEXP RDUCKS_compare_integer_strings(SEXP a, SEXP b);
+SEXP RDUCKS_integer_add_strings(SEXP a, SEXP b);
+SEXP RDUCKS_integer_negate_strings(SEXP x);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -49,6 +53,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_decimal_string_add_small", (DL_FUNC) &RDUCKS_decimal_string_add_small, 2},
     {"RDUCKS_decimal_string_multiply_small", (DL_FUNC) &RDUCKS_decimal_string_multiply_small, 2},
     {"RDUCKS_decimal_string_from_unsigned_bytes", (DL_FUNC) &RDUCKS_decimal_string_from_unsigned_bytes, 1},
+    {"RDUCKS_normalize_integer_string", (DL_FUNC) &RDUCKS_normalize_integer_string, 3},
+    {"RDUCKS_compare_integer_strings", (DL_FUNC) &RDUCKS_compare_integer_strings, 2},
+    {"RDUCKS_integer_add_strings", (DL_FUNC) &RDUCKS_integer_add_strings, 2},
+    {"RDUCKS_integer_negate_strings", (DL_FUNC) &RDUCKS_integer_negate_strings, 1},
     {NULL, NULL, 0}
 };
 
