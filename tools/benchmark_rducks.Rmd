@@ -65,7 +65,6 @@ bench_started <- Sys.time()
 bench_stamp <- format(bench_started, "%Y%m%d-%H%M%S")
 bench_dir <- file.path("bench-results", paste0("rducks-", bench_stamp))
 dir.create(bench_dir, recursive = TRUE, showWarnings = FALSE)
-bench_connections <- list()
 
 sql_string <- function(x) {
   paste0("'", gsub("'", "''", x, fixed = TRUE), "'")
@@ -114,8 +113,12 @@ connect_rducks <- function() {
   rducks_enable(con, threads = "single")
   DBI::dbExecute(con, "SET external_threads=1")
   DBI::dbExecute(con, "PRAGMA threads=1")
-  bench_connections[[length(bench_connections) + 1L]] <<- con
   con
+}
+
+disconnect_rducks <- function(con) {
+  try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+  invisible(NULL)
 }
 
 bench_sql <- function(con, label, sql, reps = params$reps, warmup = params$warmup) {
@@ -259,6 +262,7 @@ reuse_guard <- data.frame(
 )
 write_bench(reuse_guard, "buffer-reuse-guard")
 reuse_guard
+disconnect_rducks(con_guard)
 ```
 
 # Microbenchmarks
@@ -335,6 +339,7 @@ micro_summary <- summarise_bench(micro_results)
 write_bench(micro_results, "micro-results")
 write_bench(micro_summary, "micro-summary")
 micro_summary
+disconnect_rducks(con_micro)
 ```
 
 # TPC-H-inspired benchmark
@@ -519,6 +524,10 @@ if (tpch_available) {
 }
 ```
 
+```{r tpch-cleanup, eval=params$run_tpch, include=FALSE}
+disconnect_rducks(con_tpch)
+```
+
 # Memory trend probes
 
 These loops repeat already-registered UDFs. They are intended to catch obvious
@@ -593,6 +602,7 @@ leak_slopes <- do.call(rbind, lapply(split(leak_results, leak_results$label), fu
 write_bench(leak_results, "leak-results")
 write_bench(leak_slopes, "leak-slopes")
 leak_slopes
+disconnect_rducks(con_leak)
 ```
 
 # R profiling
@@ -637,6 +647,7 @@ rprof_heads <- lapply(rprof_heads, function(x) {
 rprof_top <- do.call(rbind, rprof_heads)
 write_bench(rprof_top, "rprof-top")
 rprof_top
+disconnect_rducks(con_prof)
 ```
 
 # Native leak/profiler commands
@@ -658,12 +669,11 @@ perf report
 # Session info
 
 ```{r session-info}
-session <- capture.output(sessionInfo())
-writeLines(session, file.path(bench_dir, "session-info.txt"))
-cat(paste(session, collapse = "\n"))
-cat("\n\nBenchmark artifacts: ", normalizePath(bench_dir, mustWork = FALSE), "\n", sep = "")
-
-for (con in rev(bench_connections)) {
-  try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-}
+session <- sessionInfo()
+writeLines(capture.output(session), file.path(bench_dir, "session-info.txt"))
+session
+data.frame(
+  benchmark_artifacts = normalizePath(bench_dir, mustWork = FALSE),
+  stringsAsFactors = FALSE
+)
 ```
