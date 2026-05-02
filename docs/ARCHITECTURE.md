@@ -42,19 +42,21 @@ scoping, and side effects keep ordinary R semantics.
 
 ## Thread model
 
-A DuckDB worker must never call R directly. The supported public configuration
-therefore keeps scalar-mode R UDF execution on the calling R thread by requiring
-`external_threads=1` and `PRAGMA threads=1` at registration. If DuckDB later
-enters a scalar Rducks UDF on a non-calling execution thread, the extension
-errors immediately rather than using a package-side queue or hidden
-progress/idle pump.
+A DuckDB worker must never call R directly. The registration-safe default keeps
+scalar-mode R UDF execution on the calling R thread by requiring
+`external_threads=1` and `PRAGMA threads=1` at registration. After registration,
+`rducks_enable_inproc()` can switch the connection to the in-process queued
+backend. In that backend, non-main UDF callbacks submit requests to an
+extension-owned queue and wait while the recorded main R execution lane drains
+those requests and performs all R API work. There is no package-side queue,
+hidden progress callback, or idle-loop pump.
 
 Thread-safety means preserving this invariant, not making R itself callable from
-DuckDB worker threads. A future concurrent UDF design should declare that chunks
-may be evaluated concurrently, while the execution plan chooses how that happens.
-The public UDF contract should say what concurrency is allowed, not expose
-process pools, worker threads, mirai daemons, or a specific dispatcher
-implementation as scalar-function semantics.
+DuckDB worker threads. In-process queuing is a same-process scheduling and
+liveness mechanism, not a parallel-R performance feature: R calls remain
+serialized on the main R lane. The public UDF contract should say what
+concurrency is allowed, not expose process pools, worker threads, mirai daemons,
+or a specific dispatcher implementation as scalar-function semantics.
 
 ## R API and DuckDB-worker boundary discipline
 
@@ -99,14 +101,18 @@ a genuinely pure-native evaluator with no R callback. This keeps scalar
 semantics independent from the transport that delivered a chunk while preserving
 the R-vs-RC evaluator split.
 
-Internally the planned execution backends are:
+Internally the execution backends are:
 
-- `single`: current behavior; DuckDB calls the UDF on the recorded R thread and
+- `single`: default behavior; DuckDB calls the UDF on the recorded R thread and
   may use direct RC vector reads/writes.
-- `concurrent_inproc`: future same-address-space dispatch; DuckDB workers must
-  snapshot inputs into owned native memory and use DuckDB C extension
-  bind/init/local-state plus an explicit main-R-thread execution lane. Direct
-  RC helpers cannot cross this boundary.
+- `concurrent_inproc`: same-address-space queued dispatch. A worker-side UDF
+  callback submits the current chunk request to the per-runtime queue and waits;
+  the main R execution lane drains the request, calls R, writes the DuckDB
+  output vector, and signals the waiter. This currently relies on the UDF
+  callback staying alive while the borrowed DuckDB chunk/output pointers are
+  processed; workers must not return before the main lane has consumed the
+  request. Direct RC helpers remain main-lane-only unless split into pure native
+  worker-safe phases.
 - `serialized`: future out-of-process execution for mirai or another compute
   backend. This should serialize chunk payloads with Arrow IPC so mirai's
   serialization configuration can move opaque raw payloads rather than
@@ -129,10 +135,10 @@ Rducks requires this mode before registering scalar-mode R UDFs; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the
-execution thread before every R function execution. Broader multi-threaded sync
-UDF support still needs a proven main-R-thread execution lane; it should be built
-as explicit extension/runtime machinery, not as a package-side queue or hidden
-progress callback.
+execution thread before every R function execution. `rducks_enable_inproc()` is
+the explicit opt-in for queued same-process dispatch after registration. The
+queue has timeout/error paths so a missing main-lane drain fails rather than
+waiting indefinitely.
 
 ## nanoarrow direction and lifetime model
 
@@ -147,18 +153,19 @@ UUID, interval, and bit scalar storage target DuckDB-owned vectors and use
 DuckDB's assignment APIs for variable-width values so Rducks does not retain R or
 DuckDB buffer pointers across the callback boundary.
 
-Any future worker-to-calling-thread request that carries Arrow C Data should
-answer four questions at every boundary:
+Any worker-to-calling-thread request that carries Arrow C Data should answer
+four questions at every boundary:
 
 - who owns the `ArrowArray`/`ArrowSchema`/request object now
 - whether the pointer is borrowed from DuckDB memory or owns independent buffers
 - who calls `release()` if the object is abandoned
 - who nulls `release` after the object has been consumed by DuckDB or R
 
-Borrowed DuckDB chunk views must not outlive the DuckDB UDF stack that
-created them. If a future dispatcher allows the worker to return before the
-calling R thread has consumed the input, the request must copy into owned
-nanoarrow buffers instead of exporting a borrowed view.
+Borrowed DuckDB chunk views must not outlive the DuckDB UDF stack that created
+them. The current in-process queue is synchronous: the worker waits until the
+main R lane consumes the request. If a future dispatcher allows the worker to
+return before that consumption, the request must copy into owned nanoarrow
+buffers instead of exporting a borrowed view.
 
 Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for the scalar
 adapter and should reuse that path for any future vectorized UDFs:

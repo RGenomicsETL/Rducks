@@ -21,8 +21,9 @@ rducks_enable(
 \code{con}, invisibly.
 }
 \description{
-Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
-execution path requires R API work to happen on the calling R thread; pass
+Loads the bundled Rducks DuckDB extension. The registration-safe scalar-mode
+R UDF path requires R API work to happen on the recorded main R thread; pass
 \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
-explicitly for the supported scalar-mode R UDF configuration.
+explicitly. After registering UDFs, call \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
+the extension-owned in-process queue.
 }

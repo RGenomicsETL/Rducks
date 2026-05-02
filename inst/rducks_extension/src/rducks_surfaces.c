@@ -85,8 +85,9 @@ static bool rducks_register_execution_backend_surface(duckdb_connection con, rdu
                                                       rducks_set_execution_backend_scalar);
 }
 
-static bool rducks_register_noarg_scalar(duckdb_connection con, const char *name, duckdb_type return_type,
-                                          duckdb_scalar_function_t callback, bool is_volatile) {
+static bool rducks_register_noarg_scalar_ex(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                             const char *name, duckdb_type return_type,
+                                             duckdb_scalar_function_t callback, bool is_volatile) {
     duckdb_scalar_function fn = duckdb_create_scalar_function();
     duckdb_logical_type logical_type = duckdb_create_logical_type(return_type);
     duckdb_state rc;
@@ -98,11 +99,125 @@ static bool rducks_register_noarg_scalar(duckdb_connection con, const char *name
     duckdb_scalar_function_set_name(fn, name);
     duckdb_scalar_function_set_return_type(fn, logical_type);
     if (is_volatile) duckdb_scalar_function_set_volatile(fn);
+    if (runtime) duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
     duckdb_scalar_function_set_function(fn, callback);
     rc = duckdb_register_scalar_function(con, fn);
     duckdb_destroy_logical_type(&logical_type);
     duckdb_destroy_scalar_function(&fn);
     return rc == DuckDBSuccess;
+}
+
+static bool rducks_register_noarg_scalar(duckdb_connection con, const char *name, duckdb_type return_type,
+                                          duckdb_scalar_function_t callback, bool is_volatile) {
+    return rducks_register_noarg_scalar_ex(con, NULL, name, return_type, callback, is_volatile);
+}
+
+static void rducks_queue_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    uint64_t value = 0;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    if (runtime) {
+        rducks_queue_lock(runtime);
+        value = runtime->queue_submitted;
+        rducks_queue_unlock(runtime);
+    }
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_queue_executed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    uint64_t value = 0;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    if (runtime) {
+        rducks_queue_lock(runtime);
+        value = runtime->queue_executed;
+        rducks_queue_unlock(runtime);
+    }
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_queue_timeouts_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    uint64_t value = 0;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    if (runtime) {
+        rducks_queue_lock(runtime);
+        value = runtime->queue_timeouts;
+        rducks_queue_unlock(runtime);
+    }
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *iterations = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    for (idx_t i = 0; i < n; i++) {
+        char err[256];
+        uint64_t value = 0;
+        err[0] = '\0';
+        if (!rducks_queue_self_test(runtime, iterations[i], &value, err, sizeof(err))) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks queue self-test failed");
+            return;
+        }
+        out[i] = value;
+    }
+}
+
+static bool rducks_register_unary_ubigint_typed_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                        const char *name, duckdb_type return_type,
+                                                        duckdb_scalar_function_t callback) {
+    duckdb_scalar_function fn = duckdb_create_scalar_function();
+    duckdb_logical_type ubigint_type = duckdb_create_logical_type(DUCKDB_TYPE_UBIGINT);
+    duckdb_logical_type out_type = duckdb_create_logical_type(return_type);
+    duckdb_state rc;
+    if (!fn || !ubigint_type || !out_type) {
+        if (fn) duckdb_destroy_scalar_function(&fn);
+        if (ubigint_type) duckdb_destroy_logical_type(&ubigint_type);
+        if (out_type) duckdb_destroy_logical_type(&out_type);
+        return false;
+    }
+    duckdb_scalar_function_set_name(fn, name);
+    duckdb_scalar_function_add_parameter(fn, ubigint_type);
+    duckdb_scalar_function_set_return_type(fn, out_type);
+    duckdb_scalar_function_set_volatile(fn);
+    duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
+    duckdb_scalar_function_set_function(fn, callback);
+    rc = duckdb_register_scalar_function(con, fn);
+    duckdb_destroy_scalar_function(&fn);
+    duckdb_destroy_logical_type(&ubigint_type);
+    duckdb_destroy_logical_type(&out_type);
+    return rc == DuckDBSuccess;
+}
+
+static bool rducks_register_unary_ubigint_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                  const char *name, duckdb_scalar_function_t callback) {
+    return rducks_register_unary_ubigint_typed_surface(con, runtime, name, DUCKDB_TYPE_UBIGINT, callback);
+}
+
+static void rducks_thread_is_main_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    bool is_main = runtime && rducks_is_main_thread(runtime);
+    for (idx_t i = 0; i < n; i++) out[i] = is_main;
+}
+
+static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_entry_t *runtime) {
+    return rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_submitted", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_executed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_executed_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_timeouts", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_timeouts_stat_scalar, true) &&
+           rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
+                                                 rducks_queue_self_test_scalar) &&
+           rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
+                                                       DUCKDB_TYPE_BOOLEAN, rducks_thread_is_main_scalar);
 }
 
 static bool rducks_register_version(duckdb_connection con) {
@@ -135,7 +250,9 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
     int ready = runtime->registration_surface_ready;
     rducks_runtime_unlock();
     if (!ready) {
-        if (!rducks_register_version(connection) || !rducks_register_main_thread_token_surface(connection, runtime) ||
+        if (!rducks_register_version(connection) || !rducks_register_queue_stats(connection, runtime) ||
+            !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
+            !rducks_register_main_thread_token_surface(connection, runtime) ||
             !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_scalar_surface(connection, runtime)) {
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");

@@ -420,23 +420,38 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 
     if (!rducks_is_main_thread(runtime)) {
+        if (rducks_concurrent_inproc_enabled(runtime)) {
+            if (!rducks_queue_submit_scalar(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+                duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
+            }
+            return;
+        }
         duckdb_scalar_function_set_error(
             info,
             "Rducks scalar UDF reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') "
-            "for the current safe R API execution path"
+            "for the direct R API execution path, or call rducks_enable_inproc() after registration to enable the queued backend"
         );
+        return;
+    }
+
+    if (rducks_concurrent_inproc_enabled(runtime)) {
+        if (!rducks_queue_submit_scalar_via_worker_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
+        }
         return;
     }
 
     if (meta && meta->eval_mode == RDUCKS_EVAL_RC) {
         if (!rducks_rc_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC scalar R function failed");
+            return;
         }
         return;
     }
 
     if (!rducks_r_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
         duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
+        return;
     }
 }
 

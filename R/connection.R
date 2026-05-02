@@ -14,10 +14,11 @@ rducks_extension_path <- function() {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
-#' execution path requires R API work to happen on the calling R thread; pass
+#' Loads the bundled Rducks DuckDB extension. The registration-safe scalar-mode
+#' R UDF path requires R API work to happen on the recorded main R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
-#' explicitly for the supported scalar-mode R UDF configuration.
+#' explicitly. After registering UDFs, call [rducks_enable_inproc()] to opt into
+#' the extension-owned in-process queue.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to [rducks_extension_path()].
@@ -27,9 +28,7 @@ rducks_extension_path <- function() {
 rducks_enable <- function(con, extension_path = rducks_extension_path(),
                           threads = c("unchanged", "single")) {
   threads <- match.arg(threads)
-  if (!inherits(con, "duckdb_connection")) {
-    stop("con must be a duckdb_connection", call. = FALSE)
-  }
+  rducks_assert_duckdb_connection(con)
 
   path_sql <- rducks_sql_string(normalizePath(extension_path, mustWork = TRUE))
   DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
@@ -47,22 +46,146 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   }
 
   if (identical(threads, "single")) {
-    DBI::dbExecute(con, "SET external_threads=1")
-    DBI::dbExecute(con, "PRAGMA threads=1")
+    rducks_configure_duckdb_threads(con, threads = 1L, external_threads = 1L)
   }
 
-  ok <- DBI::dbGetQuery(
-    con,
-    sprintf("SELECT rducks_set_execution_backend(%s) AS ok", rducks_sql_string("single"))
-  )$ok[[1L]]
-  if (!isTRUE(ok)) {
-    stop("failed to initialize Rducks execution backend", call. = FALSE)
-  }
+  rducks_set_execution_backend(con, "single")
   invisible(con)
+}
+
+#' Enable in-process queued scalar execution
+#'
+#' Switches a Rducks-enabled DuckDB connection to the in-process queued scalar
+#' backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
+#' callbacks submit chunk requests to an extension-owned queue, and the recorded
+#' main R execution lane drains the queue and performs all R API work. This is a
+#' same-process scheduling mode, not a performance promise; R function calls are
+#' still serialized on the main R thread.
+#'
+#' Register scalar UDFs while the connection is in the default single-thread
+#' configuration, then call `rducks_enable_inproc()` before running queries that
+#' should use the queued in-process path.
+#'
+#' @param con A `duckdb_connection` already enabled with [rducks_enable()].
+#' @param threads Optional positive integer to set with `PRAGMA threads` before
+#'   enabling the in-process backend. Use `NULL` to leave unchanged.
+#' @param external_threads Optional positive integer to set with
+#'   `SET external_threads` before enabling the in-process backend. Defaults to
+#'   `threads`; use `NULL` to leave unchanged.
+#' @return `con`, invisibly.
+#' @export
+rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads) {
+  rducks_assert_duckdb_connection(con)
+  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
+  rducks_set_execution_backend(con, "concurrent_inproc")
+  invisible(con)
+}
+
+#' Disable in-process queued scalar execution
+#'
+#' Switches a Rducks-enabled DuckDB connection back to the direct single-lane
+#' scalar backend. Optionally updates DuckDB thread settings at the same time.
+#'
+#' @param con A `duckdb_connection`.
+#' @param threads Optional positive integer to set with `PRAGMA threads`.
+#' @param external_threads Optional positive integer to set with
+#'   `SET external_threads`. Defaults to `threads`.
+#' @return `con`, invisibly.
+#' @export
+rducks_disable_inproc <- function(con, threads = NULL, external_threads = threads) {
+  rducks_assert_duckdb_connection(con)
+  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
+  rducks_set_execution_backend(con, "single")
+  invisible(con)
+}
+
+#' Inspect in-process queue counters
+#'
+#' Returns diagnostic counters for the extension-owned in-process queue.
+#' `submitted` counts requests submitted to the main R execution lane,
+#' `executed` counts requests drained by that lane, and `timeouts` counts
+#' requests that were abandoned rather than waiting indefinitely.
+#'
+#' @param con A `duckdb_connection`.
+#' @return A one-row data frame with columns `submitted`, `executed`, and
+#'   `timeouts`.
+#' @export
+rducks_inproc_stats <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  DBI::dbGetQuery(
+    con,
+    paste(
+      "SELECT rducks_queue_submitted() AS submitted,",
+      "rducks_queue_executed() AS executed,",
+      "rducks_queue_timeouts() AS timeouts"
+    )
+  )
+}
+
+#' Exercise the in-process queue
+#'
+#' Runs a native self-test that submits `n` requests from worker threads to the
+#' extension-owned main-thread queue and drains them on the recorded R execution
+#' lane. This validates the queue/condition-variable path without calling an R
+#' UDF.
+#'
+#' @param con A `duckdb_connection`.
+#' @param n Number of queue round trips to run.
+#' @return Integer-like numeric scalar: number of requests completed.
+#' @export
+rducks_inproc_self_test <- function(con, n = 1000L) {
+  rducks_assert_duckdb_connection(con)
+  n <- rducks_validate_thread_count(n, "n")
+  DBI::dbGetQuery(
+    con,
+    sprintf("SELECT rducks_queue_self_test(%s::UBIGINT) AS n", as.character(n))
+  )$n[[1L]]
 }
 
 rducks_sql_string <- function(x) {
   sprintf("'%s'", gsub("'", "''", x, fixed = TRUE))
+}
+
+rducks_assert_duckdb_connection <- function(con) {
+  if (!inherits(con, "duckdb_connection")) {
+    stop("con must be a duckdb_connection", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+rducks_validate_thread_count <- function(x, name) {
+  if (is.null(x)) return(NULL)
+  if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x < 1 ||
+      x != floor(x) || x > .Machine$integer.max) {
+    stop(name, " must be a positive integer scalar or NULL", call. = FALSE)
+  }
+  as.integer(x)
+}
+
+rducks_configure_duckdb_threads <- function(con, threads = NULL, external_threads = threads) {
+  threads <- rducks_validate_thread_count(threads, "threads")
+  external_threads <- rducks_validate_thread_count(external_threads, "external_threads")
+  if (!is.null(threads) && !is.null(external_threads) && external_threads > threads) {
+    stop("external_threads must be less than or equal to threads", call. = FALSE)
+  }
+  if (!is.null(threads)) {
+    DBI::dbExecute(con, sprintf("PRAGMA threads=%d", threads))
+  }
+  if (!is.null(external_threads)) {
+    DBI::dbExecute(con, sprintf("SET external_threads=%d", external_threads))
+  }
+  invisible(con)
+}
+
+rducks_set_execution_backend <- function(con, backend) {
+  ok <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT rducks_set_execution_backend(%s) AS ok", rducks_sql_string(backend))
+  )$ok[[1L]]
+  if (!isTRUE(ok)) {
+    stop("failed to set Rducks execution backend to ", backend, call. = FALSE)
+  }
+  invisible(con)
 }
 
 rducks_connection_integer_setting <- function(con, setting) {

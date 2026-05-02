@@ -59,5 +59,7 @@ in DuckDB even if this object is discarded.
 \description{
 Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
 extension. Registration requires \code{external_threads=1} plus
-\verb{PRAGMA threads=1} so scalar-mode R execution stays on the calling R thread.
+\verb{PRAGMA threads=1} so native registration and the default scalar execution
+path stay on the calling R thread. After registration, use
+\code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into queued same-process execution.
 }

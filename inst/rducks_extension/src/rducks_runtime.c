@@ -29,12 +29,26 @@ static int rducks_set_execution_backend(rducks_runtime_entry_t *runtime, const c
         return 1;
     }
     if (strcmp(backend, "concurrent_inproc") == 0) {
-        snprintf(err, err_cap,
-                 "Rducks concurrent_inproc backend is not enabled in this build; same-process concurrency will use DuckDB C API bind/init state rather than the removed package-side queue");
-        return 0;
+        rducks_runtime_lock();
+        runtime->execution_backend = RDUCKS_BACKEND_CONCURRENT_INPROC;
+        rducks_runtime_unlock();
+        return 1;
     }
     snprintf(err, err_cap, "unsupported Rducks execution backend: %s", backend);
     return 0;
+}
+
+static rducks_execution_backend_t rducks_get_execution_backend(rducks_runtime_entry_t *runtime) {
+    rducks_execution_backend_t backend = RDUCKS_BACKEND_SINGLE;
+    if (!runtime) return backend;
+    rducks_runtime_lock();
+    backend = runtime->execution_backend;
+    rducks_runtime_unlock();
+    return backend;
+}
+
+static int rducks_concurrent_inproc_enabled(rducks_runtime_entry_t *runtime) {
+    return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_CONCURRENT_INPROC;
 }
 
 static void rducks_r_scalar_bind_state_destroy(void *ptr) {

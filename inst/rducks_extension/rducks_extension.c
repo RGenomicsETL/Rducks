@@ -13,9 +13,11 @@
 #include <nanoarrow/r.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +26,7 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <time.h>
 #endif
 
 DUCKDB_EXTENSION_EXTERN
@@ -85,6 +88,8 @@ typedef enum rducks_type_kind {
     RDUCKS_KIND_UNION
 } rducks_type_kind_t;
 
+typedef struct rducks_udf_request rducks_udf_request_t;
+
 typedef struct rducks_type_desc {
     rducks_type_kind_t kind;
     rducks_type_id_t scalar;
@@ -106,6 +111,19 @@ typedef struct rducks_runtime_entry {
     char main_thread_token[128];
     int main_thread_token_set;
     rducks_execution_backend_t execution_backend;
+    rducks_udf_request_t *queue_head;
+    rducks_udf_request_t *queue_tail;
+    uint64_t queue_submitted;
+    uint64_t queue_executed;
+    uint64_t queue_timeouts;
+#ifdef _WIN32
+    CRITICAL_SECTION queue_lock;
+    CONDITION_VARIABLE queue_cond;
+#else
+    pthread_mutex_t queue_lock;
+    pthread_cond_t queue_cond;
+#endif
+    int queue_initialized;
 } rducks_runtime_entry_t;
 
 typedef struct rducks_r_scalar_meta {
@@ -180,6 +198,35 @@ static int rducks_runtime_reserve_locked(idx_t wanted) {
     return 1;
 }
 
+static int rducks_runtime_queue_init_entry(rducks_runtime_entry_t *entry) {
+    if (!entry) return 0;
+#ifdef _WIN32
+    InitializeCriticalSection(&entry->queue_lock);
+    InitializeConditionVariable(&entry->queue_cond);
+    entry->queue_initialized = 1;
+    return 1;
+#else
+    if (pthread_mutex_init(&entry->queue_lock, NULL) != 0) return 0;
+    if (pthread_cond_init(&entry->queue_cond, NULL) != 0) {
+        pthread_mutex_destroy(&entry->queue_lock);
+        return 0;
+    }
+    entry->queue_initialized = 1;
+    return 1;
+#endif
+}
+
+static void rducks_runtime_queue_destroy_entry(rducks_runtime_entry_t *entry) {
+    if (!entry || !entry->queue_initialized) return;
+#ifdef _WIN32
+    DeleteCriticalSection(&entry->queue_lock);
+#else
+    pthread_cond_destroy(&entry->queue_cond);
+    pthread_mutex_destroy(&entry->queue_lock);
+#endif
+    entry->queue_initialized = 0;
+}
+
 static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database database, char *err, size_t err_cap) {
     rducks_runtime_entry_t *entry;
     if (!database) {
@@ -208,7 +255,14 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
     memset(entry, 0, sizeof(*entry));
     entry->database = database;
     entry->execution_backend = RDUCKS_BACKEND_SINGLE;
+    if (!rducks_runtime_queue_init_entry(entry)) {
+        duckdb_free(entry);
+        rducks_runtime_unlock();
+        snprintf(err, err_cap, "failed to initialize Rducks runtime queue");
+        return NULL;
+    }
     if (duckdb_connect(database, &entry->connection) == DuckDBError || !entry->connection) {
+        rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);
         rducks_runtime_unlock();
@@ -223,6 +277,16 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
 static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                     duckdb_data_chunk input, duckdb_vector output,
                                     char *err_msg, size_t err_cap);
+static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                      duckdb_data_chunk input, duckdb_vector output,
+                                      char *err_msg, size_t err_cap);
+static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t *runtime,
+                                                        rducks_r_scalar_meta_t *meta,
+                                                        duckdb_data_chunk input, duckdb_vector output,
+                                                        char *err_msg, size_t err_cap);
+static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
+static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
+                                  uint64_t *out_value, char *err_msg, size_t err_cap);
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
@@ -232,5 +296,7 @@ static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sc
 #include "src/rducks_runtime.c"
 #include "src/rducks_arrow.c"
 #include "src/rducks_rc.c"
+#include "src/rducks_worker_queue.c"
+#include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_surfaces.c"
