@@ -66,12 +66,36 @@ this object for the UDF to keep working in DuckDB.
 
 The implemented mode is `mode = "scalar"`, which calls the R function
 once per DuckDB row. Internally this scalar adapter is nanoarrow-backed
-over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C
-Data, adapted to scalar R calls, then imported back to DuckDB.
-`eval_mode = "R"` uses the R row-loop adapter; `eval_mode = "RC"` uses
-the native C row-loop adapter and is covered by R-vs-RC conformance
-tests. A future vectorized mode should call R once per DuckDB chunk and
-will be added only when implemented.
+over DuckDB Arrow C Data: DuckDB calls the native scalar UDF on real
+chunks, and Rducks adapts those chunks to scalar R calls. A future
+vectorized mode should call R once per DuckDB chunk and will be added
+only when implemented.
+
+### Scalar evaluation implementations
+
+`mode = "scalar"` has two evaluator implementations selected with
+`eval_mode`:
+
+- `eval_mode = "R"` uses the original R row-loop adapter.
+- `eval_mode = "RC"` uses a native C row-loop adapter. It evaluates the
+  same R function once per logical row, so ordinary R semantics
+  including S3/S7 dispatch, RNG, lexical scope, and side effects still
+  come from R’s evaluator.
+
+Both evaluators preserve the same scalar-mode contract:
+`null_handling = "default"` skips calls for top-level SQL NULL inputs,
+`null_handling = "special"` calls the R function with the documented R
+missing-value shape, and `side_effects = TRUE` marks the DuckDB function
+volatile. Rducks includes R-vs-RC conformance tests for scalar, exact,
+composite, enum, union, NULL, error, and RNG behavior.
+
+The RC implementation uses borrowed DuckDB input vectors only during the
+native UDF callback. Per-row R arguments are fresh R objects, so a user
+function may retain them without observing later row mutation. Direct
+DuckDB output-buffer writes are used where implemented; strings and raw
+values are assigned through DuckDB’s vector assignment API, which copies
+into DuckDB-owned storage. Rducks does not retain pointers into
+DuckDB-owned chunks after the callback returns.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by

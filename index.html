@@ -81,8 +81,21 @@
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB.</p>
-<p>The implemented mode is <code>mode = "scalar"</code>, which calls the R function once per DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C Data, adapted to scalar R calls, then imported back to DuckDB. <code>eval_mode = "R"</code> uses the R row-loop adapter; <code>eval_mode = "RC"</code> uses the native C row-loop adapter and is covered by R-vs-RC conformance tests. A future vectorized mode should call R once per DuckDB chunk and will be added only when implemented.</p>
+<p>The implemented mode is <code>mode = "scalar"</code>, which calls the R function once per DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow C Data: DuckDB calls the native scalar UDF on real chunks, and Rducks adapts those chunks to scalar R calls. A future vectorized mode should call R once per DuckDB chunk and will be added only when implemented.</p>
+<div class="section level3">
+<h3 id="scalar-evaluation-implementations">Scalar evaluation implementations<a class="anchor" aria-label="anchor" href="#scalar-evaluation-implementations"></a>
+</h3>
+<p><code>mode = "scalar"</code> has two evaluator implementations selected with <code>eval_mode</code>:</p>
+<ul>
+<li>
+<code>eval_mode = "R"</code> uses the original R row-loop adapter.</li>
+<li>
+<code>eval_mode = "RC"</code> uses a native C row-loop adapter. It evaluates the same R function once per logical row, so ordinary R semantics including S3/S7 dispatch, RNG, lexical scope, and side effects still come from R’s evaluator.</li>
+</ul>
+<p>Both evaluators preserve the same scalar-mode contract: <code>null_handling = "default"</code> skips calls for top-level SQL NULL inputs, <code>null_handling = "special"</code> calls the R function with the documented R missing-value shape, and <code>side_effects = TRUE</code> marks the DuckDB function volatile. Rducks includes R-vs-RC conformance tests for scalar, exact, composite, enum, union, NULL, error, and RNG behavior.</p>
+<p>The RC implementation uses borrowed DuckDB input vectors only during the native UDF callback. Per-row R arguments are fresh R objects, so a user function may retain them without observing later row mutation. Direct DuckDB output-buffer writes are used where implemented; strings and raw values are assigned through DuckDB’s vector assignment API, which copies into DuckDB-owned storage. Rducks does not retain pointers into DuckDB-owned chunks after the callback returns.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
