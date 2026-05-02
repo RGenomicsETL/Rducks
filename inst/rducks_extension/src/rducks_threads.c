@@ -1,19 +1,5 @@
 /* Included by ../rducks_extension.c. */
 
-#ifdef _WIN32
-static SRWLOCK g_main_thread_token_lock = SRWLOCK_INIT;
-static void rducks_main_thread_token_lock_write(void) { AcquireSRWLockExclusive(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_unlock_write(void) { ReleaseSRWLockExclusive(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_lock_read(void) { AcquireSRWLockShared(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_unlock_read(void) { ReleaseSRWLockShared(&g_main_thread_token_lock); }
-#else
-static pthread_mutex_t g_main_thread_token_lock = PTHREAD_MUTEX_INITIALIZER;
-static void rducks_main_thread_token_lock_write(void) { pthread_mutex_lock(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_unlock_write(void) { pthread_mutex_unlock(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_lock_read(void) { pthread_mutex_lock(&g_main_thread_token_lock); }
-static void rducks_main_thread_token_unlock_read(void) { pthread_mutex_unlock(&g_main_thread_token_lock); }
-#endif
-
 static void rducks_current_thread_token(char *buf, size_t cap) {
     if (!buf || cap == 0U) return;
 #ifdef _WIN32
@@ -31,23 +17,23 @@ static void rducks_current_thread_token(char *buf, size_t cap) {
     buf[cap - 1U] = '\0';
 }
 
-static void rducks_set_main_thread_token(const char *token) {
-    rducks_main_thread_token_lock_write();
-    snprintf(g_main_thread_token, sizeof(g_main_thread_token), "%s", token ? token : "");
-    g_main_thread_token_set = token && token[0];
-    rducks_main_thread_token_unlock_write();
+static void rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const char *token) {
+    if (!runtime) return;
+    rducks_runtime_lock();
+    snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token ? token : "");
+    runtime->main_thread_token_set = token && token[0];
+    rducks_runtime_unlock();
 }
 
-static int rducks_get_main_thread_token(char *buf, size_t cap) {
+static int rducks_get_main_thread_token(rducks_runtime_entry_t *runtime, char *buf, size_t cap) {
     int out;
-    if (!buf || cap == 0U) return 0;
-    rducks_main_thread_token_lock_read();
-    out = g_main_thread_token_set;
+    if (!runtime || !buf || cap == 0U) return 0;
+    rducks_runtime_lock();
+    out = runtime->main_thread_token_set;
     if (out) {
-        snprintf(buf, cap, "%s", g_main_thread_token);
+        snprintf(buf, cap, "%s", runtime->main_thread_token);
     }
-    rducks_main_thread_token_unlock_read();
+    rducks_runtime_unlock();
     if (out) buf[cap - 1U] = '\0';
     return out;
 }
-

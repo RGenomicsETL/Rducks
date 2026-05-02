@@ -15,9 +15,10 @@ This repo owns:
 
 - Do not manually edit generated `.Rd` files. Update roxygen comments and run `make rd`.
 - Keep the native DuckDB extension contract canonical; R wrappers should not redefine SQL semantics.
-- Do not call R APIs from DuckDB worker threads. Use calling-R-thread direct calls or queued requests.
+- Do not call R APIs from DuckDB worker threads. Use calling-R-thread direct calls today; any future dispatch must be explicit extension/runtime machinery, not a package-side pump.
 - Treat R function lifetime explicitly: preserve R functions while native code can call them.
-- Keep marshalling paths in-process via DuckDB Arrow C Data and nanoarrow, not Arrow IPC.
+- Keep in-process marshalling paths via DuckDB Arrow C Data and nanoarrow, not Arrow IPC.
+- Use Arrow IPC only for explicit serialized/out-of-process transports such as a future mirai-backed compute plan.
 - Prefer small staged native modules over a monolithic extension source.
 
 ## Architecture notes

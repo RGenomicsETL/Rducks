@@ -51,6 +51,13 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
     DBI::dbExecute(con, "PRAGMA threads=1")
   }
 
+  ok <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT rducks_set_execution_backend(%s) AS ok", rducks_sql_string("single"))
+  )$ok[[1L]]
+  if (!isTRUE(ok)) {
+    stop("failed to initialize Rducks execution backend", call. = FALSE)
+  }
   invisible(con)
 }
 

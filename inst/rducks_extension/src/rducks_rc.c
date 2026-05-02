@@ -1201,10 +1201,17 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
     return 1;
 }
 
-static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
-                                    char *err_msg, size_t err_cap) {
-    idx_t n;
-    int protect_count = 0;
+/* RC fallback phases use the R-side Arrow prepare/result helpers while keeping
+ * row evaluation in C for eval_mode = "RC" semantics. This path remains
+ * R-thread-only because it creates nanoarrow external pointers and calls R
+ * helpers. It is intentionally isolated from the direct DuckDB vector path so a
+ * future concurrent backend can reuse the prepared row engine with an owned
+ * transport such as Arrow IPC instead of borrowed DuckDB vectors.
+ */
+static SEXP rducks_rc_eval_arrow_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                  SEXP input_array_xptr, SEXP input_schema_xptr,
+                                                  SEXP output_schema_xptr, idx_t n,
+                                                  int *protect_count, char *err_msg, size_t err_cap) {
     int r_err = 0;
     SEXP bundle;
     SEXP fun;
@@ -1213,9 +1220,6 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
     SEXP prepare_inputs_fun;
     SEXP check_return_fun;
     SEXP result_array_fun;
-    SEXP input_schema_xptr;
-    SEXP input_array_xptr;
-    SEXP output_schema_xptr;
     SEXP n_sexp;
     SEXP prep_call;
     SEXP prepared;
@@ -1228,15 +1232,12 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
 
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
-        return 0;
-    }
-    if (rducks_rc_direct_supported(meta)) {
-        return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
+        return R_NilValue;
     }
     bundle = meta->fun;
     if (!rducks_rc_bundle_valid(bundle)) {
         snprintf(err_msg, err_cap, "Rducks RC scalar metadata bundle is invalid");
-        return 0;
+        return R_NilValue;
     }
 
     fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
@@ -1246,40 +1247,26 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
     check_return_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN);
     result_array_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY);
 
-    n = duckdb_data_chunk_get_size(input);
-    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_schema(input_schema_xptr, meta, err_msg, err_cap)) goto fail;
-
-    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_array(input_array_xptr, input, err_msg, err_cap)) goto fail;
-    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
-
-    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_output_arrow_schema(output_schema_xptr, meta, err_msg, err_cap)) goto fail;
-
     n_sexp = PROTECT(Rf_ScalarReal((double)n));
-    protect_count++;
+    (*protect_count)++;
     prep_call = PROTECT(Rf_lang5(prepare_inputs_fun, arg_types, input_array_xptr, input_schema_xptr, n_sexp));
-    protect_count++;
+    (*protect_count)++;
     prepared = PROTECT(R_tryEvalSilent(prep_call, R_GlobalEnv, &r_err));
-    protect_count++;
+    (*protect_count)++;
     if (r_err || TYPEOF(prepared) != VECSXP || XLENGTH(prepared) < 3) {
         snprintf(err_msg, err_cap, "Rducks RC input preparation failed");
-        goto fail;
+        return R_NilValue;
     }
     columns = VECTOR_ELT(prepared, 0);
     nulls = VECTOR_ELT(prepared, 1);
     top_level_null = VECTOR_ELT(prepared, 2);
     if (TYPEOF(columns) != VECSXP || TYPEOF(nulls) != VECSXP || TYPEOF(top_level_null) != LGLSXP) {
         snprintf(err_msg, err_cap, "Rducks RC input preparation returned invalid metadata");
-        goto fail;
+        return R_NilValue;
     }
 
     results = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
-    protect_count++;
+    (*protect_count)++;
     for (idx_t row = 0; row < n; row++) {
         if (meta->null_handling == RDUCKS_NULL_DEFAULT && rducks_rc_logical_at(top_level_null, row)) {
             SET_VECTOR_ELT(results, (R_xlen_t)row, R_NilValue);
@@ -1295,7 +1282,7 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
             if (!ok) {
                 UNPROTECT(1);
                 snprintf(err_msg, err_cap, "Rducks RC argument extraction failed");
-                goto fail;
+                return R_NilValue;
             }
             PROTECT(arg);
             SETCAR(node, arg);
@@ -1313,7 +1300,7 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
                 continue;
             }
             snprintf(err_msg, err_cap, "Rducks RC R function error");
-            goto fail;
+            return R_NilValue;
         }
 
         r_err = 0;
@@ -1322,22 +1309,57 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
         if (r_err) {
             UNPROTECT(1); /* checked */
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
-            goto fail;
+            return R_NilValue;
         }
         SET_VECTOR_ELT(results, (R_xlen_t)row, checked);
         UNPROTECT(1); /* checked */
     }
 
     result_call = PROTECT(Rf_lang5(result_array_fun, return_type, results, output_schema_xptr, n_sexp));
-    protect_count++;
+    (*protect_count)++;
     r_err = 0;
     result_array = PROTECT(R_tryEvalSilent(result_call, R_GlobalEnv, &r_err));
-    protect_count++;
+    (*protect_count)++;
     if (r_err) {
         snprintf(err_msg, err_cap, "Rducks RC Arrow result construction failed");
-        goto fail;
+        return R_NilValue;
     }
-    if (!rducks_import_arrow_result(result_array, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
+    return result_array;
+}
+
+static int rducks_rc_arrow_scalar_execute_on_r_thread(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                                      duckdb_data_chunk input,
+                                                      duckdb_vector output, char *err_msg, size_t err_cap) {
+    idx_t n;
+    int protect_count = 0;
+    SEXP input_schema_xptr;
+    SEXP input_array_xptr;
+    SEXP output_schema_xptr;
+    SEXP result_array;
+
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
+        return 0;
+    }
+
+    n = duckdb_data_chunk_get_size(input);
+    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_schema(runtime, input_schema_xptr, meta, err_msg, err_cap)) goto fail;
+
+    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_array(runtime, input_array_xptr, input, err_msg, err_cap)) goto fail;
+    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
+
+    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_output_arrow_schema(runtime, output_schema_xptr, meta, err_msg, err_cap)) goto fail;
+
+    result_array = rducks_rc_eval_arrow_xptr_on_r_thread(meta, input_array_xptr, input_schema_xptr,
+                                                         output_schema_xptr, n, &protect_count, err_msg, err_cap);
+    if (result_array == R_NilValue) goto fail;
+    if (!rducks_import_arrow_result(runtime, result_array, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
 
     UNPROTECT(protect_count);
     return 1;
@@ -1345,4 +1367,23 @@ static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_ch
 fail:
     UNPROTECT(protect_count);
     return 0;
+}
+
+/* Current calling-R-thread RC dispatcher. This does not rule out a future
+ * threaded RC backend; it means this direct-vector implementation is only legal
+ * on the calling R thread because it may call R and touch SEXPs. Concurrent
+ * backends must route through a transport boundary and write DuckDB output from
+ * owned non-SEXP result memory, or use a pure-native evaluator with no R calls.
+ */
+static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                    duckdb_data_chunk input, duckdb_vector output,
+                                    char *err_msg, size_t err_cap) {
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
+        return 0;
+    }
+    if (rducks_rc_direct_supported(meta)) {
+        return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
+    }
+    return rducks_rc_arrow_scalar_execute_on_r_thread(runtime, meta, input, output, err_msg, err_cap);
 }

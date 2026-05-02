@@ -9,14 +9,19 @@ static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const cha
     snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : fallback);
 }
 
-static int rducks_allocate_arrow_options(duckdb_arrow_options *out_options, int *borrowed,
+static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
+                                         duckdb_arrow_options *out_options, int *borrowed,
                                          char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
+    if (!runtime || !runtime->connection) {
+        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+        return 0;
+    }
     if (!out_options || !borrowed) return 0;
     *out_options = NULL;
     *borrowed = 0;
 
-    duckdb_connection_get_arrow_options(g_connection, &options);
+    duckdb_connection_get_arrow_options(runtime->connection, &options);
     if (options) {
         *out_options = options;
         return 1;
@@ -30,13 +35,18 @@ static void rducks_release_arrow_options(duckdb_arrow_options *options, int borr
     if (!borrowed && options && *options) duckdb_destroy_arrow_options(options);
 }
 
-static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs, size_t count,
-                                    const char **names, char *err_msg, size_t err_cap) {
+static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
+                                           rducks_type_desc_t **descs, size_t count,
+                                           const char **names, char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
     int borrowed_options = 0;
     duckdb_logical_type *types = NULL;
     duckdb_error_data error_data = NULL;
-    struct ArrowSchema *schema = nanoarrow_output_schema_from_xptr(schema_xptr);
+
+    if (!schema) {
+        snprintf(err_msg, err_cap, "invalid Arrow schema output pointer");
+        return 0;
+    }
 
     if (count > 0) {
         types = (duckdb_logical_type *)calloc(count, sizeof(duckdb_logical_type));
@@ -57,7 +67,7 @@ static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs
         }
     }
 
-    if (!rducks_allocate_arrow_options(&options, &borrowed_options, err_msg, err_cap)) {
+    if (!rducks_allocate_arrow_options(runtime, &options, &borrowed_options, err_msg, err_cap)) {
         for (size_t i = 0; i < count; i++) {
             if (types[i]) duckdb_destroy_logical_type(&types[i]);
         }
@@ -84,8 +94,16 @@ static int rducks_fill_arrow_schema(SEXP schema_xptr, rducks_type_desc_t **descs
     return 1;
 }
 
-static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta_t *meta,
-                                          char *err_msg, size_t err_cap) {
+static int rducks_fill_arrow_schema(rducks_runtime_entry_t *runtime, SEXP schema_xptr,
+                                    rducks_type_desc_t **descs, size_t count,
+                                    const char **names, char *err_msg, size_t err_cap) {
+    return rducks_fill_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(schema_xptr), descs, count, names,
+                                          err_msg, err_cap);
+}
+
+static int rducks_fill_input_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
+                                                 rducks_r_scalar_meta_t *meta,
+                                                 char *err_msg, size_t err_cap) {
     const char **names = NULL;
     char **owned_names = NULL;
     int ok;
@@ -113,7 +131,7 @@ static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta
         }
     }
 
-    ok = rducks_fill_arrow_schema(schema_xptr, meta->args, meta->arity, names, err_msg, err_cap);
+    ok = rducks_fill_arrow_schema_native(runtime, schema, meta->args, meta->arity, names, err_msg, err_cap);
     if (owned_names) {
         for (size_t i = 0; i < meta->arity; i++) free(owned_names[i]);
     }
@@ -122,23 +140,41 @@ static int rducks_fill_input_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta
     return ok;
 }
 
-static int rducks_fill_output_arrow_schema(SEXP schema_xptr, rducks_r_scalar_meta_t *meta,
-                                           char *err_msg, size_t err_cap) {
+static int rducks_fill_input_arrow_schema(rducks_runtime_entry_t *runtime, SEXP schema_xptr,
+                                          rducks_r_scalar_meta_t *meta,
+                                          char *err_msg, size_t err_cap) {
+    return rducks_fill_input_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(schema_xptr), meta, err_msg, err_cap);
+}
+
+static int rducks_fill_output_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
+                                                  rducks_r_scalar_meta_t *meta,
+                                                  char *err_msg, size_t err_cap) {
     rducks_type_desc_t *descs[1];
     const char *names[1];
     descs[0] = meta->return_desc;
     names[0] = "result";
-    return rducks_fill_arrow_schema(schema_xptr, descs, 1, names, err_msg, err_cap);
+    return rducks_fill_arrow_schema_native(runtime, schema, descs, 1, names, err_msg, err_cap);
 }
 
-static int rducks_fill_input_arrow_array(SEXP array_xptr, duckdb_data_chunk input,
-                                         char *err_msg, size_t err_cap) {
+static int rducks_fill_output_arrow_schema(rducks_runtime_entry_t *runtime, SEXP schema_xptr,
+                                           rducks_r_scalar_meta_t *meta,
+                                           char *err_msg, size_t err_cap) {
+    return rducks_fill_output_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(schema_xptr), meta, err_msg, err_cap);
+}
+
+static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime, struct ArrowArray *array,
+                                                duckdb_data_chunk input,
+                                                char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
     int borrowed_options = 0;
     duckdb_error_data error_data = NULL;
-    struct ArrowArray *array = nanoarrow_output_array_from_xptr(array_xptr);
 
-    if (!rducks_allocate_arrow_options(&options, &borrowed_options, err_msg, err_cap)) {
+    if (!array) {
+        snprintf(err_msg, err_cap, "invalid Arrow array output pointer");
+        return 0;
+    }
+
+    if (!rducks_allocate_arrow_options(runtime, &options, &borrowed_options, err_msg, err_cap)) {
         return 0;
     }
 
@@ -154,6 +190,12 @@ static int rducks_fill_input_arrow_array(SEXP array_xptr, duckdb_data_chunk inpu
         duckdb_destroy_error_data(&error_data);
     }
     return 1;
+}
+
+static int rducks_fill_input_arrow_array(rducks_runtime_entry_t *runtime, SEXP array_xptr,
+                                         duckdb_data_chunk input,
+                                         char *err_msg, size_t err_cap) {
+    return rducks_fill_input_arrow_array_native(runtime, nanoarrow_output_array_from_xptr(array_xptr), input, err_msg, err_cap);
 }
 
 static SEXP rducks_arrow_array_schema_xptr(SEXP array_xptr, SEXP fallback_schema_xptr) {
@@ -182,32 +224,30 @@ static int rducks_copy_imported_result_vector(rducks_type_desc_t *return_desc, d
     return 1;
 }
 
-static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema_xptr, rducks_type_desc_t *return_desc,
-                                      idx_t expected_size, duckdb_vector output, char *err_msg, size_t err_cap) {
-    struct ArrowArray *result_array;
-    struct ArrowSchema *result_schema;
-    SEXP result_schema_xptr;
+static int rducks_import_arrow_result_native(rducks_runtime_entry_t *runtime,
+                                             struct ArrowArray *result_array, struct ArrowSchema *result_schema,
+                                             rducks_type_desc_t *return_desc, idx_t expected_size,
+                                             duckdb_vector output, char *err_msg, size_t err_cap) {
     duckdb_arrow_converted_schema converted_schema = NULL;
     duckdb_data_chunk result_chunk = NULL;
     duckdb_error_data error_data = NULL;
     idx_t result_size;
 
-    if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper must return a nanoarrow_array");
+    if (!runtime || !runtime->connection) {
+        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data import");
         return 0;
     }
-
-    result_array = nanoarrow_array_from_xptr(result_array_xptr);
+    if (!result_array || !result_schema || result_array->release == NULL || result_schema->release == NULL) {
+        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper returned invalid Arrow C Data");
+        return 0;
+    }
     if (result_array->length != (int64_t)expected_size) {
         snprintf(err_msg, err_cap, "Rducks nanoarrow scalar adapter returned %lld rows, expected %llu",
                  (long long)result_array->length, (unsigned long long)expected_size);
         return 0;
     }
 
-    result_schema_xptr = rducks_arrow_array_schema_xptr(result_array_xptr, output_schema_xptr);
-    result_schema = nanoarrow_schema_from_xptr(result_schema_xptr);
-
-    error_data = duckdb_schema_from_arrow(g_connection, result_schema, &converted_schema);
+    error_data = duckdb_schema_from_arrow(runtime->connection, result_schema, &converted_schema);
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
@@ -218,7 +258,7 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
         duckdb_destroy_error_data(&error_data);
     }
 
-    error_data = duckdb_data_chunk_from_arrow(g_connection, result_array, converted_schema, &result_chunk);
+    error_data = duckdb_data_chunk_from_arrow(runtime->connection, result_array, converted_schema, &result_chunk);
     if (error_data) {
         int has_error = duckdb_error_data_has_error(error_data);
         if (has_error) {
@@ -255,59 +295,110 @@ static int rducks_import_arrow_result(SEXP result_array_xptr, SEXP output_schema
     return 1;
 }
 
-static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+static int rducks_import_arrow_result(rducks_runtime_entry_t *runtime, SEXP result_array_xptr,
+                                      SEXP output_schema_xptr, rducks_type_desc_t *return_desc,
+                                      idx_t expected_size, duckdb_vector output, char *err_msg, size_t err_cap) {
+    struct ArrowArray *result_array;
+    struct ArrowSchema *result_schema;
+    SEXP result_schema_xptr;
+
+    if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
+        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper must return a nanoarrow_array");
+        return 0;
+    }
+
+    result_array = nanoarrow_array_from_xptr(result_array_xptr);
+    result_schema_xptr = rducks_arrow_array_schema_xptr(result_array_xptr, output_schema_xptr);
+    result_schema = nanoarrow_schema_from_xptr(result_schema_xptr);
+    return rducks_import_arrow_result_native(runtime, result_array, result_schema, return_desc, expected_size, output,
+                                            err_msg, err_cap);
+}
+
+/* In-process single-thread R evaluator phases. These still use R/nanoarrow
+ * external pointers and therefore must run on the recorded R thread. Future
+ * concurrent_inproc or serialized backends should replace the prepare/evaluate
+ * boundary with owned native buffers or Arrow IPC payloads before crossing
+ * threads/processes.
+ */
+static int rducks_r_scalar_prepare_inprocess_arrow(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, duckdb_data_chunk input,
+                                                   SEXP *input_schema_xptr, SEXP *input_array_xptr,
+                                                   SEXP *output_schema_xptr, idx_t *n,
+                                                   int *protect_count, char *err_msg, size_t err_cap) {
+    *n = duckdb_data_chunk_get_size(input);
+
+    *input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    (*protect_count)++;
+    if (!rducks_fill_input_arrow_schema(runtime, *input_schema_xptr, meta, err_msg, err_cap)) return 0;
+
+    *input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
+    (*protect_count)++;
+    if (!rducks_fill_input_arrow_array(runtime, *input_array_xptr, input, err_msg, err_cap)) return 0;
+    R_SetExternalPtrTag(*input_array_xptr, *input_schema_xptr);
+
+    *output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    (*protect_count)++;
+    if (!rducks_fill_output_arrow_schema(runtime, *output_schema_xptr, meta, err_msg, err_cap)) return 0;
+    return 1;
+}
+
+static SEXP rducks_r_scalar_eval_arrow_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                   SEXP input_array_xptr, SEXP input_schema_xptr,
+                                                   SEXP output_schema_xptr, idx_t n,
+                                                   int *protect_count, int *r_err) {
+    SEXP n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    (*protect_count)++;
+    SEXP call = PROTECT(Rf_lang5(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static int rducks_r_scalar_result_is_error(SEXP result, char *err_msg, size_t err_cap) {
+    if (!Rf_inherits(result, "rducks_arrow_error")) return 0;
+    if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
+        snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
+    } else {
+        snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
+    }
+    return 1;
+}
+
+static int rducks_r_scalar_emit_arrow_result(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, SEXP result,
+                                             SEXP output_schema_xptr, idx_t n,
+                                             duckdb_vector output, char *err_msg, size_t err_cap) {
+    if (rducks_r_scalar_result_is_error(result, err_msg, err_cap)) return 0;
+    return rducks_import_arrow_result(runtime, result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap);
+}
+
+static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
                                    char *err_msg, size_t err_cap) {
-    idx_t n;
+    idx_t n = 0;
     int protect_count = 0;
     int r_err = 0;
-    SEXP input_schema_xptr;
-    SEXP input_array_xptr;
-    SEXP output_schema_xptr;
-    SEXP n_sexp;
-    SEXP call;
-    SEXP result;
+    SEXP input_schema_xptr = R_NilValue;
+    SEXP input_array_xptr = R_NilValue;
+    SEXP output_schema_xptr = R_NilValue;
+    SEXP result = R_NilValue;
 
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks scalar metadata missing");
         return 0;
     }
-    n = duckdb_data_chunk_get_size(input);
 
-    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_schema(input_schema_xptr, meta, err_msg, err_cap)) goto fail;
+    if (!rducks_r_scalar_prepare_inprocess_arrow(runtime, meta, input, &input_schema_xptr, &input_array_xptr,
+                                                 &output_schema_xptr, &n, &protect_count, err_msg, err_cap)) {
+        goto fail;
+    }
 
-    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_array(input_array_xptr, input, err_msg, err_cap)) goto fail;
-    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
-
-    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_output_arrow_schema(output_schema_xptr, meta, err_msg, err_cap)) goto fail;
-
-    n_sexp = PROTECT(Rf_ScalarReal((double)n));
-    protect_count++;
-    call = PROTECT(Rf_lang5(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
-    protect_count++;
-    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
-    protect_count++;
-
+    result = rducks_r_scalar_eval_arrow_on_r_thread(meta, input_array_xptr, input_schema_xptr,
+                                                    output_schema_xptr, n, &protect_count, &r_err);
     if (r_err) {
         snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
         goto fail;
     }
 
-    if (Rf_inherits(result, "rducks_arrow_error")) {
-        if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
-            snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
-        } else {
-            snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
-        }
-        goto fail;
-    }
-
-    if (!rducks_import_arrow_result(result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
+    if (!rducks_r_scalar_emit_arrow_result(runtime, meta, result, output_schema_xptr, n, output, err_msg, err_cap)) goto fail;
 
     UNPROTECT(protect_count);
     return 1;
@@ -319,26 +410,32 @@ fail:
 
 static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
+    rducks_runtime_entry_t *runtime = rducks_runtime_from_function_info(info, meta);
     char err_msg[256];
     err_msg[0] = '\0';
 
-    if (!rducks_is_main_thread()) {
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks scalar UDF is missing per-connection runtime state");
+        return;
+    }
+
+    if (!rducks_is_main_thread(runtime)) {
         duckdb_scalar_function_set_error(
             info,
             "Rducks scalar UDF reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') "
-            "or set external_threads=1 and PRAGMA threads=1 before registering R UDFs"
+            "for the current safe R API execution path"
         );
         return;
     }
 
     if (meta && meta->eval_mode == RDUCKS_EVAL_RC) {
-        if (!rducks_rc_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
+        if (!rducks_rc_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC scalar R function failed");
         }
         return;
     }
 
-    if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
+    if (!rducks_r_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
         duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
     }
 }

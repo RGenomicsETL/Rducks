@@ -1121,7 +1121,42 @@ rducks_arrow_result_array <- function(type, results, output_schema, n) {
   out
 }
 
-rducks_rc_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
+rducks_scalar_execution_plan <- function(concurrency = c("serial", "chunk_concurrent"),
+                                         backend = c("single", "concurrent_inproc", "serialized"),
+                                         serialization = c("none", "arrow_ipc")) {
+  concurrency <- match.arg(concurrency)
+  backend <- match.arg(backend)
+  serialization <- match.arg(serialization)
+  if (identical(concurrency, "chunk_concurrent") && identical(backend, "single")) {
+    stop("chunk_concurrent scalar execution requires a concurrent or serialized backend", call. = FALSE)
+  }
+  if (identical(backend, "serialized") && !identical(serialization, "arrow_ipc")) {
+    stop("serialized scalar execution requires serialization = 'arrow_ipc'", call. = FALSE)
+  }
+  if (!identical(backend, "serialized") && identical(serialization, "arrow_ipc")) {
+    stop("Arrow IPC serialization is reserved for serialized/out-of-process scalar execution", call. = FALSE)
+  }
+  list(
+    concurrency = concurrency,
+    backend = backend,
+    serialization = serialization,
+    in_process = !identical(backend, "serialized"),
+    uses_r_thread = identical(backend, "single") || identical(backend, "concurrent_inproc")
+  )
+}
+
+rducks_arrow_ipc_encode <- function(data) {
+  con <- rawConnection(raw(), open = "wb")
+  on.exit(close(con), add = TRUE)
+  nanoarrow::write_nanoarrow(data, con)
+  rawConnectionValue(con)
+}
+
+rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {
+  nanoarrow::read_nanoarrow(as.raw(payload), lazy = lazy)
+}
+
+rducks_scalar_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
   n <- as.integer(n)
   if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
     stop("input nanoarrow array pointer is not valid", call. = FALSE)
@@ -1143,74 +1178,140 @@ rducks_rc_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
     top_level_null <- top_level_null | nulls[[i]]
   }
 
-  list(columns = columns, nulls = nulls, top_level_null = top_level_null)
+  list(columns = columns, nulls = nulls, top_level_null = top_level_null, n = n)
 }
 
-rducks_make_rc_scalar_bundle <- function(fun, spec) {
+rducks_scalar_args_at <- function(arg_types, prepared, row) {
+  args <- vector("list", length(arg_types))
+  for (col in seq_along(arg_types)) {
+    args[col] <- list(rducks_arrow_value_at(
+      arg_types[[col]], prepared$columns[[col]], prepared$nulls[[col]], row
+    ))
+  }
+  args
+}
+
+rducks_scalar_eval_one <- function(fun, args, exception_handling) {
+  tryCatch(
+    do.call(fun, args),
+    error = function(e) {
+      if (identical(exception_handling, "return_null")) {
+        return(structure(list(), class = "rducks_arrow_return_null"))
+      }
+      stop(e)
+    }
+  )
+}
+
+rducks_scalar_eval_prepared_rows <- function(fun, arg_types, return_type, prepared,
+                                             null_handling, exception_handling) {
+  n <- as.integer(prepared$n %||% length(prepared$top_level_null))
+  results <- vector("list", n)
+  for (row in seq_len(n)) {
+    if (isTRUE(prepared$top_level_null[[row]]) && identical(null_handling, "default")) {
+      results[row] <- list(NULL)
+      next
+    }
+
+    value <- rducks_scalar_eval_one(
+      fun,
+      rducks_scalar_args_at(arg_types, prepared, row),
+      exception_handling
+    )
+    if (inherits(value, "rducks_arrow_return_null")) {
+      results[row] <- list(NULL)
+    } else {
+      value <- rducks_check_scalar_udf_return(return_type, value)
+      results[row] <- list(value)
+    }
+  }
+  results
+}
+
+rducks_scalar_results_to_arrow <- function(return_type, results, output_schema, n) {
+  rducks_arrow_result_array(return_type, results, output_schema, n)
+}
+
+rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handling,
+                                      plan = rducks_scalar_execution_plan()) {
+  force(fun)
+  force(spec)
+  force(null_handling)
+  force(exception_handling)
+  force(plan)
   list(
     fun = fun,
     arg_types = spec$arg_types,
     return_type = spec$return_type,
-    prepare_inputs = rducks_rc_prepare_inputs,
-    check_return = rducks_check_scalar_udf_return,
-    result_array = rducks_arrow_result_array
+    null_handling = null_handling,
+    exception_handling = exception_handling,
+    plan = plan,
+    prepare_inputs = rducks_scalar_prepare_inputs,
+    eval_rows = rducks_scalar_eval_prepared_rows,
+    results_to_arrow = rducks_scalar_results_to_arrow,
+    serialization = if (identical(plan$serialization, "arrow_ipc")) list(
+      kind = "arrow_ipc",
+      encode = rducks_arrow_ipc_encode,
+      decode_stream = rducks_arrow_ipc_decode_stream
+    ) else NULL
   )
 }
 
-rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling) {
-  arg_types <- spec$arg_types
-  return_type <- spec$return_type
-  force(fun)
-  force(arg_types)
-  force(return_type)
-  force(null_handling)
-  force(exception_handling)
+rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+  tryCatch({
+    n <- as.integer(n)
+    if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
+      stop("output nanoarrow schema pointer is not valid", call. = FALSE)
+    }
+    prepared <- engine$prepare_inputs(engine$arg_types, input_array, input_schema, n)
+    results <- engine$eval_rows(
+      engine$fun,
+      engine$arg_types,
+      engine$return_type,
+      prepared,
+      engine$null_handling,
+      engine$exception_handling
+    )
+    engine$results_to_arrow(engine$return_type, results, output_schema, n)
+  }, error = function(e) {
+    msg <- paste0("Rducks nanoarrow R function or marshal error: ", conditionMessage(e))
+    .rducks_state$last_arrow_error <- msg
+    rducks_arrow_error(msg)
+  })
+}
 
+rducks_rc_prepare_inputs <- rducks_scalar_prepare_inputs
+
+rducks_make_rc_scalar_bundle <- function(fun, spec,
+                                         null_handling = "default",
+                                         exception_handling = "rethrow",
+                                         plan = rducks_scalar_execution_plan()) {
+  engine <- rducks_make_scalar_engine(
+    fun, spec,
+    null_handling = null_handling,
+    exception_handling = exception_handling,
+    plan = plan
+  )
+  list(
+    fun = fun,
+    arg_types = spec$arg_types,
+    return_type = spec$return_type,
+    prepare_inputs = rducks_scalar_prepare_inputs,
+    check_return = rducks_check_scalar_udf_return,
+    result_array = rducks_arrow_result_array,
+    eval_rows = rducks_scalar_eval_prepared_rows,
+    results_to_arrow = rducks_scalar_results_to_arrow,
+    engine = engine,
+    plan = plan,
+    null_handling = null_handling,
+    exception_handling = exception_handling
+  )
+}
+
+rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
+                                             plan = rducks_scalar_execution_plan()) {
+  engine <- rducks_make_scalar_engine(fun, spec, null_handling, exception_handling, plan = plan)
   function(input_array, input_schema, output_schema, n) {
-    tryCatch({
-      n <- as.integer(n)
-      if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
-        stop("output nanoarrow schema pointer is not valid", call. = FALSE)
-      }
-      prepared <- rducks_rc_prepare_inputs(arg_types, input_array, input_schema, n)
-      columns <- prepared$columns
-      nulls <- prepared$nulls
-      top_level_null <- prepared$top_level_null
-
-      results <- vector("list", n)
-      for (row in seq_len(n)) {
-        if (isTRUE(top_level_null[[row]]) && identical(null_handling, "default")) {
-          results[row] <- list(NULL)
-          next
-        }
-
-        args <- vector("list", length(arg_types))
-        for (col in seq_along(arg_types)) {
-          args[col] <- list(rducks_arrow_value_at(arg_types[[col]], columns[[col]], nulls[[col]], row))
-        }
-
-        value <- tryCatch(
-          do.call(fun, args),
-          error = function(e) {
-            if (identical(exception_handling, "return_null")) {
-              return(structure(list(), class = "rducks_arrow_return_null"))
-            }
-            stop(e)
-          }
-        )
-        if (inherits(value, "rducks_arrow_return_null")) {
-          results[row] <- list(NULL)
-        } else {
-          value <- rducks_check_scalar_udf_return(return_type, value)
-          results[row] <- list(value)
-        }
-      }
-
-      rducks_arrow_result_array(return_type, results, output_schema, n)
-    }, error = function(e) {
-      msg <- paste0("Rducks nanoarrow R function or marshal error: ", conditionMessage(e))
-      .rducks_state$last_arrow_error <- msg
-      rducks_arrow_error(msg)
-    })
+    rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
   }
 }

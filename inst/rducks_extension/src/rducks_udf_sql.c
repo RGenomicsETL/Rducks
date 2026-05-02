@@ -1,6 +1,7 @@
 /* Included by ../rducks_extension.c. */
 
-static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char *args_spec, const char *return_spec,
+static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char *name, SEXP eval_ref,
+                                     const char *args_spec, const char *return_spec,
                                      const char *null_handling_spec, const char *exception_handling_spec,
                                      bool side_effects, const char *eval_mode_spec, char *err, size_t err_cap) {
     rducks_type_desc_t **arg_descs = NULL;
@@ -13,10 +14,10 @@ static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
     duckdb_state rc;
-    if (!rducks_allow_calling_thread_r_execution(err, err_cap)) {
+    if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) {
         return false;
     }
-    if (!g_connection || !name || !name[0]) {
+    if (!runtime || !runtime->connection || !name || !name[0]) {
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
         return false;
     }
@@ -100,6 +101,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char
     meta->null_handling = null_handling;
     meta->exception_handling = exception_handling;
     meta->eval_mode = eval_mode;
+    meta->runtime = runtime;
     R_PreserveObject(eval_ref);
     meta->fun = eval_ref;
 
@@ -111,8 +113,10 @@ static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char
         duckdb_scalar_function_set_volatile(fn);
     }
     duckdb_scalar_function_set_extra_info(fn, meta, rducks_r_scalar_meta_destroy);
+    duckdb_scalar_function_set_bind(fn, rducks_r_scalar_bind);
+    duckdb_scalar_function_set_init(fn, rducks_r_scalar_init);
     duckdb_scalar_function_set_function(fn, rducks_r_scalar_udf);
-    rc = duckdb_register_scalar_function(g_connection, fn);
+    rc = duckdb_register_scalar_function(runtime->connection, fn);
     duckdb_destroy_scalar_function(&fn);
     duckdb_destroy_logical_type(&return_logical_type);
     if (rc != DuckDBSuccess) {
@@ -123,6 +127,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char
 }
 
 static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
     duckdb_string_t *names = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
     uint64_t *fun_ptrs = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
@@ -135,6 +140,10 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
     bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
     duckdb_string_t *eval_mode_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 7));
     bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
 
     for (idx_t i = 0; i < n; i++) {
         char *name = rducks_copy_duckdb_string(&names[i]);
@@ -157,7 +166,7 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
             return;
         }
         eval_ref = (SEXP)(uintptr_t)fun_ptrs[i];
-        out[i] = rducks_register_r_scalar(name, eval_ref, args_spec, return_spec, null_handling_spec,
+        out[i] = rducks_register_r_scalar(runtime, name, eval_ref, args_spec, return_spec, null_handling_spec,
                                           exception_handling_spec, side_effects_values[i], eval_mode_spec, err, sizeof(err));
         free(name);
         free(args_spec);
@@ -174,9 +183,14 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
 
 static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                                 duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
     duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
     bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
 
     for (idx_t i = 0; i < n; i++) {
         char *token = rducks_copy_duckdb_string(&tokens[i]);
@@ -184,9 +198,37 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
             duckdb_scalar_function_set_error(info, "out of memory setting Rducks main thread token");
             return;
         }
-        rducks_set_main_thread_token(token);
+        rducks_set_main_thread_token(runtime, token);
         free(token);
         out[i] = true;
+    }
+}
+
+static void rducks_set_execution_backend_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_string_t *backends = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+
+    for (idx_t i = 0; i < n; i++) {
+        char *backend = rducks_copy_duckdb_string(&backends[i]);
+        char err[256];
+        err[0] = '\0';
+        if (!backend) {
+            duckdb_scalar_function_set_error(info, "out of memory setting Rducks execution backend");
+            return;
+        }
+        out[i] = rducks_set_execution_backend(runtime, backend, err, sizeof(err)) ? true : false;
+        free(backend);
+        if (!out[i]) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to set Rducks execution backend");
+            return;
+        }
     }
 }
 

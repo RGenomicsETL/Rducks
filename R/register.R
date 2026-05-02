@@ -89,7 +89,7 @@ rducks_register <- function(con, name, fun, args, returns,
   eval_ref <- if (identical(eval_mode, "R")) {
     rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
   } else {
-    rducks_make_rc_scalar_bundle(fun, spec)
+    rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling)
   }
   # The SQL registration call below is synchronous. `eval_ref` is live in this
   # R frame until the DuckDB extension receives the address and preserves it in
