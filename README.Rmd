@@ -31,7 +31,7 @@ current scalar-mode R function execution.
 When you call `rducks_enable(con, threads = "single")`, Rducks loads the bundled
 `rducks.duckdb_extension` into that DuckDB connection and explicitly sets
 `external_threads=1` plus `PRAGMA threads=1`. This is a constraint of R's C API:
-Rducks keeps R API work on the calling R thread and supports direct R function
+Rducks keeps R API work on the calling R thread and supports scalar-mode R UDF
 execution only under that single-threaded DuckDB UDF configuration.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB type
@@ -95,7 +95,7 @@ outputs are accepted as constructed type objects such as `TYPE[]`, `TYPE[N]`,
 default `mode = "scalar"` calls R once per DuckDB row. Registration also supports
 `null_handling`, `exception_handling`, and `side_effects` controls.
 
-Direct R functions require R API work to happen on the calling R thread. This is
+Rducks scalar UDFs require R API work to happen on the calling R thread. This is
 R's thread-affinity rule, not a DuckDB data-race issue. Call
 `rducks_enable(con, threads = "single")` or set `external_threads=1` and
 `PRAGMA threads=1` before registering R UDFs. Rducks checks this at registration

@@ -21,8 +21,8 @@ rducks_enable(
 \code{con}, invisibly.
 }
 \description{
-Loads the bundled Rducks DuckDB extension. The current direct R function
-execution mode requires R API work to happen on the calling R thread; pass
+Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
+execution path requires R API work to happen on the calling R thread; pass
 \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
-explicitly for the supported direct R function configuration.
+explicitly for the supported scalar-mode R UDF configuration.
 }

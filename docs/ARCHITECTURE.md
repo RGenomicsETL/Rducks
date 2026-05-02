@@ -36,7 +36,7 @@ DuckDB
 ## Thread model
 
 A DuckDB worker must never call R directly. The supported public configuration
-therefore keeps direct R function execution on the calling R thread by requiring
+therefore keeps scalar-mode R UDF execution on the calling R thread by requiring
 `external_threads=1` and `PRAGMA threads=1` at registration. Native request-queue
 code is an internal guard/future integration path, not a documented
 multi-threaded execution contract.
@@ -50,7 +50,7 @@ SET external_threads=1;
 PRAGMA threads=1;
 ```
 
-Rducks requires this mode before registering direct R functions; that
+Rducks requires this mode before registering scalar-mode R UDFs; that
 registration-time check is the primary guard. The R package records a thread
 token in package state at namespace load and passes it to the extension through
 an internal SQL function during `rducks_enable()`. The extension checks the

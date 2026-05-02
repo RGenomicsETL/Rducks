@@ -1,5 +1,5 @@
 rducks_assert_scalar_marshalling_supported <- function(spec) {
-  types <- c(spec$arg_types %||% rducks_as_type_list(spec$args), list(spec$return_type %||% rducks_as_type(spec$returns)))
+  types <- c(spec$arg_types, list(spec$return_type))
   unsupported <- vapply(types, function(type) {
     if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
   }, character(1))
@@ -18,7 +18,7 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
 #'
 #' Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
 #' extension. Registration requires `external_threads=1` plus
-#' `PRAGMA threads=1` so direct R execution stays on the calling R thread.
+#' `PRAGMA threads=1` so scalar-mode R execution stays on the calling R thread.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.

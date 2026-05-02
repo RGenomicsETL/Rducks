@@ -2,7 +2,7 @@ rducks_arrow_error <- function(message) {
   structure(as.character(message)[[1L]], class = "rducks_arrow_error")
 }
 
-rducks_arrow_top_level_null_is_r_null <- function(type) {
+rducks_arrow_uses_r_null_for_null <- function(type) {
   inherits(type, c(
     "rducks_i64_type", "rducks_u64_type", "rducks_blob_type",
     "rducks_hugeint_type", "rducks_uhugeint_type", "rducks_uuid_type",
@@ -129,9 +129,15 @@ rducks_arrow_decimal_unscale_string <- function(x, scale) {
 rducks_arrow_decimal_array_to_values <- function(array, width, scale) {
   n <- as.integer(array$length)
   data <- as.raw(array$buffers[[2L]])
-  storage_width <- as.integer(length(data) / max(1L, n))
-  storage_width <- if (storage_width %in% c(4L, 8L, 16L, 32L)) storage_width else 16L
-  storage <- rducks_arrow_fixed_width_array_to_decimal(array, storage_width, signed = TRUE)
+  if (n == 0L) {
+    return(rducks_decimal(character(), width, scale))
+  }
+  storage_width <- length(data) / n
+  if (!is.finite(storage_width) || storage_width != as.integer(storage_width) ||
+    !as.integer(storage_width) %in% c(2L, 4L, 8L, 16L, 32L)) {
+    stop("unsupported Arrow DECIMAL storage width: ", storage_width, call. = FALSE)
+  }
+  storage <- rducks_arrow_fixed_width_array_to_decimal(array, as.integer(storage_width), signed = TRUE)
   rducks_decimal(vapply(storage, rducks_arrow_decimal_unscale_string, character(1), scale = scale), width, scale)
 }
 
@@ -302,7 +308,6 @@ rducks_arrow_uuid_array_to_character <- function(array) {
   n <- as.integer(array$length)
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
-  bytes <- as.raw(array$buffers[[1L]])
   # Fixed-size binary arrays do not have a validity-only first buffer when
   # accessed through nanoarrow; account for both fixed-size-binary and binary
   # proxy shapes.
@@ -1085,7 +1090,7 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
 
 rducks_arrow_value_at <- function(type, values, nulls, i) {
   if (isTRUE(nulls[[i]])) {
-    if (rducks_arrow_top_level_null_is_r_null(type) || !inherits(type, "rducks_scalar_type")) {
+    if (rducks_arrow_uses_r_null_for_null(type) || !inherits(type, "rducks_scalar_type")) {
       return(NULL)
     }
   }
@@ -1143,6 +1148,30 @@ rducks_arrow_results_as_numeric <- function(results) {
 
 rducks_arrow_results_as_character <- function(results) {
   vapply(results, function(x) if (is.null(x)) NA_character_ else as.character(x)[[1L]], character(1))
+}
+
+rducks_scalar_udf_return_needs_length_one <- function(type) {
+  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type"))) {
+    return(TRUE)
+  }
+  inherits(type, "rducks_scalar_type") && !inherits(type, c("rducks_blob_type", "rducks_bit_type"))
+}
+
+rducks_normalize_scalar_udf_return <- function(type, value) {
+  if (inherits(type, "rducks_decimal_type") && inherits(value, "rducks_decimal")) {
+    params <- rducks_type_parameters(type)
+    return(rducks_decimal(as.character(value), params$width, params$scale))
+  }
+  value
+}
+
+rducks_check_scalar_udf_return <- function(type, value) {
+  value <- rducks_normalize_scalar_udf_return(type, value)
+  rducks_check_return(type, value)
+  if (rducks_scalar_udf_return_needs_length_one(type) && length(value) != 1L) {
+    stop("return value must have length 1", call. = FALSE)
+  }
+  value
 }
 
 rducks_arrow_sequence_value_at <- function(type, value, j) {
@@ -1493,9 +1522,7 @@ rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception
       if (inherits(value, "rducks_arrow_return_null")) {
         results[row] <- list(NULL)
       } else {
-        if (!inherits(return_type, "rducks_decimal_type")) {
-          rducks_check_return(return_type, value)
-        }
+        value <- rducks_check_scalar_udf_return(return_type, value)
         results[row] <- list(value)
       }
     }

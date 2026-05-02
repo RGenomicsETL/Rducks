@@ -14,10 +14,10 @@ rducks_extension_path <- function() {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the bundled Rducks DuckDB extension. The current direct R function
-#' execution mode requires R API work to happen on the calling R thread; pass
+#' Loads the bundled Rducks DuckDB extension. The current scalar-mode R UDF
+#' execution path requires R API work to happen on the calling R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
-#' explicitly for the supported direct R function configuration.
+#' explicitly for the supported scalar-mode R UDF configuration.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to [rducks_extension_path()].
@@ -80,7 +80,7 @@ rducks_assert_single_thread <- function(con) {
   external_threads <- rducks_connection_external_threads(con)
   if (!identical(threads, 1L) || !identical(external_threads, 1L)) {
     stop(
-      "direct Rducks functions require DuckDB to execute R code on the calling R thread; ",
+      "Rducks scalar UDFs require DuckDB to execute R code on the calling R thread; ",
       "call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 ",
       "before registering R UDFs",
       call. = FALSE
