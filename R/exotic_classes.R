@@ -107,12 +107,7 @@ print.rducks_ubigint <- function(x, ...) {
 #' @return Character vector with class `rducks_uuid`.
 #' @export
 rducks_uuid <- function(x = character()) {
-  x <- tolower(trimws(as.character(x)))
-  ok <- is.na(x) | grepl("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", x)
-  if (!all(ok)) {
-    stop("UUID values must use canonical 8-4-4-4-12 hexadecimal form", call. = FALSE)
-  }
-  structure(x, class = c("rducks_uuid", "character"))
+  structure(.Call(RDUCKS_uuid_normalize_strings, x), class = c("rducks_uuid", "character"))
 }
 
 #' @export
@@ -775,12 +770,11 @@ rducks_integer_arith <- function(e1, e2, op, unsigned = FALSE, what = "integer")
 }
 
 rducks_integer_double <- function(x, what) {
-  values <- as.numeric(unclass(x))
-  too_wide <- !is.na(unclass(x)) & nchar(gsub("^[+-]", "", unclass(x))) > 15L
-  if (any(too_wide)) {
+  converted <- .Call(RDUCKS_integer_strings_to_double, unclass(x))
+  if (isTRUE(converted$warn)) {
     warning(what, " converted through R double; precision may be lost", call. = FALSE)
   }
-  values
+  converted$values
 }
 
 #' @export
@@ -790,7 +784,7 @@ as.double.rducks_bigint <- function(x, ...) rducks_integer_double(x, "BIGINT")
 as.numeric.rducks_bigint <- function(x, ...) as.double.rducks_bigint(x, ...)
 
 #' @export
-as.integer.rducks_bigint <- function(x, ...) as.integer(as.double(x))
+as.integer.rducks_bigint <- function(x, ...) .Call(RDUCKS_integer_strings_to_int32, unclass(x))
 
 #' @export
 as.double.rducks_ubigint <- function(x, ...) rducks_integer_double(x, "UBIGINT")
@@ -799,7 +793,7 @@ as.double.rducks_ubigint <- function(x, ...) rducks_integer_double(x, "UBIGINT")
 as.numeric.rducks_ubigint <- function(x, ...) as.double.rducks_ubigint(x, ...)
 
 #' @export
-as.integer.rducks_ubigint <- function(x, ...) as.integer(as.double(x))
+as.integer.rducks_ubigint <- function(x, ...) .Call(RDUCKS_integer_strings_to_int32, unclass(x))
 
 #' @export
 as.double.rducks_hugeint <- function(x, ...) rducks_integer_double(x, "HUGEINT")
@@ -808,7 +802,7 @@ as.double.rducks_hugeint <- function(x, ...) rducks_integer_double(x, "HUGEINT")
 as.numeric.rducks_hugeint <- function(x, ...) as.double.rducks_hugeint(x, ...)
 
 #' @export
-as.integer.rducks_hugeint <- function(x, ...) as.integer(as.double(x))
+as.integer.rducks_hugeint <- function(x, ...) .Call(RDUCKS_integer_strings_to_int32, unclass(x))
 
 #' @export
 as.double.rducks_uhugeint <- function(x, ...) rducks_integer_double(x, "UHUGEINT")
@@ -817,7 +811,7 @@ as.double.rducks_uhugeint <- function(x, ...) rducks_integer_double(x, "UHUGEINT
 as.numeric.rducks_uhugeint <- function(x, ...) as.double.rducks_uhugeint(x, ...)
 
 #' @export
-as.integer.rducks_uhugeint <- function(x, ...) as.integer(as.double(x))
+as.integer.rducks_uhugeint <- function(x, ...) .Call(RDUCKS_integer_strings_to_int32, unclass(x))
 
 rducks_integer_ops <- function(e1, e2, op, unsigned = FALSE, what = "integer") {
   left <- rducks_normalize_integer_string(e1, unsigned = unsigned, what = what)

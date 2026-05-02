@@ -29,14 +29,14 @@ DuckDB
   -> rducks_r_scalar_udf(info, input, output)
       -> metadata from extra_info
       -> eval_mode = "R": DuckDB chunk -> Arrow C Data -> R row-loop adapter
-      -> eval_mode = "RC": native C row-loop adapter, with direct output writes where implemented
+      -> eval_mode = "RC": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
 ```
 
 Both scalar evaluators call the R function once per logical row. `eval_mode =
 "RC"` moves row iteration, call construction, NULL handling, return checking,
-and direct output writes into C; the user function itself is still evaluated by
-R, so S3/S7 dispatch, RNG, lexical scoping, and side effects keep ordinary R
-semantics.
+and direct DuckDB vector reads/writes into C for supported scalar storage; the
+user function itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical
+scoping, and side effects keep ordinary R semantics.
 
 ## Thread model
 
@@ -72,7 +72,8 @@ finalizers, and move-only consumption. Borrowed DuckDB `duckdb_data_chunk` and
 `duckdb_vector` pointers are valid only during the native UDF callback. RC-mode
 per-row R arguments are fresh R objects, not mutable views into DuckDB storage;
 this is required because arbitrary R functions may retain an argument object
-after returning. Direct output writes target DuckDB-owned output vectors and use
+after returning. Direct RC paths for supported ordinary, exact/exotic, decimal,
+UUID, interval, and bit scalar storage target DuckDB-owned vectors and use
 DuckDB's assignment APIs for variable-width values so Rducks does not retain R or
 DuckDB buffer pointers across the callback boundary.
 

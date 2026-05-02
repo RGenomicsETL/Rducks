@@ -132,7 +132,9 @@ static SEXP rducks_rc_check_return(SEXP check_return_fun, SEXP return_type, SEXP
 
 
 static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
-    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    if (!desc) return 0;
+    if (desc->kind == RDUCKS_KIND_DECIMAL) return 1;
+    if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
     case RDUCKS_TYPE_I8:
@@ -141,6 +143,8 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_U16:
     case RDUCKS_TYPE_I32:
     case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_I64:
+    case RDUCKS_TYPE_U64:
     case RDUCKS_TYPE_F32:
     case RDUCKS_TYPE_F64:
     case RDUCKS_TYPE_VARCHAR:
@@ -148,6 +152,11 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_DATE:
     case RDUCKS_TYPE_TIME:
     case RDUCKS_TYPE_TIMESTAMP:
+    case RDUCKS_TYPE_HUGEINT:
+    case RDUCKS_TYPE_UHUGEINT:
+    case RDUCKS_TYPE_UUID:
+    case RDUCKS_TYPE_INTERVAL:
+    case RDUCKS_TYPE_BIT:
         return 1;
     default:
         return 0;
@@ -219,6 +228,498 @@ static SEXP rducks_rc_make_timestamp(double seconds) {
     return out;
 }
 
+
+#define RDUCKS_RC_DEC_BASE 1000000000U
+#define RDUCKS_RC_DEC_BASE_DIGITS 9U
+
+static void rducks_rc_u64_to_le_bytes(uint64_t value, uint8_t *bytes) {
+    for (int i = 0; i < 8; i++) bytes[i] = (uint8_t)((value >> (8 * i)) & 0xffU);
+}
+
+static uint64_t rducks_rc_le_bytes_to_u64(const uint8_t *bytes) {
+    uint64_t value = 0;
+    for (int i = 7; i >= 0; i--) value = (value << 8) | (uint64_t)bytes[i];
+    return value;
+}
+
+static void rducks_rc_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, uint32_t multiplier, uint32_t addend) {
+    uint64_t carry = addend;
+    for (size_t i = 0; i < *nlimbs; i++) {
+        uint64_t value = (uint64_t)limbs[i] * (uint64_t)multiplier + carry;
+        limbs[i] = (uint32_t)(value % RDUCKS_RC_DEC_BASE);
+        carry = value / RDUCKS_RC_DEC_BASE;
+    }
+    while (carry) {
+        limbs[*nlimbs] = (uint32_t)(carry % RDUCKS_RC_DEC_BASE);
+        carry /= RDUCKS_RC_DEC_BASE;
+        (*nlimbs)++;
+    }
+}
+
+static size_t rducks_rc_unsigned_le_bytes_to_decimal_buf(const uint8_t *bytes, size_t n, char *out, size_t out_cap) {
+    if (n == 0) {
+        if (out_cap < 2) return 0;
+        out[0] = '0';
+        out[1] = '\0';
+        return 1;
+    }
+    size_t cap = n + 1U;
+    uint32_t *limbs = (uint32_t *)R_alloc(cap, sizeof(uint32_t));
+    memset(limbs, 0, cap * sizeof(uint32_t));
+    size_t nlimbs = 1U;
+    for (size_t i = n; i > 0; i--) {
+        rducks_rc_limbs_mul_add(limbs, &nlimbs, 256U, (uint32_t)bytes[i - 1U]);
+    }
+    while (nlimbs > 1U && limbs[nlimbs - 1U] == 0U) nlimbs--;
+    if (nlimbs == 1U && limbs[0] == 0U) {
+        if (out_cap < 2) return 0;
+        out[0] = '0';
+        out[1] = '\0';
+        return 1;
+    }
+    size_t pos = 0;
+    pos += (size_t)snprintf(out + pos, out_cap - pos, "%u", limbs[nlimbs - 1U]);
+    for (size_t j = nlimbs - 1U; j > 0; j--) {
+        pos += (size_t)snprintf(out + pos, out_cap - pos, "%09u", limbs[j - 1U]);
+    }
+    return pos;
+}
+
+static size_t rducks_rc_int_le_bytes_to_decimal_buf(const uint8_t *bytes, size_t n, int signed_value, char *out, size_t out_cap) {
+    uint8_t *tmp = (uint8_t *)R_alloc(n ? n : 1U, sizeof(uint8_t));
+    if (n) memcpy(tmp, bytes, n);
+    int neg = signed_value && n > 0 && tmp[n - 1U] >= 128U;
+    if (neg) {
+        for (size_t i = 0; i < n; i++) tmp[i] = (uint8_t)(255U - tmp[i]);
+        int carry = 1;
+        for (size_t i = 0; i < n; i++) {
+            int value = (int)tmp[i] + carry;
+            tmp[i] = (uint8_t)(value & 0xff);
+            carry = value >> 8;
+            if (!carry) break;
+        }
+    }
+    size_t pos = 0;
+    if (neg) out[pos++] = '-';
+    pos += rducks_rc_unsigned_le_bytes_to_decimal_buf(tmp, n, out + pos, out_cap - pos);
+    out[pos] = '\0';
+    return pos;
+}
+
+static const char *rducks_rc_trim_string(SEXP ch, size_t *len) {
+    const char *start = CHAR(ch);
+    const char *end = start + strlen(start);
+    while (start < end && isspace((unsigned char)*start)) start++;
+    while (end > start && isspace((unsigned char)*(end - 1))) end--;
+    *len = (size_t)(end - start);
+    return start;
+}
+
+static const char *rducks_rc_skip_zeros(const char *x, size_t *len) {
+    while (*len > 0 && *x == '0') {
+        x++;
+        (*len)--;
+    }
+    return x;
+}
+
+static int rducks_rc_decimal_abs_to_unsigned_bytes(const char *digits, size_t len, int width, uint8_t *out,
+                                                   char *err_msg, size_t err_cap) {
+    memset(out, 0, (size_t)width);
+    digits = rducks_rc_skip_zeros(digits, &len);
+    if (len == 0) return 1;
+    unsigned char *work = (unsigned char *)R_alloc(len, sizeof(unsigned char));
+    for (size_t i = 0; i < len; i++) {
+        if (digits[i] < '0' || digits[i] > '9') {
+            snprintf(err_msg, err_cap, "expected a decimal integer string");
+            return 0;
+        }
+        work[i] = (unsigned char)(digits[i] - '0');
+    }
+    size_t ndigits = len;
+    int byte_pos = 0;
+    while (ndigits > 0) {
+        if (byte_pos >= width) {
+            snprintf(err_msg, err_cap, "integer value does not fit in DuckDB storage");
+            return 0;
+        }
+        int carry = 0;
+        size_t write = 0;
+        int started = 0;
+        for (size_t i = 0; i < ndigits; i++) {
+            int value = carry * 10 + work[i];
+            int q = value / 256;
+            carry = value % 256;
+            if (q != 0 || started) {
+                work[write++] = (unsigned char)q;
+                started = 1;
+            }
+        }
+        out[byte_pos++] = (uint8_t)carry;
+        ndigits = write;
+    }
+    return 1;
+}
+
+static int rducks_rc_decimal_string_to_le_bytes(const char *s, size_t len, int width, int signed_value, uint8_t *out,
+                                                char *err_msg, size_t err_cap) {
+    int neg = 0;
+    if (len > 0 && s[0] == '+') {
+        s++;
+        len--;
+    } else if (len > 0 && s[0] == '-') {
+        neg = 1;
+        s++;
+        len--;
+    }
+    if (neg && !signed_value) {
+        snprintf(err_msg, err_cap, "unsigned integer value is negative");
+        return 0;
+    }
+    if (!rducks_rc_decimal_abs_to_unsigned_bytes(s, len, width, out, err_msg, err_cap)) return 0;
+    if (signed_value && width > 0) {
+        if (!neg) {
+            if (out[width - 1] >= 128U) {
+                snprintf(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
+                return 0;
+            }
+        } else {
+            int overflow = out[width - 1] > 128U;
+            if (out[width - 1] == 128U) {
+                for (int i = 0; i < width - 1; i++) {
+                    if (out[i] != 0U) {
+                        overflow = 1;
+                        break;
+                    }
+                }
+            }
+            if (overflow) {
+                snprintf(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
+                return 0;
+            }
+        }
+    }
+    if (neg) {
+        for (int i = 0; i < width; i++) out[i] = (uint8_t)(255U - out[i]);
+        int carry = 1;
+        for (int i = 0; i < width; i++) {
+            int value = (int)out[i] + carry;
+            out[i] = (uint8_t)(value & 0xff);
+            carry = value >> 8;
+            if (!carry) break;
+        }
+    }
+    return 1;
+}
+
+static int rducks_rc_decimal_string_sexp_to_le_bytes(SEXP value, int width, int signed_value, uint8_t *out,
+                                                     char *err_msg, size_t err_cap) {
+    if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1 || STRING_ELT(value, 0) == NA_STRING) {
+        snprintf(err_msg, err_cap, "expected a non-missing decimal integer string");
+        return 0;
+    }
+    size_t len = 0;
+    const char *s = rducks_rc_trim_string(STRING_ELT(value, 0), &len);
+    return rducks_rc_decimal_string_to_le_bytes(s, len, width, signed_value, out, err_msg, err_cap);
+}
+
+static SEXP rducks_rc_make_classed_string_len(const char *value, size_t len, const char *class_name) {
+    SEXP out = PROTECT(Rf_allocVector(STRSXP, 1));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_STRING_ELT(out, 0, Rf_mkCharLenCE(value, (int)len, CE_UTF8));
+    SET_STRING_ELT(cls, 0, Rf_mkChar(class_name));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("character"));
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(2);
+    return out;
+}
+
+static SEXP rducks_rc_make_classed_string(const char *value, const char *class_name) {
+    return rducks_rc_make_classed_string_len(value, strlen(value), class_name);
+}
+
+static SEXP rducks_rc_make_integer_object_from_le_bytes(const uint8_t *bytes, size_t width, int signed_value,
+                                                        const char *class_name) {
+    char buf[160];
+    size_t len = rducks_rc_int_le_bytes_to_decimal_buf(bytes, width, signed_value, buf, sizeof(buf));
+    return rducks_rc_make_classed_string_len(buf, len, class_name);
+}
+
+static int rducks_rc_decimal_storage_string_to_le_bytes(SEXP value, int width, int scale, uint8_t *out,
+                                                        char *err_msg, size_t err_cap) {
+    if (TYPEOF(value) != VECSXP || XLENGTH(value) < 1) {
+        snprintf(err_msg, err_cap, "Rducks RC DECIMAL output is not a rducks_decimal object");
+        return 0;
+    }
+    SEXP values = VECTOR_ELT(value, 0);
+    if (TYPEOF(values) != STRSXP || XLENGTH(values) < 1 || STRING_ELT(values, 0) == NA_STRING) {
+        snprintf(err_msg, err_cap, "Rducks RC DECIMAL output is missing");
+        return 0;
+    }
+    size_t len = 0;
+    const char *s = rducks_rc_trim_string(STRING_ELT(values, 0), &len);
+    int neg = 0;
+    if (len > 0 && s[0] == '+') {
+        s++;
+        len--;
+    } else if (len > 0 && s[0] == '-') {
+        neg = 1;
+        s++;
+        len--;
+    }
+    char *digits = (char *)R_alloc(len + 2U, sizeof(char));
+    size_t pos = 0;
+    if (neg) digits[pos++] = '-';
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '.') continue;
+        if (s[i] < '0' || s[i] > '9') {
+            snprintf(err_msg, err_cap, "DECIMAL values must be fixed-point decimal strings");
+            return 0;
+        }
+        digits[pos++] = s[i];
+    }
+    digits[pos] = '\0';
+    (void)scale;
+    return rducks_rc_decimal_string_to_le_bytes(digits, pos, width, 1, out, err_msg, err_cap);
+}
+
+static void rducks_rc_le_bytes_to_hugeint(const uint8_t *bytes, duckdb_hugeint *out) {
+    out->lower = rducks_rc_le_bytes_to_u64(bytes);
+    uint64_t upper_u = rducks_rc_le_bytes_to_u64(bytes + 8);
+    memcpy(&out->upper, &upper_u, sizeof(out->upper));
+}
+
+static void rducks_rc_le_bytes_to_uhugeint(const uint8_t *bytes, duckdb_uhugeint *out) {
+    out->lower = rducks_rc_le_bytes_to_u64(bytes);
+    out->upper = rducks_rc_le_bytes_to_u64(bytes + 8);
+}
+
+static SEXP rducks_rc_make_decimal_object_from_storage_bytes(const uint8_t *bytes, size_t storage_width,
+                                                             int width, int scale) {
+    char integer_buf[160];
+    size_t integer_len = rducks_rc_int_le_bytes_to_decimal_buf(bytes, storage_width, 1, integer_buf, sizeof(integer_buf));
+    int neg = integer_len > 0 && integer_buf[0] == '-';
+    const char *digits = integer_buf + (neg ? 1 : 0);
+    size_t digit_len = integer_len - (neg ? 1U : 0U);
+    digits = rducks_rc_skip_zeros(digits, &digit_len);
+    if (digit_len == 0) {
+        digits = "0";
+        digit_len = 1;
+        neg = 0;
+    }
+    size_t padded_len = scale > 0 && digit_len <= (size_t)scale ? (size_t)scale + 1U : digit_len;
+    char *padded = (char *)R_alloc(padded_len + 1U, sizeof(char));
+    size_t pad = padded_len - digit_len;
+    memset(padded, '0', pad);
+    memcpy(padded + pad, digits, digit_len);
+    padded[padded_len] = '\0';
+    size_t whole_len = scale > 0 ? padded_len - (size_t)scale : padded_len;
+    const char *whole = rducks_rc_skip_zeros(padded, &whole_len);
+    if (whole_len == 0) {
+        whole = "0";
+        whole_len = 1;
+    }
+    size_t out_len = (neg ? 1U : 0U) + whole_len + (scale > 0 ? 1U + (size_t)scale : 0U);
+    char *buf = (char *)R_alloc(out_len + 1U, sizeof(char));
+    size_t pos = 0;
+    if (neg) buf[pos++] = '-';
+    memcpy(buf + pos, whole, whole_len);
+    pos += whole_len;
+    if (scale > 0) {
+        buf[pos++] = '.';
+        memcpy(buf + pos, padded + padded_len - (size_t)scale, (size_t)scale);
+        pos += (size_t)scale;
+    }
+    buf[pos] = '\0';
+
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+    SEXP value = PROTECT(Rf_allocVector(STRSXP, 1));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
+    SEXP cls = PROTECT(Rf_mkString("rducks_decimal"));
+    SET_STRING_ELT(value, 0, Rf_mkCharLenCE(buf, (int)out_len, CE_UTF8));
+    SET_VECTOR_ELT(out, 0, value);
+    SET_VECTOR_ELT(out, 1, Rf_ScalarInteger(width));
+    SET_VECTOR_ELT(out, 2, Rf_ScalarInteger(scale));
+    SET_STRING_ELT(names, 0, Rf_mkChar("value"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("width"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("scale"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(4);
+    return out;
+}
+
+static int rducks_rc_decimal_storage_width(const rducks_type_desc_t *desc) {
+    if (desc->decimal_width <= 4) return 2;
+    if (desc->decimal_width <= 9) return 4;
+    if (desc->decimal_width <= 18) return 8;
+    return 16;
+}
+
+static SEXP rducks_rc_make_uuid_from_hugeint(duckdb_hugeint value) {
+    static const char hex[] = "0123456789abcdef";
+    uint64_t upper = ((uint64_t)value.upper) ^ (UINT64_C(1) << 63);
+    uint64_t lower = value.lower;
+    uint8_t bytes[16];
+    for (int i = 0; i < 8; i++) bytes[i] = (uint8_t)((upper >> (56 - 8 * i)) & 0xffU);
+    for (int i = 0; i < 8; i++) bytes[8 + i] = (uint8_t)((lower >> (56 - 8 * i)) & 0xffU);
+    char buf[37];
+    int pos = 0;
+    for (int i = 0; i < 16; i++) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) buf[pos++] = '-';
+        buf[pos++] = hex[(bytes[i] >> 4) & 0x0f];
+        buf[pos++] = hex[bytes[i] & 0x0f];
+    }
+    buf[pos] = '\0';
+    return rducks_rc_make_classed_string_len(buf, 36, "rducks_uuid");
+}
+
+static int rducks_rc_parse_uuid_string(SEXP value, duckdb_hugeint *out, char *err_msg, size_t err_cap) {
+    if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1 || STRING_ELT(value, 0) == NA_STRING) {
+        snprintf(err_msg, err_cap, "Rducks RC UUID output is not a non-missing UUID string");
+        return 0;
+    }
+    const char *s = CHAR(STRING_ELT(value, 0));
+    uint64_t upper = 0, lower = 0;
+    int count = 0;
+    for (size_t i = 0; s[i] != '\0'; i++) {
+        unsigned char ch = (unsigned char)s[i];
+        if (ch == '-') continue;
+        int v;
+        if (ch >= '0' && ch <= '9') v = ch - '0';
+        else if (ch >= 'a' && ch <= 'f') v = 10 + ch - 'a';
+        else if (ch >= 'A' && ch <= 'F') v = 10 + ch - 'A';
+        else {
+            snprintf(err_msg, err_cap, "invalid UUID value");
+            return 0;
+        }
+        if (count >= 32) {
+            snprintf(err_msg, err_cap, "invalid UUID value");
+            return 0;
+        }
+        if (count < 16) upper = (upper << 4) | (uint64_t)v;
+        else lower = (lower << 4) | (uint64_t)v;
+        count++;
+    }
+    if (count != 32) {
+        snprintf(err_msg, err_cap, "invalid UUID value");
+        return 0;
+    }
+    upper ^= (UINT64_C(1) << 63);
+    out->lower = lower;
+    memcpy(&out->upper, &upper, sizeof(out->upper));
+    return 1;
+}
+
+static SEXP rducks_rc_make_interval_object(duckdb_interval value) {
+    char micros_buf[64];
+    int micros_len = snprintf(micros_buf, sizeof(micros_buf), "%lld", (long long)value.micros);
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+    SEXP micros = PROTECT(Rf_allocVector(STRSXP, 1));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
+    SEXP cls = PROTECT(Rf_mkString("rducks_interval"));
+    SET_VECTOR_ELT(out, 0, Rf_ScalarInteger(value.months));
+    SET_VECTOR_ELT(out, 1, Rf_ScalarInteger(value.days));
+    SET_STRING_ELT(micros, 0, Rf_mkCharLenCE(micros_buf, micros_len, CE_UTF8));
+    SET_VECTOR_ELT(out, 2, micros);
+    SET_STRING_ELT(names, 0, Rf_mkChar("months"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("days"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("micros"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(4);
+    return out;
+}
+
+static int rducks_rc_interval_from_object(SEXP value, duckdb_interval *out, char *err_msg, size_t err_cap) {
+    if (TYPEOF(value) != VECSXP || XLENGTH(value) < 3) {
+        snprintf(err_msg, err_cap, "Rducks RC INTERVAL output is not a rducks_interval object");
+        return 0;
+    }
+    SEXP months = VECTOR_ELT(value, 0);
+    SEXP days = VECTOR_ELT(value, 1);
+    SEXP micros = VECTOR_ELT(value, 2);
+    out->months = (int32_t)Rf_asInteger(months);
+    out->days = (int32_t)Rf_asInteger(days);
+    if (out->months == NA_INTEGER || out->days == NA_INTEGER) {
+        snprintf(err_msg, err_cap, "Rducks RC INTERVAL output is missing");
+        return 0;
+    }
+    uint8_t bytes[8];
+    if (!rducks_rc_decimal_string_sexp_to_le_bytes(micros, 8, 1, bytes, err_msg, err_cap)) return 0;
+    uint64_t u = rducks_rc_le_bytes_to_u64(bytes);
+    memcpy(&out->micros, &u, sizeof(out->micros));
+    return 1;
+}
+
+static SEXP rducks_rc_make_bits_from_payload(const char *payload, uint32_t len) {
+    if (len < 2) return R_NilValue;
+    int padding = (unsigned char)payload[0];
+    if (padding < 0 || padding > 7) return R_NilValue;
+    int bit_length = (int)((len - 1U) * 8U) - padding;
+    if (bit_length <= 0) return R_NilValue;
+    R_xlen_t nbytes = (bit_length + 7) / 8;
+    SEXP data = PROTECT(Rf_allocVector(RAWSXP, nbytes));
+    memset(RAW(data), 0, (size_t)nbytes);
+    for (int i = 0; i < bit_length; i++) {
+        int storage_bit = padding + i;
+        int src_byte = 1 + storage_bit / 8;
+        int src_bit = storage_bit % 8;
+        int value = (((const unsigned char *)payload)[src_byte] >> (7 - src_bit)) & 1U;
+        if (value) {
+            int dst_byte = i / 8;
+            int dst_bit = i % 8;
+            RAW(data)[dst_byte] = (Rbyte)(RAW(data)[dst_byte] | (Rbyte)(1U << (7 - dst_bit)));
+        }
+    }
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+    SEXP cls = PROTECT(Rf_mkString("rducks_bits"));
+    SET_VECTOR_ELT(out, 0, data);
+    SET_VECTOR_ELT(out, 1, Rf_ScalarInteger(bit_length));
+    SET_STRING_ELT(names, 0, Rf_mkChar("data"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("length"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(4);
+    return out;
+}
+
+static int rducks_rc_payload_from_bits(SEXP value, char **payload_out, idx_t *len_out, char *err_msg, size_t err_cap) {
+    if (TYPEOF(value) != VECSXP || XLENGTH(value) < 2) {
+        snprintf(err_msg, err_cap, "Rducks RC BIT output is not a rducks_bits object");
+        return 0;
+    }
+    SEXP data = VECTOR_ELT(value, 0);
+    int bit_length = Rf_asInteger(VECTOR_ELT(value, 1));
+    if (TYPEOF(data) != RAWSXP || bit_length <= 0 || (R_xlen_t)bit_length > XLENGTH(data) * 8) {
+        snprintf(err_msg, err_cap, "Rducks RC BIT output has invalid storage");
+        return 0;
+    }
+    int padding = (8 - (bit_length % 8)) % 8;
+    idx_t len = (idx_t)(1 + (bit_length + 7) / 8);
+    char *payload = (char *)R_alloc((size_t)len, sizeof(char));
+    memset(payload, 0, (size_t)len);
+    payload[0] = (char)padding;
+    for (int bit_idx = 0; bit_idx < padding; bit_idx++) {
+        payload[1] = (char)(((unsigned char)payload[1]) | (unsigned char)(1U << (7 - bit_idx)));
+    }
+    for (int i = 0; i < bit_length; i++) {
+        int src_byte = i / 8;
+        int src_bit = i % 8;
+        int set = (RAW(data)[src_byte] >> (7 - src_bit)) & 1U;
+        if (set) {
+            int storage_bit = padding + i;
+            int dst_byte = 1 + storage_bit / 8;
+            int dst_bit = storage_bit % 8;
+            payload[dst_byte] = (char)(((unsigned char)payload[dst_byte]) | (unsigned char)(1U << (7 - dst_bit)));
+        }
+    }
+    *payload_out = payload;
+    *len_out = len;
+    return 1;
+}
+
 static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     SEXP out;
     switch (desc->scalar) {
@@ -262,6 +763,36 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
 static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row) {
     SEXP out;
     if (!rducks_rc_direct_view_valid_at(input, row)) return rducks_rc_missing_arg(desc);
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        uint8_t bytes[16];
+        int storage_width = rducks_rc_decimal_storage_width(desc);
+        memset(bytes, 0, sizeof(bytes));
+        if (storage_width == 2) {
+            int16_t *data = (int16_t *)input->data;
+            uint16_t u;
+            memcpy(&u, &data[row], sizeof(u));
+            bytes[0] = (uint8_t)(u & 0xffU);
+            bytes[1] = (uint8_t)((u >> 8) & 0xffU);
+        } else if (storage_width == 4) {
+            int32_t *data = (int32_t *)input->data;
+            uint32_t u;
+            memcpy(&u, &data[row], sizeof(u));
+            for (int i = 0; i < 4; i++) bytes[i] = (uint8_t)((u >> (8 * i)) & 0xffU);
+        } else if (storage_width == 8) {
+            int64_t *data = (int64_t *)input->data;
+            uint64_t u;
+            memcpy(&u, &data[row], sizeof(u));
+            rducks_rc_u64_to_le_bytes(u, bytes);
+        } else {
+            duckdb_hugeint *data = (duckdb_hugeint *)input->data;
+            rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+            uint64_t upper;
+            memcpy(&upper, &data[row].upper, sizeof(upper));
+            rducks_rc_u64_to_le_bytes(upper, bytes + 8);
+        }
+        return rducks_rc_make_decimal_object_from_storage_bytes(bytes, (size_t)storage_width,
+                                                                desc->decimal_width, desc->decimal_scale);
+    }
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL: {
         bool *data = (bool *)input->data;
@@ -312,6 +843,20 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         UNPROTECT(1);
         return out;
     }
+    case RDUCKS_TYPE_I64: {
+        int64_t *data = (int64_t *)input->data;
+        uint8_t bytes[8];
+        uint64_t u;
+        memcpy(&u, &data[row], sizeof(u));
+        rducks_rc_u64_to_le_bytes(u, bytes);
+        return rducks_rc_make_integer_object_from_le_bytes(bytes, 8, 1, "rducks_bigint");
+    }
+    case RDUCKS_TYPE_U64: {
+        uint64_t *data = (uint64_t *)input->data;
+        uint8_t bytes[8];
+        rducks_rc_u64_to_le_bytes(data[row], bytes);
+        return rducks_rc_make_integer_object_from_le_bytes(bytes, 8, 0, "rducks_ubigint");
+    }
     case RDUCKS_TYPE_F32: {
         float *data = (float *)input->data;
         out = PROTECT(Rf_allocVector(REALSXP, 1));
@@ -359,6 +904,36 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         duckdb_timestamp *data = (duckdb_timestamp *)input->data;
         return rducks_rc_make_timestamp((double)data[row].micros / 1000000.0);
     }
+    case RDUCKS_TYPE_HUGEINT: {
+        duckdb_hugeint *data = (duckdb_hugeint *)input->data;
+        uint8_t bytes[16];
+        rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+        uint64_t upper;
+        memcpy(&upper, &data[row].upper, sizeof(upper));
+        rducks_rc_u64_to_le_bytes(upper, bytes + 8);
+        return rducks_rc_make_integer_object_from_le_bytes(bytes, 16, 1, "rducks_hugeint");
+    }
+    case RDUCKS_TYPE_UHUGEINT: {
+        duckdb_uhugeint *data = (duckdb_uhugeint *)input->data;
+        uint8_t bytes[16];
+        rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+        rducks_rc_u64_to_le_bytes(data[row].upper, bytes + 8);
+        return rducks_rc_make_integer_object_from_le_bytes(bytes, 16, 0, "rducks_uhugeint");
+    }
+    case RDUCKS_TYPE_UUID: {
+        duckdb_hugeint *data = (duckdb_hugeint *)input->data;
+        return rducks_rc_make_uuid_from_hugeint(data[row]);
+    }
+    case RDUCKS_TYPE_INTERVAL: {
+        duckdb_interval *data = (duckdb_interval *)input->data;
+        return rducks_rc_make_interval_object(data[row]);
+    }
+    case RDUCKS_TYPE_BIT: {
+        duckdb_string_t *data = (duckdb_string_t *)input->data;
+        uint32_t len = duckdb_string_t_length(data[row]);
+        const char *ptr = duckdb_string_t_data(&data[row]);
+        return rducks_rc_make_bits_from_payload(ptr, len);
+    }
     default:
         return R_NilValue;
     }
@@ -366,14 +941,30 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
 
 static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SEXP value) {
     if (value == R_NilValue) return 1;
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        if (TYPEOF(value) != VECSXP || XLENGTH(value) < 1) return 0;
+        SEXP values = VECTOR_ELT(value, 0);
+        return TYPEOF(values) == STRSXP && XLENGTH(values) > 0 && STRING_ELT(values, 0) == NA_STRING;
+    }
+    if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     if (desc->scalar == RDUCKS_TYPE_F32 || desc->scalar == RDUCKS_TYPE_F64) {
         if (TYPEOF(value) != REALSXP || XLENGTH(value) < 1) return 0;
         return ISNA(REAL(value)[0]);
     }
-    if (desc->scalar == RDUCKS_TYPE_VARCHAR) {
+    if (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_I64 || desc->scalar == RDUCKS_TYPE_U64 ||
+        desc->scalar == RDUCKS_TYPE_HUGEINT || desc->scalar == RDUCKS_TYPE_UHUGEINT || desc->scalar == RDUCKS_TYPE_UUID) {
         return TYPEOF(value) == STRSXP && XLENGTH(value) > 0 && STRING_ELT(value, 0) == NA_STRING;
     }
-    if (desc->scalar == RDUCKS_TYPE_BLOB) return 0;
+    if (desc->scalar == RDUCKS_TYPE_INTERVAL) {
+        if (TYPEOF(value) != VECSXP || XLENGTH(value) < 3) return 0;
+        SEXP months = VECTOR_ELT(value, 0);
+        SEXP days = VECTOR_ELT(value, 1);
+        SEXP micros = VECTOR_ELT(value, 2);
+        if (TYPEOF(months) == INTSXP && XLENGTH(months) > 0 && INTEGER(months)[0] == NA_INTEGER) return 1;
+        if (TYPEOF(days) == INTSXP && XLENGTH(days) > 0 && INTEGER(days)[0] == NA_INTEGER) return 1;
+        if (TYPEOF(micros) == STRSXP && XLENGTH(micros) > 0 && STRING_ELT(micros, 0) == NA_STRING) return 1;
+    }
+    if (desc->scalar == RDUCKS_TYPE_BLOB || desc->scalar == RDUCKS_TYPE_BIT) return 0;
     if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0) return INTEGER(value)[0] == NA_INTEGER;
     if (TYPEOF(value) == LGLSXP && XLENGTH(value) > 0) return LOGICAL(value)[0] == NA_LOGICAL;
     if (TYPEOF(value) == REALSXP && XLENGTH(value) > 0) return ISNA(REAL(value)[0]);
@@ -387,6 +978,33 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     }
     rducks_rc_output_set_valid_if_needed(output, row);
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        uint8_t bytes[16];
+        int storage_width = rducks_rc_decimal_storage_width(desc);
+        if (!rducks_rc_decimal_storage_string_to_le_bytes(value, storage_width, desc->decimal_scale, bytes, err_msg, err_cap)) {
+            return 0;
+        }
+        if (storage_width == 2) {
+            uint16_t u = (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));
+            int16_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int16_t *)output->data)[row] = v;
+        } else if (storage_width == 4) {
+            uint32_t u = 0;
+            for (int i = 3; i >= 0; i--) u = (u << 8) | (uint32_t)bytes[i];
+            int32_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int32_t *)output->data)[row] = v;
+        } else if (storage_width == 8) {
+            uint64_t u = rducks_rc_le_bytes_to_u64(bytes);
+            int64_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int64_t *)output->data)[row] = v;
+        } else {
+            rducks_rc_le_bytes_to_hugeint(bytes, &((duckdb_hugeint *)output->data)[row]);
+        }
+        return 1;
+    }
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
         ((bool *)output->data)[row] = Rf_asLogical(value) == TRUE;
@@ -409,6 +1027,21 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     case RDUCKS_TYPE_U32:
         ((uint32_t *)output->data)[row] = (uint32_t)Rf_asReal(value);
         return 1;
+    case RDUCKS_TYPE_I64: {
+        uint8_t bytes[8];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 8, 1, bytes, err_msg, err_cap)) return 0;
+        uint64_t u = rducks_rc_le_bytes_to_u64(bytes);
+        int64_t v;
+        memcpy(&v, &u, sizeof(v));
+        ((int64_t *)output->data)[row] = v;
+        return 1;
+    }
+    case RDUCKS_TYPE_U64: {
+        uint8_t bytes[8];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 8, 0, bytes, err_msg, err_cap)) return 0;
+        ((uint64_t *)output->data)[row] = rducks_rc_le_bytes_to_u64(bytes);
+        return 1;
+    }
     case RDUCKS_TYPE_F32:
         ((float *)output->data)[row] = (float)Rf_asReal(value);
         return 1;
@@ -441,6 +1074,37 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     case RDUCKS_TYPE_TIMESTAMP:
         ((duckdb_timestamp *)output->data)[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
+    case RDUCKS_TYPE_HUGEINT: {
+        uint8_t bytes[16];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 16, 1, bytes, err_msg, err_cap)) return 0;
+        rducks_rc_le_bytes_to_hugeint(bytes, &((duckdb_hugeint *)output->data)[row]);
+        return 1;
+    }
+    case RDUCKS_TYPE_UHUGEINT: {
+        uint8_t bytes[16];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 16, 0, bytes, err_msg, err_cap)) return 0;
+        rducks_rc_le_bytes_to_uhugeint(bytes, &((duckdb_uhugeint *)output->data)[row]);
+        return 1;
+    }
+    case RDUCKS_TYPE_UUID: {
+        duckdb_hugeint uuid;
+        if (!rducks_rc_parse_uuid_string(value, &uuid, err_msg, err_cap)) return 0;
+        ((duckdb_hugeint *)output->data)[row] = uuid;
+        return 1;
+    }
+    case RDUCKS_TYPE_INTERVAL: {
+        duckdb_interval interval;
+        if (!rducks_rc_interval_from_object(value, &interval, err_msg, err_cap)) return 0;
+        ((duckdb_interval *)output->data)[row] = interval;
+        return 1;
+    }
+    case RDUCKS_TYPE_BIT: {
+        char *payload = NULL;
+        idx_t len = 0;
+        if (!rducks_rc_payload_from_bits(value, &payload, &len, err_msg, err_cap)) return 0;
+        duckdb_vector_assign_string_element_len(output->vector, row, payload, len);
+        return 1;
+    }
     default:
         snprintf(err_msg, err_cap, "Rducks RC direct output unsupported type");
         return 0;

@@ -289,3 +289,75 @@ SEXP RDUCKS_integer_negate_strings(SEXP x) {
     rducks_integer_maybe_unprotect_character(x, xx);
     return out;
 }
+
+SEXP RDUCKS_integer_strings_to_double(SEXP x) {
+    SEXP input = rducks_integer_as_character_protect(x);
+    R_xlen_t n = XLENGTH(input);
+    SEXP values = PROTECT(Rf_allocVector(REALSXP, n));
+    int warn_precision = 0;
+    for (R_xlen_t i = 0; i < n; i++) {
+        SEXP ch = STRING_ELT(input, i);
+        if (ch == NA_STRING) {
+            REAL(values)[i] = NA_REAL;
+            continue;
+        }
+        const char *digits;
+        size_t len;
+        int sign = rducks_integer_string_sign_and_abs(ch, &digits, &len);
+        digits = rducks_skip_zero_digits(digits, &len);
+        if (len > 15) warn_precision = 1;
+        double value = 0;
+        for (size_t j = 0; j < len; j++) {
+            if (digits[j] < '0' || digits[j] > '9') Rf_error("integer values must be integer strings");
+            value = value * 10.0 + (double)(digits[j] - '0');
+        }
+        REAL(values)[i] = sign < 0 ? -value : value;
+    }
+    SEXP warn = PROTECT(Rf_ScalarLogical(warn_precision ? TRUE : FALSE));
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_VECTOR_ELT(out, 0, values);
+    SET_VECTOR_ELT(out, 1, warn);
+    SET_STRING_ELT(names, 0, Rf_mkChar("values"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("warn"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    UNPROTECT(4);
+    rducks_integer_maybe_unprotect_character(x, input);
+    return out;
+}
+
+SEXP RDUCKS_integer_strings_to_int32(SEXP x) {
+    SEXP input = rducks_integer_as_character_protect(x);
+    R_xlen_t n = XLENGTH(input);
+    SEXP out = PROTECT(Rf_allocVector(INTSXP, n));
+    int warned = 0;
+    for (R_xlen_t i = 0; i < n; i++) {
+        SEXP ch = STRING_ELT(input, i);
+        if (ch == NA_STRING) {
+            INTEGER(out)[i] = NA_INTEGER;
+            continue;
+        }
+        const char *digits;
+        size_t len;
+        int sign = rducks_integer_string_sign_and_abs(ch, &digits, &len);
+        digits = rducks_skip_zero_digits(digits, &len);
+        uint64_t value = 0;
+        int overflow = 0;
+        for (size_t j = 0; j < len; j++) {
+            if (digits[j] < '0' || digits[j] > '9') Rf_error("integer values must be integer strings");
+            value = value * 10U + (uint64_t)(digits[j] - '0');
+            if (value > 2147483648ULL) overflow = 1;
+        }
+        if (overflow || (sign > 0 && value > 2147483647ULL) || (sign < 0 && value >= 2147483648ULL)) {
+            INTEGER(out)[i] = NA_INTEGER;
+            warned = 1;
+        } else {
+            int v = (int)value;
+            INTEGER(out)[i] = sign < 0 ? -v : v;
+        }
+    }
+    if (warned) Rf_warning("NAs introduced by coercion to integer range");
+    UNPROTECT(1);
+    rducks_integer_maybe_unprotect_character(x, input);
+    return out;
+}

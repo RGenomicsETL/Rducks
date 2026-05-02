@@ -72,3 +72,44 @@ SEXP RDUCKS_uuid_strings_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP offse
     UNPROTECT(1);
     return out;
 }
+
+SEXP RDUCKS_uuid_normalize_strings(SEXP values_sexp) {
+    SEXP values = values_sexp;
+    int protect_values = 0;
+    if (TYPEOF(values) != STRSXP) {
+        values = PROTECT(Rf_coerceVector(values_sexp, STRSXP));
+        protect_values = 1;
+    }
+    R_xlen_t n = XLENGTH(values);
+    SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+    for (R_xlen_t i = 0; i < n; i++) {
+        SEXP ch = STRING_ELT(values, i);
+        if (ch == NA_STRING) {
+            SET_STRING_ELT(out, i, NA_STRING);
+            continue;
+        }
+        const char *s0 = CHAR(ch);
+        const char *s = s0;
+        const char *end = s0 + strlen(s0);
+        while (s < end && isspace((unsigned char)*s)) s++;
+        while (end > s && isspace((unsigned char)*(end - 1))) end--;
+        if ((end - s) != 36) Rf_error("UUID values must use canonical 8-4-4-4-12 hexadecimal form");
+        char buf[37];
+        for (int j = 0; j < 36; j++) {
+            char c = s[j];
+            if (j == 8 || j == 13 || j == 18 || j == 23) {
+                if (c != '-') Rf_error("UUID values must use canonical 8-4-4-4-12 hexadecimal form");
+                buf[j] = '-';
+                continue;
+            }
+            int v = rducks_uuid_hex_value((unsigned char)c);
+            if (v < 0) Rf_error("UUID values must use canonical 8-4-4-4-12 hexadecimal form");
+            buf[j] = (char)(v < 10 ? '0' + v : 'a' + (v - 10));
+        }
+        buf[36] = '\0';
+        SET_STRING_ELT(out, i, Rf_mkCharLenCE(buf, 36, CE_UTF8));
+    }
+    UNPROTECT(1);
+    if (protect_values) UNPROTECT(1);
+    return out;
+}
