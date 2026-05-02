@@ -23,19 +23,7 @@ rducks_arrow_validity <- function(array, n = NULL) {
 }
 
 rducks_arrow_pack_bits <- function(values) {
-  values <- as.logical(values)
-  n <- length(values)
-  out <- raw(ceiling(n / 8L))
-  if (!n) return(out)
-  for (i in seq_len(n)) {
-    if (isTRUE(values[[i]])) {
-      bit <- i - 1L
-      byte_index <- bit %/% 8L + 1L
-      bit_index <- bit %% 8L
-      out[[byte_index]] <- as.raw(bitwOr(as.integer(out[[byte_index]]), bitwShiftL(1L, bit_index)))
-    }
-  }
-  out
+  .Call(RDUCKS_arrow_pack_bits, values)
 }
 
 rducks_arrow_validity_buffer <- function(valid) {
@@ -104,26 +92,12 @@ rducks_arrow_twos_complement_bytes <- function(x, width) {
   as.raw(bytes)
 }
 
+rducks_arrow_decimal_unscale_strings <- function(x, scale) {
+  .Call(RDUCKS_decimal_unscale_strings, x, as.integer(scale))
+}
+
 rducks_arrow_decimal_unscale_string <- function(x, scale) {
-  if (is.na(x)) return(NA_character_)
-  x <- trimws(as.character(x))
-  sign <- ""
-  if (startsWith(x, "-")) {
-    sign <- "-"
-    x <- substring(x, 2L)
-  }
-  x <- sub("^0+", "", x)
-  if (!nzchar(x)) x <- "0"
-  if (scale > 0L) {
-    x <- paste0(strrep("0", max(0L, scale + 1L - nchar(x))), x)
-    whole <- substr(x, 1L, nchar(x) - scale)
-    frac <- substr(x, nchar(x) - scale + 1L, nchar(x))
-    whole <- sub("^0+", "", whole)
-    if (!nzchar(whole)) whole <- "0"
-    paste0(sign, whole, ".", frac)
-  } else {
-    paste0(sign, x)
-  }
+  rducks_arrow_decimal_unscale_strings(x, scale)[[1L]]
 }
 
 rducks_arrow_decimal_array_to_values <- function(array, width, scale) {
@@ -138,27 +112,15 @@ rducks_arrow_decimal_array_to_values <- function(array, width, scale) {
     stop("unsupported Arrow DECIMAL storage width: ", storage_width, call. = FALSE)
   }
   storage <- rducks_arrow_fixed_width_array_to_decimal(array, as.integer(storage_width), signed = TRUE)
-  rducks_decimal(vapply(storage, rducks_arrow_decimal_unscale_string, character(1), scale = scale), width, scale)
+  rducks_decimal(rducks_arrow_decimal_unscale_strings(storage, scale), width, scale)
+}
+
+rducks_arrow_decimal_storage_strings <- function(x, scale) {
+  .Call(RDUCKS_decimal_storage_strings, x, as.integer(scale))
 }
 
 rducks_arrow_decimal_storage_string <- function(x, scale) {
-  if (is.na(x)) return(NA_character_)
-  x <- trimws(as.character(x))
-  sign <- ""
-  if (startsWith(x, "+")) x <- substring(x, 2L)
-  if (startsWith(x, "-")) {
-    sign <- "-"
-    x <- substring(x, 2L)
-  }
-  parts <- strsplit(x, ".", fixed = TRUE)[[1L]]
-  whole <- parts[[1L]]
-  frac <- if (length(parts) > 1L) parts[[2L]] else ""
-  frac <- paste0(frac, strrep("0", max(0L, scale - nchar(frac))))
-  frac <- substr(frac, 1L, scale)
-  digits <- paste0(whole, frac)
-  digits <- sub("^0+", "", digits)
-  if (!nzchar(digits)) digits <- "0"
-  paste0(sign, digits)
+  rducks_arrow_decimal_storage_strings(x, scale)[[1L]]
 }
 
 rducks_arrow_add_decimal_string_small <- function(x, addend) {
@@ -194,19 +156,13 @@ rducks_arrow_fixed_width_array_to_decimal <- function(array, width, signed = TRU
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
   bytes <- as.raw(array$buffers[[2L]])
-  out <- rep(NA_character_, n)
-  for (i in seq_len(n)) {
-    if (!isTRUE(valid[[i]])) next
-    start <- (offset + i - 1L) * width + 1L
-    out[[i]] <- rducks_arrow_decimal_string_from_twos_complement(bytes[start + seq_len(width) - 1L], signed = signed)
-  }
-  out
+  .Call(RDUCKS_decimal_strings_from_fixed_width_bytes, bytes, valid, offset, n, as.integer(width), isTRUE(signed))
 }
 
 rducks_arrow_fixed_width_array <- function(values, schema, width, signed = TRUE) {
   values <- as.character(values)
   valid <- !is.na(values)
-  data <- do.call(c, lapply(values, rducks_arrow_twos_complement_bytes, width = width))
+  data <- .Call(RDUCKS_fixed_width_bytes_from_decimal_strings, values, as.integer(width), isTRUE(signed))
   array <- nanoarrow::nanoarrow_array_init(schema)
   nanoarrow::nanoarrow_array_modify(
     array,
@@ -219,20 +175,7 @@ rducks_arrow_fixed_width_array <- function(values, schema, width, signed = TRUE)
 }
 
 rducks_arrow_divide_decimal_string_small <- function(x, divisor) {
-  if (is.na(x)) return(NA_character_)
-  x <- trimws(as.character(x))
-  sign <- ""
-  if (startsWith(x, "-")) {
-    sign <- "-"
-    x <- substring(x, 2L)
-  }
-  digits <- as.integer(strsplit(sub("^0+", "", x), "", fixed = TRUE)[[1L]])
-  if (!length(digits) || anyNA(digits)) return("0")
-  qr <- rducks_arrow_divmod_decimal_string(digits, as.integer(divisor))
-  out <- paste0(qr$q, collapse = "")
-  out <- sub("^0+", "", out)
-  if (!nzchar(out)) out <- "0"
-  paste0(if (identical(out, "0")) "" else sign, out)
+  .Call(RDUCKS_decimal_string_divide_small, x, as.integer(divisor))
 }
 
 rducks_arrow_interval_array_to_values <- function(array) {
@@ -263,30 +206,13 @@ rducks_arrow_uuid_array_to_character <- function(array) {
   # proxy shapes.
   data_buffer_index <- if (length(array$buffers) >= 2L) 2L else 1L
   bytes <- as.raw(array$buffers[[data_buffer_index]])
-  out <- rep(NA_character_, n)
-  for (i in seq_len(n)) {
-    if (!isTRUE(valid[[i]])) next
-    start <- (offset + i - 1L) * 16L + 1L
-    hex <- paste0(sprintf("%02x", as.integer(bytes[start + 0:15])), collapse = "")
-    out[[i]] <- paste(
-      substr(hex, 1L, 8L), substr(hex, 9L, 12L), substr(hex, 13L, 16L),
-      substr(hex, 17L, 20L), substr(hex, 21L, 32L),
-      sep = "-"
-    )
-  }
-  out
+  .Call(RDUCKS_uuid_strings_from_bytes, bytes, valid, offset, n)
 }
 
 rducks_arrow_uuid_array <- function(values, schema) {
   values <- as.character(values)
   valid <- !is.na(values)
-  one <- function(x) {
-    if (is.na(x)) return(raw(16L))
-    hex <- gsub("-", "", tolower(x), fixed = TRUE)
-    if (!grepl("^[0-9a-f]{32}$", hex)) stop("invalid UUID value", call. = FALSE)
-    as.raw(strtoi(substring(hex, seq(1L, 31L, 2L), seq(2L, 32L, 2L)), 16L))
-  }
-  data <- do.call(c, lapply(values, one))
+  data <- .Call(RDUCKS_uuid_bytes_from_strings, values)
   array <- nanoarrow::nanoarrow_array_init(schema)
   nanoarrow::nanoarrow_array_modify(
     array,
@@ -314,11 +240,12 @@ rducks_arrow_interval_array <- function(values, schema) {
     if (is.na(value$months[[1L]]) || is.na(value$days[[1L]]) || is.na(value$micros[[1L]])) valid[[i]] <- FALSE
   }
   data <- raw(16L * length(values))
+  nanos_bytes <- .Call(RDUCKS_fixed_width_bytes_from_decimal_strings, nanos, 8L, TRUE)
   for (i in seq_along(values)) {
     off <- (i - 1L) * 16L
     data[off + seq_len(4L)] <- writeBin(as.integer(months[[i]]), raw(), size = 4L, endian = "little")
     data[off + 4L + seq_len(4L)] <- writeBin(as.integer(days[[i]]), raw(), size = 4L, endian = "little")
-    data[off + 8L + seq_len(8L)] <- rducks_arrow_twos_complement_bytes(nanos[[i]], 8L)
+    data[off + 8L + seq_len(8L)] <- nanos_bytes[(i - 1L) * 8L + seq_len(8L)]
   }
   array <- nanoarrow::nanoarrow_array_init(schema)
   nanoarrow::nanoarrow_array_modify(
@@ -1305,7 +1232,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     chars <- vapply(results, function(x) {
       if (is.null(x)) NA_character_ else as.character(x)[[1L]]
     }, character(1))
-    storage <- vapply(chars, rducks_arrow_decimal_storage_string, character(1), scale = params$scale)
+    storage <- rducks_arrow_decimal_storage_strings(chars, params$scale)
     return(rducks_arrow_fixed_width_array(storage, schema, 16L, signed = TRUE))
   }
 

@@ -240,38 +240,7 @@ rducks_normalize_decimal_string <- function(x, width, scale) {
   } else {
     x <- as.character(x)
   }
-  out <- trimws(x)
-  missing <- is.na(out)
-  if (any(!missing & !grepl("^[+-]?([0-9]+)(\\.[0-9]+)?$", out))) {
-    stop("DECIMAL values must be fixed-point decimal strings", call. = FALSE)
-  }
-  normalize_one <- function(value) {
-    if (is.na(value)) return(NA_character_)
-    sign <- ""
-    if (startsWith(value, "+")) value <- substring(value, 2L)
-    if (startsWith(value, "-")) {
-      sign <- "-"
-      value <- substring(value, 2L)
-    }
-    parts <- strsplit(value, ".", fixed = TRUE)[[1L]]
-    int <- parts[[1L]]
-    frac <- if (length(parts) == 2L) parts[[2L]] else ""
-    if (nchar(frac) > scale) {
-      stop("DECIMAL value has more fractional digits than scale", call. = FALSE)
-    }
-    int_norm <- sub("^0+", "", int)
-    if (!nzchar(int_norm)) int_norm <- "0"
-    significant_digits <- nchar(int_norm) + max(nchar(frac), scale)
-    if (identical(int_norm, "0")) {
-      significant_digits <- max(1L, max(nchar(frac), scale))
-    }
-    if (significant_digits > width) {
-      stop("DECIMAL value exceeds declared width", call. = FALSE)
-    }
-    frac <- paste0(frac, strrep("0", scale - nchar(frac)))
-    if (scale > 0L) paste0(sign, int_norm, ".", frac) else paste0(sign, int_norm)
-  }
-  vapply(out, normalize_one, character(1), USE.NAMES = FALSE)
+  .Call(RDUCKS_normalize_decimal_string, x, as.integer(width), as.integer(scale))
 }
 
 #' Construct exact DuckDB DECIMAL values
@@ -459,27 +428,11 @@ Ops.rducks_interval <- function(e1, e2) {
 }
 
 rducks_pack_bits <- function(bits) {
-  n <- length(bits)
-  out <- raw(ceiling(n / 8))
-  for (i in seq_len(n)) {
-    if (isTRUE(bits[[i]] != 0L)) {
-      byte <- (i - 1L) %/% 8L + 1L
-      shift <- 7L - ((i - 1L) %% 8L)
-      out[[byte]] <- as.raw(bitwOr(as.integer(out[[byte]]), bitwShiftL(1L, shift)))
-    }
-  }
-  out
+  .Call(RDUCKS_pack_bits, bits)
 }
 
 rducks_unpack_bits <- function(data, bit_length) {
-  if (bit_length == 0L) return(integer())
-  out <- integer(bit_length)
-  for (i in seq_len(bit_length)) {
-    byte <- (i - 1L) %/% 8L + 1L
-    shift <- 7L - ((i - 1L) %% 8L)
-    out[[i]] <- bitwAnd(bitwShiftR(as.integer(data[[byte]]), shift), 1L)
-  }
-  out
+  .Call(RDUCKS_unpack_bits, data, as.integer(bit_length))
 }
 
 #' Construct DuckDB BIT values
@@ -503,12 +456,7 @@ rducks_bits <- function(x = raw(), length = NULL) {
     return(structure(list(data = x, length = bit_length), class = "rducks_bits"))
   }
   if (is.character(x)) {
-    if (length(x) != 1L || is.na(x)) stop("character BIT input must be a single non-NA string", call. = FALSE)
-    chars <- strsplit(gsub("[[:space:]_]+", "", x), "", fixed = TRUE)[[1L]]
-    if (length(chars) && any(!chars %in% c("0", "1"))) {
-      stop("BIT character input may contain only 0 and 1", call. = FALSE)
-    }
-    bits <- as.integer(chars)
+    return(structure(.Call(RDUCKS_bits_from_character, x), class = "rducks_bits"))
   } else {
     bits <- as.integer(x)
     if (any(is.na(bits)) || any(!bits %in% c(0L, 1L))) {
@@ -522,7 +470,7 @@ rducks_bits <- function(x = raw(), length = NULL) {
 }
 
 #' @export
-as.character.rducks_bits <- function(x, ...) paste0(rducks_unpack_bits(x$data, x$length), collapse = "")
+as.character.rducks_bits <- function(x, ...) .Call(RDUCKS_bits_to_character, x$data, as.integer(x$length))[[1L]]
 
 #' @export
 format.rducks_bits <- function(x, ...) as.character(x)
@@ -935,29 +883,13 @@ as.numeric.rducks_decimal <- function(x, ...) as.double.rducks_decimal(x, ...)
 as.integer.rducks_decimal <- function(x, ...) as.integer(as.double(x))
 
 rducks_decimal_scaled_integer <- function(x) {
-  rducks_normalize_integer_string(gsub("\\.", "", x$value), unsigned = FALSE, what = "DECIMAL")
+  .Call(RDUCKS_decimal_scaled_integer_strings, x$value)
 }
 
 rducks_decimal_from_scaled_integer <- function(x, width, scale) {
-  one <- function(value) {
-    if (is.na(value)) return(NA_character_)
-    sign <- ""
-    if (startsWith(value, "-")) {
-      sign <- "-"
-      value <- substring(value, 2L)
-    }
-    value <- sub("^0+", "", value)
-    if (!nzchar(value)) value <- "0"
-    if (scale == 0L) return(paste0(sign, value))
-    if (nchar(value) <= scale) {
-      value <- paste0(strrep("0", scale - nchar(value) + 1L), value)
-    }
-    split <- nchar(value) - scale
-    int <- substring(value, 1L, split)
-    frac <- substring(value, split + 1L)
-    paste0(sign, int, ".", frac)
-  }
-  rducks_decimal(vapply(x, one, character(1), USE.NAMES = FALSE), width = width, scale = scale)
+  spec <- rducks_check_decimal_spec(width, scale)
+  value <- .Call(RDUCKS_decimal_from_scaled_integer_strings, x, spec[["width"]], spec[["scale"]])
+  structure(list(value = value, width = spec[["width"]], scale = spec[["scale"]]), class = "rducks_decimal")
 }
 
 rducks_decimal_arith <- function(e1, e2, op) {
@@ -995,9 +927,7 @@ rducks_decimal_compare_values <- function(a, b) {
   if (!identical(a$scale, b$scale)) {
     stop("decimal comparison requires matching scales", call. = FALSE)
   }
-  ai <- gsub("\\.", "", a$value)
-  bi <- gsub("\\.", "", b$value)
-  rducks_compare_integer_strings(ai, bi)
+  .Call(RDUCKS_decimal_compare_values, a$value, b$value)
 }
 
 #' @export
@@ -1028,15 +958,8 @@ rducks_bits_binary_op <- function(e1, e2, op) {
   e1 <- rducks_bits(e1)
   e2 <- rducks_bits(e2)
   if (length(e1) != length(e2)) stop("BIT operands must have the same bit length", call. = FALSE)
-  a <- rducks_unpack_bits(e1$data, e1$length)
-  b <- rducks_unpack_bits(e2$data, e2$length)
-  out <- switch(op,
-    `&` = bitwAnd(a, b),
-    `|` = bitwOr(a, b),
-    xor = bitwXor(a, b),
-    stop("unsupported BIT operation", call. = FALSE)
-  )
-  rducks_bits(out)
+  data <- .Call(RDUCKS_bits_binary_raw, e1$data, e2$data, as.integer(e1$length), op)
+  structure(list(data = data, length = e1$length), class = "rducks_bits")
 }
 
 #' BIT logical operations
@@ -1060,6 +983,7 @@ rducks_bits_xor <- function(e1, e2) rducks_bits_binary_op(e1, e2, "xor")
 
 #' @export
 `!.rducks_bits` <- function(x) {
-  bits <- rducks_unpack_bits(x$data, x$length)
-  rducks_bits(ifelse(bits == 0L, 1L, 0L))
+  x <- rducks_bits(x)
+  data <- .Call(RDUCKS_bits_not_raw, x$data, as.integer(x$length))
+  structure(list(data = data, length = x$length), class = "rducks_bits")
 }
