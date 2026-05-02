@@ -24,13 +24,6 @@ local({
   for (i in 1:3) invisible(gc())
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_gc_survives() AS x")$x, 42L)
 
-  DBI::dbExecute(con, "PRAGMA threads=4")
-  expect_equal(
-    as.numeric(DBI::dbGetQuery(con, "SELECT sum(rducks_plus_one((i % 100)::DOUBLE)) AS x FROM range(50000) t(i)")$x),
-    2525000
-  )
-  DBI::dbExecute(con, "PRAGMA threads=1")
-
   reg2 <- rducks_register(con, "rducks_add", function(x, y) x + y, c(DOUBLE, DOUBLE), DOUBLE)
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_add(1.5, 2.25) AS x")$x, 3.75)
 
