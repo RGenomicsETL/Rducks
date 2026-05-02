@@ -262,7 +262,6 @@ reuse_guard <- data.frame(
 )
 write_bench(reuse_guard, "buffer-reuse-guard")
 reuse_guard
-disconnect_rducks(con_guard)
 ```
 
 # Microbenchmarks
@@ -339,7 +338,6 @@ micro_summary <- summarise_bench(micro_results)
 write_bench(micro_results, "micro-results")
 write_bench(micro_summary, "micro-summary")
 micro_summary
-disconnect_rducks(con_micro)
 ```
 
 # TPC-H-inspired benchmark
@@ -524,10 +522,6 @@ if (tpch_available) {
 }
 ```
 
-```{r tpch-cleanup, eval=params$run_tpch, include=FALSE}
-disconnect_rducks(con_tpch)
-```
-
 # Memory trend probes
 
 These loops repeat already-registered UDFs. They are intended to catch obvious
@@ -602,7 +596,6 @@ leak_slopes <- do.call(rbind, lapply(split(leak_results, leak_results$label), fu
 write_bench(leak_results, "leak-results")
 write_bench(leak_slopes, "leak-slopes")
 leak_slopes
-disconnect_rducks(con_leak)
 ```
 
 # R profiling
@@ -647,7 +640,6 @@ rprof_heads <- lapply(rprof_heads, function(x) {
 rprof_top <- do.call(rbind, rprof_heads)
 write_bench(rprof_top, "rprof-top")
 rprof_top
-disconnect_rducks(con_prof)
 ```
 
 # Native leak/profiler commands
@@ -676,4 +668,12 @@ data.frame(
   benchmark_artifacts = normalizePath(bench_dir, mustWork = FALSE),
   stringsAsFactors = FALSE
 )
+```
+
+```{r cleanup, include=FALSE}
+if (exists("con_prof", inherits = FALSE)) disconnect_rducks(con_prof)
+if (exists("con_leak", inherits = FALSE)) disconnect_rducks(con_leak)
+if (exists("con_tpch", inherits = FALSE)) disconnect_rducks(con_tpch)
+if (exists("con_micro", inherits = FALSE)) disconnect_rducks(con_micro)
+if (exists("con_guard", inherits = FALSE)) disconnect_rducks(con_guard)
 ```
