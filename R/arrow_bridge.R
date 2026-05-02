@@ -34,70 +34,8 @@ rducks_arrow_validity_buffer <- function(valid) {
   rducks_arrow_pack_bits(valid)
 }
 
-rducks_arrow_divmod_decimal_string <- function(digits, divisor = 256L) {
-  carry <- 0L
-  out <- integer()
-  started <- FALSE
-  for (digit in digits) {
-    value <- carry * 10L + digit
-    q <- value %/% divisor
-    carry <- value %% divisor
-    if (q != 0L || started) {
-      out <- c(out, q)
-      started <- TRUE
-    }
-  }
-  list(q = out, r = carry)
-}
-
-rducks_arrow_unsigned_bytes_from_decimal <- function(x, width) {
-  x <- sub("^\\+", "", x)
-  x <- sub("^0+", "", x)
-  if (!nzchar(x)) x <- "0"
-  if (!grepl("^[0-9]+$", x)) {
-    stop("expected an unsigned decimal integer string", call. = FALSE)
-  }
-  digits <- as.integer(strsplit(x, "", fixed = TRUE)[[1L]])
-  out <- integer(width)
-  for (i in seq_len(width)) {
-    if (!length(digits)) break
-    qr <- rducks_arrow_divmod_decimal_string(digits)
-    out[[i]] <- qr$r
-    digits <- qr$q
-  }
-  if (length(digits)) {
-    stop("integer value does not fit in Arrow C Data storage", call. = FALSE)
-  }
-  as.raw(out)
-}
-
-rducks_arrow_twos_complement_bytes <- function(x, width) {
-  if (is.na(x)) {
-    return(raw(width))
-  }
-  x <- trimws(as.character(x))
-  neg <- startsWith(x, "-")
-  if (neg) x <- substring(x, 2L)
-  bytes <- as.integer(rducks_arrow_unsigned_bytes_from_decimal(x, width))
-  if (neg) {
-    bytes <- 255L - bytes
-    carry <- 1L
-    for (i in seq_len(width)) {
-      value <- bytes[[i]] + carry
-      bytes[[i]] <- value %% 256L
-      carry <- value %/% 256L
-      if (!carry) break
-    }
-  }
-  as.raw(bytes)
-}
-
 rducks_arrow_decimal_unscale_strings <- function(x, scale) {
   .Call(RDUCKS_decimal_unscale_strings, x, as.integer(scale))
-}
-
-rducks_arrow_decimal_unscale_string <- function(x, scale) {
-  rducks_arrow_decimal_unscale_strings(x, scale)[[1L]]
 }
 
 rducks_arrow_decimal_array_to_values <- function(array, width, scale) {
@@ -119,10 +57,6 @@ rducks_arrow_decimal_storage_strings <- function(x, scale) {
   .Call(RDUCKS_decimal_storage_strings, x, as.integer(scale))
 }
 
-rducks_arrow_decimal_storage_string <- function(x, scale) {
-  rducks_arrow_decimal_storage_strings(x, scale)[[1L]]
-}
-
 rducks_arrow_add_decimal_string_small <- function(x, addend) {
   .Call(RDUCKS_decimal_string_add_small, x, as.integer(addend))
 }
@@ -136,19 +70,11 @@ rducks_arrow_decimal_string_from_unsigned_bytes <- function(bytes) {
 }
 
 rducks_arrow_decimal_string_from_twos_complement <- function(bytes, signed = TRUE) {
-  ints <- as.integer(bytes)
-  if (!signed || !length(ints) || ints[[length(ints)]] < 128L) {
-    return(rducks_arrow_decimal_string_from_unsigned_bytes(as.raw(ints)))
-  }
-  ints <- 255L - ints
-  carry <- 1L
-  for (i in seq_along(ints)) {
-    value <- ints[[i]] + carry
-    ints[[i]] <- value %% 256L
-    carry <- value %/% 256L
-    if (!carry) break
-  }
-  paste0("-", rducks_arrow_decimal_string_from_unsigned_bytes(as.raw(ints)))
+  bytes <- as.raw(bytes)
+  .Call(
+    RDUCKS_decimal_strings_from_fixed_width_bytes,
+    bytes, TRUE, 0L, 1L, length(bytes), isTRUE(signed)
+  )[[1L]]
 }
 
 rducks_arrow_fixed_width_array_to_decimal <- function(array, width, signed = TRUE) {
@@ -174,27 +100,13 @@ rducks_arrow_fixed_width_array <- function(values, schema, width, signed = TRUE)
   )
 }
 
-rducks_arrow_divide_decimal_string_small <- function(x, divisor) {
-  .Call(RDUCKS_decimal_string_divide_small, x, as.integer(divisor))
-}
-
 rducks_arrow_interval_array_to_values <- function(array) {
   n <- as.integer(array$length)
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
   bytes <- as.raw(array$buffers[[2L]])
-  months <- rep(NA_integer_, n)
-  days <- rep(NA_integer_, n)
-  micros <- rep(NA_character_, n)
-  for (i in seq_len(n)) {
-    if (!isTRUE(valid[[i]])) next
-    start <- (offset + i - 1L) * 16L + 1L
-    months[[i]] <- readBin(bytes[start + 0:3], integer(), size = 4L, endian = "little", signed = TRUE)
-    days[[i]] <- readBin(bytes[start + 4:7], integer(), size = 4L, endian = "little", signed = TRUE)
-    nanos <- rducks_arrow_decimal_string_from_twos_complement(bytes[start + 8:15], signed = TRUE)
-    micros[[i]] <- rducks_arrow_divide_decimal_string_small(nanos, 1000L)
-  }
-  rducks_interval(months, days, micros)
+  values <- .Call(RDUCKS_interval_values_from_bytes, bytes, valid, offset, n)
+  rducks_interval(values$months, values$days, values$micros)
 }
 
 rducks_arrow_uuid_array_to_character <- function(array) {

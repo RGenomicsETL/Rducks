@@ -763,64 +763,117 @@ SEXP RDUCKS_decimal_strings_from_fixed_width_bytes(SEXP bytes_sexp, SEXP valid_s
     return out;
 }
 
-SEXP RDUCKS_decimal_string_divide_small(SEXP x, SEXP divisor_sexp) {
-    int divisor = Rf_asInteger(divisor_sexp);
-    if (divisor == NA_INTEGER || divisor <= 0) Rf_error("divisor must be a positive integer");
-    SEXP input = rducks_as_character_protect(x);
-    R_xlen_t n = XLENGTH(input);
-    SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
-    for (R_xlen_t i = 0; i < n; i++) {
-        SEXP ch = STRING_ELT(input, i);
-        if (ch == NA_STRING) {
-            SET_STRING_ELT(out, i, NA_STRING);
-            continue;
-        }
-        size_t len = 0;
-        const char *s = rducks_decimal_trim_char(ch, &len);
-        int neg = 0;
-        if (len > 0 && s[0] == '-') {
-            neg = 1;
-            s++;
-            len--;
-        } else if (len > 0 && s[0] == '+') {
-            s++;
-            len--;
-        }
-        s = rducks_decimal_skip_zeros(s, &len);
-        if (len == 0) {
-            SET_STRING_ELT(out, i, Rf_mkChar("0"));
-            continue;
-        }
-        char *q = (char *)R_alloc(len + 1U, sizeof(char));
-        size_t qpos = 0;
-        int started = 0;
-        int carry = 0;
-        for (size_t j = 0; j < len; j++) {
-            if (s[j] < '0' || s[j] > '9') Rf_error("expected a decimal integer string");
-            int value = carry * 10 + (s[j] - '0');
-            int digit = value / divisor;
-            carry = value % divisor;
-            if (digit != 0 || started) {
-                q[qpos++] = (char)('0' + digit);
-                started = 1;
-            }
-        }
-        if (qpos == 0) {
-            SET_STRING_ELT(out, i, Rf_mkChar("0"));
-            continue;
-        }
-        if (neg) {
-            char *buf = (char *)R_alloc(qpos + 2U, sizeof(char));
-            buf[0] = '-';
-            memcpy(buf + 1, q, qpos);
-            buf[qpos + 1U] = '\0';
-            rducks_decimal_set_string(out, i, buf, qpos + 1U);
-        } else {
-            q[qpos] = '\0';
-            rducks_decimal_set_string(out, i, q, qpos);
+static int32_t rducks_read_i32_le(const Rbyte *src) {
+    uint32_t u = ((uint32_t)src[0]) |
+                 ((uint32_t)src[1] << 8) |
+                 ((uint32_t)src[2] << 16) |
+                 ((uint32_t)src[3] << 24);
+    return (int32_t)u;
+}
+
+static size_t rducks_decimal_divide_integer_to_buf(const char *s, size_t len, int divisor, char *out) {
+    int neg = 0;
+    if (len > 0 && s[0] == '-') {
+        neg = 1;
+        s++;
+        len--;
+    } else if (len > 0 && s[0] == '+') {
+        s++;
+        len--;
+    }
+    s = rducks_decimal_skip_zeros(s, &len);
+    if (len == 0) {
+        out[0] = '0';
+        out[1] = '\0';
+        return 1U;
+    }
+    size_t pos = 0;
+    size_t qpos = neg ? 1U : 0U;
+    int started = 0;
+    int carry = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] < '0' || s[i] > '9') Rf_error("expected a decimal integer string");
+        int value = carry * 10 + (s[i] - '0');
+        int digit = value / divisor;
+        carry = value % divisor;
+        if (digit != 0 || started) {
+            out[qpos++] = (char)('0' + digit);
+            started = 1;
         }
     }
-    UNPROTECT(1);
-    rducks_maybe_unprotect_character(x, input);
+    if (!started) {
+        out[0] = '0';
+        out[1] = '\0';
+        return 1U;
+    }
+    if (neg) {
+        out[0] = '-';
+        pos = qpos;
+    } else {
+        pos = qpos;
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
+SEXP RDUCKS_interval_values_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp) {
+    if (TYPEOF(bytes_sexp) != RAWSXP) Rf_error("bytes must be raw");
+    if (TYPEOF(valid_sexp) != LGLSXP) Rf_error("valid must be logical");
+    int offset = Rf_asInteger(offset_sexp);
+    int n = Rf_asInteger(n_sexp);
+    if (offset < 0 || n < 0) Rf_error("invalid INTERVAL conversion parameters");
+    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * 16) Rf_error("INTERVAL byte buffer is too short");
+
+    SEXP months = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP days = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP micros = PROTECT(Rf_allocVector(STRSXP, n));
+    const Rbyte *bytes = RAW(bytes_sexp);
+
+    for (int i = 0; i < n; i++) {
+        if (LOGICAL(valid_sexp)[i] != TRUE) {
+            INTEGER(months)[i] = NA_INTEGER;
+            INTEGER(days)[i] = NA_INTEGER;
+            SET_STRING_ELT(micros, i, NA_STRING);
+            continue;
+        }
+        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * 16;
+        INTEGER(months)[i] = (int)rducks_read_i32_le(src);
+        INTEGER(days)[i] = (int)rducks_read_i32_le(src + 4);
+
+        Rbyte tmp[8];
+        memcpy(tmp, src + 8, 8U);
+        int neg = tmp[7] >= 128;
+        if (neg) {
+            for (int j = 0; j < 8; j++) tmp[j] = (Rbyte)(255U - tmp[j]);
+            int carry = 1;
+            for (int j = 0; j < 8; j++) {
+                int value = (int)tmp[j] + carry;
+                tmp[j] = (Rbyte)(value & 0xff);
+                carry = value >> 8;
+                if (!carry) break;
+            }
+        }
+        size_t dec_cap = 8U * RDUCKS_DEC_BASE_DIGITS + 3U;
+        char *dec = (char *)R_alloc(dec_cap, sizeof(char));
+        size_t dec_pos = 0;
+        if (neg) dec[dec_pos++] = '-';
+        dec_pos += rducks_unsigned_bytes_to_decimal_buf(tmp, 8U, dec + dec_pos, dec_cap - dec_pos);
+        dec[dec_pos] = '\0';
+
+        char *mic = (char *)R_alloc(dec_pos + 2U, sizeof(char));
+        size_t mic_len = rducks_decimal_divide_integer_to_buf(dec, dec_pos, 1000, mic);
+        SET_STRING_ELT(micros, i, Rf_mkCharLenCE(mic, (int)mic_len, CE_UTF8));
+    }
+
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+    SET_VECTOR_ELT(out, 0, months);
+    SET_VECTOR_ELT(out, 1, days);
+    SET_VECTOR_ELT(out, 2, micros);
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
+    SET_STRING_ELT(names, 0, Rf_mkChar("months"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("days"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("micros"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    UNPROTECT(5);
     return out;
 }
