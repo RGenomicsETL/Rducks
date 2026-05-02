@@ -1,13 +1,14 @@
 /* Included by ../rducks_extension.c. */
 
-static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *args_spec, const char *return_spec,
+static bool rducks_register_r_scalar(const char *name, SEXP eval_ref, const char *args_spec, const char *return_spec,
                                      const char *null_handling_spec, const char *exception_handling_spec,
-                                     bool side_effects, char *err, size_t err_cap) {
+                                     bool side_effects, const char *eval_mode_spec, char *err, size_t err_cap) {
     rducks_type_desc_t **arg_descs = NULL;
     rducks_type_desc_t *return_desc = NULL;
     size_t arity = 0;
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
+    rducks_eval_mode_t eval_mode;
     rducks_r_scalar_meta_t *meta = NULL;
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
@@ -15,8 +16,16 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     if (!rducks_allow_calling_thread_r_execution(err, err_cap)) {
         return false;
     }
-    if (!g_connection || !name || !name[0] || !Rf_isFunction(fun)) {
+    if (!g_connection || !name || !name[0]) {
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
+        return false;
+    }
+    if (!rducks_parse_eval_mode(eval_mode_spec, &eval_mode, err, err_cap)) {
+        return false;
+    }
+    if ((eval_mode == RDUCKS_EVAL_R && !Rf_isFunction(eval_ref)) ||
+        (eval_mode == RDUCKS_EVAL_RC && !rducks_rc_bundle_valid(eval_ref))) {
+        snprintf(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
     }
     if (!rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
@@ -90,8 +99,9 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     return_desc = NULL;
     meta->null_handling = null_handling;
     meta->exception_handling = exception_handling;
-    R_PreserveObject(fun);
-    meta->fun = fun;
+    meta->eval_mode = eval_mode;
+    R_PreserveObject(eval_ref);
+    meta->fun = eval_ref;
 
     duckdb_scalar_function_set_return_type(fn, return_logical_type);
     if (null_handling == RDUCKS_NULL_SPECIAL) {
@@ -123,6 +133,7 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
     duckdb_string_t *exception_handling_specs =
         (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 5));
     bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
+    duckdb_string_t *eval_mode_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 7));
     bool *out = (bool *)duckdb_vector_get_data(output);
 
     for (idx_t i = 0; i < n; i++) {
@@ -131,26 +142,29 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
         char *return_spec = rducks_copy_duckdb_string(&return_specs[i]);
         char *null_handling_spec = rducks_copy_duckdb_string(&null_handling_specs[i]);
         char *exception_handling_spec = rducks_copy_duckdb_string(&exception_handling_specs[i]);
+        char *eval_mode_spec = rducks_copy_duckdb_string(&eval_mode_specs[i]);
         char err[256];
-        SEXP fun;
+        SEXP eval_ref;
         err[0] = '\0';
-        if (!name || !args_spec || !return_spec || !null_handling_spec || !exception_handling_spec) {
+        if (!name || !args_spec || !return_spec || !null_handling_spec || !exception_handling_spec || !eval_mode_spec) {
             free(name);
             free(args_spec);
             free(return_spec);
             free(null_handling_spec);
             free(exception_handling_spec);
+            free(eval_mode_spec);
             duckdb_scalar_function_set_error(info, "out of memory");
             return;
         }
-        fun = (SEXP)(uintptr_t)fun_ptrs[i];
-        out[i] = rducks_register_r_scalar(name, fun, args_spec, return_spec, null_handling_spec,
-                                          exception_handling_spec, side_effects_values[i], err, sizeof(err));
+        eval_ref = (SEXP)(uintptr_t)fun_ptrs[i];
+        out[i] = rducks_register_r_scalar(name, eval_ref, args_spec, return_spec, null_handling_spec,
+                                          exception_handling_spec, side_effects_values[i], eval_mode_spec, err, sizeof(err));
         free(name);
         free(args_spec);
         free(return_spec);
         free(null_handling_spec);
         free(exception_handling_spec);
+        free(eval_mode_spec);
         if (!out[i]) {
             duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks scalar registration failed");
             return;

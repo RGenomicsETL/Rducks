@@ -11,6 +11,7 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
+  eval_mode = c("R", "RC"),
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -32,6 +33,10 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{mode}{Registration mode. \code{"scalar"} is implemented now and calls the R
 function once per DuckDB row through the nanoarrow scalar adapter. A future
 vectorized mode should call the R function once per DuckDB chunk.}
+
+\item{eval_mode}{Scalar evaluator implementation. \code{"R"} uses the R row-loop
+adapter; \code{"RC"} uses the native C row-loop adapter and validates against the
+same scalar-mode semantics.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared

@@ -66,9 +66,11 @@ not need to keep this object for the UDF to keep working in DuckDB.
 The implemented mode is `mode = "scalar"`, which calls the R function
 once per DuckDB row. Internally this scalar adapter is nanoarrow-backed
 over DuckDB Arrow C Data: DuckDB chunks are exported through Arrow C
-Data, adapted to scalar R calls, then imported back to DuckDB. A future
-vectorized mode should call R once per DuckDB chunk and will be added
-only when implemented.
+Data, adapted to scalar R calls, then imported back to DuckDB.
+`eval_mode = "R"` uses the R row-loop adapter; `eval_mode = "RC"` uses
+the native C row-loop adapter and is covered by R-vs-RC conformance
+tests. A future vectorized mode should call R once per DuckDB chunk and
+will be added only when implemented.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by

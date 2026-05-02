@@ -598,6 +598,40 @@ static int rducks_parse_exception_handling(const char *text, rducks_exception_ha
     return 0;
 }
 
+static int rducks_parse_eval_mode(const char *text, rducks_eval_mode_t *out, char *err, size_t err_cap) {
+    char token[16];
+    size_t len;
+    if (!text || !out) {
+        snprintf(err, err_cap, "invalid eval_mode value");
+        return 0;
+    }
+    while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
+        text++;
+    }
+    len = strlen(text);
+    while (len > 0 && (text[len - 1U] == ' ' || text[len - 1U] == '\t' || text[len - 1U] == '\n' ||
+                       text[len - 1U] == '\r')) {
+        len--;
+    }
+    if (len == 0 || len >= sizeof(token)) {
+        snprintf(err, err_cap, "invalid eval_mode value");
+        return 0;
+    }
+    memcpy(token, text, len);
+    token[len] = '\0';
+    rducks_ascii_lower_inplace(token);
+    if (strcmp(token, "r") == 0) {
+        *out = RDUCKS_EVAL_R;
+        return 1;
+    }
+    if (strcmp(token, "rc") == 0) {
+        *out = RDUCKS_EVAL_RC;
+        return 1;
+    }
+    snprintf(err, err_cap, "unsupported eval_mode value: %s", token);
+    return 0;
+}
+
 static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, size_t *out_count, char *err, size_t err_cap) {
     char *copy;
     char *cursor;

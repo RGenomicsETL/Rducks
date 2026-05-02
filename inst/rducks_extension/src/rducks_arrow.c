@@ -331,6 +331,13 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 
+    if (meta && meta->eval_mode == RDUCKS_EVAL_RC) {
+        if (!rducks_rc_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC scalar R function failed");
+        }
+        return;
+    }
+
     if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
         duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
     }

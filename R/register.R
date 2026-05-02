@@ -50,6 +50,9 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
 #' @param mode Registration mode. `"scalar"` is implemented now and calls the R
 #'   function once per DuckDB row through the nanoarrow scalar adapter. A future
 #'   vectorized mode should call the R function once per DuckDB chunk.
+#' @param eval_mode Scalar evaluator implementation. `"R"` uses the R row-loop
+#'   adapter; `"RC"` uses the native C row-loop adapter and validates against the
+#'   same scalar-mode semantics.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -66,10 +69,12 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
                             mode = "scalar",
+                            eval_mode = c("R", "RC"),
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
                             side_effects = FALSE) {
   mode <- rducks_match_mode(mode)
+  eval_mode <- match.arg(eval_mode)
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
   if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
@@ -81,20 +86,25 @@ rducks_register <- function(con, name, fun, args, returns,
   spec <- rducks_registration_spec(name, fun, args, returns, mode = mode)
   rducks_assert_scalar_marshalling_supported(spec)
   rducks_assert_single_thread(con)
-  arrow_fun <- rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
-  # The SQL registration call below is synchronous. `arrow_fun` is live in this
-  # R frame until the DuckDB extension receives the address and preserves the
-  # function in per-UDF metadata with R_PreserveObject().
-  fun_ptr <- .Call(RDUCKS_sexp_addr, arrow_fun)
+  eval_ref <- if (identical(eval_mode, "R")) {
+    rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
+  } else {
+    rducks_make_rc_scalar_bundle(fun, spec)
+  }
+  # The SQL registration call below is synchronous. `eval_ref` is live in this
+  # R frame until the DuckDB extension receives the address and preserves it in
+  # per-UDF metadata with R_PreserveObject().
+  eval_ref_ptr <- .Call(RDUCKS_sexp_addr, eval_ref)
   sql <- sprintf(
-    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s, %s, %s, %s, %s) AS ok",
+    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s, %s, %s, %s, %s, %s) AS ok",
     rducks_sql_string(name),
-    as.character(fun_ptr),
+    as.character(eval_ref_ptr),
     rducks_sql_string(paste(spec$args, collapse = ",")),
     rducks_sql_string(spec$returns),
     rducks_sql_string(null_handling),
     rducks_sql_string(exception_handling),
-    if (isTRUE(side_effects)) "TRUE" else "FALSE"
+    if (isTRUE(side_effects)) "TRUE" else "FALSE",
+    rducks_sql_string(eval_mode)
   )
   res <- DBI::dbGetQuery(con, sql)
   if (!NROW(res) || !isTRUE(res$ok[[1]])) {
@@ -107,6 +117,7 @@ rducks_register <- function(con, name, fun, args, returns,
       null_handling = null_handling,
       exception_handling = exception_handling,
       side_effects = side_effects,
+      eval_mode = eval_mode,
       registered = TRUE
     ),
     class = "rducks_registration"
@@ -119,6 +130,7 @@ print.rducks_registration <- function(x, ...) {
   cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
   cat("  name:       ", x$spec$name, "\n", sep = "")
   cat("  mode:       ", x$spec$mode, "\n", sep = "")
+  cat("  eval_mode:  ", x$eval_mode %||% "R", "\n", sep = "")
   cat("  signature:  ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }

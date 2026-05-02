@@ -62,6 +62,11 @@ typedef enum rducks_exception_handling {
     RDUCKS_EXCEPTION_RETURN_NULL = 1
 } rducks_exception_handling_t;
 
+typedef enum rducks_eval_mode {
+    RDUCKS_EVAL_R = 0,
+    RDUCKS_EVAL_RC = 1
+} rducks_eval_mode_t;
+
 typedef enum rducks_type_kind {
     RDUCKS_KIND_SCALAR = 0,
     RDUCKS_KIND_LIST,
@@ -94,6 +99,7 @@ typedef struct rducks_r_scalar_meta {
     struct rducks_type_desc *return_desc;
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
+    rducks_eval_mode_t eval_mode;
 } rducks_r_scalar_meta_t;
 
 static duckdb_database g_database = NULL;
@@ -101,6 +107,8 @@ static duckdb_connection g_connection = NULL;
 static int g_registration_surface_ready = 0;
 static char g_main_thread_token[128];
 static int g_main_thread_token_set = 0;
+static int rducks_rc_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                    char *err_msg, size_t err_cap);
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
@@ -109,5 +117,6 @@ static int g_main_thread_token_set = 0;
 #include "src/rducks_types.c"
 #include "src/rducks_runtime.c"
 #include "src/rducks_arrow.c"
+#include "src/rducks_rc.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_surfaces.c"

@@ -37,6 +37,7 @@ static bool rducks_register_scalar_surface(duckdb_connection con) {
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, bool_type);
+    duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_set_return_type(fn, bool_type);
     duckdb_scalar_function_set_volatile(fn);
     duckdb_scalar_function_set_function(fn, rducks_register_scalar_scalar);

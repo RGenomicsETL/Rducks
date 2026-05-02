@@ -1463,6 +1463,42 @@ rducks_arrow_result_array <- function(type, results, output_schema, n) {
   out
 }
 
+rducks_rc_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
+  n <- as.integer(n)
+  if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
+    stop("input nanoarrow array pointer is not valid", call. = FALSE)
+  }
+  if (!nanoarrow::nanoarrow_pointer_is_valid(input_schema)) {
+    stop("input nanoarrow schema pointer is not valid", call. = FALSE)
+  }
+  input_children <- input_array$children
+  input_schema_children <- input_schema$children
+  columns <- vector("list", length(arg_types))
+  nulls <- vector("list", length(arg_types))
+  for (i in seq_along(arg_types)) {
+    columns[[i]] <- rducks_arrow_array_to_values(arg_types[[i]], input_children[[i]], input_schema_children[[i]])
+    nulls[[i]] <- if (inherits(arg_types[[i]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(input_children[[i]], n)
+  }
+
+  top_level_null <- rep(FALSE, n)
+  for (i in seq_along(nulls)) {
+    top_level_null <- top_level_null | nulls[[i]]
+  }
+
+  list(columns = columns, nulls = nulls, top_level_null = top_level_null)
+}
+
+rducks_make_rc_scalar_bundle <- function(fun, spec) {
+  list(
+    fun = fun,
+    arg_types = spec$arg_types,
+    return_type = spec$return_type,
+    prepare_inputs = rducks_rc_prepare_inputs,
+    check_return = rducks_check_scalar_udf_return,
+    result_array = rducks_arrow_result_array
+  )
+}
+
 rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling) {
   arg_types <- spec$arg_types
   return_type <- spec$return_type
@@ -1475,57 +1511,42 @@ rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception
   function(input_array, input_schema, output_schema, n) {
     tryCatch({
       n <- as.integer(n)
-      if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
-        stop("input nanoarrow array pointer is not valid", call. = FALSE)
-      }
-      if (!nanoarrow::nanoarrow_pointer_is_valid(input_schema)) {
-        stop("input nanoarrow schema pointer is not valid", call. = FALSE)
-      }
       if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
         stop("output nanoarrow schema pointer is not valid", call. = FALSE)
       }
-      input_children <- input_array$children
-    input_schema_children <- input_schema$children
-    columns <- vector("list", length(arg_types))
-    nulls <- vector("list", length(arg_types))
-    for (i in seq_along(arg_types)) {
-      columns[[i]] <- rducks_arrow_array_to_values(arg_types[[i]], input_children[[i]], input_schema_children[[i]])
-      nulls[[i]] <- if (inherits(arg_types[[i]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(input_children[[i]], n)
-    }
+      prepared <- rducks_rc_prepare_inputs(arg_types, input_array, input_schema, n)
+      columns <- prepared$columns
+      nulls <- prepared$nulls
+      top_level_null <- prepared$top_level_null
 
-    top_level_null <- rep(FALSE, n)
-    for (i in seq_along(nulls)) {
-      top_level_null <- top_level_null | nulls[[i]]
-    }
-
-    results <- vector("list", n)
-    for (row in seq_len(n)) {
-      if (isTRUE(top_level_null[[row]]) && identical(null_handling, "default")) {
-        results[row] <- list(NULL)
-        next
-      }
-
-      args <- vector("list", length(arg_types))
-      for (col in seq_along(arg_types)) {
-        args[col] <- list(rducks_arrow_value_at(arg_types[[col]], columns[[col]], nulls[[col]], row))
-      }
-
-      value <- tryCatch(
-        do.call(fun, args),
-        error = function(e) {
-          if (identical(exception_handling, "return_null")) {
-            return(structure(list(), class = "rducks_arrow_return_null"))
-          }
-          stop(e)
+      results <- vector("list", n)
+      for (row in seq_len(n)) {
+        if (isTRUE(top_level_null[[row]]) && identical(null_handling, "default")) {
+          results[row] <- list(NULL)
+          next
         }
-      )
-      if (inherits(value, "rducks_arrow_return_null")) {
-        results[row] <- list(NULL)
-      } else {
-        value <- rducks_check_scalar_udf_return(return_type, value)
-        results[row] <- list(value)
+
+        args <- vector("list", length(arg_types))
+        for (col in seq_along(arg_types)) {
+          args[col] <- list(rducks_arrow_value_at(arg_types[[col]], columns[[col]], nulls[[col]], row))
+        }
+
+        value <- tryCatch(
+          do.call(fun, args),
+          error = function(e) {
+            if (identical(exception_handling, "return_null")) {
+              return(structure(list(), class = "rducks_arrow_return_null"))
+            }
+            stop(e)
+          }
+        )
+        if (inherits(value, "rducks_arrow_return_null")) {
+          results[row] <- list(NULL)
+        } else {
+          value <- rducks_check_scalar_udf_return(return_type, value)
+          results[row] <- list(value)
+        }
       }
-    }
 
       rducks_arrow_result_array(return_type, results, output_schema, n)
     }, error = function(e) {
