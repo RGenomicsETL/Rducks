@@ -12,7 +12,7 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
     duckdb_state rc;
-    if (!rducks_allow_direct_r_execution(err, err_cap)) {
+    if (!rducks_allow_calling_thread_r_execution(err, err_cap)) {
         return false;
     }
     if (!g_connection || !name || !name[0] || !Rf_isFunction(fun)) {
@@ -64,8 +64,8 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
             duckdb_destroy_scalar_function(&fn);
             duckdb_destroy_logical_type(&return_logical_type);
             for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
-        free(arg_descs);
-        rducks_type_desc_destroy(return_desc);
+            free(arg_descs);
+            rducks_type_desc_destroy(return_desc);
             return false;
         }
         duckdb_scalar_function_add_parameter(fn, arg_logical_type);
@@ -90,8 +90,8 @@ static bool rducks_register_r_scalar(const char *name, SEXP fun, const char *arg
     return_desc = NULL;
     meta->null_handling = null_handling;
     meta->exception_handling = exception_handling;
-    meta->fun = fun;
     R_PreserveObject(fun);
+    meta->fun = fun;
 
     duckdb_scalar_function_set_return_type(fn, return_logical_type);
     if (null_handling == RDUCKS_NULL_SPECIAL) {

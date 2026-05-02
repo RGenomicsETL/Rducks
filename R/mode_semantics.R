@@ -14,6 +14,10 @@ rducks_mode_semantics_rows <- list(
   )
 )
 
+rducks_match_mode <- function(mode) {
+  match.arg(mode, names(rducks_mode_semantics_rows))
+}
+
 #' Describe Rducks execution mode semantics
 #'
 #' `rducks_mode_semantics()` is the package-level schema for execution-mode

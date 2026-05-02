@@ -267,7 +267,6 @@ static int rducks_r_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chu
     SEXP call;
     SEXP result;
 
-    rducks_stats_note_r_execute(rducks_is_main_thread());
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks scalar metadata missing");
         return 0;
@@ -323,26 +322,17 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     char err_msg[256];
     err_msg[0] = '\0';
 
-    int is_main_thread = rducks_is_main_thread();
-    rducks_stats_note_udf_entry(is_main_thread);
-
-    if (is_main_thread) {
-        rducks_drain_worker_requests();
-        if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
-            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
-            return;
-        }
-        rducks_drain_worker_requests();
+    if (!rducks_is_main_thread()) {
+        duckdb_scalar_function_set_error(
+            info,
+            "Rducks scalar UDF reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') "
+            "or set external_threads=1 and PRAGMA threads=1 before registering R UDFs"
+        );
         return;
     }
 
-    rducks_udf_request_t req;
-    req.meta = meta;
-    req.input = input;
-    req.output = output;
-    rducks_request_enqueue_and_wait(&req);
-    if (!req.ok) {
-        duckdb_scalar_function_set_error(info, req.err[0] ? req.err : "Rducks main-thread R execution request failed");
+    if (!rducks_r_scalar_execute(meta, input, output, err_msg, sizeof(err_msg))) {
+        duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
     }
 }
 

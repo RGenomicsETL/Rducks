@@ -107,7 +107,7 @@ static int g_main_thread_token_set = 0;
 #include "src/rducks_threads.c"
 #include "src/rducks_util.c"
 #include "src/rducks_types.c"
-#include "src/rducks_worker_queue.c"
+#include "src/rducks_runtime.c"
 #include "src/rducks_arrow.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_surfaces.c"

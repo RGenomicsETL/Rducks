@@ -37,13 +37,14 @@ DuckDB
 
 A DuckDB worker must never call R directly. The supported public configuration
 therefore keeps scalar-mode R UDF execution on the calling R thread by requiring
-`external_threads=1` and `PRAGMA threads=1` at registration. Native request-queue
-code is an internal guard/future integration path, not a documented
-multi-threaded execution contract.
+`external_threads=1` and `PRAGMA threads=1` at registration. If DuckDB later
+enters a scalar Rducks UDF on a non-calling execution thread, the extension
+errors immediately rather than queueing work through an unproven main-thread
+pump.
 
 ## First safe mode
 
-The first direct-R-function scalar mode uses:
+The supported scalar-mode R UDF path uses:
 
 ```sql
 SET external_threads=1;

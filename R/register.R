@@ -1,3 +1,23 @@
+rducks_registration_spec <- function(name, fun, args, returns, mode) {
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("name must be a non-empty character scalar", call. = FALSE)
+  }
+  if (!is.function(fun)) {
+    stop("fun must be a function", call. = FALSE)
+  }
+  arg_types <- rducks_as_type_list(args)
+  return_type <- rducks_as_type(returns)
+  list(
+    name = name,
+    args = vapply(arg_types, rducks_type_token, character(1), USE.NAMES = FALSE),
+    returns = rducks_type_token(return_type),
+    arg_types = arg_types,
+    return_type = return_type,
+    mode = mode,
+    signature = rducks_duckdb_signature(name, arg_types, return_type)
+  )
+}
+
 rducks_assert_scalar_marshalling_supported <- function(spec) {
   types <- c(spec$arg_types, list(spec$return_type))
   unsupported <- vapply(types, function(type) {
@@ -58,7 +78,7 @@ rducks_register <- function(con, name, fun, args, returns,
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
-  spec <- rducks_udf_spec(name, fun, args, returns, mode = mode)
+  spec <- rducks_registration_spec(name, fun, args, returns, mode = mode)
   rducks_assert_scalar_marshalling_supported(spec)
   rducks_assert_single_thread(con)
   arrow_fun <- rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
@@ -97,6 +117,8 @@ rducks_register <- function(con, name, fun, args, returns,
 print.rducks_registration <- function(x, ...) {
   cat("<rducks_registration>\n")
   cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
-  print(x$spec)
+  cat("  name:       ", x$spec$name, "\n", sep = "")
+  cat("  mode:       ", x$spec$mode, "\n", sep = "")
+  cat("  signature:  ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }

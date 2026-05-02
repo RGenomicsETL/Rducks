@@ -51,9 +51,3 @@ static int rducks_get_main_thread_token(char *buf, size_t cap) {
     return out;
 }
 
-static void rducks_capture_main_thread(void) {
-    /* DuckDB may run extension loading on a worker thread. The R package passes
-     * the calling R thread token explicitly through rducks_set_main_thread_token()
-     * during rducks_enable(). */
-}
-

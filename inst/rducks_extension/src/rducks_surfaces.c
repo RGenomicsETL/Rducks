@@ -8,28 +8,6 @@ static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk i
     }
 }
 
-static void rducks_debug_thread_stats_scalar(duckdb_function_info info, duckdb_data_chunk input,
-                                             duckdb_vector output) {
-    (void)info;
-    idx_t n = duckdb_data_chunk_get_size(input);
-    char stats[512];
-    rducks_thread_stats_format(stats, sizeof(stats));
-    for (idx_t i = 0; i < n; i++) {
-        duckdb_vector_assign_string_element(output, i, stats);
-    }
-}
-
-static void rducks_debug_thread_stats_reset_scalar(duckdb_function_info info, duckdb_data_chunk input,
-                                                   duckdb_vector output) {
-    (void)info;
-    idx_t n = duckdb_data_chunk_get_size(input);
-    bool *out = (bool *)duckdb_vector_get_data(output);
-    rducks_thread_stats_reset();
-    for (idx_t i = 0; i < n; i++) {
-        out[i] = true;
-    }
-}
-
 static bool rducks_register_scalar_surface(duckdb_connection con) {
     duckdb_scalar_function fn = duckdb_create_scalar_function();
     duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
@@ -117,16 +95,8 @@ static bool rducks_register_version(duckdb_connection con) {
     return rducks_register_noarg_scalar(con, "rducks_version", DUCKDB_TYPE_VARCHAR, rducks_version_scalar, false);
 }
 
-static bool rducks_register_debug_thread_stats(duckdb_connection con) {
-    return rducks_register_noarg_scalar(con, "rducks_debug_thread_stats", DUCKDB_TYPE_VARCHAR,
-                                        rducks_debug_thread_stats_scalar, true) &&
-           rducks_register_noarg_scalar(con, "rducks_debug_thread_stats_reset", DUCKDB_TYPE_BOOLEAN,
-                                        rducks_debug_thread_stats_reset_scalar, true);
-}
-
 DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_extension_access *access) {
     duckdb_database database = NULL;
-    rducks_capture_main_thread();
     if (access && info) {
         duckdb_database *db_ptr = access->get_database(info);
         if (db_ptr) {
@@ -150,8 +120,8 @@ DUCKDB_EXTENSION_ENTRYPOINT_CUSTOM(duckdb_extension_info info, struct duckdb_ext
         g_registration_surface_ready = 0;
     }
     if (!g_registration_surface_ready) {
-        if (!rducks_register_version(g_connection) || !rducks_register_debug_thread_stats(g_connection) ||
-            !rducks_register_main_thread_token_surface(g_connection) || !rducks_register_scalar_surface(g_connection)) {
+        if (!rducks_register_version(g_connection) || !rducks_register_main_thread_token_surface(g_connection) ||
+            !rducks_register_scalar_surface(g_connection)) {
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");
             }
