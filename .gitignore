@@ -8,6 +8,7 @@
 *.dylib
 *.duckdb_extension
 *.tar.gz
+*.tgz
 *.Rcheck
 build/
 .DS_Store

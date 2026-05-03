@@ -1,5 +1,10 @@
 # Rducks 0.0.0.9000
 
+- Added an R-universe badge to the README and lowered the package R dependency
+  floor to R 4.3.
+- Added wasm/webR build detection in `configure`, including the DuckDB wasm
+  metadata platform and explicit Emscripten export for the extension entrypoint,
+  plus a `Dockerfile.webr-test` helper for local rwasm builds.
 - Added explicit execution-plan helpers `rducks_execution_plan()`,
   `rducks_set_execution_plan()`, and `rducks_current_execution_plan()` to
   separate UDF semantics from connection-level marshalling/concurrency policy.

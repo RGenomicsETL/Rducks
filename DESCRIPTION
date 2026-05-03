@@ -15,7 +15,7 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends:
-    R (>= 4.4)
+    R (>= 4.3)
 Imports:
     DBI,
     duckdb (>= 1.5.0),

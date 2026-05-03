@@ -8,6 +8,7 @@
 ^docs/.*\.dot$
 ^Makefile$
 ^README\.Rmd$
+^Dockerfile\.webr-test$
 ^AGENTS\.md$
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$

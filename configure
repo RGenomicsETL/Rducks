@@ -3,6 +3,14 @@ set -eu
 
 THIS_DIR=`dirname "$0"`
 THIS_DIR=`cd "$THIS_DIR" && pwd`
+
+HOST_TRIPLET=""
+for arg in "$@"; do
+  case "$arg" in
+    --host=*) HOST_TRIPLET="${arg#--host=}";;
+  esac
+done
+
 EXT_DIR="${THIS_DIR}/inst/rducks_extension"
 DUCKDB_CAPI_HEADER="${EXT_DIR}/duckdb_capi/duckdb_extension.h"
 SRC_FILE="${EXT_DIR}/rducks_extension.c"
@@ -40,6 +48,7 @@ R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
 R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
 R_LDFLAGS=`"${R_HOME}/bin/R" CMD config LDFLAGS`
 R_LD_FLAGS=`"${R_HOME}/bin/R" CMD config --ldflags`
+CONFIGURE_LDFLAGS="${LDFLAGS:-}"
 NANOARROW_INCLUDE=`"${R_HOME}/bin/Rscript" -e 'cat(system.file("include", package = "nanoarrow"))'`
 if [ -z "${NANOARROW_INCLUDE}" ] || [ ! -f "${NANOARROW_INCLUDE}/nanoarrow/r.h" ]; then
   echo "ERROR: nanoarrow headers not found. Install the nanoarrow R package."
@@ -84,23 +93,36 @@ if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
   UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
 fi
 
+WASM_BUILD=no
+if echo "${CC}" | grep -q "emcc" || echo "${CC}" | grep -q "wasm"; then
+  WASM_BUILD=yes
+fi
+if echo "${HOST_TRIPLET}" | grep -q "wasm" || echo "${HOST_TRIPLET}" | grep -q "emscripten"; then
+  WASM_BUILD=yes
+fi
+
 OS_NAME=`uname -s`
 ARCH_NAME=`uname -m`
 DUCKDB_PLATFORM=""
-case "${OS_NAME}" in
-  Linux)
-    case "${ARCH_NAME}" in
-      x86_64) DUCKDB_PLATFORM="linux_amd64";;
-      aarch64|arm64) DUCKDB_PLATFORM="linux_arm64";;
-    esac
-    ;;
-  Darwin)
-    case "${ARCH_NAME}" in
-      x86_64) DUCKDB_PLATFORM="osx_amd64";;
-      arm64) DUCKDB_PLATFORM="osx_arm64";;
-    esac
-    ;;
-esac
+if [ "${WASM_BUILD}" = "yes" ]; then
+  DUCKDB_PLATFORM="linux_i686_musl"
+fi
+if [ -z "${DUCKDB_PLATFORM}" ]; then
+  case "${OS_NAME}" in
+    Linux)
+      case "${ARCH_NAME}" in
+        x86_64) DUCKDB_PLATFORM="linux_amd64";;
+        aarch64|arm64) DUCKDB_PLATFORM="linux_arm64";;
+      esac
+      ;;
+    Darwin)
+      case "${ARCH_NAME}" in
+        x86_64) DUCKDB_PLATFORM="osx_amd64";;
+        arm64) DUCKDB_PLATFORM="osx_arm64";;
+      esac
+      ;;
+  esac
+fi
 if [ -z "${DUCKDB_PLATFORM}" ]; then
   echo "ERROR: Unsupported platform: ${OS_NAME}/${ARCH_NAME}"
   exit 1
@@ -116,10 +138,26 @@ else
   SHARED_FLAGS="-shared -fPIC"
 fi
 
+EXT_EXPORT_FLAGS=""
+R_LINK_FLAGS="${R_LD_FLAGS}"
+if [ "${WASM_BUILD}" = "yes" ]; then
+  # Emscripten side modules do not automatically expose default-visible
+  # symbols as wasm exports. DuckDB's loader looks up rducks_init_c_api
+  # by name, so export it explicitly in the final wasm link.
+  EXT_EXPORT_FLAGS="-Wl,--export=rducks_init_c_api"
+  # R CMD config --ldflags in the webR container points at the host libR.so and
+  # host-only libraries. A wasm side module must leave R API symbols unresolved
+  # for the webR runtime instead of linking the host R shared library.
+  R_LINK_FLAGS=""
+fi
+
 echo "---------- Building Rducks DuckDB extension ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
 echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
-${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${R_LD_FLAGS}
+echo "WebAssembly build: ${WASM_BUILD}"
+${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} ${CONFIGURE_LDFLAGS} -o "${RAW_EXT_FILE}" \
+  ${EXT_EXPORT_FLAGS} \
+  "${SRC_FILE}" ${R_LINK_FLAGS}
 
 echo "Appending DuckDB extension metadata..."
 "${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
