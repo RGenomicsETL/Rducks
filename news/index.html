@@ -34,7 +34,8 @@
 
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.0.0.9000" id="rducks-0009000">Rducks 0.0.0.9000<a class="anchor" aria-label="anchor" href="#rducks-0009000"></a></h2>
-<ul><li>Added an R-universe badge to the README and lowered the package R dependency floor to R 4.3.</li>
+<ul><li>Added <code><a href="../reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> with native per-UDF execution counters so users can inspect registration metadata and verify that <code>arrow_r</code>/<code>arrow_c</code> chunks ran through the requested evaluator without fallback.</li>
+<li>Added an R-universe badge to the README and lowered the package R dependency floor to R 4.3.</li>
 <li>Added wasm/webR build detection in <code>configure</code>, including the DuckDB wasm metadata platform and explicit Emscripten export for the extension entrypoint, plus a <code>Dockerfile.webr-test</code> helper for local rwasm builds.</li>
 <li>Added explicit execution-plan helpers <code><a href="../reference/rducks_execution_plan.html">rducks_execution_plan()</a></code>, <code><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>, and <code><a href="../reference/rducks_current_execution_plan.html">rducks_current_execution_plan()</a></code> to separate UDF semantics from connection-level marshalling/concurrency policy. The <code>arrow_r + serial</code> plan is the reference implementation; <code>arrow_c + vectorized</code> and planned <code>arrow_ipc + multiprocess_parallel</code> execution now fail explicitly through plan validation rather than silently falling back.</li>
 <li>Removed per-registration evaluator selection from <code><a href="../reference/rducks_register.html">rducks_register()</a></code>. The evaluator is now derived from the active execution plan, so conformance tests compare plan-native registrations instead of mixing evaluator choices inside a single registration call.</li>

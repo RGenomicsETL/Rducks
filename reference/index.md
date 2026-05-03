@@ -40,6 +40,8 @@
   : Construct DuckDB ENUM values
 - [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
   : Define an Rducks execution plan
+- [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+  : Explain a registered Rducks UDF
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
