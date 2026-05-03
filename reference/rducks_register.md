@@ -3,7 +3,11 @@
 Registers an R function as a DuckDB SQL function using the loaded Rducks
 extension. Registration requires `external_threads=1` plus
 `PRAGMA threads=1` so native registration and the default scalar
-execution path stay on the calling R thread. After registration, use
+execution path stay on the calling R thread. The active
+[`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
+selects the marshalling implementation for this registration;
+unsupported plan/mode/type combinations fail instead of falling back.
+After registration, use
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
 to opt into queued same-process execution.
 
@@ -17,7 +21,6 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
-  eval_mode = NULL,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -53,15 +56,6 @@ rducks_register(
   Registration mode. `"scalar"` calls the R function once per DuckDB
   row. `"vectorized"` calls the R function once per DuckDB chunk with
   one R vector/list-column per declared argument.
-
-- eval_mode:
-
-  Compatibility override for the marshalling evaluator. Use `NULL` to
-  select from the active connection
-  [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md).
-  `"R"` maps to `arrow_r`; `"RC"` maps to `arrow_c` for scalar mode.
-  `mode = "vectorized"` currently supports `eval_mode = "R"` only
-  because `arrow_c` vectorized execution is not implemented yet.
 
 - null_handling:
 

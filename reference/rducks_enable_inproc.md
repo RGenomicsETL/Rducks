@@ -6,9 +6,9 @@ worker-side UDF callbacks submit chunk requests to an extension-owned
 queue, and the recorded main R execution lane drains the queue and
 performs all R API work. This is a same-process scheduling mode, not a
 performance promise; R function calls are still serialized on the main R
-thread. The queued backend dispatches scalar mode with `eval_mode = "R"`
-or `"RC"`, and vectorized mode with `eval_mode = "R"`, through that same
-main-lane execution rule.
+thread. This helper changes only the concurrency part of the active
+execution plan; marshalling stays `arrow_r` or `arrow_c` according to
+[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md).
 
 ## Usage
 

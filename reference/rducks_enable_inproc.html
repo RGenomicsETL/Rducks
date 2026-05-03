@@ -4,16 +4,16 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. The queued backend dispatches scalar
-mode with eval_mode = &quot;R&quot; or &quot;RC&quot;, and vectorized mode with
-eval_mode = &quot;R&quot;, through that same main-lane execution rule."><meta property="og:description" content="Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
+still serialized on the main R thread. This helper changes only the
+concurrency part of the active execution plan; marshalling stays arrow_r or
+arrow_c according to rducks_set_execution_plan()."><meta property="og:description" content="Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
 backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. The queued backend dispatches scalar
-mode with eval_mode = &quot;R&quot; or &quot;RC&quot;, and vectorized mode with
-eval_mode = &quot;R&quot;, through that same main-lane execution rule."></head><body>
+still serialized on the main R thread. This helper changes only the
+concurrency part of the active execution plan; marshalling stays arrow_r or
+arrow_c according to rducks_set_execution_plan()."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -53,9 +53,9 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. The queued backend dispatches scalar
-mode with <code>eval_mode = "R"</code> or <code>"RC"</code>, and vectorized mode with
-<code>eval_mode = "R"</code>, through that same main-lane execution rule.</p>
+still serialized on the main R thread. This helper changes only the
+concurrency part of the active execution plan; marshalling stays <code>arrow_r</code> or
+<code>arrow_c</code> according to <code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>.</p>
     </div>
 
     <div class="section level2">

@@ -59,7 +59,7 @@
 <p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that Arrow C Data marshalling is available, and preserves the R function. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the R function reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one generic DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>.</p>
 <p>Query execution is described by a connection-level execution plan with two orthogonal pieces:</p>
 <ul>
-<li>marshalling: <code>arrow_r</code> is the Arrow C Data plus nanoarrow/R reference path; <code>arrow_c</code> is the native C/DuckDB-vector path used by scalar RC execution; <code>arrow_ipc</code> is reserved for the future owned-IPC multiprocess transport.</li>
+<li>marshalling: <code>arrow_r</code> is the Arrow C Data plus nanoarrow/R reference path; <code>arrow_c</code> is the native C/DuckDB-vector path used by scalar native execution; <code>arrow_ipc</code> is reserved for the future owned-IPC multiprocess transport.</li>
 <li>concurrency: <code>serial</code> evaluates one chunk at a time in-process; <code>inproc_concurrent</code> allows concurrent DuckDB callbacks but still runs all R API work on the recorded R execution lane; <code>multiprocess_parallel</code> is the future process-isolated chunk-parallel plan.</li>
 </ul>
 <p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> selects the reference <code>arrow_r + serial</code> plan. <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> is a compatibility helper that switches the concurrency part to <code>inproc_concurrent</code> while preserving the current marshalling choice. No R API work runs on DuckDB worker threads, and the in-process queue has timeout/error paths rather than a hidden pump.</p>
@@ -104,7 +104,7 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i)"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 15</span></span></code></pre></div>
-<p>In vectorized mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as scalar mode. The return length must match the number of evaluated rows. For now, vectorized mode supports <code>eval_mode = "R"</code> only and requires at least one declared argument.</p>
+<p>In vectorized mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as scalar mode. The return length must match the number of evaluated rows. For now, vectorized mode is supported by <code>arrow_r</code> execution plans only and requires at least one declared argument.</p>
 <p>A tiny benchmark with <code>bench</code> can show the call-shape difference for simple R work. The result is illustrative rather than a performance guarantee.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bench_n</span> <span class="op">&lt;-</span> <span class="fl">10000L</span></span>
@@ -124,12 +124,12 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        289ms      3.27    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    235ms      4.31    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        303ms      3.28    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    245ms      4.06    2.34MB</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
 </h3>
-<p>Register UDFs in the registration-safe configuration. Then call <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> to switch query execution to the explicit in-process queue. Pass <code>threads</code>/<code>external_threads</code> there if you want to raise DuckDB’s thread settings for queued execution. R calls are still serialized on the recorded main R thread, but queued worker requests have timeout/error paths rather than deadlocking indefinitely. The queued backend supports scalar mode with <code>eval_mode = "R"</code> or <code>"RC"</code>, and vectorized mode with <code>eval_mode = "R"</code>.</p>
+<p>Register UDFs in the registration-safe configuration. Then call <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> to switch query execution to the explicit in-process queue. Pass <code>threads</code>/<code>external_threads</code> there if you want to raise DuckDB’s thread settings for queued execution. R calls are still serialized on the recorded main R thread, but queued worker requests have timeout/error paths rather than deadlocking indefinitely. The helper preserves the current marshalling choice: <code>arrow_r + inproc_concurrent</code> supports scalar and vectorized UDFs, while <code>arrow_c + inproc_concurrent</code> currently supports scalar UDFs.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_sleepy</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -153,7 +153,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-03 12:49:06</span></span>
+<span><span class="co">#&gt; 1 2026-05-03 13:00:57</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -163,15 +163,15 @@
 <div class="section level3">
 <h3 id="scalar-evaluation-implementations">Scalar evaluation implementations<a class="anchor" aria-label="anchor" href="#scalar-evaluation-implementations"></a>
 </h3>
-<p><code>mode = "scalar"</code> has two evaluator implementations selected with <code>eval_mode</code>:</p>
+<p><code>mode = "scalar"</code> has two evaluator implementations selected by the active connection execution plan:</p>
 <ul>
 <li>
-<code>eval_mode = "R"</code> uses the original R row-loop adapter.</li>
+<code>arrow_r</code> uses the original R/nanoarrow row-loop adapter.</li>
 <li>
-<code>eval_mode = "RC"</code> uses a native C row-loop adapter. It evaluates the same R function once per logical row, so ordinary R semantics including S3/S7 dispatch, RNG, lexical scope, and side effects still come from R’s evaluator.</li>
+<code>arrow_c</code> uses a native C row-loop adapter. It evaluates the same R function once per logical row, so ordinary R semantics including S3/S7 dispatch, RNG, lexical scope, and side effects still come from R’s evaluator.</li>
 </ul>
-<p>Both evaluators preserve the same scalar-mode contract: <code>null_handling = "default"</code> skips calls for top-level SQL NULL inputs, <code>null_handling = "special"</code> calls the R function with the documented R missing-value shape, and <code>side_effects = TRUE</code> marks the DuckDB function volatile. Rducks includes R-vs-RC conformance tests for scalar, exact, composite, enum, union, NULL, error, and RNG behavior.</p>
-<p>The RC implementation uses borrowed DuckDB input vectors only during the native UDF callback. Per-row R arguments are fresh R objects, so a user function may retain them without observing later row mutation. Direct DuckDB output-buffer writes are used where implemented; strings and raw values are assigned through DuckDB’s vector assignment API, which copies into DuckDB-owned storage. Rducks does not retain pointers into DuckDB-owned chunks after the callback returns.</p>
+<p>Both evaluators preserve the same scalar-mode contract: <code>null_handling = "default"</code> skips calls for top-level SQL NULL inputs, <code>null_handling = "special"</code> calls the R function with the documented R missing-value shape, and <code>side_effects = TRUE</code> marks the DuckDB function volatile. Rducks includes <code>arrow_r</code>-vs-<code>arrow_c</code> conformance tests for scalar, exact, composite, enum, union, NULL, error, and RNG behavior.</p>
+<p>The <code>arrow_c</code> implementation uses borrowed DuckDB input vectors only during the native UDF callback. Per-row R arguments are fresh R objects, so a user function may retain them without observing later row mutation. Direct DuckDB output-buffer writes are used where implemented; strings and raw values are assigned through DuckDB’s vector assignment API, which copies into DuckDB-owned storage. Rducks does not retain pointers into DuckDB-owned chunks after the callback returns.</p>
 <p><code>u32</code> is passed through R numeric (<code>double</code>). <code>BIGINT</code>, <code>UBIGINT</code>, <code>HUGEINT</code>, and <code>UHUGEINT</code> use exact Rducks integer classes backed by canonical decimal strings.</p>
 </div>
 </div>
@@ -224,7 +224,7 @@
 <td align="left">one R vector/list-column per declared argument</td>
 <td align="left">one R vector/list of values compatible with the declared return type</td>
 <td align="left">return length must equal the number of evaluated rows in the chunk</td>
-<td align="left">same backend/threading rules as scalar mode; eval_mode = ‘R’ only for now</td>
+<td align="left">same execution-plan threading rules as scalar mode; currently supported by arrow_r plans only</td>
 <td align="left">DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument</td>
 </tr>
 </tbody>
