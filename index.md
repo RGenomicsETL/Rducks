@@ -142,6 +142,11 @@ bench_result <- bench::mark(
   check = FALSE
 )
 bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
+#> # A tibble: 2 × 4
+#>   expression   median `itr/sec` mem_alloc
+#>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
+#> 1 scalar        289ms      3.27    1.97MB
+#> 2 vectorized    235ms      4.31    2.34MB
 ```
 
 ### In-process queued execution
@@ -180,7 +185,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-03 12:38:56
+#> 1 2026-05-03 12:49:06
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
