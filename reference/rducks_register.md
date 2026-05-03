@@ -1,7 +1,7 @@
 # Register an R UDF in DuckDB
 
-Registers a scalar R function as a DuckDB SQL function using the loaded
-Rducks extension. Registration requires `external_threads=1` plus
+Registers an R function as a DuckDB SQL function using the loaded Rducks
+extension. Registration requires `external_threads=1` plus
 `PRAGMA threads=1` so native registration and the default scalar
 execution path stay on the calling R thread. After registration, use
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
@@ -50,16 +50,16 @@ rducks_register(
 
 - mode:
 
-  Registration mode. `"scalar"` is implemented now and calls the R
-  function once per DuckDB row through the nanoarrow scalar adapter. A
-  future vectorized mode should call the R function once per DuckDB
-  chunk.
+  Registration mode. `"scalar"` calls the R function once per DuckDB
+  row. `"vectorized"` calls the R function once per DuckDB chunk with
+  one R vector/list-column per declared argument.
 
 - eval_mode:
 
-  Scalar evaluator implementation. `"R"` uses the R row-loop adapter;
+  Scalar evaluator implementation. `"R"` uses the R/nanoarrow adapter;
   `"RC"` uses the native C row-loop adapter and validates against the
-  same scalar-mode semantics.
+  same scalar-mode semantics. `mode = "vectorized"` currently supports
+  `eval_mode = "R"` only.
 
 - null_handling:
 

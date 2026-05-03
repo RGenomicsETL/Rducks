@@ -25,7 +25,7 @@
 - [`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md)
   : Construct exact DuckDB DECIMAL values
 - [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md)
-  : Disable in-process queued scalar execution
+  : Disable in-process queued R UDF execution
 - [`rducks_duckdb_signature()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.md)
   : Format a DuckDB scalar function signature
 - [`rducks_duckdb_types()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_types.md)
@@ -33,7 +33,7 @@
 - [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
   : Enable Rducks on a DuckDB connection
 - [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-  : Enable in-process queued scalar execution
+  : Enable in-process queued R UDF execution
 - [`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md)
   : Construct DuckDB ENUM values
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)

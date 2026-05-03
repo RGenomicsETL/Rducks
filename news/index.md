@@ -2,6 +2,11 @@
 
 ## Rducks 0.0.0.9000
 
+- Added `mode = "vectorized"` for R UDFs that should be called once per
+  DuckDB chunk with vector/list-column arguments. The vectorized adapter
+  uses the same Arrow C Data/nanoarrow bridge as scalar mode, enforces
+  return length, defines default vs special NULL handling, and is
+  covered by runtime tests.
 - Added an official in-process queued execution API for scalar UDFs:
   [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md),
   [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md),

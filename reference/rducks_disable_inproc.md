@@ -1,8 +1,8 @@
-# Disable in-process queued scalar execution
+# Disable in-process queued R UDF execution
 
 Switches a Rducks-enabled DuckDB connection back to the direct
-single-lane scalar backend. Optionally updates DuckDB thread settings at
-the same time.
+single-lane backend. Optionally updates DuckDB thread settings at the
+same time.
 
 ## Usage
 
