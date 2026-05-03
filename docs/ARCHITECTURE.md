@@ -3,6 +3,10 @@
 Rducks is designed as an R package plus a loaded DuckDB extension for registering
 R functions as DuckDB UDFs.
 
+See [Execution Plans And Validation Checklist](EXECUTION_PLANS.md) for the target
+separation between UDF semantics, marshalling implementation, concurrency model,
+the hard `arrow_r + serial` reference implementation, and the no-fallback rule.
+
 ## Core layers
 
 1. **R wrapper layer**
