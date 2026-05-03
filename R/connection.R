@@ -60,9 +60,9 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 #' callbacks submit chunk requests to an extension-owned queue, and the recorded
 #' main R execution lane drains the queue and performs all R API work. This is a
 #' same-process scheduling mode, not a performance promise; R function calls are
-#' still serialized on the main R thread. The queued backend dispatches scalar
-#' mode with `eval_mode = "R"` or `"RC"`, and vectorized mode with
-#' `eval_mode = "R"`, through that same main-lane execution rule.
+#' still serialized on the main R thread. This helper changes only the
+#' concurrency part of the active execution plan; marshalling stays `arrow_r` or
+#' `arrow_c` according to [rducks_set_execution_plan()].
 #'
 #' Register UDFs while the connection is in the registration-safe
 #' configuration, then call `rducks_enable_inproc()` before running queries that

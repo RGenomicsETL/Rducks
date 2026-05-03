@@ -13,19 +13,19 @@ local({
   expect_equal(current$plan_id, "arrow_c+serial")
 
   reg <- rducks_register(con, "plan_plus_one", function(x) x + 1L, INTEGER, INTEGER)
-  expect_equal(reg$eval_mode, "RC")
+  expect_equal(reg$execution_plan$marshalling, "arrow_c")
   expect_equal(reg$execution_plan$plan_id, "arrow_c+serial")
   result <- DBI::dbGetQuery(con, "SELECT plan_plus_one(41::INTEGER) AS x")
   expect_equal(result$x, 42L)
 
   expect_error(
     rducks_register(con, "plan_vec", function(x) x, INTEGER, INTEGER, mode = "vectorized"),
-    "does not yet support mode = 'vectorized'"
+    "does not support mode = 'vectorized'"
   )
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   reg_r <- rducks_register(con, "plan_r_plus_one", function(x) x + 1L, INTEGER, INTEGER)
-  expect_equal(reg_r$eval_mode, "R")
+  expect_equal(reg_r$execution_plan$marshalling, "arrow_r")
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   rducks_enable_inproc(con)

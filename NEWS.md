@@ -3,9 +3,13 @@
 - Added explicit execution-plan helpers `rducks_execution_plan()`,
   `rducks_set_execution_plan()`, and `rducks_current_execution_plan()` to
   separate UDF semantics from connection-level marshalling/concurrency policy.
-  The `arrow_r + serial` plan is the reference implementation, and planned
-  `arrow_ipc + multiprocess_parallel` execution now fails explicitly rather
-  than silently falling back.
+  The `arrow_r + serial` plan is the reference implementation; `arrow_c +
+  vectorized` and planned `arrow_ipc + multiprocess_parallel` execution now fail
+  explicitly through plan validation rather than silently falling back.
+- Removed per-registration evaluator selection from `rducks_register()`. The
+  evaluator is now derived from the active execution plan, so conformance tests
+  compare plan-native registrations instead of mixing evaluator choices inside a
+  single registration call.
 - Added `mode = "vectorized"` for R UDFs that should be called once per DuckDB
   chunk with vector/list-column arguments. The vectorized adapter uses the same
   Arrow C Data/nanoarrow bridge as scalar mode, enforces return length, defines

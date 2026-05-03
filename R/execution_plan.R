@@ -25,6 +25,19 @@ rducks_plan_implemented <- function(marshalling, concurrency) {
     concurrency %in% c("serial", "inproc_concurrent")
 }
 
+rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
+  if (!rducks_plan_implemented(marshalling, concurrency)) {
+    return(character())
+  }
+  switch(
+    marshalling,
+    arrow_r = c("scalar", "vectorized"),
+    arrow_c = "scalar",
+    arrow_ipc = character(),
+    character()
+  )
+}
+
 rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
   if (identical(marshalling, "arrow_ipc") && !identical(concurrency, "multiprocess_parallel")) {
     stop("marshalling = 'arrow_ipc' requires concurrency = 'multiprocess_parallel'", call. = FALSE)
@@ -66,6 +79,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
   backend <- rducks_plan_backend(concurrency)
   serialization <- rducks_plan_serialization(marshalling)
   implemented <- rducks_plan_implemented(marshalling, concurrency)
+  supported_call_shapes <- rducks_plan_supported_call_shapes(marshalling, concurrency)
   structure(
     list(
       marshalling = marshalling,
@@ -73,6 +87,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       plan_id = paste(marshalling, concurrency, sep = "+"),
       reference = identical(marshalling, "arrow_r") && identical(concurrency, "serial"),
       implemented = implemented,
+      supported_call_shapes = supported_call_shapes,
       backend = backend,
       serialization = serialization,
       in_process = !identical(concurrency, "multiprocess_parallel"),
@@ -90,6 +105,7 @@ print.rducks_execution_plan <- function(x, ...) {
   cat("  concurrency: ", x$concurrency, "\n", sep = "")
   cat("  reference:   ", if (isTRUE(x$reference)) "yes" else "no", "\n", sep = "")
   cat("  implemented: ", if (isTRUE(x$implemented)) "yes" else "no", "\n", sep = "")
+  cat("  call shapes: ", paste(x$supported_call_shapes, collapse = ", "), "\n", sep = "")
   invisible(x)
 }
 
@@ -155,21 +171,32 @@ rducks_assert_execution_plan_implemented <- function(plan) {
   invisible(TRUE)
 }
 
-rducks_plan_eval_mode <- function(plan, mode) {
-  if (identical(plan$marshalling, "arrow_r")) {
-    return("R")
+rducks_validate_execution_plan_for_registration <- function(plan, spec) {
+  rducks_assert_execution_plan_implemented(plan)
+  if (!identical(spec$mode, "scalar") && !identical(spec$mode, "vectorized")) {
+    stop("unknown Rducks UDF call shape: ", spec$mode, call. = FALSE)
   }
-  if (identical(plan$marshalling, "arrow_c")) {
-    if (identical(mode, "vectorized")) {
-      stop("marshalling = 'arrow_c' does not yet support mode = 'vectorized'", call. = FALSE)
-    }
-    return("RC")
+  if (!spec$mode %in% plan$supported_call_shapes) {
+    stop(
+      "Rducks execution plan ", plan$plan_id,
+      " does not support mode = '", spec$mode, "'",
+      call. = FALSE
+    )
   }
-  stop("marshalling = 'arrow_ipc' is not implemented for local UDF registration yet", call. = FALSE)
+  if (identical(spec$mode, "vectorized") && !length(spec$arg_types)) {
+    stop("mode = 'vectorized' currently requires at least one declared argument", call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
-rducks_current_plan_eval_mode <- function(con, mode) {
-  rducks_plan_eval_mode(rducks_current_execution_plan(con), mode)
+rducks_plan_native_evaluator_token <- function(plan) {
+  switch(
+    plan$marshalling,
+    arrow_r = "R",
+    arrow_c = "RC",
+    arrow_ipc = stop("marshalling = 'arrow_ipc' is not implemented for local UDF registration yet", call. = FALSE),
+    stop("unsupported Rducks execution-plan marshalling: ", plan$marshalling, call. = FALSE)
+  )
 }
 
 # Backwards-compatible internal helper used by the existing scalar/vectorized

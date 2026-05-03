@@ -25,9 +25,9 @@ backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. The queued backend dispatches scalar
-mode with \code{eval_mode = "R"} or \code{"RC"}, and vectorized mode with
-\code{eval_mode = "R"}, through that same main-lane execution rule.
+still serialized on the main R thread. This helper changes only the
+concurrency part of the active execution plan; marshalling stays \code{arrow_r} or
+\code{arrow_c} according to \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}.
 }
 \details{
 Register UDFs while the connection is in the registration-safe

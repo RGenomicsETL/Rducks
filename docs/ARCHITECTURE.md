@@ -35,17 +35,18 @@ the hard `arrow_r + serial` reference implementation, and the no-fallback rule.
 DuckDB
   -> rducks_r_scalar_udf(info, input, output)
       -> metadata from extra_info
-      -> mode = "scalar", eval_mode = "R": DuckDB chunk -> Arrow C Data -> R row-loop adapter
-      -> mode = "scalar", eval_mode = "RC": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
-      -> mode = "vectorized": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
+      -> mode = "scalar", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> R row-loop adapter
+      -> mode = "scalar", plan marshalling = "arrow_c": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
+      -> mode = "vectorized", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
 ```
 
-Both scalar evaluators call the R function once per logical row. `eval_mode =
-"RC"` moves row iteration, call construction, NULL handling, return checking,
-and direct DuckDB vector reads/writes into C for supported scalar storage; the
-user function itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical
-scoping, and side effects keep ordinary R semantics. Vectorized mode calls the R
-function once per DuckDB chunk and currently uses the R/nanoarrow evaluator only.
+Both scalar evaluators call the R function once per logical row. `arrow_c` moves
+row iteration, call construction, NULL handling, return checking, and direct
+DuckDB vector reads/writes into C for supported scalar storage; the user function
+itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical scoping, and side
+effects keep ordinary R semantics. Vectorized mode calls the R function once per
+DuckDB chunk and currently supports `arrow_r` execution plans only; `arrow_c +
+vectorized` is rejected by plan validation rather than falling back.
 
 ## Thread model
 
@@ -82,53 +83,53 @@ Keep the following layers separate when changing the native path:
    must not pass borrowed DuckDB vectors or transient `SEXP` objects across
    threads.
 
-The current RC execution helpers are deliberately main-R-lane helpers and
-therefore mix R API calls with direct DuckDB vector reads/writes in one
-callback-local loop. In the `single` backend, DuckDB enters them directly on the
-recorded R thread. In the `concurrent_inproc` backend, an off-main callback must
-queue first; the main R lane drains the request and only then runs those helpers.
-Do not reuse RC direct-buffer helpers as worker-safe building blocks without
-first splitting them along the boundaries above.
+The current `arrow_c` scalar execution helpers are deliberately main-R-lane
+helpers and therefore mix R API calls with direct DuckDB vector reads/writes in
+one callback-local loop. In the `serial` concurrency plan, DuckDB enters them
+directly on the recorded R thread. In the `inproc_concurrent` plan, an off-main
+callback must queue first; the main R lane drains the request and only then runs
+those helpers. Do not reuse `arrow_c` direct-buffer helpers as worker-safe
+building blocks without first splitting them along the boundaries above.
 
 ## Prepared scalar and vectorized execution plans
 
-The R and RC row-loop code is split into explicit phases:
+The `arrow_r` and `arrow_c` scalar row-loop code is split into explicit phases:
 
 1. prepare typed R inputs from an Arrow C Data chunk;
 2. evaluate the scalar R function row-by-row;
 3. validate each scalar return;
 4. build an Arrow C Data result chunk.
 
-`eval_mode = "R"` calls this engine through an R wrapper on the recorded R lane.
-`eval_mode = "RC"` keeps its current main-lane direct-buffer fast path and its C
-row-loop fallback, but the fallback bundle now carries the same prepare/result
-helpers plus an R engine object. This does not rule out a future threaded RC
-implementation; it only describes the path that is safe today. A threaded RC
+`arrow_r` calls this engine through an R wrapper on the recorded R lane.
+`arrow_c` keeps its current main-lane direct-buffer fast path and its C row-loop
+fallback, but the fallback bundle now carries the same prepare/result helpers
+plus an R engine object. This does not rule out a future threaded `arrow_c`
+implementation; it only describes the path that is safe today. A threaded native
 backend must split worker-safe DuckDB/vector work from any R API or `SEXP` work,
 then cross an owned-buffer transport boundary before R-thread evaluation, or be
 a genuinely pure-native evaluator with no R callback. This keeps scalar
 semantics independent from the transport that delivered a chunk while preserving
-the R-vs-RC evaluator split. Vectorized mode reuses the same prepare/result
+the marshalling-plan split. Vectorized mode reuses the same prepare/result
 phases but replaces row-wise evaluation with one call over column-shaped R
 arguments. With `null_handling = "default"`, only rows with no top-level SQL NULL
 inputs are evaluated and SQL NULL rows are scattered back into the DuckDB result;
 with `null_handling = "special"`, all rows are passed through with the same
 NA/NULL shapes used by scalar mode.
 
-Internally the execution backends are:
+Internally the current concurrency backends are:
 
-- `single`: default behavior; DuckDB calls the UDF on the recorded R thread and
-  may use direct RC vector reads/writes.
-- `concurrent_inproc`: same-address-space queued dispatch. A worker-side UDF
+- `serial`: default behavior; DuckDB calls the UDF on the recorded R thread and
+  may use direct `arrow_c` vector reads/writes.
+- `inproc_concurrent`: same-address-space queued dispatch. A worker-side UDF
   callback submits the current chunk request to the per-runtime queue and waits;
   the main R execution lane drains the request, calls R, writes the DuckDB
   output vector, and signals the waiter. This currently relies on the UDF
   callback staying alive while the borrowed DuckDB chunk/output pointers are
   processed; workers must not return before the main lane has consumed the
-  request. Direct RC helpers remain main-lane-only unless split into pure native
-  worker-safe phases.
-- `serialized`: future out-of-process execution for mirai or another compute
-  backend. This should serialize chunk payloads with Arrow IPC so mirai's
+  request. Direct `arrow_c` helpers remain main-lane-only unless split into pure
+  native worker-safe phases.
+- `multiprocess_parallel`: future out-of-process execution for mirai-style or
+  another compute backend. This should serialize chunk payloads with Arrow IPC so mirai's
   serialization configuration can move opaque raw payloads rather than
   DuckDB-owned pointers or session-bound R objects.
 
@@ -160,11 +161,12 @@ waiting indefinitely.
 Rducks should follow Arrow C Data and DuckDB vector ownership rules in R terms:
 use named `externalptr` objects, explicit owner/protected slots, idempotent
 finalizers, and move-only consumption. Borrowed DuckDB `duckdb_data_chunk` and
-`duckdb_vector` pointers are valid only during the native UDF callback. RC-mode
-per-row R arguments are fresh R objects, not mutable views into DuckDB storage;
-this is required because arbitrary R functions may retain an argument object
-after returning. Direct RC paths for supported ordinary, exact/exotic, decimal,
-UUID, interval, and bit scalar storage target DuckDB-owned vectors and use
+`duckdb_vector` pointers are valid only during the native UDF callback.
+`arrow_c` scalar per-row R arguments are fresh R objects, not mutable views into
+DuckDB storage; this is required because arbitrary R functions may retain an
+argument object after returning. Direct `arrow_c` paths for supported ordinary,
+exact/exotic, decimal, UUID, interval, and bit scalar storage target
+DuckDB-owned vectors and use
 DuckDB's assignment APIs for variable-width values so Rducks does not retain R or
 DuckDB buffer pointers across the callback boundary.
 

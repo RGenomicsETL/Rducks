@@ -132,11 +132,13 @@ local({
     "vectorized return value must have length"
   )
 
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   expect_error(
-    rducks_register(con, "vec_rc_rejected", function(x) x, INTEGER, INTEGER,
-                    mode = "vectorized", eval_mode = "RC"),
-    "eval_mode = 'R' only"
+    rducks_register(con, "vec_arrow_c_rejected", function(x) x, INTEGER, INTEGER,
+                    mode = "vectorized"),
+    "does not support mode = 'vectorized'"
   )
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   expect_error(
     rducks_register(con, "vec_no_arg_rejected", function() 1L, character(), INTEGER,
                     mode = "vectorized"),

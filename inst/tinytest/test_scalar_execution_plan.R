@@ -10,6 +10,7 @@ expect_equal(plan$backend, "single")
 expect_equal(plan$serialization, "none")
 expect_true(plan$in_process)
 expect_true(plan$uses_r_thread)
+expect_equal(plan$supported_call_shapes, c("scalar", "vectorized"))
 
 inproc <- rducks_execution_plan("arrow_c", "inproc_concurrent")
 expect_equal(inproc$marshalling, "arrow_c")
@@ -18,6 +19,7 @@ expect_equal(inproc$plan_id, "arrow_c+inproc_concurrent")
 expect_false(inproc$reference)
 expect_true(inproc$implemented)
 expect_equal(inproc$backend, "concurrent_inproc")
+expect_equal(inproc$supported_call_shapes, "scalar")
 
 ipc <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
 expect_equal(ipc$serialization, "arrow_ipc")
@@ -37,9 +39,14 @@ expect_error(
   rducks_execution_plan("arrow_r", "multiprocess_parallel"),
   "requires marshalling = 'arrow_ipc'"
 )
+vectorized_spec <- Rducks:::rducks_registration_spec(
+  "vec", function(x) x, INTEGER, INTEGER, mode = "vectorized"
+)
 expect_error(
-  Rducks:::rducks_plan_eval_mode(rducks_execution_plan("arrow_c", "serial"), "vectorized"),
-  "does not yet support mode = 'vectorized'"
+  Rducks:::rducks_validate_execution_plan_for_registration(
+    rducks_execution_plan("arrow_c", "serial"), vectorized_spec
+  ),
+  "does not support mode = 'vectorized'"
 )
 
 legacy <- Rducks:::rducks_scalar_execution_plan(

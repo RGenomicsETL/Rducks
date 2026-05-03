@@ -35,7 +35,7 @@ These are execution-plan choices, not UDF semantics:
 - `arrow_r`: Arrow C Data plus nanoarrow/R materialization. This is the semantic
   reference implementation.
 - `arrow_c`: C/native DuckDB-vector and Arrow-compatible materialization. This
-  includes the current RC scalar row-loop and a future first-class native
+  includes the current native scalar row-loop and a future first-class native
   vectorized chunk evaluator.
 - `arrow_ipc`: owned Arrow IPC bytes as the process/thread transport boundary.
 
@@ -111,22 +111,18 @@ observable plan remains one named plan with one declared support matrix.
 | --- | --- | --- | --- | --- |
 | `arrow_r` | `serial` | implemented/reference | implemented/reference | The semantic oracle for all other plans. |
 | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded R lane. |
-| `arrow_c` | `serial` | implemented as current RC scalar | planned | Native materialization and native row/chunk control; no fallback to `arrow_r`. |
-| `arrow_c` | `inproc_concurrent` | implemented for current RC scalar | planned | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
+| `arrow_c` | `serial` | implemented as current native scalar | planned | Native materialization and native row/chunk control; no fallback to `arrow_r`. |
+| `arrow_c` | `inproc_concurrent` | implemented for current native scalar | planned | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
 | `arrow_ipc` | `multiprocess_parallel` | planned | planned | Owned Arrow IPC request/result bytes across process boundary. Scalar still batches transport by chunk and loops rows inside the worker. |
 
-Current API compatibility:
+Current API direction:
 
-- `eval_mode = "R"` maps to `arrow_r` today.
-- `eval_mode = "RC"` maps to `arrow_c` today for scalar mode.
-- `rducks_enable_inproc()` maps the connection to `inproc_concurrent` today.
-
-Target API direction:
-
-- keep `rducks_register()` focused on UDF semantics;
-- move marshalling/concurrency selection to a connection/session execution-plan
+- `rducks_register()` is focused on UDF semantics;
+- marshalling/concurrency selection lives in a connection/session execution-plan
   API;
-- keep current API as compatibility shims until the new plan API is ready.
+- `rducks_enable_inproc()` is a compatibility helper that sets the connection's
+  concurrency to `inproc_concurrent` while preserving the current marshalling
+  choice.
 
 ## Validation requirements for every non-reference plan
 
@@ -181,23 +177,23 @@ Additional multiprocess cases:
 
 ### Iteration 0: freeze principles
 
-- [ ] Add this execution-plan vocabulary to public/internal architecture docs.
-- [ ] State that `arrow_r + serial` is the reference, not a fallback.
-- [ ] State the no-fallback rule in registration and runtime docs.
-- [ ] Decide public names for concurrency: `serial`, `inproc_concurrent`,
+- [x] Add this execution-plan vocabulary to public/internal architecture docs.
+- [x] State that `arrow_r + serial` is the reference, not a fallback.
+- [x] State the no-fallback rule in registration and runtime docs.
+- [x] Decide public names for concurrency: `serial`, `inproc_concurrent`,
       `multiprocess_parallel` unless a better what-not-how name is chosen.
-- [ ] Decide whether `mode` remains the public spelling of `call_shape`.
+- [x] Decide whether `mode` remains the public spelling of `call_shape`.
 
 ### Iteration 1: make plan resolution explicit internally
 
-- [ ] Add an internal execution-plan object or struct with fields:
+- [x] Add an internal execution-plan object or struct with fields:
       `marshaller`, `concurrency`, `call_shape`, `null_handling`,
       `exception_handling`, and plan id.
 - [ ] Store the resolved plan id in native UDF metadata.
-- [ ] Add a plan validator that checks the full UDF signature before native
+- [x] Add a plan validator that checks the full UDF signature before native
       registration succeeds.
-- [ ] Add plan introspection for tests, e.g. `rducks_explain_udf()` or a SQL
-      debug surface returning the resolved plan id.
+- [x] Add R-side plan introspection for tests via `rducks_current_execution_plan()`;
+      native per-UDF introspection such as `rducks_explain_udf()` remains open.
 - [ ] Add counters per plan id so tests can prove no fallback path executed.
 
 ### Iteration 2: harden the reference
@@ -211,14 +207,14 @@ Additional multiprocess cases:
 - [ ] Add negative generated cases for unsupported plan/type combinations.
 - [ ] Run the generated matrix in CI, not only manually.
 
-### Iteration 3: reframe current RC as `arrow_c + scalar`
+### Iteration 3: reframe current native scalar path as `arrow_c + scalar`
 
 - [ ] Rename internal comments/docs from generic `RC` to `arrow_c scalar` where
-      possible while preserving public compatibility.
-- [ ] Ensure current direct-buffer and Arrow-helper RC paths are one named plan,
-      not an implicit fallback from one plan to another.
+      possible.
+- [ ] Ensure current direct-buffer and Arrow-helper native paths are one named
+      plan, not an implicit fallback from one plan to another.
 - [ ] Document exactly which helpers are part of that plan.
-- [ ] Add tests proving `arrow_c + scalar` matches `arrow_r + serial + scalar`
+- [x] Add tests proving `arrow_c + scalar` matches `arrow_r + serial + scalar`
       for all supported signatures.
 - [ ] Add tests proving unsupported scalar signatures fail plan validation rather
       than switching to `arrow_r`.
@@ -226,7 +222,7 @@ Additional multiprocess cases:
 ### Iteration 4: design `arrow_c + vectorized`
 
 - [ ] Define the complete v1 supported type matrix.
-- [ ] Reject every unsupported signature at registration/plan-validation time.
+- [x] Reject every unsupported signature at registration/plan-validation time.
 - [ ] Implement native chunk argument materialization for the v1 matrix.
 - [ ] Implement native default/special NULL row selection.
 - [ ] Call the R function exactly once per evaluated chunk.
@@ -237,13 +233,13 @@ Additional multiprocess cases:
 
 ### Iteration 5: make concurrency a connection/session execution plan
 
-- [ ] Introduce a connection/session-level execution-plan API.
-- [ ] Keep `rducks_enable()` and `rducks_enable_inproc()` as compatibility
+- [x] Introduce a connection/session-level execution-plan API.
+- [x] Keep `rducks_enable()` and `rducks_enable_inproc()` as compatibility
       shims that set execution plans.
-- [ ] Remove evaluator/concurrency selection from the conceptual UDF semantic
+- [x] Remove evaluator/concurrency selection from the conceptual UDF semantic
       contract.
 - [ ] Validate all registered UDFs when the connection/session plan changes.
-- [ ] Validate a UDF against the active plan when registering after a plan has
+- [x] Validate a UDF against the active plan when registering after a plan has
       been set.
 - [ ] Preserve no-fallback behavior at query execution.
 

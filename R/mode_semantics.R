@@ -21,7 +21,7 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
     length_semantics = "return length must equal the number of evaluated rows in the chunk",
     error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
-    threading = "same backend/threading rules as scalar mode; eval_mode = 'R' only for now",
+    threading = "same execution-plan threading rules as scalar mode; currently supported by arrow_r plans only",
     copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument",
     notes = "batch/chunk call-shape used by future serialized Arrow IPC backends; zero-argument vectorized UDFs are not exposed yet"
   )

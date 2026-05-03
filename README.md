@@ -37,8 +37,8 @@ Query execution is described by a connection-level execution plan with
 two orthogonal pieces:
 
 - marshalling: `arrow_r` is the Arrow C Data plus nanoarrow/R reference
-  path; `arrow_c` is the native C/DuckDB-vector path used by scalar RC
-  execution; `arrow_ipc` is reserved for the future owned-IPC
+  path; `arrow_c` is the native C/DuckDB-vector path used by scalar
+  native execution; `arrow_ipc` is reserved for the future owned-IPC
   multiprocess transport.
 - concurrency: `serial` evaluates one chunk at a time in-process;
   `inproc_concurrent` allows concurrent DuckDB callbacks but still runs
@@ -114,8 +114,8 @@ In vectorized mode, `null_handling = "default"` evaluates only rows with
 no top-level SQL NULL inputs and scatters SQL NULLs back into the
 result. `null_handling = "special"` passes all rows using the same
 NA/NULL shapes as scalar mode. The return length must match the number
-of evaluated rows. For now, vectorized mode supports `eval_mode = "R"`
-only and requires at least one declared argument.
+of evaluated rows. For now, vectorized mode is supported by `arrow_r`
+execution plans only and requires at least one declared argument.
 
 A tiny benchmark with `bench` can show the call-shape difference for
 simple R work. The result is illustrative rather than a performance
@@ -139,8 +139,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        289ms      3.27    1.97MB
-#> 2 vectorized    235ms      4.31    2.34MB
+#> 1 scalar        303ms      3.28    1.97MB
+#> 2 vectorized    245ms      4.06    2.34MB
 ```
 
 ### In-process queued execution
@@ -151,8 +151,9 @@ in-process queue. Pass `threads`/`external_threads` there if you want to
 raise DuckDB’s thread settings for queued execution. R calls are still
 serialized on the recorded main R thread, but queued worker requests
 have timeout/error paths rather than deadlocking indefinitely. The
-queued backend supports scalar mode with `eval_mode = "R"` or `"RC"`,
-and vectorized mode with `eval_mode = "R"`.
+helper preserves the current marshalling choice:
+`arrow_r + inproc_concurrent` supports scalar and vectorized UDFs, while
+`arrow_c + inproc_concurrent` currently supports scalar UDFs.
 
 ``` r
 reg_sleepy <- rducks_register(
@@ -177,7 +178,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-03 12:49:06
+#> 1 2026-05-03 13:00:57
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -187,29 +188,29 @@ rducks_disable_inproc(con, threads = 1)
 
 ### Scalar evaluation implementations
 
-`mode = "scalar"` has two evaluator implementations selected with
-`eval_mode`:
+`mode = "scalar"` has two evaluator implementations selected by the
+active connection execution plan:
 
-- `eval_mode = "R"` uses the original R row-loop adapter.
-- `eval_mode = "RC"` uses a native C row-loop adapter. It evaluates the
-  same R function once per logical row, so ordinary R semantics
-  including S3/S7 dispatch, RNG, lexical scope, and side effects still
-  come from R’s evaluator.
+- `arrow_r` uses the original R/nanoarrow row-loop adapter.
+- `arrow_c` uses a native C row-loop adapter. It evaluates the same R
+  function once per logical row, so ordinary R semantics including S3/S7
+  dispatch, RNG, lexical scope, and side effects still come from R’s
+  evaluator.
 
 Both evaluators preserve the same scalar-mode contract:
 `null_handling = "default"` skips calls for top-level SQL NULL inputs,
 `null_handling = "special"` calls the R function with the documented R
 missing-value shape, and `side_effects = TRUE` marks the DuckDB function
-volatile. Rducks includes R-vs-RC conformance tests for scalar, exact,
-composite, enum, union, NULL, error, and RNG behavior.
+volatile. Rducks includes `arrow_r`-vs-`arrow_c` conformance tests for
+scalar, exact, composite, enum, union, NULL, error, and RNG behavior.
 
-The RC implementation uses borrowed DuckDB input vectors only during the
-native UDF callback. Per-row R arguments are fresh R objects, so a user
-function may retain them without observing later row mutation. Direct
-DuckDB output-buffer writes are used where implemented; strings and raw
-values are assigned through DuckDB’s vector assignment API, which copies
-into DuckDB-owned storage. Rducks does not retain pointers into
-DuckDB-owned chunks after the callback returns.
+The `arrow_c` implementation uses borrowed DuckDB input vectors only
+during the native UDF callback. Per-row R arguments are fresh R objects,
+so a user function may retain them without observing later row mutation.
+Direct DuckDB output-buffer writes are used where implemented; strings
+and raw values are assigned through DuckDB’s vector assignment API,
+which copies into DuckDB-owned storage. Rducks does not retain pointers
+into DuckDB-owned chunks after the callback returns.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`,
 `HUGEINT`, and `UHUGEINT` use exact Rducks integer classes backed by
@@ -262,7 +263,7 @@ The table below is produced by `rducks_mode_semantics()`.
 | mode         | status      | call_granularity            | input_shape                                        | return_shape                                                          | length_semantics                                                   | threading                                                                                                                                                                                                                                      | copy_semantics                                                                                                                                   |
 |:-------------|:------------|:----------------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------|
 | `scalar`     | implemented | one R call per row          | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call                               | R API work runs on the recorded main R thread; rducks_enable(…, threads = ‘single’) is the registration-safe default, and rducks_enable_inproc() enables an extension-owned in-process queue that still serializes R calls on that main R lane | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row          |
-| `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | return length must equal the number of evaluated rows in the chunk | same backend/threading rules as scalar mode; eval_mode = ‘R’ only for now                                                                                                                                                                      | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument |
+| `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | return length must equal the number of evaluated rows in the chunk | same execution-plan threading rules as scalar mode; currently supported by arrow_r plans only                                                                                                                                                  | DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument |
 
 ## Type descriptors
 

@@ -11,7 +11,6 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
-  eval_mode = NULL,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -33,12 +32,6 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 \item{mode}{Registration mode. \code{"scalar"} calls the R function once per
 DuckDB row. \code{"vectorized"} calls the R function once per DuckDB chunk with
 one R vector/list-column per declared argument.}
-
-\item{eval_mode}{Compatibility override for the marshalling evaluator. Use
-\code{NULL} to select from the active connection \code{rducks_execution_plan()}.
-\code{"R"} maps to \code{arrow_r}; \code{"RC"} maps to \code{arrow_c} for scalar mode.
-\code{mode = "vectorized"} currently supports \code{eval_mode = "R"} only because
-\code{arrow_c} vectorized execution is not implemented yet.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared
@@ -62,6 +55,8 @@ in DuckDB even if this object is discarded.
 Registers an R function as a DuckDB SQL function using the loaded Rducks
 extension. Registration requires \code{external_threads=1} plus
 \verb{PRAGMA threads=1} so native registration and the default scalar execution
-path stay on the calling R thread. After registration, use
-\code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into queued same-process execution.
+path stay on the calling R thread. The active \code{\link[=rducks_execution_plan]{rducks_execution_plan()}}
+selects the marshalling implementation for this registration; unsupported
+plan/mode/type combinations fail instead of falling back. After registration,
+use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into queued same-process execution.
 }

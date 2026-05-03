@@ -34,26 +34,15 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
   invisible(NULL)
 }
 
-rducks_assert_vectorized_supported <- function(spec, eval_mode) {
-  if (!identical(spec$mode, "vectorized")) {
-    return(invisible(NULL))
-  }
-  if (!identical(eval_mode, "R")) {
-    stop("mode = 'vectorized' currently supports eval_mode = 'R' only", call. = FALSE)
-  }
-  if (!length(spec$arg_types)) {
-    stop("mode = 'vectorized' currently requires at least one declared argument", call. = FALSE)
-  }
-  invisible(NULL)
-}
-
 #' Register an R UDF in DuckDB
 #'
 #' Registers an R function as a DuckDB SQL function using the loaded Rducks
 #' extension. Registration requires `external_threads=1` plus
 #' `PRAGMA threads=1` so native registration and the default scalar execution
-#' path stay on the calling R thread. After registration, use
-#' [rducks_enable_inproc()] to opt into queued same-process execution.
+#' path stay on the calling R thread. The active [rducks_execution_plan()]
+#' selects the marshalling implementation for this registration; unsupported
+#' plan/mode/type combinations fail instead of falling back. After registration,
+#' use [rducks_enable_inproc()] to opt into queued same-process execution.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -65,11 +54,6 @@ rducks_assert_vectorized_supported <- function(spec, eval_mode) {
 #' @param mode Registration mode. `"scalar"` calls the R function once per
 #'   DuckDB row. `"vectorized"` calls the R function once per DuckDB chunk with
 #'   one R vector/list-column per declared argument.
-#' @param eval_mode Compatibility override for the marshalling evaluator. Use
-#'   `NULL` to select from the active connection `rducks_execution_plan()`.
-#'   `"R"` maps to `arrow_r`; `"RC"` maps to `arrow_c` for scalar mode.
-#'   `mode = "vectorized"` currently supports `eval_mode = "R"` only because
-#'   `arrow_c` vectorized execution is not implemented yet.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -86,16 +70,10 @@ rducks_assert_vectorized_supported <- function(spec, eval_mode) {
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
                             mode = "scalar",
-                            eval_mode = NULL,
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
                             side_effects = FALSE) {
   mode <- rducks_match_mode(mode)
-  if (is.null(eval_mode)) {
-    eval_mode <- rducks_current_plan_eval_mode(con, mode)
-  } else {
-    eval_mode <- match.arg(eval_mode, c("R", "RC"))
-  }
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
   if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
@@ -105,15 +83,19 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_registration_spec(name, fun, args, returns, mode = mode)
+  plan <- rducks_current_execution_plan(con)
   rducks_assert_arrow_marshalling_supported(spec)
-  rducks_assert_vectorized_supported(spec, eval_mode)
+  rducks_validate_execution_plan_for_registration(plan, spec)
   rducks_assert_single_thread(con)
-  eval_ref <- if (identical(mode, "vectorized")) {
+  native_evaluator <- rducks_plan_native_evaluator_token(plan)
+  eval_ref <- if (identical(spec$mode, "vectorized")) {
     rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling)
-  } else if (identical(eval_mode, "R")) {
+  } else if (identical(plan$marshalling, "arrow_r")) {
     rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
-  } else {
+  } else if (identical(plan$marshalling, "arrow_c")) {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling)
+  } else {
+    stop("Rducks execution plan ", plan$plan_id, " is not implemented for local registration", call. = FALSE)
   }
   # The SQL registration call below is synchronous. `eval_ref` is live in this
   # R frame until the DuckDB extension receives the address and preserves it in
@@ -128,7 +110,7 @@ rducks_register <- function(con, name, fun, args, returns,
     rducks_sql_string(null_handling),
     rducks_sql_string(exception_handling),
     if (isTRUE(side_effects)) "TRUE" else "FALSE",
-    rducks_sql_string(eval_mode)
+    rducks_sql_string(native_evaluator)
   )
   res <- DBI::dbGetQuery(con, sql)
   if (!NROW(res) || !isTRUE(res$ok[[1]])) {
@@ -141,8 +123,7 @@ rducks_register <- function(con, name, fun, args, returns,
       null_handling = null_handling,
       exception_handling = exception_handling,
       side_effects = side_effects,
-      eval_mode = eval_mode,
-      execution_plan = rducks_current_execution_plan(con),
+      execution_plan = plan,
       registered = TRUE
     ),
     class = "rducks_registration"
@@ -155,7 +136,6 @@ print.rducks_registration <- function(x, ...) {
   cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
   cat("  name:       ", x$spec$name, "\n", sep = "")
   cat("  mode:       ", x$spec$mode, "\n", sep = "")
-  cat("  eval_mode:  ", x$eval_mode %||% "R", "\n", sep = "")
   if (!is.null(x$execution_plan)) {
     cat("  plan:       ", x$execution_plan$plan_id, "\n", sep = "")
   }
