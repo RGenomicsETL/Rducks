@@ -1,5 +1,16 @@
 /* Included by ../rducks_extension.c. */
 
+static char *rducks_strdup(const char *s) {
+    size_t len;
+    char *out;
+    if (!s) return NULL;
+    len = strlen(s);
+    out = (char *)malloc(len + 1U);
+    if (!out) return NULL;
+    memcpy(out, s, len + 1U);
+    return out;
+}
+
 static char *rducks_copy_duckdb_string(duckdb_string_t *s) {
     uint32_t len = duckdb_string_t_length(*s);
     const char *data = duckdb_string_t_data(s);

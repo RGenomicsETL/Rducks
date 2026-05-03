@@ -385,6 +385,7 @@ static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sca
         snprintf(err_msg, err_cap, "Rducks scalar metadata missing");
         return 0;
     }
+    rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
 
     if (!rducks_r_scalar_prepare_inprocess_arrow(runtime, meta, input, &input_schema_xptr, &input_array_xptr,
                                                  &output_schema_xptr, &n, &protect_count, err_msg, err_cap)) {
@@ -421,6 +422,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     if (!rducks_is_main_thread(runtime)) {
         if (rducks_concurrent_inproc_enabled(runtime)) {
+            rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
             if (!rducks_queue_submit_scalar(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
                 duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
             }
@@ -435,11 +437,14 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 
     if (rducks_concurrent_inproc_enabled(runtime)) {
+        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
         if (!rducks_queue_submit_scalar_via_worker_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
         }
         return;
     }
+
+    rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
 
     if (meta && meta->eval_mode == RDUCKS_EVAL_RC) {
         if (!rducks_rc_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {

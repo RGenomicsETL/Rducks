@@ -93,6 +93,17 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         return false;
     }
     meta->fun = R_NilValue;
+    meta->name = rducks_strdup(name);
+    if (!meta->name) {
+        snprintf(err, err_cap, "out of memory copying Rducks UDF name");
+        free(meta);
+        duckdb_destroy_scalar_function(&fn);
+        duckdb_destroy_logical_type(&return_logical_type);
+        for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
+        free(arg_descs);
+        rducks_type_desc_destroy(return_desc);
+        return false;
+    }
     meta->arity = arity;
     meta->args = arg_descs;
     arg_descs = NULL;
@@ -123,6 +134,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         snprintf(err, err_cap, "DuckDB failed to register Rducks scalar UDF %s", name);
         return false;
     }
+    rducks_runtime_register_udf(runtime, meta);
     return true;
 }
 
@@ -201,6 +213,41 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
         rducks_set_main_thread_token(runtime, token);
         free(token);
         out[i] = true;
+    }
+}
+
+static void rducks_udf_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_string_t *names = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
+    duckdb_string_t *fields = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+
+    for (idx_t i = 0; i < n; i++) {
+        char *name = rducks_copy_duckdb_string(&names[i]);
+        char *field = rducks_copy_duckdb_string(&fields[i]);
+        char value[128];
+        char err[256];
+        err[0] = '\0';
+        value[0] = '\0';
+        if (!name || !field) {
+            free(name);
+            free(field);
+            duckdb_scalar_function_set_error(info, "out of memory inspecting Rducks UDF stats");
+            return;
+        }
+        if (!rducks_runtime_udf_stat(runtime, name, field, value, sizeof(value), err, sizeof(err))) {
+            free(name);
+            free(field);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to inspect Rducks UDF stats");
+            return;
+        }
+        duckdb_vector_assign_string_element(output, i, value);
+        free(name);
+        free(field);
     }
 }
 

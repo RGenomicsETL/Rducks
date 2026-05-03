@@ -75,6 +75,33 @@ static bool rducks_register_unary_varchar_bool_surface(duckdb_connection con, rd
     return rc == DuckDBSuccess;
 }
 
+static bool rducks_register_binary_varchar_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                   const char *name, duckdb_scalar_function_t callback) {
+    duckdb_scalar_function fn = duckdb_create_scalar_function();
+    duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
+    duckdb_state rc;
+    if (!fn || !varchar_type) {
+        if (fn) duckdb_destroy_scalar_function(&fn);
+        if (varchar_type) duckdb_destroy_logical_type(&varchar_type);
+        return false;
+    }
+    duckdb_scalar_function_set_name(fn, name);
+    duckdb_scalar_function_add_parameter(fn, varchar_type);
+    duckdb_scalar_function_add_parameter(fn, varchar_type);
+    duckdb_scalar_function_set_return_type(fn, varchar_type);
+    duckdb_scalar_function_set_volatile(fn);
+    duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
+    duckdb_scalar_function_set_function(fn, callback);
+    rc = duckdb_register_scalar_function(con, fn);
+    duckdb_destroy_scalar_function(&fn);
+    duckdb_destroy_logical_type(&varchar_type);
+    return rc == DuckDBSuccess;
+}
+
+static bool rducks_register_udf_stat_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
+    return rducks_register_binary_varchar_surface(con, runtime, "rducks_udf_stat", rducks_udf_stat_scalar);
+}
+
 static bool rducks_register_main_thread_token_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
     return rducks_register_unary_varchar_bool_surface(con, runtime, "rducks_set_main_thread_token",
                                                       rducks_set_main_thread_token_scalar);
@@ -253,7 +280,8 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
         if (!rducks_register_version(connection) || !rducks_register_queue_stats(connection, runtime) ||
             !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
             !rducks_register_main_thread_token_surface(connection, runtime) ||
-            !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_scalar_surface(connection, runtime)) {
+            !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_udf_stat_surface(connection, runtime) ||
+            !rducks_register_scalar_surface(connection, runtime)) {
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");
             }

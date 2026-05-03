@@ -1,5 +1,8 @@
 # Rducks 0.0.0.9000
 
+- Added `rducks_explain_udf()` with native per-UDF execution counters so users
+  can inspect registration metadata and verify that `arrow_r`/`arrow_c` chunks
+  ran through the requested evaluator without fallback.
 - Added an R-universe badge to the README and lowered the package R dependency
   floor to R 4.3.
 - Added wasm/webR build detection in `configure`, including the DuckDB wasm

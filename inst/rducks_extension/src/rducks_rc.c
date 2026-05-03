@@ -1382,6 +1382,7 @@ static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sc
         snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
         return 0;
     }
+    rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     if (rducks_rc_direct_supported(meta)) {
         return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
     }

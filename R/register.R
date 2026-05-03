@@ -116,7 +116,7 @@ rducks_register <- function(con, name, fun, args, returns,
   if (!NROW(res) || !isTRUE(res$ok[[1]])) {
     stop("native Rducks registration failed for SQL function: ", name, call. = FALSE)
   }
-  structure(
+  registration <- structure(
     list(
       connection = con,
       spec = spec,
@@ -128,6 +128,8 @@ rducks_register <- function(con, name, fun, args, returns,
     ),
     class = "rducks_registration"
   )
+  rducks_store_registration(registration)
+  registration
 }
 
 #' @export

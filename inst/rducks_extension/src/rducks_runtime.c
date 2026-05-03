@@ -51,6 +51,120 @@ static int rducks_concurrent_inproc_enabled(rducks_runtime_entry_t *runtime) {
     return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_CONCURRENT_INPROC;
 }
 
+static rducks_r_scalar_meta_t *rducks_runtime_find_udf_locked(rducks_runtime_entry_t *runtime, const char *name) {
+    rducks_r_scalar_meta_t *cur;
+    if (!runtime || !name) return NULL;
+    cur = runtime->udf_registry_head;
+    while (cur) {
+        if (cur->name && strcmp(cur->name, name) == 0) return cur;
+        cur = cur->registry_next;
+    }
+    return NULL;
+}
+
+static void rducks_runtime_register_udf(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta) {
+    if (!runtime || !meta || !meta->name) return;
+    rducks_runtime_lock();
+    meta->registry_next = runtime->udf_registry_head;
+    runtime->udf_registry_head = meta;
+    rducks_runtime_unlock();
+}
+
+static void rducks_runtime_unregister_udf(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta) {
+    rducks_r_scalar_meta_t *prev = NULL;
+    rducks_r_scalar_meta_t *cur;
+    if (!runtime || !meta) return;
+    rducks_runtime_lock();
+    cur = runtime->udf_registry_head;
+    while (cur) {
+        if (cur == meta) {
+            if (prev) {
+                prev->registry_next = cur->registry_next;
+            } else {
+                runtime->udf_registry_head = cur->registry_next;
+            }
+            cur->registry_next = NULL;
+            break;
+        }
+        prev = cur;
+        cur = cur->registry_next;
+    }
+    rducks_runtime_unlock();
+}
+
+static void rducks_udf_record_dispatch(rducks_r_scalar_meta_t *meta, idx_t rows, int queued) {
+    if (!meta || !meta->runtime) return;
+    rducks_runtime_lock();
+    meta->dispatch_chunks++;
+    meta->dispatch_rows += (uint64_t)rows;
+    if (queued) {
+        meta->queued_chunks++;
+    } else {
+        meta->direct_chunks++;
+    }
+    rducks_runtime_unlock();
+}
+
+static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows) {
+    (void)rows;
+    if (!meta || !meta->runtime) return;
+    rducks_runtime_lock();
+    if (meta->eval_mode == RDUCKS_EVAL_RC) {
+        meta->arrow_c_chunks++;
+    } else {
+        meta->arrow_r_chunks++;
+    }
+    rducks_runtime_unlock();
+}
+
+static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *name, const char *field,
+                                   char *out, size_t out_cap, char *err, size_t err_cap) {
+    rducks_r_scalar_meta_t *meta;
+    int ok = 1;
+    if (!out || out_cap == 0U) return 0;
+    out[0] = '\0';
+    if (!runtime || !name || !name[0] || !field || !field[0]) {
+        snprintf(err, err_cap, "invalid Rducks UDF stat request");
+        return 0;
+    }
+
+    rducks_runtime_lock();
+    meta = rducks_runtime_find_udf_locked(runtime, name);
+    if (!meta) {
+        rducks_runtime_unlock();
+        snprintf(err, err_cap, "unknown Rducks UDF: %s", name);
+        return 0;
+    }
+
+    if (strcmp(field, "name") == 0) {
+        snprintf(out, out_cap, "%s", meta->name ? meta->name : "");
+    } else if (strcmp(field, "eval_mode") == 0) {
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_RC ? "RC" : "R");
+    } else if (strcmp(field, "marshalling") == 0) {
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_RC ? "arrow_c" : "arrow_r");
+    } else if (strcmp(field, "dispatch_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_chunks);
+    } else if (strcmp(field, "dispatch_rows") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_rows);
+    } else if (strcmp(field, "direct_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->direct_chunks);
+    } else if (strcmp(field, "queued_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->queued_chunks);
+    } else if (strcmp(field, "arrow_r_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_r_chunks);
+    } else if (strcmp(field, "arrow_c_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_chunks);
+    } else {
+        ok = 0;
+    }
+    rducks_runtime_unlock();
+
+    if (!ok) {
+        snprintf(err, err_cap, "unknown Rducks UDF stat field: %s", field);
+    }
+    return ok;
+}
+
 static void rducks_r_scalar_bind_state_destroy(void *ptr) {
     free(ptr);
 }
@@ -151,6 +265,7 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
     if (!meta) {
         return;
     }
+    rducks_runtime_unregister_udf(meta->runtime, meta);
     if (meta->fun && meta->fun != R_NilValue && rducks_is_main_thread(meta->runtime)) {
         R_ReleaseObject(meta->fun);
     }
@@ -158,6 +273,7 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
      * R. A later main-thread release queue can make this deterministic; until
      * then a preserved-function leak is safer than off-thread R API use.
      */
+    free(meta->name);
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
     }

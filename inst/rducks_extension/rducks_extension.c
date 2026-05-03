@@ -89,6 +89,7 @@ typedef enum rducks_type_kind {
 } rducks_type_kind_t;
 
 typedef struct rducks_udf_request rducks_udf_request_t;
+typedef struct rducks_r_scalar_meta rducks_r_scalar_meta_t;
 
 typedef struct rducks_type_desc {
     rducks_type_kind_t kind;
@@ -116,6 +117,7 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_submitted;
     uint64_t queue_executed;
     uint64_t queue_timeouts;
+    rducks_r_scalar_meta_t *udf_registry_head;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;
     CONDITION_VARIABLE queue_cond;
@@ -126,8 +128,10 @@ typedef struct rducks_runtime_entry {
     int queue_initialized;
 } rducks_runtime_entry_t;
 
-typedef struct rducks_r_scalar_meta {
+struct rducks_r_scalar_meta {
     SEXP fun;
+    char *name;
+    rducks_r_scalar_meta_t *registry_next;
     size_t arity;
     struct rducks_type_desc **args;
     struct rducks_type_desc *return_desc;
@@ -135,7 +139,13 @@ typedef struct rducks_r_scalar_meta {
     rducks_exception_handling_t exception_handling;
     rducks_eval_mode_t eval_mode;
     rducks_runtime_entry_t *runtime;
-} rducks_r_scalar_meta_t;
+    uint64_t dispatch_chunks;
+    uint64_t dispatch_rows;
+    uint64_t direct_chunks;
+    uint64_t queued_chunks;
+    uint64_t arrow_r_chunks;
+    uint64_t arrow_c_chunks;
+};
 
 typedef struct rducks_r_scalar_bind_state {
     rducks_runtime_entry_t *runtime;
