@@ -65,10 +65,11 @@ rducks_assert_vectorized_supported <- function(spec, eval_mode) {
 #' @param mode Registration mode. `"scalar"` calls the R function once per
 #'   DuckDB row. `"vectorized"` calls the R function once per DuckDB chunk with
 #'   one R vector/list-column per declared argument.
-#' @param eval_mode Scalar evaluator implementation. `"R"` uses the R/nanoarrow
-#'   adapter; `"RC"` uses the native C row-loop adapter and validates against the
-#'   same scalar-mode semantics. `mode = "vectorized"` currently supports
-#'   `eval_mode = "R"` only.
+#' @param eval_mode Compatibility override for the marshalling evaluator. Use
+#'   `NULL` to select from the active connection `rducks_execution_plan()`.
+#'   `"R"` maps to `arrow_r`; `"RC"` maps to `arrow_c` for scalar mode.
+#'   `mode = "vectorized"` currently supports `eval_mode = "R"` only because
+#'   `arrow_c` vectorized execution is not implemented yet.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -85,12 +86,16 @@ rducks_assert_vectorized_supported <- function(spec, eval_mode) {
 #' @export
 rducks_register <- function(con, name, fun, args, returns,
                             mode = "scalar",
-                            eval_mode = c("R", "RC"),
+                            eval_mode = NULL,
                             null_handling = c("default", "special"),
                             exception_handling = c("rethrow", "return_null"),
                             side_effects = FALSE) {
   mode <- rducks_match_mode(mode)
-  eval_mode <- match.arg(eval_mode)
+  if (is.null(eval_mode)) {
+    eval_mode <- rducks_current_plan_eval_mode(con, mode)
+  } else {
+    eval_mode <- match.arg(eval_mode, c("R", "RC"))
+  }
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
   if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
@@ -137,6 +142,7 @@ rducks_register <- function(con, name, fun, args, returns,
       exception_handling = exception_handling,
       side_effects = side_effects,
       eval_mode = eval_mode,
+      execution_plan = rducks_current_execution_plan(con),
       registered = TRUE
     ),
     class = "rducks_registration"
@@ -150,6 +156,9 @@ print.rducks_registration <- function(x, ...) {
   cat("  name:       ", x$spec$name, "\n", sep = "")
   cat("  mode:       ", x$spec$mode, "\n", sep = "")
   cat("  eval_mode:  ", x$eval_mode %||% "R", "\n", sep = "")
+  if (!is.null(x$execution_plan)) {
+    cat("  plan:       ", x$execution_plan$plan_id, "\n", sep = "")
+  }
   cat("  signature:  ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }

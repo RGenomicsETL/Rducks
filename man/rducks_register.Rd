@@ -11,7 +11,7 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
-  eval_mode = c("R", "RC"),
+  eval_mode = NULL,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -34,10 +34,11 @@ objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3
 DuckDB row. \code{"vectorized"} calls the R function once per DuckDB chunk with
 one R vector/list-column per declared argument.}
 
-\item{eval_mode}{Scalar evaluator implementation. \code{"R"} uses the R/nanoarrow
-adapter; \code{"RC"} uses the native C row-loop adapter and validates against the
-same scalar-mode semantics. \code{mode = "vectorized"} currently supports
-\code{eval_mode = "R"} only.}
+\item{eval_mode}{Compatibility override for the marshalling evaluator. Use
+\code{NULL} to select from the active connection \code{rducks_execution_plan()}.
+\code{"R"} maps to \code{arrow_r}; \code{"RC"} maps to \code{arrow_c} for scalar mode.
+\code{mode = "vectorized"} currently supports \code{eval_mode = "R"} only because
+\code{arrow_c} vectorized execution is not implemented yet.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared

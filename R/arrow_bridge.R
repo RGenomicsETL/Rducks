@@ -1124,30 +1124,6 @@ rducks_arrow_result_array <- function(type, results, output_schema, n) {
   out
 }
 
-rducks_scalar_execution_plan <- function(concurrency = c("serial", "chunk_concurrent"),
-                                         backend = c("single", "concurrent_inproc", "serialized"),
-                                         serialization = c("none", "arrow_ipc")) {
-  concurrency <- match.arg(concurrency)
-  backend <- match.arg(backend)
-  serialization <- match.arg(serialization)
-  if (identical(concurrency, "chunk_concurrent") && identical(backend, "single")) {
-    stop("chunk_concurrent scalar execution requires a concurrent or serialized backend", call. = FALSE)
-  }
-  if (identical(backend, "serialized") && !identical(serialization, "arrow_ipc")) {
-    stop("serialized scalar execution requires serialization = 'arrow_ipc'", call. = FALSE)
-  }
-  if (!identical(backend, "serialized") && identical(serialization, "arrow_ipc")) {
-    stop("Arrow IPC serialization is reserved for serialized/out-of-process scalar execution", call. = FALSE)
-  }
-  list(
-    concurrency = concurrency,
-    backend = backend,
-    serialization = serialization,
-    in_process = !identical(backend, "serialized"),
-    uses_r_thread = identical(backend, "single") || identical(backend, "concurrent_inproc")
-  )
-}
-
 rducks_arrow_ipc_encode <- function(data) {
   con <- rawConnection(raw(), open = "wb")
   on.exit(close(con), add = TRUE)

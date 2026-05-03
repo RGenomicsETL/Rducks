@@ -49,7 +49,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
     rducks_configure_duckdb_threads(con, threads = 1L, external_threads = 1L)
   }
 
-  rducks_set_execution_backend(con, "single")
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   invisible(con)
 }
 
@@ -79,8 +79,9 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 #' @export
 rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads) {
   rducks_assert_duckdb_connection(con)
-  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
-  rducks_set_execution_backend(con, "concurrent_inproc")
+  current <- rducks_current_execution_plan(con)
+  plan <- rducks_execution_plan(current$marshalling, "inproc_concurrent")
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
   invisible(con)
 }
 
@@ -97,8 +98,9 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads
 #' @export
 rducks_disable_inproc <- function(con, threads = NULL, external_threads = threads) {
   rducks_assert_duckdb_connection(con)
-  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
-  rducks_set_execution_backend(con, "single")
+  current <- rducks_current_execution_plan(con)
+  plan <- rducks_execution_plan(current$marshalling, "serial")
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
   invisible(con)
 }
 
@@ -177,6 +179,36 @@ rducks_configure_duckdb_threads <- function(con, threads = NULL, external_thread
   if (!is.null(external_threads)) {
     DBI::dbExecute(con, sprintf("SET external_threads=%d", external_threads))
   }
+  invisible(con)
+}
+
+#' Set the Rducks execution plan for a connection
+#'
+#' Sets connection/session policy for Rducks chunk execution. Registration still
+#' defines UDF semantics such as scalar versus vectorized call shape, declared
+#' types, NULL handling, error handling, and side effects. The execution plan
+#' chooses the marshalling implementation and concurrency contract.
+#'
+#' Compatibility note: the older `rducks_enable_inproc()` and
+#' `rducks_disable_inproc()` helpers now set the `inproc_concurrent` and
+#' `serial` concurrency parts of this plan while preserving the current
+#' marshalling choice.
+#'
+#' @param con A `duckdb_connection` already enabled with [rducks_enable()].
+#' @param plan An `rducks_execution_plan()` object.
+#' @param threads Optional positive integer to set with `PRAGMA threads`.
+#' @param external_threads Optional positive integer to set with
+#'   `SET external_threads`. Defaults to `threads`.
+#' @return `con`, invisibly.
+#' @export
+rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
+                                      threads = NULL, external_threads = threads) {
+  rducks_assert_duckdb_connection(con)
+  plan <- rducks_as_execution_plan(plan)
+  rducks_assert_execution_plan_implemented(plan)
+  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
+  rducks_set_execution_backend(con, plan$backend)
+  rducks_store_connection_plan(con, plan)
   invisible(con)
 }
 

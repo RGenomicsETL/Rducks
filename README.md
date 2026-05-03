@@ -33,26 +33,31 @@ NULL/exception/side-effect flags. The extension registers one generic
 DuckDB scalar function implementation and stores the per-UDF metadata in
 DuckDB `extra_info`.
 
-Query execution has two in-process backends:
+Query execution is described by a connection-level execution plan with
+two orthogonal pieces:
 
-- `single` is the direct backend selected by `rducks_enable()`. DuckDB
-  enters the scalar UDF on the recorded R thread, and the extension runs
-  the selected scalar evaluator immediately.
-- `concurrent_inproc` is selected by `rducks_enable_inproc()` after
-  registration. A worker-side UDF callback submits the chunk to an
-  extension-owned queue and waits; the recorded main R lane drains the
-  queue, runs the selected scalar evaluator, fills the DuckDB output
-  vector, and wakes the worker. No R API work runs on DuckDB worker
-  threads, and the queue has timeout/error paths rather than a hidden
-  pump.
+- marshalling: `arrow_r` is the Arrow C Data plus nanoarrow/R reference
+  path; `arrow_c` is the native C/DuckDB-vector path used by scalar RC
+  execution; `arrow_ipc` is reserved for the future owned-IPC
+  multiprocess transport.
+- concurrency: `serial` evaluates one chunk at a time in-process;
+  `inproc_concurrent` allows concurrent DuckDB callbacks but still runs
+  all R API work on the recorded R execution lane;
+  `multiprocess_parallel` is the future process-isolated chunk-parallel
+  plan.
 
-For scalar mode, both backends support `eval_mode = "R"` and
-`eval_mode = "RC"`. The R evaluator uses DuckDB Arrow C Data plus
-nanoarrow to adapt DuckDB chunks to row-wise R calls. The RC evaluator
-uses native row-loop code and direct DuckDB vector access where
-implemented, while still evaluating the user R function once per logical
-row on the recorded R lane. Vectorized mode currently uses the
-R/nanoarrow evaluator.
+`rducks_enable()` selects the reference `arrow_r + serial` plan.
+`rducks_enable_inproc()` is a compatibility helper that switches the
+concurrency part to `inproc_concurrent` while preserving the current
+marshalling choice. No R API work runs on DuckDB worker threads, and the
+in-process queue has timeout/error paths rather than a hidden pump.
+
+For scalar mode, `arrow_r` maps to the R/nanoarrow evaluator and
+`arrow_c` maps to the native C row-loop evaluator. Both still evaluate
+the user R function once per logical row on the recorded R lane.
+Vectorized mode currently uses the `arrow_r` reference path only;
+`arrow_c` vectorized execution is deliberately an explicit
+not-implemented plan rather than a hidden fallback.
 
 ## Getting started
 
@@ -131,11 +136,6 @@ bench_result <- bench::mark(
   check = FALSE
 )
 bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
-#> # A tibble: 2 × 4
-#>   expression   median `itr/sec` mem_alloc
-#>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        295ms      3.41    1.97MB
-#> 2 vectorized    231ms      4.17    2.34MB
 ```
 
 ### In-process queued execution
@@ -172,7 +172,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-03 11:24:59
+#> 1 2026-05-03 12:38:56
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
