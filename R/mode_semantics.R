@@ -10,21 +10,35 @@ rducks_mode_semantics_rows <- list(
     error_semantics = "R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
     threading = "R API work runs on the recorded main R thread; rducks_enable(..., threads = 'single') is the registration-safe default, and rducks_enable_inproc() enables an extension-owned in-process queue that still serializes R calls on that main R lane",
     copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row",
-    notes = "current production path is single-lane; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation; a vectorized mode should call R once per DuckDB chunk and is not exposed until implemented"
+    notes = "current production path is single-lane; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation"
+  ),
+  vectorized = list(
+    mode = "vectorized",
+    status = "implemented",
+    call_granularity = "one R call per DuckDB chunk",
+    input_shape = "one R vector/list-column per declared argument",
+    return_shape = "one R vector/list of values compatible with the declared return type",
+    null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
+    length_semantics = "return length must equal the number of evaluated rows in the chunk",
+    error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
+    threading = "same backend/threading rules as scalar mode; eval_mode = 'R' only for now",
+    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument",
+    notes = "batch/chunk call-shape used by future serialized Arrow IPC backends; zero-argument vectorized UDFs are not exposed yet"
   )
 )
 
 rducks_match_mode <- function(mode) {
-  match.arg(mode, names(rducks_mode_semantics_rows))
+  mode <- match.arg(mode, names(rducks_mode_semantics_rows))
+  mode
 }
 
 #' Describe Rducks execution mode semantics
 #'
 #' `rducks_mode_semantics()` is the package-level schema for execution-mode
-#' semantics. `mode = "scalar"` is currently the only public mode: Rducks calls
-#' the R function once for each DuckDB row. Scalar mode is implemented on top of
-#' DuckDB Arrow C Data export/import plus nanoarrow. A future vectorized mode
-#' should call R once per DuckDB chunk and will be added only when implemented.
+#' semantics. `mode = "scalar"` calls the R function once for each DuckDB row.
+#' `mode = "vectorized"` calls the R function once per DuckDB chunk with one R
+#' vector/list-column per declared argument. Both modes are implemented on top
+#' of DuckDB Arrow C Data export/import plus nanoarrow.
 #'
 #' @param mode Optional character vector of mode names. When `NULL`, all known
 #'   modes are returned.

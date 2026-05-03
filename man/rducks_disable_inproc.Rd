@@ -2,7 +2,7 @@
 % Please edit documentation in R/connection.R
 \name{rducks_disable_inproc}
 \alias{rducks_disable_inproc}
-\title{Disable in-process queued scalar execution}
+\title{Disable in-process queued R UDF execution}
 \usage{
 rducks_disable_inproc(con, threads = NULL, external_threads = threads)
 }
@@ -19,5 +19,5 @@ rducks_disable_inproc(con, threads = NULL, external_threads = threads)
 }
 \description{
 Switches a Rducks-enabled DuckDB connection back to the direct single-lane
-scalar backend. Optionally updates DuckDB thread settings at the same time.
+backend. Optionally updates DuckDB thread settings at the same time.
 }

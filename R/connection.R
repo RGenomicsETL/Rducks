@@ -14,8 +14,8 @@ rducks_extension_path <- function() {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the bundled Rducks DuckDB extension. The registration-safe scalar-mode
-#' R UDF path requires R API work to happen on the recorded main R thread; pass
+#' Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
+#' requires R API work to happen on the recorded main R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
 #' explicitly. After registering UDFs, call [rducks_enable_inproc()] to opt into
 #' the extension-owned in-process queue.
@@ -53,18 +53,18 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   invisible(con)
 }
 
-#' Enable in-process queued scalar execution
+#' Enable in-process queued R UDF execution
 #'
-#' Switches a Rducks-enabled DuckDB connection to the in-process queued scalar
+#' Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
 #' backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 #' callbacks submit chunk requests to an extension-owned queue, and the recorded
 #' main R execution lane drains the queue and performs all R API work. This is a
 #' same-process scheduling mode, not a performance promise; R function calls are
-#' still serialized on the main R thread. The queued backend dispatches both
-#' scalar evaluator implementations, `eval_mode = "R"` and `eval_mode = "RC"`,
-#' through that same main-lane execution rule.
+#' still serialized on the main R thread. The queued backend dispatches scalar
+#' mode with `eval_mode = "R"` or `"RC"`, and vectorized mode with
+#' `eval_mode = "R"`, through that same main-lane execution rule.
 #'
-#' Register scalar UDFs while the connection is in the registration-safe
+#' Register UDFs while the connection is in the registration-safe
 #' configuration, then call `rducks_enable_inproc()` before running queries that
 #' should use the queued in-process path. Use `threads`/`external_threads` here
 #' to adjust DuckDB's thread settings for queued execution.
@@ -84,10 +84,10 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads
   invisible(con)
 }
 
-#' Disable in-process queued scalar execution
+#' Disable in-process queued R UDF execution
 #'
 #' Switches a Rducks-enabled DuckDB connection back to the direct single-lane
-#' scalar backend. Optionally updates DuckDB thread settings at the same time.
+#' backend. Optionally updates DuckDB thread settings at the same time.
 #'
 #' @param con A `duckdb_connection`.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.

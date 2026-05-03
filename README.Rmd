@@ -20,15 +20,15 @@ library(Rducks)
 
 Rducks registers R functions as DuckDB SQL functions. It ships as an R package
 plus a DuckDB extension. The loaded DuckDB extension registers R functions on a
-DuckDB connection and performs the current nanoarrow scalar-mode execution bridge
-over DuckDB Arrow C Data.
+DuckDB connection and performs the current nanoarrow scalar/vectorized execution
+bridge over DuckDB Arrow C Data.
 
 ## How it works
 
 Rducks has two native boundaries: an R package that owns registration
 ergonomics, and a loaded DuckDB extension that owns SQL function registration,
 DuckDB chunk access, R function preservation while DuckDB owns the UDF, and
-current scalar-mode R function execution.
+current scalar/vectorized R function execution.
 
 When you call `rducks_enable()`, Rducks loads the bundled
 `rducks.duckdb_extension` into that DuckDB connection, enables DuckDB's lossless
@@ -37,7 +37,7 @@ call R. With `threads = "single"`, it also sets `external_threads=1` and
 `PRAGMA threads=1`; use that registration-safe setting while adding UDFs.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB type
-objects, checks that scalar-mode marshalling is available, and preserves the R
+objects, checks that Arrow C Data marshalling is available, and preserves the R
 function. Registration then crosses back through SQL: Rducks calls the extension
 function `rducks_register_scalar(...)`, passing the R function reference, type
 descriptor tokens, and NULL/exception/side-effect flags. The extension registers
@@ -56,11 +56,12 @@ Query execution has two in-process backends:
   runs on DuckDB worker threads, and the queue has timeout/error paths rather
   than a hidden pump.
 
-Both backends support `eval_mode = "R"` and `eval_mode = "RC"`. The R evaluator
-uses DuckDB Arrow C Data plus nanoarrow to adapt DuckDB chunks to row-wise R
-calls. The RC evaluator uses native row-loop code and direct DuckDB vector access
-where implemented, while still evaluating the user R function once per logical
-row on the recorded R lane.
+For scalar mode, both backends support `eval_mode = "R"` and `eval_mode =
+"RC"`. The R evaluator uses DuckDB Arrow C Data plus nanoarrow to adapt DuckDB
+chunks to row-wise R calls. The RC evaluator uses native row-loop code and direct
+DuckDB vector access where implemented, while still evaluating the user R
+function once per logical row on the recorded R lane. Vectorized mode currently
+uses the R/nanoarrow evaluator.
 
 ## Getting started
 
@@ -88,21 +89,62 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 connection, normalized signature, and registration options. You do not need to
 keep this object for the UDF to keep working in DuckDB.
 
-The implemented mode is `mode = "scalar"`, which calls the R function once per
-DuckDB row. Internally this scalar adapter is nanoarrow-backed over DuckDB Arrow
-C Data: DuckDB calls the native scalar UDF on real chunks, and Rducks adapts
-those chunks to scalar R calls. A future vectorized mode should call R once per
-DuckDB chunk and will be added only when implemented.
+Rducks implements two R call shapes. `mode = "scalar"` calls the R function once
+per DuckDB row. `mode = "vectorized"` calls the R function once per DuckDB chunk
+with one R vector/list-column per declared argument. Both adapters are
+nanoarrow-backed over DuckDB Arrow C Data: DuckDB calls the native scalar UDF on
+real chunks, and Rducks adapts those chunks to the requested R call shape.
+
+```{r vectorized-mode}
+reg_vec_plus_one <- rducks_register(
+  con,
+  name = "r_vec_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "vectorized",
+  side_effects = TRUE
+)
+
+dbGetQuery(con, "SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i)")
+```
+
+In vectorized mode, `null_handling = "default"` evaluates only rows with no
+top-level SQL NULL inputs and scatters SQL NULLs back into the result.
+`null_handling = "special"` passes all rows using the same NA/NULL shapes as
+scalar mode. The return length must match the number of evaluated rows. For now,
+vectorized mode supports `eval_mode = "R"` only and requires at least one
+declared argument.
+
+A tiny benchmark with `bench` can show the call-shape difference for simple R
+work. The result is illustrative rather than a performance guarantee.
+
+```{r vectorized-benchmark, eval=requireNamespace("bench", quietly = TRUE)}
+bench_n <- 10000L
+bench_result <- bench::mark(
+  scalar = DBI::dbGetQuery(
+    con,
+    sprintf("SELECT sum(r_plus_one(i::DOUBLE)) AS x FROM range(%d) AS t(i)", bench_n)
+  ),
+  vectorized = DBI::dbGetQuery(
+    con,
+    sprintf("SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(%d) AS t(i)", bench_n)
+  ),
+  iterations = 3,
+  check = FALSE
+)
+bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
+```
 
 ### In-process queued execution
 
-Register scalar UDFs in the registration-safe configuration. Then call
+Register UDFs in the registration-safe configuration. Then call
 `rducks_enable_inproc()` to switch query execution to the explicit in-process
 queue. Pass `threads`/`external_threads` there if you want to raise DuckDB's
 thread settings for queued execution. R calls are still serialized on the
 recorded main R thread, but queued worker requests have timeout/error paths
-rather than deadlocking indefinitely. The queued backend supports both scalar
-evaluators: `eval_mode = "R"` and `eval_mode = "RC"`.
+rather than deadlocking indefinitely. The queued backend supports scalar mode
+with `eval_mode = "R"` or `"RC"`, and vectorized mode with `eval_mode = "R"`.
 
 ```{r inproc-queue}
 reg_sleepy <- rducks_register(
@@ -158,16 +200,17 @@ strings.
 ## Current scope
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads it into
-DuckDB with `rducks_enable()`, and registers scalar-mode R UDFs with
-`rducks_register()`. The scalar-mode input/output type set is `BOOLEAN`,
+DuckDB with `rducks_enable()`, and registers scalar or vectorized R UDFs with
+`rducks_register()`. The input/output type set is `BOOLEAN`,
 `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`,
 `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`,
 `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
 `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`. Composite inputs and
 outputs are accepted as constructed type objects such as `TYPE[]`, `TYPE[N]`,
 `STRUCT(...)`, and `MAP(...)`, recursively over supported child types. The
-default `mode = "scalar"` calls R once per DuckDB row. Registration also supports
-`null_handling`, `exception_handling`, and `side_effects` controls.
+default `mode = "scalar"` calls R once per DuckDB row; `mode = "vectorized"`
+calls R once per DuckDB chunk. Registration also supports `null_handling`,
+`exception_handling`, and `side_effects` controls.
 
 Rducks scalar UDFs require R API work to happen on the recorded main R thread.
 This is R's thread-affinity rule, not a DuckDB data-race issue. Register UDFs
@@ -193,8 +236,7 @@ ordinary R values against those descriptors before marshalling.
 
 ### Execution mode semantics
 
-The table below is produced by `rducks_mode_semantics()`. Only `scalar` is public
-and implemented now.
+The table below is produced by `rducks_mode_semantics()`.
 
 ```{r mode-semantics, echo=FALSE, results="asis"}
 mode_semantics <- Rducks::rducks_mode_semantics()

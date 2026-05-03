@@ -33,7 +33,17 @@ maybe_stop_for_limit <- function() {
 }
 
 sql_ok <- function(sql, label) {
-  res <- DBI::dbGetQuery(con, sql)
+  res <- tryCatch(
+    DBI::dbGetQuery(con, sql),
+    error = function(e) {
+      stop(
+        "generated marshalling case errored: ", label,
+        "\nSQL: ", sql,
+        "\n", conditionMessage(e),
+        call. = FALSE
+      )
+    }
+  )
   if (!NROW(res) || !isTRUE(res$ok[[1L]])) {
     stop("generated marshalling case failed: ", label, "\nSQL: ", sql, call. = FALSE)
   }
@@ -59,6 +69,43 @@ run_return <- function(case) {
   invisible(rducks_register(con, name, function() value, character(), case$type))
   got <- sprintf("%s()", name)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, case$sql1)), paste0("return ", case$name))
+}
+
+run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
+  type_sql <- rducks_type_sql(type)
+  values_sql <- if (include_null) {
+    sprintf("(%s), (NULL::%s), (%s)", sql1, type_sql, sql2)
+  } else {
+    sprintf("(%s), (%s)", sql1, sql2)
+  }
+
+  maybe_stop_for_limit()
+  row_name <- next_name("row")
+  vec_name <- next_name("vec")
+  invisible(rducks_register(con, row_name, function(x) x, type, type, side_effects = TRUE))
+  invisible(rducks_register(con, vec_name, function(x) x, type, type, mode = "vectorized", side_effects = TRUE))
+  row_expr <- sprintf("%s(x)", row_name)
+  vec_expr <- sprintf("%s(x)", vec_name)
+  sql_ok(
+    sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_expr, row_expr)),
+    paste0("vectorized/default vs scalar ", label)
+  )
+
+  if (include_null) {
+    maybe_stop_for_limit()
+    row_special_name <- next_name("row_special")
+    vec_special_name <- next_name("vec_special")
+    invisible(rducks_register(con, row_special_name, function(x) x, type, type,
+                              null_handling = "special", side_effects = TRUE))
+    invisible(rducks_register(con, vec_special_name, function(x) x, type, type,
+                              mode = "vectorized", null_handling = "special", side_effects = TRUE))
+    row_special_expr <- sprintf("%s(x)", row_special_name)
+    vec_special_expr <- sprintf("%s(x)", vec_special_name)
+    sql_ok(
+      sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_special_expr, row_special_expr)),
+      paste0("vectorized/special vs scalar ", label)
+    )
+  }
 }
 
 sequence_r_value <- function(case) {
@@ -101,6 +148,7 @@ run_composite_identity <- function(case, shape) {
   invisible(rducks_register(con, name, function(x) x, spec$type, spec$type))
   got <- sprintf("%s(%s)", name, spec$sql)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, spec$sql)), paste(shape, case$name))
+  run_vectorized_row_conformance(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
 
   maybe_stop_for_limit()
   ret_name <- next_name(paste0("ret_", shape))
@@ -141,6 +189,7 @@ tryCatch({
   for (case in scalar_cases) {
     run_identity(case)
     run_return(case)
+    run_vectorized_row_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
   }
 
   for (case in scalar_cases) {

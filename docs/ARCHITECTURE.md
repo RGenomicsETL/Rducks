@@ -23,27 +23,30 @@ R functions as DuckDB UDFs.
    - canonical chunk marshalling through DuckDB `data_chunk` ⇄ Arrow C Data APIs
    - typed Rducks conversion rules for exact/exotic values
    - scalar adapter that invokes the R function once per DuckDB row
+   - vectorized adapter that invokes the R function once per DuckDB chunk
 
-## Scalar UDF execution model
+## Scalar and vectorized UDF execution model
 
 ```text
 DuckDB
   -> rducks_r_scalar_udf(info, input, output)
       -> metadata from extra_info
-      -> eval_mode = "R": DuckDB chunk -> Arrow C Data -> R row-loop adapter
-      -> eval_mode = "RC": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
+      -> mode = "scalar", eval_mode = "R": DuckDB chunk -> Arrow C Data -> R row-loop adapter
+      -> mode = "scalar", eval_mode = "RC": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
+      -> mode = "vectorized": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
 ```
 
 Both scalar evaluators call the R function once per logical row. `eval_mode =
 "RC"` moves row iteration, call construction, NULL handling, return checking,
 and direct DuckDB vector reads/writes into C for supported scalar storage; the
 user function itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical
-scoping, and side effects keep ordinary R semantics.
+scoping, and side effects keep ordinary R semantics. Vectorized mode calls the R
+function once per DuckDB chunk and currently uses the R/nanoarrow evaluator only.
 
 ## Thread model
 
 A DuckDB worker must never call R directly. The registration-safe default keeps
-scalar-mode R UDF execution on the calling R thread by requiring
+R UDF execution on the calling R thread by requiring
 `external_threads=1` and `PRAGMA threads=1` at registration. After registration,
 `rducks_enable_inproc()` can switch the connection to the in-process queued
 backend. In that backend, non-main UDF callbacks submit requests to an
@@ -83,7 +86,7 @@ queue first; the main R lane drains the request and only then runs those helpers
 Do not reuse RC direct-buffer helpers as worker-safe building blocks without
 first splitting them along the boundaries above.
 
-## Prepared scalar execution plans
+## Prepared scalar and vectorized execution plans
 
 The R and RC row-loop code is split into explicit phases:
 
@@ -101,7 +104,12 @@ backend must split worker-safe DuckDB/vector work from any R API or `SEXP` work,
 then cross an owned-buffer transport boundary before R-thread evaluation, or be
 a genuinely pure-native evaluator with no R callback. This keeps scalar
 semantics independent from the transport that delivered a chunk while preserving
-the R-vs-RC evaluator split.
+the R-vs-RC evaluator split. Vectorized mode reuses the same prepare/result
+phases but replaces row-wise evaluation with one call over column-shaped R
+arguments. With `null_handling = "default"`, only rows with no top-level SQL NULL
+inputs are evaluated and SQL NULL rows are scattered back into the DuckDB result;
+with `null_handling = "special"`, all rows are passed through with the same
+NA/NULL shapes used by scalar mode.
 
 Internally the execution backends are:
 
@@ -170,8 +178,8 @@ main R lane consumes the request. If a future dispatcher allows the worker to
 return before that consumption, the request must copy into owned nanoarrow
 buffers instead of exporting a borrowed view.
 
-Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for the scalar
-adapter and should reuse that path for any future vectorized UDFs:
+Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for both the
+scalar and vectorized adapters:
 
 - `ArrowArray`
 - `ArrowSchema`

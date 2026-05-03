@@ -7,7 +7,7 @@ Authors@R: c(
   )
 Description: R package and DuckDB extension bridge for registering R functions
     as DuckDB user-defined functions. The package is designed around
-    a loaded DuckDB extension, declarative type descriptors, nanoarrow scalar
+    a loaded DuckDB extension, declarative type descriptors, nanoarrow
     marshalling over DuckDB Arrow C Data, and a calling-R-thread execution
     discipline for safe interaction with R from DuckDB execution.
 License: GPL (>= 3)
@@ -25,6 +25,7 @@ Imports:
 LinkingTo:
     nanoarrow
 Suggests:
+    bench,
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

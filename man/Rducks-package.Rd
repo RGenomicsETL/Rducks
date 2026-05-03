@@ -12,7 +12,7 @@ functions as DuckDB user-defined functions.
 \details{
 The design keeps the DuckDB extension as the canonical execution surface and
 uses R for ergonomic registration, R function lifetime management, and scalar
-function execution over DuckDB chunks.
+or vectorized function execution over DuckDB chunks.
 }
 \seealso{
 Useful links:

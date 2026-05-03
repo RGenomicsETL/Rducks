@@ -2,7 +2,7 @@
 % Please edit documentation in R/connection.R
 \name{rducks_enable_inproc}
 \alias{rducks_enable_inproc}
-\title{Enable in-process queued scalar execution}
+\title{Enable in-process queued R UDF execution}
 \usage{
 rducks_enable_inproc(con, threads = NULL, external_threads = threads)
 }
@@ -20,17 +20,17 @@ enabling the in-process backend. Use \code{NULL} to leave unchanged.}
 \code{con}, invisibly.
 }
 \description{
-Switches a Rducks-enabled DuckDB connection to the in-process queued scalar
+Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
 backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
 main R execution lane drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. The queued backend dispatches both
-scalar evaluator implementations, \code{eval_mode = "R"} and \code{eval_mode = "RC"},
-through that same main-lane execution rule.
+still serialized on the main R thread. The queued backend dispatches scalar
+mode with \code{eval_mode = "R"} or \code{"RC"}, and vectorized mode with
+\code{eval_mode = "R"}, through that same main-lane execution rule.
 }
 \details{
-Register scalar UDFs while the connection is in the registration-safe
+Register UDFs while the connection is in the registration-safe
 configuration, then call \code{rducks_enable_inproc()} before running queries that
 should use the queued in-process path. Use \code{threads}/\code{external_threads} here
 to adjust DuckDB's thread settings for queued execution.

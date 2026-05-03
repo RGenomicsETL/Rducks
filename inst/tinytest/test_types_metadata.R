@@ -108,8 +108,10 @@ for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
   expect_equal(mapping$rducks_type, token)
 }
 mode_semantics <- rducks_mode_semantics()
-expect_equal(mode_semantics$mode, "scalar")
+expect_equal(mode_semantics$mode, c("scalar", "vectorized"))
 expect_equal(mode_semantics$status[mode_semantics$mode == "scalar"], "implemented")
+expect_equal(mode_semantics$status[mode_semantics$mode == "vectorized"], "implemented")
+expect_equal(rducks_mode_semantics("vectorized")$call_granularity, "one R call per DuckDB chunk")
 expect_error(rducks_mode_semantics("legacy"), "unknown Rducks mode")
 expect_error(rducks_type_normalize("list<i32>"), "constructors")
 expect_error(rducks_argument_type_mapping(LIST("nope")), "unsupported")

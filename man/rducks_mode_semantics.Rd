@@ -17,8 +17,8 @@ semantics for each mode.
 }
 \description{
 \code{rducks_mode_semantics()} is the package-level schema for execution-mode
-semantics. \code{mode = "scalar"} is currently the only public mode: Rducks calls
-the R function once for each DuckDB row. Scalar mode is implemented on top of
-DuckDB Arrow C Data export/import plus nanoarrow. A future vectorized mode
-should call R once per DuckDB chunk and will be added only when implemented.
+semantics. \code{mode = "scalar"} calls the R function once for each DuckDB row.
+\code{mode = "vectorized"} calls the R function once per DuckDB chunk with one R
+vector/list-column per declared argument. Both modes are implemented on top
+of DuckDB Arrow C Data export/import plus nanoarrow.
 }

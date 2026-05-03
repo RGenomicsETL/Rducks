@@ -18,7 +18,7 @@ rducks_registration_spec <- function(name, fun, args, returns, mode) {
   )
 }
 
-rducks_assert_scalar_marshalling_supported <- function(spec) {
+rducks_assert_arrow_marshalling_supported <- function(spec) {
   types <- c(spec$arg_types, list(spec$return_type))
   unsupported <- vapply(types, function(type) {
     if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
@@ -26,7 +26,7 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
   unsupported <- unsupported[nzchar(unsupported)]
   if (length(unsupported)) {
     stop(
-      "scalar-mode marshalling is not implemented yet for: ",
+      spec$mode, "-mode marshalling is not implemented yet for: ",
       paste(unique(unsupported), collapse = ", "),
       call. = FALSE
     )
@@ -34,9 +34,22 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
   invisible(NULL)
 }
 
+rducks_assert_vectorized_supported <- function(spec, eval_mode) {
+  if (!identical(spec$mode, "vectorized")) {
+    return(invisible(NULL))
+  }
+  if (!identical(eval_mode, "R")) {
+    stop("mode = 'vectorized' currently supports eval_mode = 'R' only", call. = FALSE)
+  }
+  if (!length(spec$arg_types)) {
+    stop("mode = 'vectorized' currently requires at least one declared argument", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Register an R UDF in DuckDB
 #'
-#' Registers a scalar R function as a DuckDB SQL function using the loaded Rducks
+#' Registers an R function as a DuckDB SQL function using the loaded Rducks
 #' extension. Registration requires `external_threads=1` plus
 #' `PRAGMA threads=1` so native registration and the default scalar execution
 #' path stay on the calling R thread. After registration, use
@@ -49,12 +62,13 @@ rducks_assert_scalar_marshalling_supported <- function(spec) {
 #'   objects such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
-#' @param mode Registration mode. `"scalar"` is implemented now and calls the R
-#'   function once per DuckDB row through the nanoarrow scalar adapter. A future
-#'   vectorized mode should call the R function once per DuckDB chunk.
-#' @param eval_mode Scalar evaluator implementation. `"R"` uses the R row-loop
+#' @param mode Registration mode. `"scalar"` calls the R function once per
+#'   DuckDB row. `"vectorized"` calls the R function once per DuckDB chunk with
+#'   one R vector/list-column per declared argument.
+#' @param eval_mode Scalar evaluator implementation. `"R"` uses the R/nanoarrow
 #'   adapter; `"RC"` uses the native C row-loop adapter and validates against the
-#'   same scalar-mode semantics.
+#'   same scalar-mode semantics. `mode = "vectorized"` currently supports
+#'   `eval_mode = "R"` only.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -86,9 +100,12 @@ rducks_register <- function(con, name, fun, args, returns,
     stop("con must be a duckdb_connection", call. = FALSE)
   }
   spec <- rducks_registration_spec(name, fun, args, returns, mode = mode)
-  rducks_assert_scalar_marshalling_supported(spec)
+  rducks_assert_arrow_marshalling_supported(spec)
+  rducks_assert_vectorized_supported(spec, eval_mode)
   rducks_assert_single_thread(con)
-  eval_ref <- if (identical(eval_mode, "R")) {
+  eval_ref <- if (identical(mode, "vectorized")) {
+    rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling)
+  } else if (identical(eval_mode, "R")) {
     rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
   } else {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling)
