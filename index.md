@@ -1,6 +1,7 @@
 # Rducks
 
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
+[![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
 
 Rducks registers R functions as DuckDB SQL functions. It ships as an R
 package plus a DuckDB extension. The loaded DuckDB extension registers R
@@ -145,8 +146,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        303ms      3.28    1.97MB
-#> 2 vectorized    245ms      4.06    2.34MB
+#> 1 scalar        309ms      3.23    1.97MB
+#> 2 vectorized    244ms      4.08    2.34MB
 ```
 
 ### In-process queued execution
@@ -186,7 +187,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-03 13:00:57
+#> 1 2026-05-03 14:57:01
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0

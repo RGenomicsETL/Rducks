@@ -49,7 +49,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></p>
+<p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. The loaded DuckDB extension registers R functions on a DuckDB connection and performs the current nanoarrow scalar/vectorized execution bridge over DuckDB Arrow C Data.</p>
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
@@ -124,8 +124,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        303ms      3.28    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    245ms      4.06    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        309ms      3.23    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    244ms      4.08    2.34MB</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
 </h3>
@@ -153,7 +153,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-03 13:00:57</span></span>
+<span><span class="co">#&gt; 1 2026-05-03 14:57:01</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
