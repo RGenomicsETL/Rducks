@@ -11,6 +11,7 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bigint.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.html</loc></url>
@@ -18,6 +19,7 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_self_test.html</loc></url>
@@ -25,6 +27,7 @@
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.html</loc></url>
+<url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.html</loc></url>
 <url><loc>https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_token.html</loc></url>

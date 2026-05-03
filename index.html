@@ -57,14 +57,13 @@
 <p>Rducks has two native boundaries: an R package that owns registration ergonomics, and a loaded DuckDB extension that owns SQL function registration, DuckDB chunk access, R function preservation while DuckDB owns the UDF, and current scalar/vectorized R function execution.</p>
 <p>When you call <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, Rducks loads the bundled <code>rducks.duckdb_extension</code> into that DuckDB connection, enables DuckDB’s lossless Arrow conversion, and records the current R thread as the only lane allowed to call R. With <code>threads = "single"</code>, it also sets <code>external_threads=1</code> and <code>PRAGMA threads=1</code>; use that registration-safe setting while adding UDFs.</p>
 <p>When you call <code><a href="reference/rducks_register.html">rducks_register()</a></code>, Rducks normalizes the declared DuckDB type objects, checks that Arrow C Data marshalling is available, and preserves the R function. Registration then crosses back through SQL: Rducks calls the extension function <code>rducks_register_scalar(...)</code>, passing the R function reference, type descriptor tokens, and NULL/exception/side-effect flags. The extension registers one generic DuckDB scalar function implementation and stores the per-UDF metadata in DuckDB <code>extra_info</code>.</p>
-<p>Query execution has two in-process backends:</p>
+<p>Query execution is described by a connection-level execution plan with two orthogonal pieces:</p>
 <ul>
-<li>
-<code>single</code> is the direct backend selected by <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. DuckDB enters the scalar UDF on the recorded R thread, and the extension runs the selected scalar evaluator immediately.</li>
-<li>
-<code>concurrent_inproc</code> is selected by <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> after registration. A worker-side UDF callback submits the chunk to an extension-owned queue and waits; the recorded main R lane drains the queue, runs the selected scalar evaluator, fills the DuckDB output vector, and wakes the worker. No R API work runs on DuckDB worker threads, and the queue has timeout/error paths rather than a hidden pump.</li>
+<li>marshalling: <code>arrow_r</code> is the Arrow C Data plus nanoarrow/R reference path; <code>arrow_c</code> is the native C/DuckDB-vector path used by scalar RC execution; <code>arrow_ipc</code> is reserved for the future owned-IPC multiprocess transport.</li>
+<li>concurrency: <code>serial</code> evaluates one chunk at a time in-process; <code>inproc_concurrent</code> allows concurrent DuckDB callbacks but still runs all R API work on the recorded R execution lane; <code>multiprocess_parallel</code> is the future process-isolated chunk-parallel plan.</li>
 </ul>
-<p>For scalar mode, both backends support <code>eval_mode = "R"</code> and <code>eval_mode = "RC"</code>. The R evaluator uses DuckDB Arrow C Data plus nanoarrow to adapt DuckDB chunks to row-wise R calls. The RC evaluator uses native row-loop code and direct DuckDB vector access where implemented, while still evaluating the user R function once per logical row on the recorded R lane. Vectorized mode currently uses the R/nanoarrow evaluator.</p>
+<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> selects the reference <code>arrow_r + serial</code> plan. <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> is a compatibility helper that switches the concurrency part to <code>inproc_concurrent</code> while preserving the current marshalling choice. No R API work runs on DuckDB worker threads, and the in-process queue has timeout/error paths rather than a hidden pump.</p>
+<p>For scalar mode, <code>arrow_r</code> maps to the R/nanoarrow evaluator and <code>arrow_c</code> maps to the native C row-loop evaluator. Both still evaluate the user R function once per logical row on the recorded R lane. Vectorized mode currently uses the <code>arrow_r</code> reference path only; <code>arrow_c</code> vectorized execution is deliberately an explicit not-implemented plan rather than a hidden fallback.</p>
 </div>
 <div class="section level2">
 <h2 id="getting-started">Getting started<a class="anchor" aria-label="anchor" href="#getting-started"></a>
@@ -121,12 +120,7 @@
 <span>  iterations <span class="op">=</span> <span class="fl">3</span>,</span>
 <span>  check <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">bench_result</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"expression"</span>, <span class="st">"median"</span>, <span class="st">"itr/sec"</span>, <span class="st">"mem_alloc"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
-<span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
-<span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        295ms      3.41    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    231ms      4.17    2.34MB</span></span></code></pre></div>
+<span><span class="va">bench_result</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"expression"</span>, <span class="st">"median"</span>, <span class="st">"itr/sec"</span>, <span class="st">"mem_alloc"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
 </h3>
@@ -154,7 +148,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-03 11:24:59</span></span>
+<span><span class="co">#&gt; 1 2026-05-03 12:38:56</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>

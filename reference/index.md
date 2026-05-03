@@ -22,6 +22,8 @@
   [`rducks_check_argument()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   [`rducks_check_return()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_check_value.md)
   : Check that an R value is compatible with a DuckDB type
+- [`rducks_current_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.md)
+  : Inspect the current Rducks execution plan
 - [`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md)
   : Construct exact DuckDB DECIMAL values
 - [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md)
@@ -36,6 +38,8 @@
   : Enable in-process queued R UDF execution
 - [`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md)
   : Construct DuckDB ENUM values
+- [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
+  : Define an Rducks execution plan
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
@@ -50,6 +54,8 @@
   : Describe Rducks execution mode semantics
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
+- [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
+  : Set the Rducks execution plan for a connection
 - [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md)
   : Normalize an Rducks type token
 - [`rducks_is_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)

@@ -17,7 +17,7 @@ rducks_register(
   args,
   returns,
   mode = "scalar",
-  eval_mode = c("R", "RC"),
+  eval_mode = NULL,
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
   side_effects = FALSE
@@ -56,10 +56,12 @@ rducks_register(
 
 - eval_mode:
 
-  Scalar evaluator implementation. `"R"` uses the R/nanoarrow adapter;
-  `"RC"` uses the native C row-loop adapter and validates against the
-  same scalar-mode semantics. `mode = "vectorized"` currently supports
-  `eval_mode = "R"` only.
+  Compatibility override for the marshalling evaluator. Use `NULL` to
+  select from the active connection
+  [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md).
+  `"R"` maps to `arrow_r`; `"RC"` maps to `arrow_c` for scalar mode.
+  `mode = "vectorized"` currently supports `eval_mode = "R"` only
+  because `arrow_c` vectorized execution is not implemented yet.
 
 - null_handling:
 
