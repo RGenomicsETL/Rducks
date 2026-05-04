@@ -52,6 +52,10 @@ local({
   expect_true(explain$ripc_collect_batches >= 1)
   expect_equal(explain$ripc_collect_requests, explain$arrow_ipc_chunks)
   expect_true(explain$ripc_collect_max_batch >= 1)
+  expect_equal(explain$queue_pending_current, 0)
+  expect_true(explain$queue_pending_max >= 1)
+  expect_equal(explain$ripc_inflight_current, 0)
+  expect_true(explain$ripc_inflight_max >= 1)
   expect_equal(explain$arrow_r_chunks, 0)
   expect_equal(explain$arrow_c_chunks, 0)
 

@@ -260,6 +260,7 @@ static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, s
     ok = 1;
 
 done:
+    rducks_udf_record_ripc_inflight_done(meta, count);
     i = 0;
     for (request = head; request && i < count; request = request->next, i++) {
         rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
@@ -288,6 +289,7 @@ static int rducks_queue_request_is_ripc(rducks_udf_request_t *request) {
 static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
                                         int ok, const char *err_msg) {
     if (!runtime || !request) return;
+    rducks_udf_record_queue_pending_done(request->meta);
     rducks_queue_lock(runtime);
     request->ok = ok;
     if (!ok) {
@@ -350,6 +352,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     request->state = RDUCKS_REQUEST_PENDING;
     request->ok = 0;
     request->error[0] = '\0';
+    rducks_udf_record_queue_pending_add(request->meta);
 
     rducks_queue_lock(runtime);
     rducks_queue_push_locked(runtime, request);
@@ -363,6 +366,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                 runtime->queue_timeouts++;
                 rducks_queue_signal_all(runtime);
                 rducks_queue_unlock(runtime);
+                rducks_udf_record_queue_pending_done(request->meta);
                 snprintf(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
                          "Rducks timed out waiting for the main R execution lane to drain a queued request");
                 return 0;

@@ -50,12 +50,16 @@ rducks_native_udf_stat_fields <- c(
   "dispatch_rows",
   "direct_chunks",
   "queued_chunks",
+  "queue_pending_current",
+  "queue_pending_max",
   "arrow_r_chunks",
   "arrow_c_chunks",
   "arrow_ipc_chunks",
   "ripc_collect_batches",
   "ripc_collect_requests",
-  "ripc_collect_max_batch"
+  "ripc_collect_max_batch",
+  "ripc_inflight_current",
+  "ripc_inflight_max"
 )
 
 rducks_native_udf_stats <- function(con, name) {
@@ -93,12 +97,16 @@ rducks_explain_udf_empty <- function() {
     dispatch_rows = numeric(),
     direct_chunks = numeric(),
     queued_chunks = numeric(),
+    queue_pending_current = numeric(),
+    queue_pending_max = numeric(),
     arrow_r_chunks = numeric(),
     arrow_c_chunks = numeric(),
     arrow_ipc_chunks = numeric(),
     ripc_collect_batches = numeric(),
     ripc_collect_requests = numeric(),
     ripc_collect_max_batch = numeric(),
+    ripc_inflight_current = numeric(),
+    ripc_inflight_max = numeric(),
     stringsAsFactors = FALSE
   )
 }
@@ -125,12 +133,16 @@ rducks_explain_udf_row <- function(con, name) {
     dispatch_rows = rducks_counter_value(stats, "dispatch_rows"),
     direct_chunks = rducks_counter_value(stats, "direct_chunks"),
     queued_chunks = rducks_counter_value(stats, "queued_chunks"),
+    queue_pending_current = rducks_counter_value(stats, "queue_pending_current"),
+    queue_pending_max = rducks_counter_value(stats, "queue_pending_max"),
     arrow_r_chunks = rducks_counter_value(stats, "arrow_r_chunks"),
     arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
     arrow_ipc_chunks = rducks_counter_value(stats, "arrow_ipc_chunks"),
     ripc_collect_batches = rducks_counter_value(stats, "ripc_collect_batches"),
     ripc_collect_requests = rducks_counter_value(stats, "ripc_collect_requests"),
     ripc_collect_max_batch = rducks_counter_value(stats, "ripc_collect_max_batch"),
+    ripc_inflight_current = rducks_counter_value(stats, "ripc_inflight_current"),
+    ripc_inflight_max = rducks_counter_value(stats, "ripc_inflight_max"),
     stringsAsFactors = FALSE
   )
 }

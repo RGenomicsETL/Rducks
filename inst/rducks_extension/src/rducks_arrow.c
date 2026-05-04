@@ -484,6 +484,7 @@ static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rdu
 
     R_PreserveObject(future);
     R_PreserveObject(output_schema_xptr);
+    rducks_udf_record_ripc_inflight_add(meta);
     *future_out = future;
     *output_schema_out = output_schema_xptr;
     *n_out = n;
@@ -515,9 +516,11 @@ static int rducks_ripc_collect_chunk_on_main(rducks_runtime_entry_t *runtime, rd
         goto fail;
     }
     if (!rducks_r_scalar_emit_arrow_result(runtime, meta, result, output_schema_xptr, n, output, err_msg, err_cap)) goto fail;
+    rducks_udf_record_ripc_inflight_done(meta, 1U);
     UNPROTECT(protect_count);
     return 1;
 fail:
+    rducks_udf_record_ripc_inflight_done(meta, 1U);
     UNPROTECT(protect_count);
     return 0;
 }

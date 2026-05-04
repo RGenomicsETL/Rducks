@@ -5,8 +5,8 @@
   rows inside the worker, vectorized registrations call once per chunk, and the
   queued native path splits submit and collect phases so queued chunk tasks can
   be submitted before grouped result collection. `rducks_explain_udf()` now
-  reports RIPC collect batch counters for diagnosing whether chunks are actually
-  overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
+  reports queue-pending, RIPC-in-flight, and RIPC collect batch counters for
+  diagnosing whether chunks are actually overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.

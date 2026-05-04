@@ -146,12 +146,16 @@ struct rducks_r_scalar_meta {
     uint64_t dispatch_rows;
     uint64_t direct_chunks;
     uint64_t queued_chunks;
+    uint64_t queue_pending_current;
+    uint64_t queue_pending_max;
     uint64_t arrow_r_chunks;
     uint64_t arrow_c_chunks;
     uint64_t arrow_ipc_chunks;
     uint64_t ripc_collect_batches;
     uint64_t ripc_collect_requests;
     uint64_t ripc_collect_max_batch;
+    uint64_t ripc_inflight_current;
+    uint64_t ripc_inflight_max;
 };
 
 typedef struct rducks_r_scalar_bind_state {
