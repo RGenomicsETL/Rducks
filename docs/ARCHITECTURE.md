@@ -133,12 +133,11 @@ Internally the current concurrency backends are:
 - `multiprocess_parallel`: out-of-process execution through the current generic
   Future backend. The scalar-UDF callback implementation serializes chunk
   payloads with Arrow IPC so workers receive raw task/result payloads rather
-  than DuckDB-owned pointers or session-bound R objects. It is real UDF
-  execution, but it is bounded by DuckDB's synchronous callback contract. The
-  owned prechunk pipeline implementation in
-  `tools/benchmark_owned_ipc_pipeline.R` owns the source chunks, submits Arrow
-  IPC tasks ahead, and is the throughput-oriented path to integrate as a
-  first-class source/query surface.
+  than DuckDB-owned pointers or session-bound R objects. This path is
+  implemented in the native extension (`rducks_arrow.c` and
+  `rducks_worker_queue.c`) and is real DuckDB UDF execution: C submits Arrow IPC
+  chunk work, collects Future results, and imports returned Arrow IPC into the
+  DuckDB output vector.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

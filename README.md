@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        289ms      3.43    1.97MB
-#> 2 vectorized    238ms      4.14    2.34MB
+#> 1 scalar        292ms      3.40    1.97MB
+#> 2 vectorized    235ms      4.23    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:51:37
+#> 1 2026-05-04 22:55:10
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -222,15 +222,12 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 #> 1                      1
 ```
 
-The `ripc_collect_max_batch` counter is deliberately shown here. A value
-of `1` means this registered-UDF path submitted and waited for one
-DuckDB callback chunk at a time. That is a correctness/diagnostic
-example, not a speed benchmark.
-
-Parallel speedups require a different shape: first split/copy the input
-into owned Arrow IPC chunks, then submit many chunks to workers at once.
-A synchronous DuckDB scalar-UDF callback cannot do that because it must
-fill its current output vector before returning.
+This is the real `arrow_ipc + multiprocess_parallel` UDF implementation.
+The native extension submits Arrow IPC chunk work through the
+Future-backed RIPC path and imports the returned Arrow IPC result into
+DuckDB. The `ripc_collect_max_batch` counter reports how many submitted
+RIPC chunk requests the native queue collected together in one batch for
+this query.
 
 ## Current scope
 

@@ -173,21 +173,18 @@ chunk-task abstraction. The semantic difference is not UDF registration; it is
 how a prepared chunk task is submitted, progressed, waited on, collected, and
 written back.
 
-Important boundary: DuckDB scalar UDF callbacks are synchronous. The
-`duckdb_vector` output is only valid during that callback, so even a
-non-blocking multiprocess submission must be collected and written back before
-that callback returns. This makes borrowed scalar-callback scheduling a
-synchronous UDF integration path, not the production multiprocess hot path.
+Implemented boundary: the `arrow_ipc + multiprocess_parallel` scalar-UDF path is
+native-extension code. C submits Arrow IPC chunk work, collects Future results,
+and imports returned Arrow IPC into the DuckDB output vector. Because DuckDB
+scalar UDF callbacks are synchronous, the `duckdb_vector` output is valid only
+during that callback; the callback implementation must complete writeback before
+returning.
 
-Decision: the multiprocess performance path should own the chunk source. It
-should pre-split input into owned Arrow IPC chunk tasks, submit a window of tasks
-ahead, collect results by sequence number, and only then hand data back to
-DuckDB/R. The local `tools/benchmark_owned_ipc_pipeline.R` implementation shows
-this shape is fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x
-speedup). Mori/shared-memory payloads can be explored later as a same-host
-payload optimization, but the first architectural requirement is ownership of
-chunk inputs/results rather than borrowed `duckdb_data_chunk`/`duckdb_vector`
-pointers.
+Optional future non-UDF surface: if we add a source/query pipeline separate from
+scalar UDF callbacks, it should pre-split input into owned Arrow IPC chunk tasks,
+submit a window of tasks ahead, collect results by sequence number, and only then
+hand data back to DuckDB/R. Mori/shared-memory payloads can be explored later as
+a same-host payload optimization.
 
 - [ ] **P2** Define a shared `rducks_chunk_task` lifecycle.
   - Proposed states: prepared, submitted, running, completed, writeback_done,
@@ -207,10 +204,10 @@ pointers.
     `ripc_collect_batches`, `ripc_collect_requests`, and
     `ripc_collect_max_batch`; current DuckDB scalar UDF tests usually show
     max batch size 1.
-  - Required production backend: an owned prechunk source/pipeline. It must send
-    owned Arrow IPC task bytes to workers, keep multiple chunks outstanding,
-    collect by task sequence, decode owned Arrow IPC result bytes, and expose the
-    result to DuckDB/R without relying on borrowed scalar-UDF callback pointers.
+  - Optional non-UDF source/query surface: send owned Arrow IPC task bytes to
+    workers, keep multiple chunks outstanding, collect by task sequence, decode
+    owned Arrow IPC result bytes, and expose the result to DuckDB/R without
+    relying on borrowed scalar-UDF callback pointers.
 - [ ] **P2** Keep counters at the scheduler boundary.
   - Acceptance: the same counters can report submitted, completed, queued,
     timed out, cancelled, `arrow_r`, `arrow_c`, and `arrow_ipc` chunk paths.
