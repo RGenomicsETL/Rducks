@@ -9,11 +9,12 @@
   submit and collect phases so queued chunk tasks can be submitted
   before grouped result collection.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  now reports RIPC collect batch counters for diagnosing whether chunks
-  are actually overlapping. Arrow IPC encoding for nanoarrow arrays now
-  uses a native buffer writer instead of an R `rawConnection`, avoiding
-  large transient allocations. Enum arguments and returns are supported
-  through an explicit Rducks enum-storage IPC convention.
+  now reports queue-pending, RIPC-in-flight, and RIPC collect batch
+  counters for diagnosing whether chunks are actually overlapping. Arrow
+  IPC encoding for nanoarrow arrays now uses a native buffer writer
+  instead of an R `rawConnection`, avoiding large transient allocations.
+  Enum arguments and returns are supported through an explicit Rducks
+  enum-storage IPC convention.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
 - Implemented `arrow_c + vectorized` registrations for both `serial` and
