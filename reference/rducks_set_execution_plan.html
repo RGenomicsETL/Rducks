@@ -52,7 +52,7 @@ chooses the marshalling implementation and concurrency contract.</p>
 <span>  <span class="va">con</span>,</span>
 <span>  plan <span class="op">=</span> <span class="fu"><a href="rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  external_threads <span class="op">=</span> <span class="va">threads</span></span>
+<span>  external_threads <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -74,7 +74,8 @@ chooses the marshalling implementation and concurrency contract.</p>
 
 <dt id="arg-external-threads">external_threads<a class="anchor" aria-label="anchor" href="#arg-external-threads"></a></dt>
 <dd><p>Optional positive integer to set with
-<code>SET external_threads</code>. Defaults to <code>threads</code>.</p></dd>
+<code>SET external_threads</code>. Use <code>NULL</code> to leave unchanged. For actual DuckDB
+worker concurrency, keep this smaller than <code>threads</code>.</p></dd>
 
 </dl></div>
     <div class="section level2">

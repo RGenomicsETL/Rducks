@@ -60,7 +60,7 @@ concurrency part of the active execution plan; marshalling stays <code>arrow_r</
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rducks_enable_inproc</span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="cn">NULL</span>, external_threads <span class="op">=</span> <span class="va">threads</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rducks_enable_inproc</span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="cn">NULL</span>, external_threads <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -78,8 +78,9 @@ enabling the in-process backend. Use <code>NULL</code> to leave unchanged.</p></
 
 <dt id="arg-external-threads">external_threads<a class="anchor" aria-label="anchor" href="#arg-external-threads"></a></dt>
 <dd><p>Optional positive integer to set with
-<code>SET external_threads</code> before enabling the in-process backend. Defaults to
-<code>threads</code>; use <code>NULL</code> to leave unchanged.</p></dd>
+<code>SET external_threads</code> before enabling the in-process backend. Use <code>NULL</code>
+to leave unchanged. For actual DuckDB worker concurrency, keep this smaller
+than <code>threads</code> (for example <code>threads = 4, external_threads = 1</code>).</p></dd>
 
 </dl></div>
     <div class="section level2">

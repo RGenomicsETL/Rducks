@@ -13,7 +13,7 @@ execution plan; marshalling stays `arrow_r` or `arrow_c` according to
 ## Usage
 
 ``` r
-rducks_enable_inproc(con, threads = NULL, external_threads = threads)
+rducks_enable_inproc(con, threads = NULL, external_threads = NULL)
 ```
 
 ## Arguments
@@ -31,8 +31,9 @@ rducks_enable_inproc(con, threads = NULL, external_threads = threads)
 - external_threads:
 
   Optional positive integer to set with `SET external_threads` before
-  enabling the in-process backend. Defaults to `threads`; use `NULL` to
-  leave unchanged.
+  enabling the in-process backend. Use `NULL` to leave unchanged. For
+  actual DuckDB worker concurrency, keep this smaller than `threads`
+  (for example `threads = 4, external_threads = 1`).
 
 ## Value
 

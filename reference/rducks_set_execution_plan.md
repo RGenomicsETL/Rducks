@@ -13,7 +13,7 @@ rducks_set_execution_plan(
   con,
   plan = rducks_execution_plan(),
   threads = NULL,
-  external_threads = threads
+  external_threads = NULL
 )
 ```
 
@@ -36,8 +36,9 @@ rducks_set_execution_plan(
 
 - external_threads:
 
-  Optional positive integer to set with `SET external_threads`. Defaults
-  to `threads`.
+  Optional positive integer to set with `SET external_threads`. Use
+  `NULL` to leave unchanged. For actual DuckDB worker concurrency, keep
+  this smaller than `threads`.
 
 ## Value
 

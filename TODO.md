@@ -12,9 +12,10 @@ user-facing release notes stay in `NEWS.md`.
 
 ## Priority lanes
 
-Current short-term scope: **coverage**. Do not start new backend design
-work until the implemented plan matrix is covered by local tests,
-generated matrix cases, CI, and semantic docs.
+Current short-term scope: **type coverage**. Do not start new backend
+design work until the implemented plan matrix is covered across declared
+types, NULL/error semantics, local tests, generated matrix cases, CI,
+and semantic README/docs.
 
 - **P0 release gates**: r-universe/oldrelease/wasm status, package
   checks, and semantic text that prevents users from misunderstanding
@@ -86,12 +87,15 @@ These are guardrails, not TODO checkboxes.
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process path |
 | `arrow_c + serial` | implemented | implemented | native scalar evaluator and `RCV` vectorized chunk evaluator |
 | `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process path, R callbacks still serialized on main R lane |
-| `arrow_ipc + multiprocess_parallel` | design-only | design-only | future out-of-process transport |
+| `arrow_ipc + multiprocess_parallel` | implemented | implemented | Future-backed Arrow IPC provider, evaluator `RIPC` |
 
-`arrow_c` vectorized mode now uses the `RCV` native evaluator token.
-In-process R callbacks cannot be truly parallel because R API work must
-stay on the recorded main R lane; real parallel R evaluation belongs to
-an out-of-process `arrow_ipc + multiprocess_parallel` plan.
+`arrow_c` vectorized mode now uses the `RCV` native evaluator token. The
+current `arrow_ipc + multiprocess_parallel` path uses generic `future`
+backends and Arrow IPC payloads. Scalar mode loops over logical rows
+inside the worker; vectorized mode calls the R function once per chunk.
+The provider splits submit and collect phases so queued chunk futures
+can overlap when DuckDB provides multiple concurrent UDF callbacks. It
+is implemented, but it is not the final persistent RPC hot path.
 
 ## Immediate release / infrastructure follow-up
 
@@ -226,10 +230,20 @@ waited on, collected, and written back.
 Important boundary: DuckDB scalar UDF callbacks are synchronous. The
 `duckdb_vector` output is only valid during that callback, so even a
 non-blocking multiprocess submission must be collected and written back
-before that callback returns. Non-blocking submission means multiple
-outstanding chunk futures can overlap across DuckDB callbacks/workers or
-a broker loop; it does not mean returning to DuckDB before output is
-ready.
+before that callback returns. This makes borrowed scalar-callback
+scheduling a synchronous UDF integration path, not the production
+multiprocess hot path.
+
+Decision: the multiprocess performance path should own the chunk source.
+It should pre-split input into owned Arrow IPC chunk tasks, submit a
+window of tasks ahead, collect results by sequence number, and only then
+hand data back to DuckDB/R. The local
+`tools/benchmark_owned_ipc_pipeline.R` prototype shows this shape is
+fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x speedup).
+Mori/shared-memory payloads can be explored later as a same-host payload
+optimization, but the first architectural requirement is ownership of
+chunk inputs/results rather than borrowed
+`duckdb_data_chunk`/`duckdb_vector` pointers.
 
 **P2** Define a shared `rducks_chunk_task` lifecycle.
 
@@ -247,14 +261,20 @@ interface.
 - `inproc_concurrent`: enqueue task to main-lane executor, wait with
   timeout, and drain/progress only on the recorded main R lane.
 
-**P3** Plug `multiprocess_parallel` into the same scheduler interface.
+\[~\] **P3** Plug `multiprocess_parallel` into the same scheduler
+interface.
 
-- `submit`: send owned Arrow IPC task bytes to a worker without R API
-  calls in DuckDB worker threads.
-- `progress`: poll sockets/process workers and complete futures.
-- `collect`: decode owned Arrow IPC result bytes.
-- `writeback`: fill the DuckDB output vector before the scalar callback
-  returns.
+- Current scalar-callback prototype: `arrow_ipc` uses generic `future`
+  providers, submits Arrow IPC chunk tasks separately from collection,
+  and can collect a group of queued futures after submission. Native
+  counters expose `ripc_collect_batches`, `ripc_collect_requests`, and
+  `ripc_collect_max_batch`; current DuckDB scalar UDF tests usually show
+  max batch size 1.
+- Required production backend: an owned prechunk source/pipeline. It
+  must send owned Arrow IPC task bytes to workers, keep multiple chunks
+  outstanding, collect by task sequence, decode owned Arrow IPC result
+  bytes, and expose the result to DuckDB/R without relying on borrowed
+  scalar-UDF callback pointers.
 
 **P2** Keep counters at the scheduler boundary.
 

@@ -7,7 +7,7 @@ same time.
 ## Usage
 
 ``` r
-rducks_disable_inproc(con, threads = NULL, external_threads = threads)
+rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 ```
 
 ## Arguments
@@ -22,8 +22,8 @@ rducks_disable_inproc(con, threads = NULL, external_threads = threads)
 
 - external_threads:
 
-  Optional positive integer to set with `SET external_threads`. Defaults
-  to `threads`.
+  Optional positive integer to set with `SET external_threads`. Use
+  `NULL` to leave unchanged.
 
 ## Value
 
