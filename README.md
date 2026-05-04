@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        292ms      3.40    1.97MB
-#> 2 vectorized    234ms      4.27    2.34MB
+#> 1 scalar        295ms      3.36    1.97MB
+#> 2 vectorized    238ms      4.16    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:34:23
+#> 1 2026-05-04 22:39:45
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -276,8 +276,8 @@ sleep_bench[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression               median `itr/sec` mem_alloc
 #>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>
-#> 1 arrow_r_serial            276ms      3.58    1005KB
-#> 2 arrow_ipc_multiprocess    471ms      2.08     291MB
+#> 1 arrow_r_serial            276ms      3.57    1005KB
+#> 2 arrow_ipc_multiprocess    472ms      2.11     291MB
 
 rbind(
   rducks_explain_udf(con, "r_serial_sleep_plus_one"),
@@ -301,9 +301,9 @@ In the current scalar-UDF callback path, `ripc_collect_max_batch = 1` is
 the important scheduling result: each callback must fill its DuckDB
 output vector before returning, so it cannot be treated as the
 production multiprocess throughput path.
-`tools/benchmark_owned_ipc_pipeline.R` is a separate source-checkout
-benchmark for the planned owned prechunk pipeline, where input chunks
-and result chunks are owned before worker submission.
+`tools/benchmark_owned_ipc_pipeline.R` is the owned prechunk pipeline
+implementation used for source-checkout benchmarking: input chunks and
+result chunks are owned before worker submission.
 
 ## Current scope
 

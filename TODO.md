@@ -182,11 +182,12 @@ synchronous UDF integration path, not the production multiprocess hot path.
 Decision: the multiprocess performance path should own the chunk source. It
 should pre-split input into owned Arrow IPC chunk tasks, submit a window of tasks
 ahead, collect results by sequence number, and only then hand data back to
-DuckDB/R. The local `tools/benchmark_owned_ipc_pipeline.R` prototype shows this
-shape is fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x speedup).
-Mori/shared-memory payloads can be explored later as a same-host payload
-optimization, but the first architectural requirement is ownership of chunk
-inputs/results rather than borrowed `duckdb_data_chunk`/`duckdb_vector` pointers.
+DuckDB/R. The local `tools/benchmark_owned_ipc_pipeline.R` implementation shows
+this shape is fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x
+speedup). Mori/shared-memory payloads can be explored later as a same-host
+payload optimization, but the first architectural requirement is ownership of
+chunk inputs/results rather than borrowed `duckdb_data_chunk`/`duckdb_vector`
+pointers.
 
 - [ ] **P2** Define a shared `rducks_chunk_task` lifecycle.
   - Proposed states: prepared, submitted, running, completed, writeback_done,
@@ -200,7 +201,7 @@ inputs/results rather than borrowed `duckdb_data_chunk`/`duckdb_vector` pointers
   - `inproc_concurrent`: enqueue task to main-lane executor, wait with timeout,
     and drain/progress only on the recorded main R lane.
 - [~] **P3** Plug `multiprocess_parallel` into the same scheduler interface.
-  - Current scalar-callback prototype: `arrow_ipc` uses generic `future`
+  - Current scalar-callback implementation: `arrow_ipc` uses generic `future`
     providers, submits Arrow IPC chunk tasks separately from collection, and can
     collect a group of queued futures after submission. Native counters expose
     `ripc_collect_batches`, `ripc_collect_requests`, and

@@ -269,9 +269,9 @@ rbind(
 In the current scalar-UDF callback path, `ripc_collect_max_batch = 1` is the
 important scheduling result: each callback must fill its DuckDB output vector
 before returning, so it cannot be treated as the production multiprocess
-throughput path. `tools/benchmark_owned_ipc_pipeline.R` is a separate
-source-checkout benchmark for the planned owned prechunk pipeline, where input
-chunks and result chunks are owned before worker submission.
+throughput path. `tools/benchmark_owned_ipc_pipeline.R` is the owned prechunk
+pipeline implementation used for source-checkout benchmarking: input chunks and
+result chunks are owned before worker submission.
 
 ```{r reset-after-ipc, include=FALSE}
 rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))

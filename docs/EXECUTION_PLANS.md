@@ -113,7 +113,7 @@ observable plan remains one named plan with one declared support matrix.
 | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded R lane. |
 | `arrow_c` | `serial` | implemented as current native scalar | implemented | Native scalar evaluator plus `RCV` vectorized chunk evaluator; no fallback to `arrow_r`. |
 | `arrow_c` | `inproc_concurrent` | implemented for current native scalar | implemented | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
-| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The current UDF callback implementation is bounded by DuckDB's synchronous callback contract; the production speed path should be an owned prechunk source/pipeline. |
+| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The UDF callback implementation is bounded by DuckDB's synchronous callback contract; the owned prechunk pipeline implementation lives in `tools/benchmark_owned_ipc_pipeline.R` and is the throughput-oriented path. |
 
 Current API direction:
 
@@ -271,10 +271,12 @@ named `arrow_c` plan rather than a fallback to the public `arrow_r` evaluator.
 - [ ] Add worker lifecycle/shutdown/cancellation tests.
 - [ ] Add tests proving hot-path payloads are Arrow IPC and not R
       `serialize()`/`unserialize()`.
-- [ ] Implement the production owned prechunk source/pipeline: split an input
+- [~] Implement the production owned prechunk source/pipeline: split an input
       source into owned Arrow IPC tasks, submit a window ahead, collect by task
       sequence, and expose results without borrowed scalar-UDF callback
-      pointers.
+      pointers. The source-checkout implementation is
+      `tools/benchmark_owned_ipc_pipeline.R`; remaining work is integrating that
+      owned pipeline as a first-class data-source/query surface.
 
 ### Iteration 7: release gates
 
