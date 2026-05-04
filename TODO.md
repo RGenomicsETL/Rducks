@@ -82,9 +82,9 @@ a final product goal. Target support includes both
 `arrow_c + serial + vectorized` and
 `arrow_c + inproc_concurrent + vectorized`, with the same no-fallback
 and one-R-call-per-DuckDB-chunk semantics as `arrow_r` vectorized mode.
-If we add a true parallel `arrow_c` execution variant beyond
-same-process queued dispatch, it must get an explicit plan name and
-support matrix entry rather than being hidden under `serial`.
+In-process R callbacks cannot be truly parallel because R API work must
+stay on the recorded main R lane; real parallel R evaluation belongs to
+an out-of-process `arrow_ipc + multiprocess_parallel` plan.
 
 ## Immediate release / infrastructure follow-up
 
@@ -213,11 +213,8 @@ implementation.
 - Required combinations:
   - `arrow_c + serial + vectorized` for direct single-lane chunk calls.
   - `arrow_c + inproc_concurrent + vectorized` for same-process queued
-    concurrent/parallel DuckDB scheduling while keeping R calls on the
+    DuckDB scheduling while keeping all R callbacks serialized on the
     main R lane.
-  - a future explicitly named true-parallel native `arrow_c` variant if
-    we can prove the hot path has no R API calls and no borrowed
-    DuckDB/R lifetime hazards.
 - Do not enable by removing guards; implement the native vectorized
   evaluator, registration validation, queue path, and counters together.
 - Acceptance: vectorized native path preserves one R call per DuckDB

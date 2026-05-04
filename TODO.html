@@ -122,7 +122,7 @@
 <td>design-only</td>
 <td>design-only</td>
 <td>future out-of-process transport</td>
-</tr></tbody></table><p>The current <code>arrow_c</code> vectorized rejection is an implementation gap, not a final product goal. Target support includes both <code>arrow_c + serial + vectorized</code> and <code>arrow_c + inproc_concurrent + vectorized</code>, with the same no-fallback and one-R-call-per-DuckDB-chunk semantics as <code>arrow_r</code> vectorized mode. If we add a true parallel <code>arrow_c</code> execution variant beyond same-process queued dispatch, it must get an explicit plan name and support matrix entry rather than being hidden under <code>serial</code>.</p>
+</tr></tbody></table><p>The current <code>arrow_c</code> vectorized rejection is an implementation gap, not a final product goal. Target support includes both <code>arrow_c + serial + vectorized</code> and <code>arrow_c + inproc_concurrent + vectorized</code>, with the same no-fallback and one-R-call-per-DuckDB-chunk semantics as <code>arrow_r</code> vectorized mode. In-process R callbacks cannot be truly parallel because R API work must stay on the recorded main R lane; real parallel R evaluation belongs to an out-of-process <code>arrow_ipc + multiprocess_parallel</code> plan.</p>
 </div>
 <div class="section level2">
 <h2 id="immediate-release--infrastructure-follow-up">Immediate release / infrastructure follow-up<a class="anchor" aria-label="anchor" href="#immediate-release--infrastructure-follow-up"></a></h2>
@@ -214,8 +214,7 @@
 <ul><li>
 <code>arrow_c + serial + vectorized</code> for direct single-lane chunk calls.</li>
 <li>
-<code>arrow_c + inproc_concurrent + vectorized</code> for same-process queued concurrent/parallel DuckDB scheduling while keeping R calls on the main R lane.</li>
-<li>a future explicitly named true-parallel native <code>arrow_c</code> variant if we can prove the hot path has no R API calls and no borrowed DuckDB/R lifetime hazards.</li>
+<code>arrow_c + inproc_concurrent + vectorized</code> for same-process queued DuckDB scheduling while keeping all R callbacks serialized on the main R lane.</li>
 </ul></li>
 <li>Do not enable by removing guards; implement the native vectorized evaluator, registration validation, queue path, and counters together.</li>
 <li>Acceptance: vectorized native path preserves one R call per DuckDB chunk, strict return-length checks, default/special NULL semantics, exotic/composite values, and no-fallback counters.</li>
