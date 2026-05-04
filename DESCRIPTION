@@ -1,6 +1,6 @@
 Package: Rducks
 Title: Register R User-Defined Functions in DuckDB
-Version: 0.0.0.9000
+Version: 0.0.1
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
     email = "sounkoutoure@gmail.com", role = c("aut", "cre"))

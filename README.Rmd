@@ -213,7 +213,13 @@ n <- 8192L
 chunk_size <- 1024L
 sleep_s <- 0.1
 
+# Benchmark-only Future polling tweak: small worker tasks can finish before
+# the default polling interval notices them. This reduces wait latency; it is
+# not required for Rducks correctness or for real parallelism.
+options(future.wait.interval = 0.001, future.wait.alpha = 1.01)
 future::plan(future.mirai::mirai_multisession, workers = workers)
+# Warm workers so the measurement reflects chunk scheduling, not startup.
+invisible(future::value(future::future(NULL)))
 
 rows <- 0:(n - 1L)
 chunks <- split(rows, ceiling(seq_along(rows) / chunk_size))

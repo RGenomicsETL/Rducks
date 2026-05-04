@@ -1,4 +1,4 @@
-# Rducks 0.0.0.9000
+# Rducks 0.0.1
 
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
