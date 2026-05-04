@@ -203,46 +203,64 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 )]
 ```
 
-This timing probe registers a vectorized R function that sleeps once per DuckDB
-chunk, runs it through DuckDB SQL, and reports the native RIPC counters.
+This timing probe compares two real DuckDB R UDF registrations with the same
+R function and SQL workload: the reference in-process `arrow_r + serial` path
+and the current Future-backed `arrow_ipc + multiprocess_parallel` callback path.
 
 ```{r arrow-ipc-real-udf-timing}
 sleep_rows <- 8192L
 sleep_s <- 0.02
+sleep_fun <- function(x) {
+  Sys.sleep(sleep_s)
+  x + 1L
+}
 
-reg_ipc_sleep <- rducks_register(
+rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+reg_serial_sleep <- rducks_register(
   con,
-  name = "r_ipc_sleep_plus_one",
-  fun = function(x) {
-    Sys.sleep(sleep_s)
-    x + 1L
-  },
+  name = "r_serial_sleep_plus_one",
+  fun = sleep_fun,
   args = INTEGER,
   returns = INTEGER,
   mode = "vectorized",
   side_effects = TRUE
 )
 
-ipc_time <- system.time({
-  ipc_result <- dbGetQuery(
-    con,
-    sprintf(
-      "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
-      sleep_rows
-    )
-  )
-})[["elapsed"]]
-
-ipc_explain <- rducks_explain_udf(con, "r_ipc_sleep_plus_one")
-data.frame(
-  rows = sleep_rows,
-  result = ipc_result$x,
-  elapsed_s = ipc_time,
-  arrow_ipc_chunks = ipc_explain$arrow_ipc_chunks,
-  collect_batches = ipc_explain$ripc_collect_batches,
-  collect_requests = ipc_explain$ripc_collect_requests,
-  collect_max_batch = ipc_explain$ripc_collect_max_batch
+rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
+reg_ipc_sleep <- rducks_register(
+  con,
+  name = "r_ipc_sleep_plus_one",
+  fun = sleep_fun,
+  args = INTEGER,
+  returns = INTEGER,
+  mode = "vectorized",
+  side_effects = TRUE
 )
+
+serial_sql <- sprintf(
+  "SELECT sum(r_serial_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
+  sleep_rows
+)
+ipc_sql <- sprintf(
+  "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
+  sleep_rows
+)
+
+sleep_bench <- bench::mark(
+  arrow_r_serial = DBI::dbGetQuery(con, serial_sql),
+  arrow_ipc_multiprocess = DBI::dbGetQuery(con, ipc_sql),
+  iterations = 3,
+  check = FALSE
+)
+sleep_bench[, c("expression", "median", "itr/sec", "mem_alloc")]
+
+rbind(
+  rducks_explain_udf(con, "r_serial_sleep_plus_one"),
+  rducks_explain_udf(con, "r_ipc_sleep_plus_one")
+)[, c(
+  "name", "plan_id", "evaluator", "arrow_r_chunks", "arrow_ipc_chunks",
+  "ripc_collect_batches", "ripc_collect_requests", "ripc_collect_max_batch"
+)]
 ```
 
 `tools/benchmark_owned_ipc_pipeline.R` is a separate source-checkout benchmark

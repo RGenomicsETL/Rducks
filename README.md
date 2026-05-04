@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        291ms      3.41    1.97MB
-#> 2 vectorized    230ms      4.30    2.34MB
+#> 1 scalar        293ms      3.38    1.97MB
+#> 2 vectorized    238ms      4.18    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:23:58
+#> 1 2026-05-04 22:28:22
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -219,51 +219,79 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 #> 1                5                    5                     5
 ```
 
-This timing probe registers a vectorized R function that sleeps once per
-DuckDB chunk, runs it through DuckDB SQL, and reports the native RIPC
-counters.
+This timing probe compares two real DuckDB R UDF registrations with the
+same R function and SQL workload: the reference in-process
+`arrow_r + serial` path and the current Future-backed
+`arrow_ipc + multiprocess_parallel` callback path.
 
 ``` r
 sleep_rows <- 8192L
 sleep_s <- 0.02
+sleep_fun <- function(x) {
+  Sys.sleep(sleep_s)
+  x + 1L
+}
 
-reg_ipc_sleep <- rducks_register(
+rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+reg_serial_sleep <- rducks_register(
   con,
-  name = "r_ipc_sleep_plus_one",
-  fun = function(x) {
-    Sys.sleep(sleep_s)
-    x + 1L
-  },
+  name = "r_serial_sleep_plus_one",
+  fun = sleep_fun,
   args = INTEGER,
   returns = INTEGER,
   mode = "vectorized",
   side_effects = TRUE
 )
 
-ipc_time <- system.time({
-  ipc_result <- dbGetQuery(
-    con,
-    sprintf(
-      "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
-      sleep_rows
-    )
-  )
-})[["elapsed"]]
-
-ipc_explain <- rducks_explain_udf(con, "r_ipc_sleep_plus_one")
-data.frame(
-  rows = sleep_rows,
-  result = ipc_result$x,
-  elapsed_s = ipc_time,
-  arrow_ipc_chunks = ipc_explain$arrow_ipc_chunks,
-  collect_batches = ipc_explain$ripc_collect_batches,
-  collect_requests = ipc_explain$ripc_collect_requests,
-  collect_max_batch = ipc_explain$ripc_collect_max_batch
+rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
+reg_ipc_sleep <- rducks_register(
+  con,
+  name = "r_ipc_sleep_plus_one",
+  fun = sleep_fun,
+  args = INTEGER,
+  returns = INTEGER,
+  mode = "vectorized",
+  side_effects = TRUE
 )
-#>   rows   result elapsed_s arrow_ipc_chunks collect_batches collect_requests
-#> 1 8192 33558528     0.468                4               4                4
-#>   collect_max_batch
-#> 1                 1
+
+serial_sql <- sprintf(
+  "SELECT sum(r_serial_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
+  sleep_rows
+)
+ipc_sql <- sprintf(
+  "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
+  sleep_rows
+)
+
+sleep_bench <- bench::mark(
+  arrow_r_serial = DBI::dbGetQuery(con, serial_sql),
+  arrow_ipc_multiprocess = DBI::dbGetQuery(con, ipc_sql),
+  iterations = 3,
+  check = FALSE
+)
+sleep_bench[, c("expression", "median", "itr/sec", "mem_alloc")]
+#> # A tibble: 2 × 4
+#>   expression               median `itr/sec` mem_alloc
+#>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>
+#> 1 arrow_r_serial            276ms      3.57    1005KB
+#> 2 arrow_ipc_multiprocess    475ms      2.10     291MB
+
+rbind(
+  rducks_explain_udf(con, "r_serial_sleep_plus_one"),
+  rducks_explain_udf(con, "r_ipc_sleep_plus_one")
+)[, c(
+  "name", "plan_id", "evaluator", "arrow_r_chunks", "arrow_ipc_chunks",
+  "ripc_collect_batches", "ripc_collect_requests", "ripc_collect_max_batch"
+)]
+#>                      name                         plan_id evaluator
+#> 1 r_serial_sleep_plus_one                  arrow_r+serial         R
+#> 2    r_ipc_sleep_plus_one arrow_ipc+multiprocess_parallel      RIPC
+#>   arrow_r_chunks arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
+#> 1             16                0                    0                     0
+#> 2              0               16                   16                    16
+#>   ripc_collect_max_batch
+#> 1                      0
+#> 2                      1
 ```
 
 `tools/benchmark_owned_ipc_pipeline.R` is a separate source-checkout
