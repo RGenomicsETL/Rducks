@@ -6,12 +6,13 @@
   `future` backends with Arrow IPC task/result payloads. Scalar
   registrations loop over rows inside the worker, vectorized
   registrations call once per chunk, and the queued native path splits
-  submit and collect phases so multiple queued chunk tasks can be
-  outstanding before results are collected when DuckDB provides
-  concurrent UDF callbacks.
+  submit and collect phases so queued chunk tasks can be submitted
+  before grouped result collection.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   now reports RIPC collect batch counters for diagnosing whether chunks
-  are actually overlapping. Enum arguments and returns are supported
+  are actually overlapping. Arrow IPC encoding for nanoarrow arrays now
+  uses a native buffer writer instead of an R `rawConnection`, avoiding
+  large transient allocations. Enum arguments and returns are supported
   through an explicit Rducks enum-storage IPC convention.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
