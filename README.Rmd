@@ -203,9 +203,12 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 )]
 ```
 
-This timing probe compares two real DuckDB R UDF registrations with the same
-R function and SQL workload: the reference in-process `arrow_r + serial` path
-and the current Future-backed `arrow_ipc + multiprocess_parallel` callback path.
+This benchmark compares two real DuckDB R UDF implementations with the same R
+function and SQL workload: the reference in-process `arrow_r + serial` path and
+the current Future-backed `arrow_ipc + multiprocess_parallel` callback path. The
+counter table is part of the benchmark: it shows whether the requested evaluator
+actually ran and whether the callback path batched more than one outstanding
+RIPC request.
 
 ```{r arrow-ipc-real-udf-timing}
 sleep_rows <- 8192L
@@ -250,7 +253,7 @@ sleep_bench <- bench::mark(
   arrow_r_serial = DBI::dbGetQuery(con, serial_sql),
   arrow_ipc_multiprocess = DBI::dbGetQuery(con, ipc_sql),
   iterations = 3,
-  check = FALSE
+  check = TRUE
 )
 sleep_bench[, c("expression", "median", "itr/sec", "mem_alloc")]
 
@@ -263,9 +266,12 @@ rbind(
 )]
 ```
 
-`tools/benchmark_owned_ipc_pipeline.R` is a separate source-checkout benchmark
-for the planned owned prechunk pipeline. It deliberately does not benchmark the
-synchronous DuckDB scalar-UDF callback path shown above.
+In the current scalar-UDF callback path, `ripc_collect_max_batch = 1` is the
+important scheduling result: each callback must fill its DuckDB output vector
+before returning, so it cannot be treated as the production multiprocess
+throughput path. `tools/benchmark_owned_ipc_pipeline.R` is a separate
+source-checkout benchmark for the planned owned prechunk pipeline, where input
+chunks and result chunks are owned before worker submission.
 
 ```{r reset-after-ipc, include=FALSE}
 rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))

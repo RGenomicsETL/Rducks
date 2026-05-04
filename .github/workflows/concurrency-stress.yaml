@@ -1,0 +1,52 @@
+name: Concurrency stress
+
+on:
+  workflow_dispatch:
+    inputs:
+      duckdb_threads:
+        description: "DuckDB/external thread count for stress tests"
+        required: false
+        default: "8"
+      future_workers:
+        description: "Future worker count for multiprocess tests"
+        required: false
+        default: "8"
+  schedule:
+    - cron: "41 4 * * 2"
+
+jobs:
+  concurrency-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      USE_UNSTABLE_C_API: "1"
+      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
+      RDUCKS_STRESS_CONCURRENCY: "true"
+      RDUCKS_TEST_DUCKDB_THREADS: ${{ github.event.inputs.duckdb_threads || '8' }}
+      RDUCKS_TEST_FUTURE_WORKERS: ${{ github.event.inputs.future_workers || '8' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libcurl4-openssl-dev libssl-dev libxml2-dev
+
+      - name: Install R dependencies
+        run: |
+          install.packages(c("DBI", "duckdb", "future", "nanoarrow", "S7", "tinytest"))
+        shell: Rscript {0}
+
+      - name: Install Rducks
+        run: R CMD INSTALL --preclean .
+
+      - name: Run focused concurrency stress tests
+        run: |
+          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_concurrent_queue.R")
+          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_future_ipc.R")
+        shell: Rscript {0}
