@@ -3,6 +3,10 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
+  empty <- rducks_list_udfs(con)
+  expect_equal(NROW(empty), 0L)
+  expect_true("name" %in% names(empty))
+
   invisible(rducks_register(con, "explain_plus_one", function(x) x + 1L, INTEGER, INTEGER))
   before <- rducks_explain_udf(con, "explain_plus_one")
   expect_equal(before$mode, "scalar")
@@ -34,6 +38,13 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_equal(after_c$native_marshalling, "arrow_c")
   expect_true(after_c$arrow_c_chunks >= 1)
   expect_equal(after_c$arrow_r_chunks, 0)
+
+  listed <- rducks_list_udfs(con)
+  expect_equal(listed$name, c("explain_plus_one", "explain_plus_two_c"))
+  expect_equal(listed$native_marshalling, c("arrow_r", "arrow_c"))
+  expect_equal(listed$plan_id, c("arrow_r+serial", "arrow_c+serial"))
+  expect_true(listed$dispatch_chunks[[1L]] >= 1)
+  expect_true(listed$dispatch_chunks[[2L]] >= 1)
 
   expect_error(rducks_explain_udf(con, "missing_rducks_udf"), "unknown Rducks UDF")
 }

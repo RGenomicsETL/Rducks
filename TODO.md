@@ -81,7 +81,7 @@ main R lane; real parallel R evaluation belongs to an out-of-process
 
 ## Immediate release / infrastructure follow-up
 
-- [ ] **P0** Watch R-universe until it builds commit `06d6f3d` or later.
+- [ ] **P0** Watch R-universe until it builds the current `main` commit.
   - Acceptance: R-universe API `RemoteSha` matches a current `main` commit and
     status is success.
   - If oldrelease fails, confirm `Depends: R (>= 4.3)` is present in the built
@@ -112,8 +112,8 @@ main R lane; real parallel R evaluation belongs to an out-of-process
     marshalling.
   - Needed clarification: either make this the explicit public semantic or
     implement true query-time marshalling dispatch.
-- [ ] **P2** Add `rducks_list_udfs()` or equivalent connection-level registry view.
-  - Acceptance: returns all UDFs registered through `rducks_register()` on the
+- [x] Add `rducks_list_udfs()` connection-level registry view.
+  - Implemented: returns UDFs registered through `rducks_register()` on the
     connection with mode, signature, plan snapshot, and counters.
 - [ ] **P2** Add counter reset support for benchmarks/tests.
   - Acceptance: reset one UDF or all UDF counters without unregistering the UDF.

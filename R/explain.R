@@ -71,24 +71,31 @@ rducks_counter_value <- function(stats, name) {
   if (length(value) != 1L || is.na(value)) 0 else value
 }
 
-#' Explain a registered Rducks UDF
-#'
-#' Returns the R-side registration metadata together with native execution
-#' counters for a UDF registered by [rducks_register()]. The native counters are
-#' useful for checking that a plan executed through its requested evaluator
-#' instead of silently falling back: for example, an `arrow_c` scalar UDF should
-#' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
-#'
-#' @param con A `duckdb_connection` with Rducks enabled.
-#' @param name SQL function name registered with [rducks_register()].
-#' @return A one-row data frame with registration metadata and native counters.
-#' @export
-rducks_explain_udf <- function(con, name) {
-  rducks_assert_duckdb_connection(con)
-  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
+rducks_explain_udf_empty <- function() {
+  data.frame(
+    name = character(),
+    mode = character(),
+    plan_id = character(),
+    marshalling = character(),
+    concurrency = character(),
+    native_marshalling = character(),
+    evaluator = character(),
+    args = character(),
+    returns = character(),
+    null_handling = character(),
+    exception_handling = character(),
+    side_effects = logical(),
+    dispatch_chunks = numeric(),
+    dispatch_rows = numeric(),
+    direct_chunks = numeric(),
+    queued_chunks = numeric(),
+    arrow_r_chunks = numeric(),
+    arrow_c_chunks = numeric(),
+    stringsAsFactors = FALSE
+  )
+}
 
+rducks_explain_udf_row <- function(con, name) {
   record <- rducks_get_registration_record(con, name)
   stats <- rducks_native_udf_stats(con, name)
   plan <- if (!is.null(record)) record$execution_plan else NULL
@@ -114,4 +121,50 @@ rducks_explain_udf <- function(con, name) {
     arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
     stringsAsFactors = FALSE
   )
+}
+
+#' Explain a registered Rducks UDF
+#'
+#' Returns the R-side registration metadata together with native execution
+#' counters for a UDF registered by [rducks_register()]. The native counters are
+#' useful for checking that a plan executed through its requested evaluator
+#' instead of silently falling back: for example, an `arrow_c` scalar UDF should
+#' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
+#'
+#' @param con A `duckdb_connection` with Rducks enabled.
+#' @param name SQL function name registered with [rducks_register()].
+#' @return A one-row data frame with registration metadata and native counters.
+#' @export
+rducks_explain_udf <- function(con, name) {
+  rducks_assert_duckdb_connection(con)
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("name must be a non-empty character scalar", call. = FALSE)
+  }
+
+  rducks_explain_udf_row(con, name)
+}
+
+#' List registered Rducks UDFs
+#'
+#' Returns one row per UDF registered through [rducks_register()] on a
+#' connection, including the same registration metadata and native counters as
+#' [rducks_explain_udf()]. This is an Rducks registry view, not a complete DuckDB
+#' catalog listing: functions registered by other extensions or raw SQL are not
+#' included.
+#'
+#' @param con A `duckdb_connection` with Rducks enabled.
+#' @return A data frame with one row per Rducks UDF registered on `con`.
+#' @export
+rducks_list_udfs <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  env <- rducks_connection_registration_store(con, create = FALSE)
+  if (is.null(env)) {
+    return(rducks_explain_udf_empty())
+  }
+  names <- sort(ls(envir = env, all.names = TRUE))
+  if (!length(names)) {
+    return(rducks_explain_udf_empty())
+  }
+  rows <- lapply(names, function(name) rducks_explain_udf_row(con, name))
+  do.call(rbind, rows)
 }
