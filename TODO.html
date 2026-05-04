@@ -239,6 +239,17 @@
 </ul></li>
 </ul></div>
 <div class="section level2">
+<h2 id="potential-async-duckdb--aioduckdb-interface">Potential async DuckDB / <code>aioduckdb</code> interface<a class="anchor" aria-label="anchor" href="#potential-async-duckdb--aioduckdb-interface"></a></h2>
+<p>This is a parking lot and may belong in a separate package. DuckDB pending-query APIs are more naturally useful for an explicit async query interface than for the current R UDF scheduler.</p>
+<ul class="task-list"><li>
+<label><input type="checkbox"><strong>P3</strong> Keep DuckDB pending-query/task APIs as a later reference for an explicit async DuckDB query handle.</label>
+<ul><li>Relevant C/extension APIs in the current headers include <code>duckdb_pending_prepared()</code>, <code>duckdb_pending_execute_task()</code>, <code>duckdb_pending_execute_check_state()</code>, <code>duckdb_execute_pending()</code>, <code>duckdb_pending_prepared_streaming()</code>, <code>duckdb_execute_tasks()</code>, and <code>duckdb_create_task_state()</code> / <code>duckdb_execute_n_tasks_state()</code>.</li>
+<li>Possible shape: <code>aioduckdb_query(con, sql)</code> returns a pending handle; <code>aioduckdb_poll(handle, max_tasks)</code>, <code>aioduckdb_ready(handle)</code>, <code>aioduckdb_collect(handle)</code>, and <code>aioduckdb_cancel(handle)</code> are explicit user operations.</li>
+<li>Constraint: this must be an explicit async-query API, not a hidden UDF pump. Do not depend on <code>duckdb</code> R private slots or a background R event loop unless that is the public API contract.</li>
+<li>Acceptance before promotion out of P3: prototype pending-query polling over <code>duckdb_pending_result</code>, document lifecycle/cancellation/error semantics, and test that users can interleave R work between polls.</li>
+</ul></li>
+</ul></div>
+<div class="section level2">
 <h2 id="native-arrow_c-work">Native <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow_c-work"></a></h2>
 <ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
 <li>

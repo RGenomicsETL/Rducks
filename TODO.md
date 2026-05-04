@@ -249,6 +249,31 @@ interface.
   timed out, cancelled, `arrow_r`, `arrow_c`, and `arrow_ipc` chunk
   paths.
 
+## Potential async DuckDB / `aioduckdb` interface
+
+This is a parking lot and may belong in a separate package. DuckDB
+pending-query APIs are more naturally useful for an explicit async query
+interface than for the current R UDF scheduler.
+
+**P3** Keep DuckDB pending-query/task APIs as a later reference for an
+explicit async DuckDB query handle.
+
+- Relevant C/extension APIs in the current headers include
+  `duckdb_pending_prepared()`, `duckdb_pending_execute_task()`,
+  `duckdb_pending_execute_check_state()`, `duckdb_execute_pending()`,
+  `duckdb_pending_prepared_streaming()`, `duckdb_execute_tasks()`, and
+  `duckdb_create_task_state()` / `duckdb_execute_n_tasks_state()`.
+- Possible shape: `aioduckdb_query(con, sql)` returns a pending handle;
+  `aioduckdb_poll(handle, max_tasks)`, `aioduckdb_ready(handle)`,
+  `aioduckdb_collect(handle)`, and `aioduckdb_cancel(handle)` are
+  explicit user operations.
+- Constraint: this must be an explicit async-query API, not a hidden UDF
+  pump. Do not depend on `duckdb` R private slots or a background R
+  event loop unless that is the public API contract.
+- Acceptance before promotion out of P3: prototype pending-query polling
+  over `duckdb_pending_result`, document lifecycle/cancellation/error
+  semantics, and test that users can interleave R work between polls.
+
 ## Native `arrow_c` work
 
 Scalar `arrow_c` direct-buffer evaluator for implemented types.
