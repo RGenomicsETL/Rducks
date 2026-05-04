@@ -2,33 +2,26 @@
 
 suppressPackageStartupMessages({
   library(Rducks)
-  library(bench)
   library(future)
   library(future.mirai)
   library(nanoarrow)
 })
 
-int_env <- function(name, default) {
-  value <- suppressWarnings(as.integer(Sys.getenv(name, as.character(default))))
-  if (length(value) != 1L || is.na(value) || value < 1L) default else value
-}
-num_env <- function(name, default) {
-  value <- suppressWarnings(as.numeric(Sys.getenv(name, as.character(default))))
-  if (length(value) != 1L || is.na(value) || value < 0) default else value
-}
-
-n <- int_env("RDUCKS_OWNED_PIPELINE_N", 8192L)
-chunk_size <- int_env("RDUCKS_OWNED_PIPELINE_CHUNK_SIZE", 1024L)
-workers <- int_env("RDUCKS_OWNED_PIPELINE_WORKERS", 4L)
-sleep_s <- num_env("RDUCKS_OWNED_PIPELINE_SLEEP", 0.1)
-iterations <- int_env("RDUCKS_OWNED_PIPELINE_ITERATIONS", 3L)
+# Benchmark parameters are explicit script constants, not hidden environment
+# variables. Edit them here when running a different local experiment.
+n <- 8192L
+chunk_size <- 1024L
+workers <- 4L
+sleep_s <- 0.1
+iterations <- 3L
 # Benchmark-only Future polling tweak: small worker tasks can finish before
 # the default polling interval notices them. This reduces wait latency; it is
 # not required for Rducks correctness or for real parallelism.
 options(future.wait.interval = 0.001, future.wait.alpha = 1.01)
 future::plan(future.mirai::mirai_multisession, workers = workers)
 # Warm workers so the measurement reflects chunk scheduling, not startup.
-invisible(future::value(future::future(NULL)))
+warmup <- lapply(seq_len(workers), function(i) future::future(NULL))
+invisible(future::value(warmup, stdout = FALSE, signal = FALSE))
 
 mk_input_payload <- function(x) {
   array <- nanoarrow::as_nanoarrow_array(data.frame(arg1 = as.integer(x)))
@@ -45,51 +38,107 @@ chunks <- split(rows, chunk_id)
 payloads <- lapply(chunks, mk_input_payload)
 ns <- lengths(chunks)
 
-fun <- function(x) {
-  Sys.sleep(sleep_s)
-  x + 1L
-}
+fun <- local({
+  delay <- sleep_s
+  function(x) {
+    Sys.sleep(delay)
+    x + 1L
+  }
+})
+arg_types <- list(INTEGER)
+return_type <- INTEGER
 
-worker_eval <- function(payload, n_rows) {
+worker_eval <- function(payload, n_rows, output_schema_spec, fun, arg_types, return_type) {
   Rducks:::rducks_future_worker_eval_arrow_ipc_chunk(
     input_payload = payload,
     output_schema_spec = output_schema_spec,
     n = n_rows,
     fun = fun,
-    arg_types = list(INTEGER),
-    return_type = INTEGER,
+    arg_types = arg_types,
+    return_type = return_type,
     null_handling = "default",
     exception_handling = "rethrow",
     mode = "vectorized"
   )
 }
 
-bench_result <- bench::mark(
-  sequential = {
-    seq_payloads <- Map(worker_eval, payloads, ns)
-    invisible(seq_payloads)
-  },
-  parallel = {
-    futures <- Map(function(payload, n_rows) {
-      future::future(
-        worker_eval(payload, n_rows),
-        globals = list(worker_eval = worker_eval, payload = payload, n_rows = n_rows),
-        packages = "Rducks",
-        stdout = FALSE
-      )
-    }, payloads, ns)
-    par_payloads <- future::value(futures, stdout = FALSE, signal = FALSE)
-    invisible(par_payloads)
-  },
-  iterations = iterations,
-  check = FALSE
-)
+stop_if_worker_error <- function(values) {
+  failed <- vapply(values, inherits, logical(1), "error")
+  if (any(failed)) {
+    stop("owned IPC worker failed: ", conditionMessage(values[[which(failed)[1L]]]), call. = FALSE)
+  }
+  values
+}
 
-print(bench_result[, c("expression", "median", "itr/sec", "mem_alloc", "n_itr", "n_gc")])
+run_sequential <- function() {
+  Map(worker_eval, payloads, ns,
+    MoreArgs = list(
+      output_schema_spec = output_schema_spec,
+      fun = fun,
+      arg_types = arg_types,
+      return_type = return_type
+    )
+  )
+}
 
-median_seconds <- setNames(as.numeric(bench_result$median), as.character(bench_result$expression))
+run_parallel <- function() {
+  futures <- Map(function(payload, n_rows) {
+    future::future(
+      worker_eval(payload, n_rows, output_schema_spec, fun, arg_types, return_type),
+      globals = list(
+        worker_eval = worker_eval,
+        payload = payload,
+        n_rows = n_rows,
+        output_schema_spec = output_schema_spec,
+        fun = fun,
+        arg_types = arg_types,
+        return_type = return_type
+      ),
+      packages = "Rducks",
+      stdout = FALSE
+    )
+  }, payloads, ns)
+  stop_if_worker_error(future::value(futures, stdout = FALSE, signal = FALSE))
+}
+
+payload_values <- function(result_payloads) {
+  unlist(lapply(result_payloads, function(payload) {
+    decoded <- Rducks:::rducks_arrow_ipc_decode_array(payload)
+    as.data.frame(decoded$array)[[1L]]
+  }), use.names = FALSE)
+}
+
+validate_result <- function(label, result_payloads) {
+  values <- as.integer(payload_values(result_payloads))
+  expected <- as.integer(rows + 1L)
+  if (!identical(values, expected)) {
+    stop(label, " produced incorrect results", call. = FALSE)
+  }
+  invisible(result_payloads)
+}
+
+time_run <- function(label, expr) {
+  gc()
+  value <- NULL
+  elapsed <- system.time({
+    value <- force(expr)
+  })[["elapsed"]]
+  validate_result(label, value)
+  data.frame(expression = label, elapsed = elapsed, stringsAsFactors = FALSE)
+}
+
+timings <- do.call(rbind, lapply(seq_len(iterations), function(i) {
+  rbind(
+    cbind(iteration = i, time_run("sequential", run_sequential())),
+    cbind(iteration = i, time_run("parallel", run_parallel()))
+  )
+}))
+print(timings, row.names = FALSE)
+
+median_elapsed <- tapply(timings$elapsed, timings$expression, median)
 cat(sprintf(
-  "owned_arrow_ipc_pipeline provider=future.mirai workers=%d rows=%d chunks=%d chunk_size=%d sleep=%.3f median_speedup=%.2fx\n",
+  "owned_arrow_ipc_pipeline provider=future.mirai workers=%d rows=%d chunks=%d chunk_size=%d sleep=%.3f median_sequential=%.3fs median_parallel=%.3fs median_speedup=%.2fx\n",
   workers, n, length(chunks), chunk_size, sleep_s,
-  median_seconds[["sequential"]] / median_seconds[["parallel"]]
+  median_elapsed[["sequential"]], median_elapsed[["parallel"]],
+  median_elapsed[["sequential"]] / median_elapsed[["parallel"]]
 ))
