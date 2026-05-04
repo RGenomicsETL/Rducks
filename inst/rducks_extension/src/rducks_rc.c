@@ -18,7 +18,8 @@
 #define RDUCKS_RC_BUNDLE_PREPARE_INPUTS 3
 #define RDUCKS_RC_BUNDLE_CHECK_RETURN 4
 #define RDUCKS_RC_BUNDLE_RESULT_ARRAY 5
-#define RDUCKS_RC_BUNDLE_SIZE 6
+#define RDUCKS_RC_BUNDLE_EVAL_ROWS 6
+#define RDUCKS_RC_BUNDLE_SIZE 7
 
 static int rducks_rc_type_null_is_r_null(const rducks_type_desc_t *desc) {
     if (!desc) return 1;
@@ -43,7 +44,8 @@ static int rducks_rc_bundle_valid(SEXP bundle) {
            Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN)) &&
            Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_PREPARE_INPUTS)) &&
            Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN)) &&
-           Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY));
+           Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY)) &&
+           Rf_isFunction(VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS));
 }
 
 static SEXP rducks_rc_subset_with_bracket(SEXP values, idx_t row, int *ok) {
@@ -140,6 +142,36 @@ static SEXP rducks_rc_check_return(SEXP check_return_fun, SEXP return_type, SEXP
     SEXP checked = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
     UNPROTECT(2);
     return checked;
+}
+
+static SEXP rducks_rc_null_handling_sexp(rducks_null_handling_t null_handling) {
+    return Rf_mkString(null_handling == RDUCKS_NULL_SPECIAL ? "special" : "default");
+}
+
+static SEXP rducks_rc_exception_handling_sexp(rducks_exception_handling_t exception_handling) {
+    return Rf_mkString(exception_handling == RDUCKS_EXCEPTION_RETURN_NULL ? "return_null" : "rethrow");
+}
+
+static SEXP rducks_rc_call_vectorized_eval(SEXP eval_rows_fun, SEXP fun, SEXP arg_types, SEXP return_type,
+                                           SEXP prepared, SEXP null_handling, SEXP exception_handling,
+                                           int *r_err) {
+    SEXP args = PROTECT(Rf_allocList(6));
+    SEXP node = args;
+    SETCAR(node, fun);
+    node = CDR(node);
+    SETCAR(node, arg_types);
+    node = CDR(node);
+    SETCAR(node, return_type);
+    node = CDR(node);
+    SETCAR(node, prepared);
+    node = CDR(node);
+    SETCAR(node, null_handling);
+    node = CDR(node);
+    SETCAR(node, exception_handling);
+    SEXP call = PROTECT(Rf_lcons(eval_rows_fun, args));
+    SEXP value = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    UNPROTECT(3);
+    return value;
 }
 
 
@@ -1365,6 +1397,124 @@ static int rducks_rc_arrow_scalar_execute_on_r_thread(rducks_runtime_entry_t *ru
     return 1;
 
 fail:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
+static SEXP rducks_rc_eval_arrow_vectorized_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                             SEXP input_array_xptr, SEXP input_schema_xptr,
+                                                             SEXP output_schema_xptr, idx_t n,
+                                                             int *protect_count, char *err_msg, size_t err_cap) {
+    int r_err = 0;
+    SEXP bundle;
+    SEXP fun;
+    SEXP arg_types;
+    SEXP return_type;
+    SEXP prepare_inputs_fun;
+    SEXP result_array_fun;
+    SEXP eval_rows_fun;
+    SEXP n_sexp;
+    SEXP prep_call;
+    SEXP prepared;
+    SEXP null_handling_sexp;
+    SEXP exception_handling_sexp;
+    SEXP results;
+    SEXP result_call;
+    SEXP result_array;
+
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata missing");
+        return R_NilValue;
+    }
+    bundle = meta->fun;
+    if (!rducks_rc_bundle_valid(bundle)) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
+        return R_NilValue;
+    }
+
+    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
+    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
+    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
+    prepare_inputs_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_PREPARE_INPUTS);
+    result_array_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY);
+    eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
+
+    n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    (*protect_count)++;
+    prep_call = PROTECT(Rf_lang5(prepare_inputs_fun, arg_types, input_array_xptr, input_schema_xptr, n_sexp));
+    (*protect_count)++;
+    prepared = PROTECT(R_tryEvalSilent(prep_call, R_GlobalEnv, &r_err));
+    (*protect_count)++;
+    if (r_err || TYPEOF(prepared) != VECSXP || XLENGTH(prepared) < 3) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized input preparation failed");
+        return R_NilValue;
+    }
+
+    null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
+    (*protect_count)++;
+    exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
+    (*protect_count)++;
+    results = PROTECT(rducks_rc_call_vectorized_eval(eval_rows_fun, fun, arg_types, return_type, prepared,
+                                                     null_handling_sexp, exception_handling_sexp, &r_err));
+    (*protect_count)++;
+    if (r_err || TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return R_NilValue;
+    }
+
+    result_call = PROTECT(Rf_lang5(result_array_fun, return_type, results, output_schema_xptr, n_sexp));
+    (*protect_count)++;
+    r_err = 0;
+    result_array = PROTECT(R_tryEvalSilent(result_call, R_GlobalEnv, &r_err));
+    (*protect_count)++;
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized Arrow result construction failed");
+        return R_NilValue;
+    }
+    return result_array;
+}
+
+static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                        duckdb_data_chunk input, duckdb_vector output,
+                                        char *err_msg, size_t err_cap) {
+    idx_t n;
+    int protect_count = 0;
+    SEXP input_schema_xptr;
+    SEXP input_array_xptr;
+    SEXP output_schema_xptr;
+    SEXP result_array;
+
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata missing");
+        return 0;
+    }
+
+    rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
+    n = duckdb_data_chunk_get_size(input);
+    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_schema(runtime, input_schema_xptr, meta, err_msg, err_cap)) goto fail_vectorized;
+
+    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_input_arrow_array(runtime, input_array_xptr, input, err_msg, err_cap)) goto fail_vectorized;
+    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
+
+    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_fill_output_arrow_schema(runtime, output_schema_xptr, meta, err_msg, err_cap)) goto fail_vectorized;
+
+    result_array = rducks_rc_eval_arrow_vectorized_xptr_on_r_thread(meta, input_array_xptr, input_schema_xptr,
+                                                                    output_schema_xptr, n, &protect_count,
+                                                                    err_msg, err_cap);
+    if (result_array == R_NilValue) goto fail_vectorized;
+    if (!rducks_import_arrow_result(runtime, result_array, output_schema_xptr, meta->return_desc, n, output,
+                                    err_msg, err_cap)) goto fail_vectorized;
+
+    UNPROTECT(protect_count);
+    return 1;
+
+fail_vectorized:
     UNPROTECT(protect_count);
     return 0;
 }

@@ -71,7 +71,30 @@ run_return <- function(case) {
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, case$sql1)), paste0("return ", case$name))
 }
 
-run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
+assert_vectorized_marshalling_counter <- function(name, marshalling, label) {
+  info <- rducks_explain_udf(con, name)
+  if (!identical(info$native_marshalling[[1L]], marshalling)) {
+    stop(
+      "generated marshalling case used wrong native marshalling: ", label,
+      " expected ", marshalling, " got ", info$native_marshalling[[1L]],
+      call. = FALSE
+    )
+  }
+  expected <- paste0(marshalling, "_chunks")
+  other <- if (identical(marshalling, "arrow_c")) "arrow_r_chunks" else "arrow_c_chunks"
+  if (info[[expected]][[1L]] < 1 || info[[other]][[1L]] != 0) {
+    stop(
+      "generated marshalling case violated no-fallback counters: ", label,
+      " ", expected, "=", info[[expected]][[1L]],
+      " ", other, "=", info[[other]][[1L]],
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql2, label, include_null = TRUE) {
+  rducks_set_execution_plan(con, rducks_execution_plan(marshalling, "serial"))
   type_sql <- rducks_type_sql(type)
   values_sql <- if (include_null) {
     sprintf("(%s), (NULL::%s), (%s)", sql1, type_sql, sql2)
@@ -80,32 +103,43 @@ run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null
   }
 
   maybe_stop_for_limit()
-  row_name <- next_name("row")
-  vec_name <- next_name("vec")
+  row_name <- next_name(paste0(marshalling, "_row"))
+  vec_name <- next_name(paste0(marshalling, "_vec"))
   invisible(rducks_register(con, row_name, function(x) x, type, type, side_effects = TRUE))
   invisible(rducks_register(con, vec_name, function(x) x, type, type, mode = "vectorized", side_effects = TRUE))
   row_expr <- sprintf("%s(x)", row_name)
   vec_expr <- sprintf("%s(x)", vec_name)
+  default_label <- paste0(marshalling, " vectorized/default vs scalar ", label)
   sql_ok(
     sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_expr, row_expr)),
-    paste0("vectorized/default vs scalar ", label)
+    default_label
   )
+  assert_vectorized_marshalling_counter(vec_name, marshalling, default_label)
 
   if (include_null) {
     maybe_stop_for_limit()
-    row_special_name <- next_name("row_special")
-    vec_special_name <- next_name("vec_special")
+    row_special_name <- next_name(paste0(marshalling, "_row_special"))
+    vec_special_name <- next_name(paste0(marshalling, "_vec_special"))
     invisible(rducks_register(con, row_special_name, function(x) x, type, type,
                               null_handling = "special", side_effects = TRUE))
     invisible(rducks_register(con, vec_special_name, function(x) x, type, type,
                               mode = "vectorized", null_handling = "special", side_effects = TRUE))
     row_special_expr <- sprintf("%s(x)", row_special_name)
     vec_special_expr <- sprintf("%s(x)", vec_special_name)
+    special_label <- paste0(marshalling, " vectorized/special vs scalar ", label)
     sql_ok(
       sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_special_expr, row_special_expr)),
-      paste0("vectorized/special vs scalar ", label)
+      special_label
     )
+    assert_vectorized_marshalling_counter(vec_special_name, marshalling, special_label)
   }
+}
+
+run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
+  for (marshalling in c("arrow_r", "arrow_c")) {
+    run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
+  }
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
 }
 
 sequence_r_value <- function(case) {

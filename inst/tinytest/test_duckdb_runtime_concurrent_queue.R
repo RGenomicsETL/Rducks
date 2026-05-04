@@ -43,12 +43,21 @@ local({
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
 
   invisible(rducks_register(con, "rducks_queue_plus_one_c", function(x) x + 1, DOUBLE, DOUBLE))
+  invisible(rducks_register(con, "rducks_queue_plus_one_c_vec", function(x) x + 1, DOUBLE, DOUBLE,
+                            mode = "vectorized", side_effects = TRUE))
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+inproc_concurrent")
 
   before <- rducks_inproc_stats(con)
   queued_c_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_result$x, sum((0:9) + 1))
+  queued_c_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
+  expect_equal(queued_c_vec_result$x, sum((0:9) + 1))
+  explain_c_vec <- rducks_explain_udf(con, "rducks_queue_plus_one_c_vec")
+  expect_equal(explain_c_vec$evaluator, "RCV")
+  expect_true(explain_c_vec$queued_chunks >= 1)
+  expect_true(explain_c_vec$arrow_c_chunks >= 1)
+  expect_equal(explain_c_vec$arrow_r_chunks, 0)
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] > before$submitted[[1L]])
   expect_equal(final$submitted, final$executed)

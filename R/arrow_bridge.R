@@ -1400,6 +1400,23 @@ rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema
 
 rducks_rc_prepare_inputs <- rducks_scalar_prepare_inputs
 
+rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, plan, engine, eval_rows) {
+  list(
+    fun = fun,
+    arg_types = spec$arg_types,
+    return_type = spec$return_type,
+    prepare_inputs = rducks_scalar_prepare_inputs,
+    check_return = rducks_check_scalar_udf_return,
+    result_array = rducks_arrow_result_array,
+    eval_rows = eval_rows,
+    results_to_arrow = rducks_scalar_results_to_arrow,
+    engine = engine,
+    plan = plan,
+    null_handling = null_handling,
+    exception_handling = exception_handling
+  )
+}
+
 rducks_make_rc_scalar_bundle <- function(fun, spec,
                                          null_handling = "default",
                                          exception_handling = "rethrow",
@@ -1410,19 +1427,33 @@ rducks_make_rc_scalar_bundle <- function(fun, spec,
     exception_handling = exception_handling,
     plan = plan
   )
-  list(
-    fun = fun,
-    arg_types = spec$arg_types,
-    return_type = spec$return_type,
-    prepare_inputs = rducks_scalar_prepare_inputs,
-    check_return = rducks_check_scalar_udf_return,
-    result_array = rducks_arrow_result_array,
-    eval_rows = rducks_scalar_eval_prepared_rows,
-    results_to_arrow = rducks_scalar_results_to_arrow,
-    engine = engine,
-    plan = plan,
+  rducks_make_rc_bundle(
+    fun, spec,
     null_handling = null_handling,
-    exception_handling = exception_handling
+    exception_handling = exception_handling,
+    plan = plan,
+    engine = engine,
+    eval_rows = rducks_scalar_eval_prepared_rows
+  )
+}
+
+rducks_make_rc_vectorized_bundle <- function(fun, spec,
+                                             null_handling = "default",
+                                             exception_handling = "rethrow",
+                                             plan = rducks_scalar_execution_plan()) {
+  engine <- rducks_make_vectorized_engine(
+    fun, spec,
+    null_handling = null_handling,
+    exception_handling = exception_handling,
+    plan = plan
+  )
+  rducks_make_rc_bundle(
+    fun, spec,
+    null_handling = null_handling,
+    exception_handling = exception_handling,
+    plan = plan,
+    engine = engine,
+    eval_rows = rducks_vectorized_eval_prepared_chunk
   )
 }
 

@@ -87,13 +87,15 @@ rducks_register <- function(con, name, fun, args, returns,
   rducks_assert_arrow_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
   rducks_assert_single_thread(con)
-  native_evaluator <- rducks_plan_native_evaluator_token(plan)
-  eval_ref <- if (identical(spec$mode, "vectorized")) {
-    rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling)
+  native_evaluator <- rducks_plan_native_evaluator_token(plan, spec$mode)
+  eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_r")) {
+    rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
+  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
+    rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_r")) {
-    rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling)
+    rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_c")) {
-    rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling)
+    rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling, plan = plan)
   } else {
     stop("Rducks execution plan ", plan$plan_id, " is not implemented for local registration", call. = FALSE)
   }

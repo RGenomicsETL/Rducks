@@ -1,5 +1,8 @@
 # Rducks 0.0.0.9000
 
+- Implemented `arrow_c + vectorized` registrations for both `serial` and
+  `inproc_concurrent` execution plans. The native evaluator token is `RCV`, and
+  `rducks_explain_udf()` reports `arrow_c` counters for these chunk calls.
 - Added `rducks_explain_udf()` and `rducks_list_udfs()` with native per-UDF
   execution counters so users can inspect registration metadata and verify that
   `arrow_r`/`arrow_c` chunks ran through the requested evaluator without

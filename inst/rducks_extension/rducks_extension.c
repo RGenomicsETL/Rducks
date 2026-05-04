@@ -69,7 +69,8 @@ typedef enum rducks_exception_handling {
 
 typedef enum rducks_eval_mode {
     RDUCKS_EVAL_R = 0,
-    RDUCKS_EVAL_RC = 1
+    RDUCKS_EVAL_RC = 1,
+    RDUCKS_EVAL_RCV = 2
 } rducks_eval_mode_t;
 
 typedef enum rducks_execution_backend {
@@ -287,6 +288,9 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
 static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                     duckdb_data_chunk input, duckdb_vector output,
                                     char *err_msg, size_t err_cap);
+static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                        duckdb_data_chunk input, duckdb_vector output,
+                                        char *err_msg, size_t err_cap);
 static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap);

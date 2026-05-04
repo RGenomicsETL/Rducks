@@ -25,7 +25,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         return false;
     }
     if ((eval_mode == RDUCKS_EVAL_R && !Rf_isFunction(eval_ref)) ||
-        (eval_mode == RDUCKS_EVAL_RC && !rducks_rc_bundle_valid(eval_ref))) {
+        ((eval_mode == RDUCKS_EVAL_RC || eval_mode == RDUCKS_EVAL_RCV) && !rducks_rc_bundle_valid(eval_ref))) {
         snprintf(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
     }

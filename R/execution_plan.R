@@ -32,7 +32,7 @@ rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
   switch(
     marshalling,
     arrow_r = c("scalar", "vectorized"),
-    arrow_c = "scalar",
+    arrow_c = c("scalar", "vectorized"),
     arrow_ipc = character(),
     character()
   )
@@ -189,11 +189,12 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
   invisible(TRUE)
 }
 
-rducks_plan_native_evaluator_token <- function(plan) {
+rducks_plan_native_evaluator_token <- function(plan, mode = "scalar") {
+  mode <- rducks_match_mode(mode)
   switch(
     plan$marshalling,
     arrow_r = "R",
-    arrow_c = "RC",
+    arrow_c = if (identical(mode, "vectorized")) "RCV" else "RC",
     arrow_ipc = stop("marshalling = 'arrow_ipc' is not implemented for local UDF registration yet", call. = FALSE),
     stop("unsupported Rducks execution-plan marshalling: ", plan$marshalling, call. = FALSE)
   )

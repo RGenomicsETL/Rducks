@@ -133,11 +133,14 @@ local({
   )
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
-  expect_error(
-    rducks_register(con, "vec_arrow_c_rejected", function(x) x, INTEGER, INTEGER,
-                    mode = "vectorized"),
-    "does not support mode = 'vectorized'"
-  )
+  invisible(rducks_register(con, "vec_arrow_c_plus_one", function(x) x + 1L, INTEGER, INTEGER,
+                            mode = "vectorized", side_effects = TRUE))
+  arrow_c_vec <- DBI::dbGetQuery(con, "SELECT vec_arrow_c_plus_one(i::INTEGER) AS x FROM range(5) AS t(i)")
+  expect_equal(arrow_c_vec$x, 1:5)
+  arrow_c_explain <- rducks_explain_udf(con, "vec_arrow_c_plus_one")
+  expect_equal(arrow_c_explain$evaluator, "RCV")
+  expect_true(arrow_c_explain$arrow_c_chunks >= 1)
+  expect_equal(arrow_c_explain$arrow_r_chunks, 0)
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   expect_error(
     rducks_register(con, "vec_no_arg_rejected", function() 1L, character(), INTEGER,

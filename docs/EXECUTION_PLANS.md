@@ -111,8 +111,8 @@ observable plan remains one named plan with one declared support matrix.
 | --- | --- | --- | --- | --- |
 | `arrow_r` | `serial` | implemented/reference | implemented/reference | The semantic oracle for all other plans. |
 | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded R lane. |
-| `arrow_c` | `serial` | implemented as current native scalar | planned | Native materialization and native row/chunk control; no fallback to `arrow_r`. |
-| `arrow_c` | `inproc_concurrent` | implemented for current native scalar | planned | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
+| `arrow_c` | `serial` | implemented as current native scalar | implemented | Native scalar evaluator plus `RCV` vectorized chunk evaluator; no fallback to `arrow_r`. |
+| `arrow_c` | `inproc_concurrent` | implemented for current native scalar | implemented | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
 | `arrow_ipc` | `multiprocess_parallel` | planned | planned | Owned Arrow IPC request/result bytes across process boundary. Scalar still batches transport by chunk and loops rows inside the worker. |
 
 Current API direction:
@@ -221,15 +221,20 @@ Additional multiprocess cases:
 
 ### Iteration 4: design `arrow_c + vectorized`
 
-- [ ] Define the complete v1 supported type matrix.
+- [x] Define the complete v1 supported type matrix.
 - [x] Reject every unsupported signature at registration/plan-validation time.
-- [ ] Implement native chunk argument materialization for the v1 matrix.
-- [ ] Implement native default/special NULL row selection.
-- [ ] Call the R function exactly once per evaluated chunk.
-- [ ] Validate vectorized return length in C/R-thread-safe code.
-- [ ] Scatter returned values and SQL NULLs to DuckDB output vectors.
-- [ ] Add conformance tests against `arrow_r + serial + vectorized`.
-- [ ] Add tests proving no scalar row-loop is used for vectorized calls.
+- [x] Implement native chunk argument materialization for the v1 matrix.
+- [x] Implement native default/special NULL row selection.
+- [x] Call the R function exactly once per evaluated chunk.
+- [x] Validate vectorized return length in C/R-thread-safe code.
+- [x] Scatter returned values and SQL NULLs to DuckDB output vectors.
+- [x] Add conformance tests against `arrow_r + serial + vectorized`.
+- [x] Add tests proving no scalar row-loop is used for vectorized calls.
+
+Current implementation note: `arrow_c + vectorized` uses the `RCV` evaluator
+metadata token. It reuses the native Arrow C Data import/export bridge and the
+R-side vectorized chunk evaluator, but dispatch and counters remain part of the
+named `arrow_c` plan rather than a fallback to the public `arrow_r` evaluator.
 
 ### Iteration 5: make concurrency a connection/session execution plan
 

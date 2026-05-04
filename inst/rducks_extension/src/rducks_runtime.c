@@ -109,10 +109,10 @@ static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows
     (void)rows;
     if (!meta || !meta->runtime) return;
     rducks_runtime_lock();
-    if (meta->eval_mode == RDUCKS_EVAL_RC) {
-        meta->arrow_c_chunks++;
-    } else {
+    if (meta->eval_mode == RDUCKS_EVAL_R) {
         meta->arrow_r_chunks++;
+    } else {
+        meta->arrow_c_chunks++;
     }
     rducks_runtime_unlock();
 }
@@ -139,9 +139,10 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     if (strcmp(field, "name") == 0) {
         snprintf(out, out_cap, "%s", meta->name ? meta->name : "");
     } else if (strcmp(field, "eval_mode") == 0) {
-        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_RC ? "RC" : "R");
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "R" :
+                 (meta->eval_mode == RDUCKS_EVAL_RCV ? "RCV" : "RC"));
     } else if (strcmp(field, "marshalling") == 0) {
-        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_RC ? "arrow_c" : "arrow_r");
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" : "arrow_c");
     } else if (strcmp(field, "dispatch_chunks") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_chunks);
     } else if (strcmp(field, "dispatch_rows") == 0) {

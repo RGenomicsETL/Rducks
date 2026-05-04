@@ -139,6 +139,10 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
         return rducks_rc_scalar_execute(request->runtime, request->meta, request->input,
                                        request->output, err_msg, err_cap);
     }
+    if (request->meta->eval_mode == RDUCKS_EVAL_RCV) {
+        return rducks_rc_vectorized_execute(request->runtime, request->meta, request->input,
+                                           request->output, err_msg, err_cap);
+    }
     return rducks_r_scalar_execute(request->runtime, request->meta, request->input,
                                   request->output, err_msg, err_cap);
 }

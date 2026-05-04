@@ -628,6 +628,10 @@ static int rducks_parse_eval_mode(const char *text, rducks_eval_mode_t *out, cha
         *out = RDUCKS_EVAL_RC;
         return 1;
     }
+    if (strcmp(token, "rcv") == 0) {
+        *out = RDUCKS_EVAL_RCV;
+        return 1;
+    }
     snprintf(err, err_cap, "unsupported eval_mode value: %s", token);
     return 0;
 }
