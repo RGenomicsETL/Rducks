@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        292ms      3.40    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    234ms      4.27    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        295ms      3.36    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    238ms      4.16    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:34:23</span></span>
+<span><span class="co">#&gt; 1 2026-05-04 22:39:45</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -308,8 +308,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 arrow_r_serial            276ms      3.58    1005KB</span></span>
-<span><span class="co">#&gt; 2 arrow_ipc_multiprocess    471ms      2.08     291MB</span></span>
+<span><span class="co">#&gt; 1 arrow_r_serial            276ms      3.57    1005KB</span></span>
+<span><span class="co">#&gt; 2 arrow_ipc_multiprocess    472ms      2.11     291MB</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
 <span>  <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_serial_sleep_plus_one"</span><span class="op">)</span>,</span>
@@ -327,7 +327,7 @@
 <span><span class="co">#&gt;   ripc_collect_max_batch</span></span>
 <span><span class="co">#&gt; 1                      0</span></span>
 <span><span class="co">#&gt; 2                      1</span></span></code></pre></div>
-<p>In the current scalar-UDF callback path, <code>ripc_collect_max_batch = 1</code> is the important scheduling result: each callback must fill its DuckDB output vector before returning, so it cannot be treated as the production multiprocess throughput path. <code>tools/benchmark_owned_ipc_pipeline.R</code> is a separate source-checkout benchmark for the planned owned prechunk pipeline, where input chunks and result chunks are owned before worker submission.</p>
+<p>In the current scalar-UDF callback path, <code>ripc_collect_max_batch = 1</code> is the important scheduling result: each callback must fill its DuckDB output vector before returning, so it cannot be treated as the production multiprocess throughput path. <code>tools/benchmark_owned_ipc_pipeline.R</code> is the owned prechunk pipeline implementation used for source-checkout benchmarking: input chunks and result chunks are owned before worker submission.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>

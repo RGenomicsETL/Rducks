@@ -238,8 +238,8 @@ Decision: the multiprocess performance path should own the chunk source.
 It should pre-split input into owned Arrow IPC chunk tasks, submit a
 window of tasks ahead, collect results by sequence number, and only then
 hand data back to DuckDB/R. The local
-`tools/benchmark_owned_ipc_pipeline.R` prototype shows this shape is
-fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x speedup).
+`tools/benchmark_owned_ipc_pipeline.R` implementation shows this shape
+is fast (`future.mirai`, 4 workers, 8 chunks x 0.1s: about 4x speedup).
 Mori/shared-memory payloads can be explored later as a same-host payload
 optimization, but the first architectural requirement is ownership of
 chunk inputs/results rather than borrowed
@@ -264,12 +264,12 @@ interface.
 \[~\] **P3** Plug `multiprocess_parallel` into the same scheduler
 interface.
 
-- Current scalar-callback prototype: `arrow_ipc` uses generic `future`
-  providers, submits Arrow IPC chunk tasks separately from collection,
-  and can collect a group of queued futures after submission. Native
-  counters expose `ripc_collect_batches`, `ripc_collect_requests`, and
-  `ripc_collect_max_batch`; current DuckDB scalar UDF tests usually show
-  max batch size 1.
+- Current scalar-callback implementation: `arrow_ipc` uses generic
+  `future` providers, submits Arrow IPC chunk tasks separately from
+  collection, and can collect a group of queued futures after
+  submission. Native counters expose `ripc_collect_batches`,
+  `ripc_collect_requests`, and `ripc_collect_max_batch`; current DuckDB
+  scalar UDF tests usually show max batch size 1.
 - Required production backend: an owned prechunk source/pipeline. It
   must send owned Arrow IPC task bytes to workers, keep multiple chunks
   outstanding, collect by task sequence, decode owned Arrow IPC result
