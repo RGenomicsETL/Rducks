@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        301ms      3.29    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    248ms      3.98    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        291ms      3.41    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    230ms      4.30    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:18:49</span></span>
+<span><span class="co">#&gt; 1 2026-05-04 22:23:58</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -258,81 +258,49 @@
 <span><span class="co">#&gt; 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests</span></span>
 <span><span class="co">#&gt; 1                5                    5                     5</span></span></code></pre></div>
-<p>The owned-task shape is what allows real worker parallelism: encode every input chunk to an owned Arrow IPC payload, submit all tasks, then collect owned Arrow IPC result payloads.</p>
+<p>This timing probe registers a vectorized R function that sleeps once per DuckDB chunk, runs it through DuckDB SQL, and reports the native RIPC counters.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">workers</span> <span class="op">&lt;-</span> <span class="fl">4L</span></span>
-<span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">8192L</span></span>
-<span><span class="va">chunk_size</span> <span class="op">&lt;-</span> <span class="fl">1024L</span></span>
-<span><span class="va">sleep_s</span> <span class="op">&lt;-</span> <span class="fl">0.1</span></span>
+<code class="sourceCode R"><span><span class="va">sleep_rows</span> <span class="op">&lt;-</span> <span class="fl">8192L</span></span>
+<span><span class="va">sleep_s</span> <span class="op">&lt;-</span> <span class="fl">0.02</span></span>
 <span></span>
-<span><span class="co"># Benchmark-only Future polling tweak: small worker tasks can finish before</span></span>
-<span><span class="co"># the default polling interval notices them. This reduces wait latency; it is</span></span>
-<span><span class="co"># not required for Rducks correctness or for real parallelism.</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>future.wait.interval <span class="op">=</span> <span class="fl">0.001</span>, future.wait.alpha <span class="op">=</span> <span class="fl">1.01</span><span class="op">)</span></span>
-<span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future.mirai</span><span class="fu">::</span><span class="va">mirai_multisession</span>, workers <span class="op">=</span> <span class="va">workers</span><span class="op">)</span></span>
-<span><span class="co"># Warm workers so the measurement reflects chunk scheduling, not startup.</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/value.html" class="external-link">value</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/future.html" class="external-link">future</a></span><span class="op">(</span><span class="cn">NULL</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">rows</span> <span class="op">&lt;-</span> <span class="fl">0</span><span class="op">:</span><span class="op">(</span><span class="va">n</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span><span class="va">chunks</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/split.html" class="external-link">split</a></span><span class="op">(</span><span class="va">rows</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">ceiling</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">rows</span><span class="op">)</span> <span class="op">/</span> <span class="va">chunk_size</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">ns</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lengths.html" class="external-link">lengths</a></span><span class="op">(</span><span class="va">chunks</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">encode_input</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu">Rducks</span><span class="fu">:::</span><span class="fu">rducks_arrow_ipc_encode</span><span class="op">(</span></span>
-<span>    <span class="fu">nanoarrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/as_nanoarrow_array.html" class="external-link">as_nanoarrow_array</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>arg1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="va">output_schema_spec</span> <span class="op">&lt;-</span> <span class="fu">Rducks</span><span class="fu">:::</span><span class="fu">rducks_arrow_schema_to_spec</span><span class="op">(</span></span>
-<span>  <span class="fu">nanoarrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/as_nanoarrow_schema.html" class="external-link">infer_nanoarrow_schema</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>result <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">reg_ipc_sleep</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_ipc_sleep_plus_one"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="va">sleep_s</span><span class="op">)</span></span>
+<span>    <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
+<span>  <span class="op">}</span>,</span>
+<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
+<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">worker_eval</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">payload</span>, <span class="va">n_rows</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu">Rducks</span><span class="fu">:::</span><span class="fu">rducks_future_worker_eval_arrow_ipc_chunk</span><span class="op">(</span></span>
-<span>    input_payload <span class="op">=</span> <span class="va">payload</span>,</span>
-<span>    output_schema_spec <span class="op">=</span> <span class="va">output_schema_spec</span>,</span>
-<span>    n <span class="op">=</span> <span class="va">n_rows</span>,</span>
-<span>    fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>      <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="va">sleep_s</span><span class="op">)</span></span>
-<span>      <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
-<span>    <span class="op">}</span>,</span>
-<span>    arg_types <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span>,</span>
-<span>    return_type <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>    null_handling <span class="op">=</span> <span class="st">"default"</span>,</span>
-<span>    exception_handling <span class="op">=</span> <span class="st">"rethrow"</span>,</span>
-<span>    mode <span class="op">=</span> <span class="st">"vectorized"</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="va">payloads</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">chunks</span>, <span class="va">encode_input</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">seq_time</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">seq_payloads</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/funprog.html" class="external-link">Map</a></span><span class="op">(</span><span class="va">worker_eval</span>, <span class="va">payloads</span>, <span class="va">ns</span><span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
-<span></span>
-<span><span class="va">par_time</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">futures</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/funprog.html" class="external-link">Map</a></span><span class="op">(</span><span class="kw">function</span><span class="op">(</span><span class="va">payload</span>, <span class="va">n_rows</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/future.html" class="external-link">future</a></span><span class="op">(</span></span>
-<span>      <span class="fu">worker_eval</span><span class="op">(</span><span class="va">payload</span>, <span class="va">n_rows</span><span class="op">)</span>,</span>
-<span>      globals <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>worker_eval <span class="op">=</span> <span class="va">worker_eval</span>, payload <span class="op">=</span> <span class="va">payload</span>, n_rows <span class="op">=</span> <span class="va">n_rows</span><span class="op">)</span>,</span>
-<span>      packages <span class="op">=</span> <span class="st">"Rducks"</span>,</span>
-<span>      stdout <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="va">ipc_time</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="va">ipc_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
+<span>      <span class="st">"SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)"</span>,</span>
+<span>      <span class="va">sleep_rows</span></span>
 <span>    <span class="op">)</span></span>
-<span>  <span class="op">}</span>, <span class="va">payloads</span>, <span class="va">ns</span><span class="op">)</span></span>
-<span>  <span class="va">par_payloads</span> <span class="op">&lt;-</span> <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/value.html" class="external-link">value</a></span><span class="op">(</span><span class="va">futures</span>, stdout <span class="op">=</span> <span class="cn">FALSE</span>, signal <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
 <span></span>
+<span><span class="va">ipc_explain</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_sleep_plus_one"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  rows <span class="op">=</span> <span class="va">n</span>,</span>
-<span>  chunks <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">chunks</span><span class="op">)</span>,</span>
-<span>  workers <span class="op">=</span> <span class="va">workers</span>,</span>
-<span>  sequential_s <span class="op">=</span> <span class="va">seq_time</span>,</span>
-<span>  parallel_s <span class="op">=</span> <span class="va">par_time</span>,</span>
-<span>  speedup <span class="op">=</span> <span class="va">seq_time</span> <span class="op">/</span> <span class="va">par_time</span></span>
+<span>  rows <span class="op">=</span> <span class="va">sleep_rows</span>,</span>
+<span>  result <span class="op">=</span> <span class="va">ipc_result</span><span class="op">$</span><span class="va">x</span>,</span>
+<span>  elapsed_s <span class="op">=</span> <span class="va">ipc_time</span>,</span>
+<span>  arrow_ipc_chunks <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">arrow_ipc_chunks</span>,</span>
+<span>  collect_batches <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_batches</span>,</span>
+<span>  collect_requests <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_requests</span>,</span>
+<span>  collect_max_batch <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_max_batch</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt;   rows chunks workers sequential_s parallel_s  speedup</span></span>
-<span><span class="co">#&gt; 1 8192      8       4        1.045      0.295 3.542373</span></span></code></pre></div>
-<p>The same benchmark is available as <code>tools/benchmark_owned_ipc_pipeline.R</code> for repeatable source-checkout runs. Results depend on provider, workload, chunk size, and worker startup state.</p>
+<span><span class="co">#&gt;   rows   result elapsed_s arrow_ipc_chunks collect_batches collect_requests</span></span>
+<span><span class="co">#&gt; 1 8192 33558528     0.468                4               4                4</span></span>
+<span><span class="co">#&gt;   collect_max_batch</span></span>
+<span><span class="co">#&gt; 1                 1</span></span></code></pre></div>
+<p><code>tools/benchmark_owned_ipc_pipeline.R</code> is a separate source-checkout benchmark for the planned owned prechunk pipeline. It deliberately does not benchmark the synchronous DuckDB scalar-UDF callback path shown above.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
@@ -957,10 +925,10 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_rng() AS x FROM range(3)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;            x</span></span>
-<span><span class="co">#&gt; 1 0.07729825</span></span>
-<span><span class="co">#&gt; 2 0.15246686</span></span>
-<span><span class="co">#&gt; 3 0.63664303</span></span></code></pre></div>
+<span><span class="co">#&gt;           x</span></span>
+<span><span class="co">#&gt; 1 0.6775328</span></span>
+<span><span class="co">#&gt; 2 0.4273457</span></span>
+<span><span class="co">#&gt; 3 0.9103805</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>

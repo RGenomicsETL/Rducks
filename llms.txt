@@ -100,8 +100,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        301ms      3.29    1.97MB
-#> 2 vectorized    248ms      3.98    2.34MB
+#> 1 scalar        291ms      3.41    1.97MB
+#> 2 vectorized    230ms      4.30    2.34MB
 ```
 
 ## Execution plans
@@ -175,7 +175,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:18:49
+#> 1 2026-05-04 22:23:58
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -224,90 +224,58 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 #> 1                5                    5                     5
 ```
 
-The owned-task shape is what allows real worker parallelism: encode
-every input chunk to an owned Arrow IPC payload, submit all tasks, then
-collect owned Arrow IPC result payloads.
+This timing probe registers a vectorized R function that sleeps once per
+DuckDB chunk, runs it through DuckDB SQL, and reports the native RIPC
+counters.
 
 ``` r
 
-workers <- 4L
-n <- 8192L
-chunk_size <- 1024L
-sleep_s <- 0.1
+sleep_rows <- 8192L
+sleep_s <- 0.02
 
-# Benchmark-only Future polling tweak: small worker tasks can finish before
-# the default polling interval notices them. This reduces wait latency; it is
-# not required for Rducks correctness or for real parallelism.
-options(future.wait.interval = 0.001, future.wait.alpha = 1.01)
-future::plan(future.mirai::mirai_multisession, workers = workers)
-# Warm workers so the measurement reflects chunk scheduling, not startup.
-invisible(future::value(future::future(NULL)))
-
-rows <- 0:(n - 1L)
-chunks <- split(rows, ceiling(seq_along(rows) / chunk_size))
-ns <- lengths(chunks)
-
-encode_input <- function(x) {
-  Rducks:::rducks_arrow_ipc_encode(
-    nanoarrow::as_nanoarrow_array(data.frame(arg1 = as.integer(x)))
-  )
-}
-
-output_schema_spec <- Rducks:::rducks_arrow_schema_to_spec(
-  nanoarrow::infer_nanoarrow_schema(data.frame(result = integer()))
+reg_ipc_sleep <- rducks_register(
+  con,
+  name = "r_ipc_sleep_plus_one",
+  fun = function(x) {
+    Sys.sleep(sleep_s)
+    x + 1L
+  },
+  args = INTEGER,
+  returns = INTEGER,
+  mode = "vectorized",
+  side_effects = TRUE
 )
 
-worker_eval <- function(payload, n_rows) {
-  Rducks:::rducks_future_worker_eval_arrow_ipc_chunk(
-    input_payload = payload,
-    output_schema_spec = output_schema_spec,
-    n = n_rows,
-    fun = function(x) {
-      Sys.sleep(sleep_s)
-      x + 1L
-    },
-    arg_types = list(INTEGER),
-    return_type = INTEGER,
-    null_handling = "default",
-    exception_handling = "rethrow",
-    mode = "vectorized"
-  )
-}
-
-payloads <- lapply(chunks, encode_input)
-
-seq_time <- system.time({
-  seq_payloads <- Map(worker_eval, payloads, ns)
-})[["elapsed"]]
-
-par_time <- system.time({
-  futures <- Map(function(payload, n_rows) {
-    future::future(
-      worker_eval(payload, n_rows),
-      globals = list(worker_eval = worker_eval, payload = payload, n_rows = n_rows),
-      packages = "Rducks",
-      stdout = FALSE
+ipc_time <- system.time({
+  ipc_result <- dbGetQuery(
+    con,
+    sprintf(
+      "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
+      sleep_rows
     )
-  }, payloads, ns)
-  par_payloads <- future::value(futures, stdout = FALSE, signal = FALSE)
+  )
 })[["elapsed"]]
 
+ipc_explain <- rducks_explain_udf(con, "r_ipc_sleep_plus_one")
 data.frame(
-  rows = n,
-  chunks = length(chunks),
-  workers = workers,
-  sequential_s = seq_time,
-  parallel_s = par_time,
-  speedup = seq_time / par_time
+  rows = sleep_rows,
+  result = ipc_result$x,
+  elapsed_s = ipc_time,
+  arrow_ipc_chunks = ipc_explain$arrow_ipc_chunks,
+  collect_batches = ipc_explain$ripc_collect_batches,
+  collect_requests = ipc_explain$ripc_collect_requests,
+  collect_max_batch = ipc_explain$ripc_collect_max_batch
 )
-#>   rows chunks workers sequential_s parallel_s  speedup
-#> 1 8192      8       4        1.045      0.295 3.542373
+#>   rows   result elapsed_s arrow_ipc_chunks collect_batches collect_requests
+#> 1 8192 33558528     0.468                4               4                4
+#>   collect_max_batch
+#> 1                 1
 ```
 
-The same benchmark is available as
-`tools/benchmark_owned_ipc_pipeline.R` for repeatable source-checkout
-runs. Results depend on provider, workload, chunk size, and worker
-startup state.
+`tools/benchmark_owned_ipc_pipeline.R` is a separate source-checkout
+benchmark for the planned owned prechunk pipeline. It deliberately does
+not benchmark the synchronous DuckDB scalar-UDF callback path shown
+above.
 
 ## Current scope
 
@@ -621,10 +589,10 @@ reg_rng <- rducks_register(
 )
 
 dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
-#>            x
-#> 1 0.07729825
-#> 2 0.15246686
-#> 3 0.63664303
+#>           x
+#> 1 0.6775328
+#> 2 0.4273457
+#> 3 0.9103805
 ```
 
 ## Build notes
