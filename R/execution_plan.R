@@ -231,29 +231,13 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 }
 
 rducks_arrow_ipc_mapping_supported <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
-  kind <- rducks_type_kind(type)
-  if (identical(kind, "enum")) {
-    return(FALSE)
-  }
-  children <- rducks_type_children(type)
-  if (length(children)) {
-    return(all(vapply(children, rducks_arrow_ipc_mapping_supported, logical(1))))
-  }
+  if (!inherits(type, "rducks_type")) invisible(rducks_type_object(type))
   TRUE
 }
 
 rducks_arrow_ipc_unsupported_types <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
-  if (rducks_arrow_ipc_mapping_supported(type)) {
-    return(character())
-  }
-  children <- rducks_type_children(type)
-  if (length(children)) {
-    out <- unique(unlist(lapply(children, rducks_arrow_ipc_unsupported_types), use.names = FALSE))
-    if (length(out)) return(out)
-  }
-  rducks_type_duckdb_sql(type)
+  if (!inherits(type, "rducks_type")) invisible(rducks_type_object(type))
+  character()
 }
 
 rducks_validate_execution_plan_for_registration <- function(plan, spec) {

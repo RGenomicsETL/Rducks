@@ -167,6 +167,11 @@ Additional multiprocess cases:
 
 - request payload is Arrow IPC bytes, not R `serialize()` output;
 - result payload is Arrow IPC bytes;
+- declared `ENUM(...)` payloads use Rducks' explicit enum-storage convention:
+  the Arrow IPC stream carries the DuckDB enum storage indices as ordinary
+  integer arrays, while the declared type descriptor carries the dictionary
+  levels. This is not general Arrow dictionary IPC support and must not be used
+  for arbitrary dictionary arrays;
 - worker errors propagate with function name, chunk/request id, and original R
   condition text where possible;
 - worker crash/timeout/cancellation returns a deterministic query error;

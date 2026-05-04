@@ -6,7 +6,9 @@
   queued native path splits submit and collect phases so multiple queued chunk
   tasks can be outstanding before results are collected when DuckDB provides
   concurrent UDF callbacks. `rducks_explain_udf()` now reports RIPC collect
-  batch counters for diagnosing whether chunks are actually overlapping.
+  batch counters for diagnosing whether chunks are actually overlapping. Enum
+  arguments and returns are supported through an explicit Rducks enum-storage
+  IPC convention.
 - Added an internal `%||%` compatibility shim so the package works under the
   lowered R 4.3 dependency floor.
 - Implemented `arrow_c + vectorized` registrations for both `serial` and

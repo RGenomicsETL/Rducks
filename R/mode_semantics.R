@@ -23,7 +23,7 @@ rducks_mode_semantics_rows <- list(
     error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
     threading = "same execution-plan threading rules as scalar mode for arrow_r/arrow_c; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend",
     copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport",
-    notes = "batch/chunk call-shape used by the Future-based Arrow IPC backend; zero-argument vectorized UDFs are not exposed yet; production multiprocess speed should use an owned prechunk pipeline"
+    notes = "batch/chunk call-shape used by the Future-based Arrow IPC backend; zero-argument vectorized UDFs are not exposed yet; best throughput comes from workloads that keep multiple chunk tasks in flight"
   )
 )
 

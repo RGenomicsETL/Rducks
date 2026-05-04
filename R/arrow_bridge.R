@@ -566,6 +566,72 @@ rducks_arrow_import_schema <- function(type, output_schema) {
   schema
 }
 
+rducks_arrow_type_contains_enum <- function(type) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  if (inherits(type, "rducks_enum_type")) {
+    return(TRUE)
+  }
+  children <- rducks_type_children(type)
+  length(children) > 0L && any(vapply(children, rducks_arrow_type_contains_enum, logical(1)))
+}
+
+rducks_arrow_ipc_storage_array_for_type <- function(type, array) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  out <- nanoarrow::as_nanoarrow_array(array)
+
+  if (inherits(type, "rducks_enum_type")) {
+    out$dictionary <- NULL
+    return(out)
+  }
+
+  if (inherits(type, c("rducks_list_type", "rducks_array_type"))) {
+    out$children[[1L]] <- rducks_arrow_ipc_storage_array_for_type(rducks_type_children(type)[[1L]], out$children[[1L]])
+    return(out)
+  }
+
+  if (inherits(type, "rducks_struct_type")) {
+    children <- rducks_type_children(type)
+    for (i in seq_along(children)) {
+      out$children[[i]] <- rducks_arrow_ipc_storage_array_for_type(children[[i]], out$children[[i]])
+    }
+    return(out)
+  }
+
+  if (inherits(type, "rducks_map_type")) {
+    children <- rducks_type_children(type)
+    entries <- out$children[[1L]]
+    entries$children[[1L]] <- rducks_arrow_ipc_storage_array_for_type(children[[1L]], entries$children[[1L]])
+    entries$children[[2L]] <- rducks_arrow_ipc_storage_array_for_type(children[[2L]], entries$children[[2L]])
+    out$children[[1L]] <- entries
+    return(out)
+  }
+
+  if (inherits(type, "rducks_union_type")) {
+    children <- rducks_type_children(type)
+    for (i in seq_along(children)) {
+      out$children[[i]] <- rducks_arrow_ipc_storage_array_for_type(children[[i]], out$children[[i]])
+    }
+    return(out)
+  }
+
+  out
+}
+
+rducks_arrow_ipc_storage_input <- function(arg_types, input_array, input_schema) {
+  if (!length(arg_types) || !any(vapply(arg_types, rducks_arrow_type_contains_enum, logical(1)))) {
+    return(list(array = input_array, schema = input_schema))
+  }
+
+  schema <- nanoarrow::as_nanoarrow_schema(input_schema)
+  array <- nanoarrow::as_nanoarrow_array(input_array)
+  for (i in seq_along(arg_types)) {
+    schema$children[[i]] <- rducks_arrow_import_child_schema(arg_types[[i]], schema$children[[i]])
+    array$children[[i]] <- rducks_arrow_ipc_storage_array_for_type(arg_types[[i]], array$children[[i]])
+  }
+  nanoarrow::nanoarrow_array_set_schema(array, schema)
+  list(array = array, schema = schema)
+}
+
 rducks_arrow_scalar_array_to_values <- S7::new_generic(
   "rducks_arrow_scalar_array_to_values",
   "type",
@@ -1621,7 +1687,8 @@ rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, inpu
   if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
     stop("output nanoarrow schema pointer is not valid", call. = FALSE)
   }
-  input_payload <- rducks_arrow_ipc_encode(input_array)
+  storage_input <- rducks_arrow_ipc_storage_input(engine$arg_types, input_array, input_schema)
+  input_payload <- rducks_arrow_ipc_encode(storage_input$array)
   output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
   rducks_future_start_vectorized_chunk(engine, input_payload, output_schema_spec, n)
 }

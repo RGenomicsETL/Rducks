@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        296ms      3.38    1.97MB
-#> 2 vectorized    240ms      4.15    2.34MB
+#> 1 scalar        290ms      3.48    1.97MB
+#> 2 vectorized    231ms      4.33    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 21:18:06
+#> 1 2026-05-04 22:11:05
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -187,7 +187,7 @@ vectorized mode calls the R function once per chunk inside the worker
 process. Configure the Future backend before executing queries.
 
 ``` r
-future::plan(future::multisession, workers = 2)
+future::plan(future.mirai::mirai_multisession, workers = 2)
 
 plan <- rducks_execution_plan(
   "arrow_ipc", "multiprocess_parallel",
@@ -196,7 +196,7 @@ plan <- rducks_execution_plan(
 )
 rducks_set_execution_plan(con, plan)
 
-rducks_register(
+reg_ipc_plus_one <- rducks_register(
   con,
   name = "r_ipc_plus_one",
   fun = function(x) x + 1L,
@@ -207,21 +207,95 @@ rducks_register(
 )
 
 dbGetQuery(con, "SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)")
-rducks_explain_udf(con, "r_ipc_plus_one")
+#>          x
+#> 1 50005000
+rducks_explain_udf(con, "r_ipc_plus_one")[, c(
+  "name", "mode", "plan_id", "evaluator",
+  "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests"
+)]
+#>             name       mode                         plan_id evaluator
+#> 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC
+#>   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
+#> 1                5                    5                     5
 ```
 
-For throughput-oriented experiments, Rducks also includes a development
-benchmark that owns chunk payloads before submission and keeps multiple
-Future workers busy:
+The owned-task shape is what allows real worker parallelism: encode
+every input chunk to an owned Arrow IPC payload, submit all tasks, then
+collect owned Arrow IPC result payloads.
 
-``` sh
-Rscript tools/benchmark_owned_ipc_pipeline.R
+``` r
+workers <- 4L
+n <- 8192L
+chunk_size <- 1024L
+sleep_s <- 0.1
+
+future::plan(future.mirai::mirai_multisession, workers = workers)
+
+rows <- 0:(n - 1L)
+chunks <- split(rows, ceiling(seq_along(rows) / chunk_size))
+ns <- lengths(chunks)
+
+encode_input <- function(x) {
+  Rducks:::rducks_arrow_ipc_encode(
+    nanoarrow::as_nanoarrow_array(data.frame(arg1 = as.integer(x)))
+  )
+}
+
+output_schema_spec <- Rducks:::rducks_arrow_schema_to_spec(
+  nanoarrow::infer_nanoarrow_schema(data.frame(result = integer()))
+)
+
+worker_eval <- function(payload, n_rows) {
+  Rducks:::rducks_future_worker_eval_arrow_ipc_chunk(
+    input_payload = payload,
+    output_schema_spec = output_schema_spec,
+    n = n_rows,
+    fun = function(x) {
+      Sys.sleep(sleep_s)
+      x + 1L
+    },
+    arg_types = list(INTEGER),
+    return_type = INTEGER,
+    null_handling = "default",
+    exception_handling = "rethrow",
+    mode = "vectorized"
+  )
+}
+
+payloads <- lapply(chunks, encode_input)
+
+seq_time <- system.time({
+  seq_payloads <- Map(worker_eval, payloads, ns)
+})[["elapsed"]]
+
+par_time <- system.time({
+  futures <- Map(function(payload, n_rows) {
+    future::future(
+      worker_eval(payload, n_rows),
+      globals = list(worker_eval = worker_eval, payload = payload, n_rows = n_rows),
+      packages = "Rducks",
+      stdout = FALSE
+    )
+  }, payloads, ns)
+  par_payloads <- future::value(futures, stdout = FALSE, signal = FALSE)
+})[["elapsed"]]
+
+data.frame(
+  rows = n,
+  chunks = length(chunks),
+  workers = workers,
+  sequential_s = seq_time,
+  parallel_s = par_time,
+  speedup = seq_time / par_time
+)
+#>   rows chunks workers sequential_s parallel_s  speedup
+#> 1 8192      8       4        1.068      1.064 1.003759
 ```
 
-On this machine, the owned Arrow IPC pipeline with 4 `future.mirai`
-workers and 8 chunks sleeping for 0.1 seconds ran about 4x faster than
-the sequential worker loop. Results depend on provider, workload, chunk
-size, and worker startup state.
+The same benchmark is available as
+`tools/benchmark_owned_ipc_pipeline.R` for repeatable source-checkout
+runs. Results depend on provider, workload, chunk size, and worker
+startup state.
 
 ## Current scope
 
@@ -238,10 +312,15 @@ inputs and outputs are accepted as constructed type objects such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types.
 
-`arrow_ipc` currently excludes DuckDB dictionary-backed enum IPC because
-the nanoarrow IPC writer used here does not encode dictionary arrays.
-Rducks rejects those registrations instead of falling back to another
-marshalling path.
+Enum types are supported by all implemented execution plans. For
+`arrow_ipc`, Rducks does not rely on general Arrow dictionary IPC
+because the nanoarrow C IPC writer used by this path does not yet encode
+dictionary arrays. Instead, enum payloads use the declared Rducks type
+descriptor as the dictionary sidecar and serialize the DuckDB enum
+storage indices as ordinary Arrow integer arrays. This is an explicit
+Rducks wire convention for declared `ENUM(...)` types, not general
+support for arbitrary Arrow dictionary arrays. A future same-host
+payload mode such as `mori` may optimize this path further.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values: `rducks_bigint()`, `rducks_ubigint()`,
@@ -520,9 +599,9 @@ reg_rng <- rducks_register(
 
 dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 #>           x
-#> 1 0.2655087
-#> 2 0.3721239
-#> 3 0.5728534
+#> 1 0.8874720
+#> 2 0.8184697
+#> 3 0.3346775
 ```
 
 ## Build notes
