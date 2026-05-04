@@ -151,6 +151,42 @@ main R lane; real parallel R evaluation belongs to an out-of-process
   - Current constants: `RDUCKS_QUEUE_WAIT_MS`, `RDUCKS_QUEUE_TIMEOUT_TICKS`.
   - Acceptance: docs and tests cover timeout error text and counter increments.
 
+## Unified task scheduling model
+
+The same-process queue and future `multiprocess_parallel` backend should share a
+chunk-task abstraction. The semantic difference is not UDF registration; it is
+how a prepared chunk task is submitted, progressed, waited on, collected, and
+written back.
+
+Important boundary: DuckDB scalar UDF callbacks are synchronous. The
+`duckdb_vector` output is only valid during that callback, so even a
+non-blocking multiprocess submission must be collected and written back before
+that callback returns. Non-blocking submission means multiple outstanding chunk
+futures can overlap across DuckDB callbacks/workers or a broker loop; it does
+not mean returning to DuckDB before output is ready.
+
+- [ ] **P2** Define a shared `rducks_chunk_task` lifecycle.
+  - Proposed states: prepared, submitted, running, completed, writeback_done,
+    cancelled, failed.
+  - Payload variants: borrowed same-callback DuckDB chunk, owned native snapshot,
+    Arrow IPC bytes.
+  - Result variants: direct DuckDB output reference for synchronous callbacks,
+    owned native result, Arrow IPC result bytes.
+- [ ] **P2** Refactor the in-process queue onto the shared scheduler interface.
+  - `serial`: execute inline on the main R lane.
+  - `inproc_concurrent`: enqueue task to main-lane executor, wait with timeout,
+    and drain/progress only on the recorded main R lane.
+- [ ] **P3** Plug `multiprocess_parallel` into the same scheduler interface.
+  - `submit`: send owned Arrow IPC task bytes to a worker without R API calls in
+    DuckDB worker threads.
+  - `progress`: poll sockets/process workers and complete futures.
+  - `collect`: decode owned Arrow IPC result bytes.
+  - `writeback`: fill the DuckDB output vector before the scalar callback
+    returns.
+- [ ] **P2** Keep counters at the scheduler boundary.
+  - Acceptance: the same counters can report submitted, completed, queued,
+    timed out, cancelled, `arrow_r`, `arrow_c`, and `arrow_ipc` chunk paths.
+
 ## Native `arrow_c` work
 
 - [x] Scalar `arrow_c` direct-buffer evaluator for implemented types.
