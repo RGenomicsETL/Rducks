@@ -205,14 +205,13 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 ```
 
 The `ripc_collect_max_batch` counter is deliberately shown here. A value of `1`
-means the scalar-UDF callback integration submitted and collected one borrowed
-DuckDB callback chunk at a time, because DuckDB requires the output vector to be
-filled before the callback returns. That path is useful for UDF integration and
-correctness tests, but it is not the multiprocess throughput benchmark.
+means this registered-UDF path submitted and waited for one DuckDB callback chunk
+at a time. That is a correctness/diagnostic example, not a speed benchmark.
 
-The throughput-oriented path is the owned prechunk Arrow IPC pipeline in
-`tools/benchmark_owned_ipc_pipeline.R`: it owns input and result chunks before
-worker submission, so multiple Future tasks can be outstanding at once.
+Parallel speedups require a different shape: first split/copy the input into
+owned Arrow IPC chunks, then submit many chunks to workers at once. A synchronous
+DuckDB scalar-UDF callback cannot do that because it must fill its current output
+vector before returning.
 
 ```{r reset-after-ipc, include=FALSE}
 rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
