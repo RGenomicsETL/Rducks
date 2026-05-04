@@ -100,8 +100,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        295ms      3.36    1.97MB
-#> 2 vectorized    238ms      4.16    2.34MB
+#> 1 scalar        294ms      3.38    1.97MB
+#> 2 vectorized    234ms      4.24    2.34MB
 ```
 
 ## Execution plans
@@ -175,7 +175,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:39:45
+#> 1 2026-05-04 22:49:58
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -216,100 +216,28 @@ dbGetQuery(con, "SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) A
 #> 1 50005000
 rducks_explain_udf(con, "r_ipc_plus_one")[, c(
   "name", "mode", "plan_id", "evaluator",
-  "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests"
+  "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests",
+  "ripc_collect_max_batch"
 )]
 #>             name       mode                         plan_id evaluator
 #> 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC
 #>   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
 #> 1                5                    5                     5
-```
-
-This benchmark compares two real DuckDB R UDF implementations with the
-same R function and SQL workload: the reference in-process
-`arrow_r + serial` path and the current Future-backed
-`arrow_ipc + multiprocess_parallel` callback path. The counter table is
-part of the benchmark: it shows whether the requested evaluator actually
-ran and whether the callback path batched more than one outstanding RIPC
-request.
-
-``` r
-
-sleep_rows <- 8192L
-sleep_s <- 0.02
-sleep_fun <- function(x) {
-  Sys.sleep(sleep_s)
-  x + 1L
-}
-
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
-reg_serial_sleep <- rducks_register(
-  con,
-  name = "r_serial_sleep_plus_one",
-  fun = sleep_fun,
-  args = INTEGER,
-  returns = INTEGER,
-  mode = "vectorized",
-  side_effects = TRUE
-)
-
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
-reg_ipc_sleep <- rducks_register(
-  con,
-  name = "r_ipc_sleep_plus_one",
-  fun = sleep_fun,
-  args = INTEGER,
-  returns = INTEGER,
-  mode = "vectorized",
-  side_effects = TRUE
-)
-
-serial_sql <- sprintf(
-  "SELECT sum(r_serial_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
-  sleep_rows
-)
-ipc_sql <- sprintf(
-  "SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)",
-  sleep_rows
-)
-
-sleep_bench <- bench::mark(
-  arrow_r_serial = DBI::dbGetQuery(con, serial_sql),
-  arrow_ipc_multiprocess = DBI::dbGetQuery(con, ipc_sql),
-  iterations = 3,
-  check = TRUE
-)
-sleep_bench[, c("expression", "median", "itr/sec", "mem_alloc")]
-#> # A tibble: 2 × 4
-#>   expression               median `itr/sec` mem_alloc
-#>   <bch:expr>             <bch:tm>     <dbl> <bch:byt>
-#> 1 arrow_r_serial            276ms      3.57    1005KB
-#> 2 arrow_ipc_multiprocess    472ms      2.11     291MB
-
-rbind(
-  rducks_explain_udf(con, "r_serial_sleep_plus_one"),
-  rducks_explain_udf(con, "r_ipc_sleep_plus_one")
-)[, c(
-  "name", "plan_id", "evaluator", "arrow_r_chunks", "arrow_ipc_chunks",
-  "ripc_collect_batches", "ripc_collect_requests", "ripc_collect_max_batch"
-)]
-#>                      name                         plan_id evaluator
-#> 1 r_serial_sleep_plus_one                  arrow_r+serial         R
-#> 2    r_ipc_sleep_plus_one arrow_ipc+multiprocess_parallel      RIPC
-#>   arrow_r_chunks arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
-#> 1             16                0                    0                     0
-#> 2              0               16                   16                    16
 #>   ripc_collect_max_batch
-#> 1                      0
-#> 2                      1
+#> 1                      1
 ```
 
-In the current scalar-UDF callback path, `ripc_collect_max_batch = 1` is
-the important scheduling result: each callback must fill its DuckDB
-output vector before returning, so it cannot be treated as the
-production multiprocess throughput path.
-`tools/benchmark_owned_ipc_pipeline.R` is the owned prechunk pipeline
-implementation used for source-checkout benchmarking: input chunks and
-result chunks are owned before worker submission.
+The `ripc_collect_max_batch` counter is deliberately shown here. A value
+of `1` means the scalar-UDF callback integration submitted and collected
+one borrowed DuckDB callback chunk at a time, because DuckDB requires
+the output vector to be filled before the callback returns. That path is
+useful for UDF integration and correctness tests, but it is not the
+multiprocess throughput benchmark.
+
+The throughput-oriented path is the owned prechunk Arrow IPC pipeline in
+`tools/benchmark_owned_ipc_pipeline.R`: it owns input and result chunks
+before worker submission, so multiple Future tasks can be outstanding at
+once.
 
 ## Current scope
 
