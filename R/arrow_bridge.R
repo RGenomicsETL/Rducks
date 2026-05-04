@@ -1642,7 +1642,7 @@ rducks_future_start_vectorized_chunk <- function(engine, input_payload, output_s
   globals <- rducks_future_required_globals(environment(), opts$globals)
   future::future(
     {
-      worker_eval <- getFromNamespace("rducks_future_worker_eval_arrow_ipc_chunk", "Rducks")
+      worker_eval <- utils::getFromNamespace("rducks_future_worker_eval_arrow_ipc_chunk", "Rducks")
       worker_eval(
         input_payload = input_payload,
         output_schema_spec = output_schema_spec,

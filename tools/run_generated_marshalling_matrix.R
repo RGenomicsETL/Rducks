@@ -17,6 +17,12 @@ old_future_plan <- future::plan()
 on.exit(future::plan(old_future_plan), add = TRUE)
 if (include_ipc) {
   future::plan(future::multisession, workers = future_workers)
+  if (!isTRUE(Rducks:::rducks_arrow_ipc_mapping_supported(INTEGER))) {
+    stop("Arrow IPC matrix smoke check failed: INTEGER mapping is not supported", call. = FALSE)
+  }
+  if (!identical(Rducks:::rducks_arrow_ipc_unsupported_types(INTEGER), character())) {
+    stop("Arrow IPC matrix smoke check failed: INTEGER reported as unsupported", call. = FALSE)
+  }
 }
 
 con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
