@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        291ms      3.41    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    230ms      4.30    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        293ms      3.38    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    238ms      4.18    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:23:58</span></span>
+<span><span class="co">#&gt; 1 2026-05-04 22:28:22</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -258,48 +258,75 @@
 <span><span class="co">#&gt; 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests</span></span>
 <span><span class="co">#&gt; 1                5                    5                     5</span></span></code></pre></div>
-<p>This timing probe registers a vectorized R function that sleeps once per DuckDB chunk, runs it through DuckDB SQL, and reports the native RIPC counters.</p>
+<p>This timing probe compares two real DuckDB R UDF registrations with the same R function and SQL workload: the reference in-process <code>arrow_r + serial</code> path and the current Future-backed <code>arrow_ipc + multiprocess_parallel</code> callback path.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">sleep_rows</span> <span class="op">&lt;-</span> <span class="fl">8192L</span></span>
 <span><span class="va">sleep_s</span> <span class="op">&lt;-</span> <span class="fl">0.02</span></span>
+<span><span class="va">sleep_fun</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="va">sleep_s</span><span class="op">)</span></span>
+<span>  <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
+<span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">reg_ipc_sleep</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">reg_serial_sleep</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_ipc_sleep_plus_one"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="va">sleep_s</span><span class="op">)</span></span>
-<span>    <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
-<span>  <span class="op">}</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_serial_sleep_plus_one"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="va">sleep_fun</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">ipc_time</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">ipc_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span></span>
-<span>    <span class="va">con</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
-<span>      <span class="st">"SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)"</span>,</span>
-<span>      <span class="va">sleep_rows</span></span>
-<span>    <span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
-<span></span>
-<span><span class="va">ipc_explain</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_sleep_plus_one"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  rows <span class="op">=</span> <span class="va">sleep_rows</span>,</span>
-<span>  result <span class="op">=</span> <span class="va">ipc_result</span><span class="op">$</span><span class="va">x</span>,</span>
-<span>  elapsed_s <span class="op">=</span> <span class="va">ipc_time</span>,</span>
-<span>  arrow_ipc_chunks <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">arrow_ipc_chunks</span>,</span>
-<span>  collect_batches <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_batches</span>,</span>
-<span>  collect_requests <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_requests</span>,</span>
-<span>  collect_max_batch <span class="op">=</span> <span class="va">ipc_explain</span><span class="op">$</span><span class="va">ripc_collect_max_batch</span></span>
+<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">reg_ipc_sleep</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_ipc_sleep_plus_one"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="va">sleep_fun</span>,</span>
+<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
+<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt;   rows   result elapsed_s arrow_ipc_chunks collect_batches collect_requests</span></span>
-<span><span class="co">#&gt; 1 8192 33558528     0.468                4               4                4</span></span>
-<span><span class="co">#&gt;   collect_max_batch</span></span>
-<span><span class="co">#&gt; 1                 1</span></span></code></pre></div>
+<span></span>
+<span><span class="va">serial_sql</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
+<span>  <span class="st">"SELECT sum(r_serial_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)"</span>,</span>
+<span>  <span class="va">sleep_rows</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">ipc_sql</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
+<span>  <span class="st">"SELECT sum(r_ipc_sleep_plus_one(i::INTEGER)) AS x FROM range(%d) AS t(i)"</span>,</span>
+<span>  <span class="va">sleep_rows</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">sleep_bench</span> <span class="op">&lt;-</span> <span class="fu">bench</span><span class="fu">::</span><span class="fu"><a href="https://bench.r-lib.org/reference/mark.html" class="external-link">mark</a></span><span class="op">(</span></span>
+<span>  arrow_r_serial <span class="op">=</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">serial_sql</span><span class="op">)</span>,</span>
+<span>  arrow_ipc_multiprocess <span class="op">=</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">ipc_sql</span><span class="op">)</span>,</span>
+<span>  iterations <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  check <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">sleep_bench</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"expression"</span>, <span class="st">"median"</span>, <span class="st">"itr/sec"</span>, <span class="st">"mem_alloc"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
+<span><span class="co">#&gt;   expression               median `itr/sec` mem_alloc</span></span>
+<span><span class="co">#&gt;   &lt;bch:expr&gt;             &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
+<span><span class="co">#&gt; 1 arrow_r_serial            276ms      3.57    1005KB</span></span>
+<span><span class="co">#&gt; 2 arrow_ipc_multiprocess    475ms      2.10     291MB</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_serial_sleep_plus_one"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_sleep_plus_one"</span><span class="op">)</span></span>
+<span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>  <span class="st">"name"</span>, <span class="st">"plan_id"</span>, <span class="st">"evaluator"</span>, <span class="st">"arrow_r_chunks"</span>, <span class="st">"arrow_ipc_chunks"</span>,</span>
+<span>  <span class="st">"ripc_collect_batches"</span>, <span class="st">"ripc_collect_requests"</span>, <span class="st">"ripc_collect_max_batch"</span></span>
+<span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;                      name                         plan_id evaluator</span></span>
+<span><span class="co">#&gt; 1 r_serial_sleep_plus_one                  arrow_r+serial         R</span></span>
+<span><span class="co">#&gt; 2    r_ipc_sleep_plus_one arrow_ipc+multiprocess_parallel      RIPC</span></span>
+<span><span class="co">#&gt;   arrow_r_chunks arrow_ipc_chunks ripc_collect_batches ripc_collect_requests</span></span>
+<span><span class="co">#&gt; 1             16                0                    0                     0</span></span>
+<span><span class="co">#&gt; 2              0               16                   16                    16</span></span>
+<span><span class="co">#&gt;   ripc_collect_max_batch</span></span>
+<span><span class="co">#&gt; 1                      0</span></span>
+<span><span class="co">#&gt; 2                      1</span></span></code></pre></div>
 <p><code>tools/benchmark_owned_ipc_pipeline.R</code> is a separate source-checkout benchmark for the planned owned prechunk pipeline. It deliberately does not benchmark the synchronous DuckDB scalar-UDF callback path shown above.</p>
 </div>
 <div class="section level2">
