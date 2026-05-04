@@ -7,7 +7,7 @@ PKGVERS := $(shell sed -n 's/Version: *\([^ ]*\)/\1/p' DESCRIPTION)
 USE_UNSTABLE_C_API ?= 1
 RDUCKS_EXTENSION_ABI_TYPE ?= C_STRUCT_UNSTABLE
 
-.PHONY: rd catalog test install check build clean
+.PHONY: rd rdm catalog test install check build clean
 
 rd:
 	Rscript -e 'roxygen2::roxygenize(load_code = "source")'
@@ -30,7 +30,8 @@ check: build
 	R CMD check $(PKGNAME)_$(PKGVERS).tar.gz
 
 rdm: install
-	Rscript -e 'rmarkdown::render("README.Rmd")'
+	Rscript -e 'rmarkdown::render("README.Rmd", output_format = rmarkdown::github_document(), quiet = TRUE)'
+	rm -f README.html
 
 clean:
 	./cleanup
