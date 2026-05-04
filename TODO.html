@@ -51,14 +51,14 @@
 <li>
 <strong>P1 correctness hardening</strong>: no-fallback tests, plan-transition tests, lifetime/GC tests, and native/R-thread boundary tests.</li>
 <li>
-<strong>P2 observability and ergonomics</strong>: listing UDFs, counter reset, README/docs examples, and richer diagnostics.</li>
+<strong>P2 observability and required feature gaps</strong>: listing UDFs, counter reset, README/docs examples, richer diagnostics, and planned <code>arrow_c</code> vectorized support.</li>
 <li>
-<strong>P3 future backends</strong>: owned queued boundaries, native vectorized <code>arrow_c</code>, and Arrow IPC multiprocess execution.</li>
+<strong>P3 future backends</strong>: owned queued boundaries and Arrow IPC multiprocess execution.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="current-baseline">Current baseline<a class="anchor" aria-label="anchor" href="#current-baseline"></a></h2>
 <ul><li><p>Code baseline validated before adding this tracker: <code>cfa8e2c Add UDF execution introspection</code>.</p></li>
-<li><p>Tracker commit: <code>06d6f3d Add implementation TODO tracker</code>.</p></li>
+<li><p>Initial tracker commit: <code>06d6f3d Add implementation TODO tracker</code>.</p></li>
 <li>
 <p>Locally validated at the code baseline:</p>
 <ul><li>
@@ -122,7 +122,8 @@
 <td>design-only</td>
 <td>design-only</td>
 <td>future out-of-process transport</td>
-</tr></tbody></table></div>
+</tr></tbody></table><p>The current <code>arrow_c</code> vectorized rejection is an implementation gap, not a final product goal. Target support includes both <code>arrow_c + serial + vectorized</code> and <code>arrow_c + inproc_concurrent + vectorized</code>, with the same no-fallback and one-R-call-per-DuckDB-chunk semantics as <code>arrow_r</code> vectorized mode. If we add a true parallel <code>arrow_c</code> execution variant beyond same-process queued dispatch, it must get an explicit plan name and support matrix entry rather than being hidden under <code>serial</code>.</p>
+</div>
 <div class="section level2">
 <h2 id="immediate-release--infrastructure-follow-up">Immediate release / infrastructure follow-up<a class="anchor" aria-label="anchor" href="#immediate-release--infrastructure-follow-up"></a></h2>
 <ul class="task-list"><li>
@@ -208,9 +209,17 @@
 <h2 id="native-arrow_c-work">Native <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow_c-work"></a></h2>
 <ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Design native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
-<ul><li>Do not enable by removing guards.</li>
-<li>Acceptance: vectorized native path preserves chunk-call semantics, NULL semantics, exotic/composite values, and no-fallback counters.</li>
+<label><input type="checkbox"><strong>P2</strong> Implement native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
+<ul><li>Required combinations:
+<ul><li>
+<code>arrow_c + serial + vectorized</code> for direct single-lane chunk calls.</li>
+<li>
+<code>arrow_c + inproc_concurrent + vectorized</code> for same-process queued concurrent/parallel DuckDB scheduling while keeping R calls on the main R lane.</li>
+<li>a future explicitly named true-parallel native <code>arrow_c</code> variant if we can prove the hot path has no R API calls and no borrowed DuckDB/R lifetime hazards.</li>
+</ul></li>
+<li>Do not enable by removing guards; implement the native vectorized evaluator, registration validation, queue path, and counters together.</li>
+<li>Acceptance: vectorized native path preserves one R call per DuckDB chunk, strict return-length checks, default/special NULL semantics, exotic/composite values, and no-fallback counters.</li>
+<li>Acceptance: <code>arrow_c + inproc_concurrent + vectorized</code> increments <code>queued_chunks</code> and <code>arrow_c_chunks</code>, never <code>arrow_r_chunks</code>, and does not scalar-row-loop the chunk.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P3</strong> Split <code>arrow_c</code> into worker-safe native phases and R-thread phases.</label>

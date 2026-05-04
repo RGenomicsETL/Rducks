@@ -17,17 +17,18 @@ user-facing release notes stay in `NEWS.md`.
   the current API.
 - **P1 correctness hardening**: no-fallback tests, plan-transition
   tests, lifetime/GC tests, and native/R-thread boundary tests.
-- **P2 observability and ergonomics**: listing UDFs, counter reset,
-  README/docs examples, and richer diagnostics.
-- **P3 future backends**: owned queued boundaries, native vectorized
-  `arrow_c`, and Arrow IPC multiprocess execution.
+- **P2 observability and required feature gaps**: listing UDFs, counter
+  reset, README/docs examples, richer diagnostics, and planned `arrow_c`
+  vectorized support.
+- **P3 future backends**: owned queued boundaries and Arrow IPC
+  multiprocess execution.
 
 ## Current baseline
 
 - Code baseline validated before adding this tracker:
   `cfa8e2c Add UDF execution introspection`.
 
-- Tracker commit: `06d6f3d Add implementation TODO tracker`.
+- Initial tracker commit: `06d6f3d Add implementation TODO tracker`.
 
 - Locally validated at the code baseline:
 
@@ -75,6 +76,15 @@ These are guardrails, not TODO checkboxes.
 | `arrow_c + serial` | implemented | rejected | direct native scalar evaluator |
 | `arrow_c + inproc_concurrent` | implemented | rejected | queued same-process path |
 | `arrow_ipc + multiprocess_parallel` | design-only | design-only | future out-of-process transport |
+
+The current `arrow_c` vectorized rejection is an implementation gap, not
+a final product goal. Target support includes both
+`arrow_c + serial + vectorized` and
+`arrow_c + inproc_concurrent + vectorized`, with the same no-fallback
+and one-R-call-per-DuckDB-chunk semantics as `arrow_r` vectorized mode.
+If we add a true parallel `arrow_c` execution variant beyond
+same-process queued dispatch, it must get an explicit plan name and
+support matrix entry rather than being hidden under `serial`.
 
 ## Immediate release / infrastructure follow-up
 
@@ -197,12 +207,25 @@ requests.
 
 Scalar `arrow_c` direct-buffer evaluator for implemented types.
 
-**P3** Design native `arrow_c + vectorized` as a first-class
+**P2** Implement native `arrow_c + vectorized` as a first-class
 implementation.
 
-- Do not enable by removing guards.
-- Acceptance: vectorized native path preserves chunk-call semantics,
-  NULL semantics, exotic/composite values, and no-fallback counters.
+- Required combinations:
+  - `arrow_c + serial + vectorized` for direct single-lane chunk calls.
+  - `arrow_c + inproc_concurrent + vectorized` for same-process queued
+    concurrent/parallel DuckDB scheduling while keeping R calls on the
+    main R lane.
+  - a future explicitly named true-parallel native `arrow_c` variant if
+    we can prove the hot path has no R API calls and no borrowed
+    DuckDB/R lifetime hazards.
+- Do not enable by removing guards; implement the native vectorized
+  evaluator, registration validation, queue path, and counters together.
+- Acceptance: vectorized native path preserves one R call per DuckDB
+  chunk, strict return-length checks, default/special NULL semantics,
+  exotic/composite values, and no-fallback counters.
+- Acceptance: `arrow_c + inproc_concurrent + vectorized` increments
+  `queued_chunks` and `arrow_c_chunks`, never `arrow_r_chunks`, and does
+  not scalar-row-loop the chunk.
 
 **P3** Split `arrow_c` into worker-safe native phases and R-thread
 phases.
