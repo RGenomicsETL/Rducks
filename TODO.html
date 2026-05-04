@@ -289,6 +289,7 @@
 <li>
 <label><input type="checkbox"><strong>P3</strong> Keep Arrow IPC hot-path payloads as Arrow IPC bytes.</label>
 <ul><li>Acceptance: hot data path has tests or instrumentation proving it does not use R <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> / <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">unserialize()</a></code>.</li>
+<li>Current enum handling: declared <code>ENUM(...)</code> values use an explicit Rducks enum-storage convention over Arrow IPC integer arrays plus descriptor-carried levels, not general Arrow dictionary IPC.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P3</strong> Decide worker transport for the first MVP.</label>

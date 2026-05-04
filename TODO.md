@@ -349,6 +349,9 @@ phases.
 - Acceptance: hot data path has tests or instrumentation proving it does
   not use R [`serialize()`](https://rdrr.io/r/base/serialize.html) /
   [`unserialize()`](https://rdrr.io/r/base/serialize.html).
+- Current enum handling: declared `ENUM(...)` values use an explicit
+  Rducks enum-storage convention over Arrow IPC integer arrays plus
+  descriptor-carried levels, not general Arrow dictionary IPC.
 
 **P3** Decide worker transport for the first MVP.
 
