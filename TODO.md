@@ -12,6 +12,10 @@ user-facing release notes stay in `NEWS.md`.
 
 ## Priority lanes
 
+Current short-term scope: **coverage**. Do not start new backend design
+work until the implemented plan matrix is covered by local tests,
+generated matrix cases, CI, and semantic docs.
+
 - **P0 release gates**: r-universe/oldrelease/wasm status, package
   checks, and semantic text that prevents users from misunderstanding
   the current API.
@@ -36,6 +40,13 @@ user-facing release notes stay in `NEWS.md`.
   - `Rscript tools/run_generated_marshalling_matrix.R` OK: 472 cases
   - `make check` OK
   - local `ghcr.io/r-wasm/webr:main` + `rwasm::build()` OK
+
+- Latest local coverage validation after `arrow_c + vectorized` work:
+
+  - `make install` OK
+  - `make test` OK: 478 tinytest results
+  - `Rscript tools/run_generated_marshalling_matrix.R` OK: 706 cases
+  - `make check` OK
 
 - R-universe may lag GitHub pushes. Check the API before assuming
   oldrelease or wasm results include the latest commits:
@@ -73,22 +84,18 @@ These are guardrails, not TODO checkboxes.
 |----|----|----|----|
 | `arrow_r + serial` | implemented | implemented | semantic reference |
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process path |
-| `arrow_c + serial` | implemented | rejected | direct native scalar evaluator |
-| `arrow_c + inproc_concurrent` | implemented | rejected | queued same-process path |
+| `arrow_c + serial` | implemented | implemented | native scalar evaluator and `RCV` vectorized chunk evaluator |
+| `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process path, R callbacks still serialized on main R lane |
 | `arrow_ipc + multiprocess_parallel` | design-only | design-only | future out-of-process transport |
 
-The current `arrow_c` vectorized rejection is an implementation gap, not
-a final product goal. Target support includes both
-`arrow_c + serial + vectorized` and
-`arrow_c + inproc_concurrent + vectorized`, with the same no-fallback
-and one-R-call-per-DuckDB-chunk semantics as `arrow_r` vectorized mode.
+`arrow_c` vectorized mode now uses the `RCV` native evaluator token.
 In-process R callbacks cannot be truly parallel because R API work must
 stay on the recorded main R lane; real parallel R evaluation belongs to
 an out-of-process `arrow_ipc + multiprocess_parallel` plan.
 
 ## Immediate release / infrastructure follow-up
 
-**P0** Watch R-universe until it builds commit `06d6f3d` or later.
+**P0** Watch R-universe until it builds the current `main` commit.
 
 - Acceptance: R-universe API `RemoteSha` matches a current `main` commit
   and status is success.
@@ -97,12 +104,15 @@ an out-of-process `arrow_ipc + multiprocess_parallel` plan.
 - If wasm fails, fetch logs and update `configure` /
   `Dockerfile.webr-test`.
 
-**P1** Add or verify CI coverage for the generated marshalling matrix.
+Add or verify CI coverage for the generated marshalling matrix.
 
 - Existing workflow:
   `.github/workflows/generated-marshalling-matrix.yaml`.
-- Acceptance: push/PR run executes all 472 generated cases or an
-  explicitly configured subset and uploads enough logs for failed cases.
+- Implemented: release and R 4.3 Linux matrix jobs run generated cases
+  with no-fallback counter assertions for `arrow_r` and `arrow_c`
+  vectorized paths.
+- Acceptance: push/PR run executes all generated cases or an explicitly
+  configured subset and uploads enough logs for failed cases.
 
 **P1** Add a CI/webR wasm build job or documented manual trigger.
 
@@ -119,11 +129,13 @@ Add per-UDF execution introspection.
 - Current counters: `dispatch_chunks`, `dispatch_rows`, `direct_chunks`,
   `queued_chunks`, `arrow_r_chunks`, `arrow_c_chunks`.
 
-**P1** Extend no-fallback tests to generated matrix cases.
+\[~\] **P1** Extend no-fallback tests to generated matrix cases.
 
-- Acceptance: every generated `arrow_r`/`arrow_c` conformance case
-  asserts the expected native counter moved and the other marshalling
+- Current status: generated vectorized conformance cases assert the
+  expected `arrow_r`/`arrow_c` counter moved and the other marshalling
   counter stayed zero.
+- Remaining acceptance: extend the same counter assertions to scalar
+  generated cases where native counters are meaningful.
 
 **P0** Decide and document whether marshalling is a registration-time
 snapshot or a query-time session choice.
@@ -136,10 +148,11 @@ snapshot or a query-time session choice.
 - Needed clarification: either make this the explicit public semantic or
   implement true query-time marshalling dispatch.
 
-**P2** Add `rducks_list_udfs()` or equivalent connection-level registry
-view.
+Add
+[`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
+connection-level registry view.
 
-- Acceptance: returns all UDFs registered through
+- Implemented: returns UDFs registered through
   [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   on the connection with mode, signature, plan snapshot, and counters.
 
@@ -278,22 +291,18 @@ explicit async DuckDB query handle.
 
 Scalar `arrow_c` direct-buffer evaluator for implemented types.
 
-**P2** Implement native `arrow_c + vectorized` as a first-class
-implementation.
+Implement native `arrow_c + vectorized` as a first-class implementation.
 
-- Required combinations:
+- Implemented combinations:
   - `arrow_c + serial + vectorized` for direct single-lane chunk calls.
   - `arrow_c + inproc_concurrent + vectorized` for same-process queued
     DuckDB scheduling while keeping all R callbacks serialized on the
     main R lane.
-- Do not enable by removing guards; implement the native vectorized
-  evaluator, registration validation, queue path, and counters together.
-- Acceptance: vectorized native path preserves one R call per DuckDB
-  chunk, strict return-length checks, default/special NULL semantics,
-  exotic/composite values, and no-fallback counters.
-- Acceptance: `arrow_c + inproc_concurrent + vectorized` increments
-  `queued_chunks` and `arrow_c_chunks`, never `arrow_r_chunks`, and does
-  not scalar-row-loop the chunk.
+- Current native evaluator token: `RCV`.
+- Validated: preserves one R call per DuckDB chunk, strict return-length
+  checks, default/special NULL semantics, and no-fallback counters for
+  covered tests; `inproc_concurrent` increments queued and `arrow_c`
+  counters.
 
 **P3** Split `arrow_c` into worker-safe native phases and R-thread
 phases.

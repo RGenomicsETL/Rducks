@@ -46,6 +46,7 @@
 </ul></div>
 <div class="section level2">
 <h2 id="priority-lanes">Priority lanes<a class="anchor" aria-label="anchor" href="#priority-lanes"></a></h2>
+<p>Current short-term scope: <strong>coverage</strong>. Do not start new backend design work until the implemented plan matrix is covered by local tests, generated matrix cases, CI, and semantic docs.</p>
 <ul><li>
 <strong>P0 release gates</strong>: r-universe/oldrelease/wasm status, package checks, and semantic text that prevents users from misunderstanding the current API.</li>
 <li>
@@ -68,6 +69,17 @@
 <li>
 <code>make check</code> OK</li>
 <li>local <code>ghcr.io/r-wasm/webr:main</code> + <code>rwasm::build()</code> OK</li>
+</ul></li>
+<li>
+<p>Latest local coverage validation after <code>arrow_c + vectorized</code> work:</p>
+<ul><li>
+<code>make install</code> OK</li>
+<li>
+<code>make test</code> OK: 478 tinytest results</li>
+<li>
+<code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 706 cases</li>
+<li>
+<code>make check</code> OK</li>
 </ul></li>
 <li>
 <p>R-universe may lag GitHub pushes. Check the API before assuming oldrelease or wasm results include the latest commits:</p>
@@ -112,30 +124,31 @@
 <td>queued same-process path</td>
 </tr><tr><td><code>arrow_c + serial</code></td>
 <td>implemented</td>
-<td>rejected</td>
-<td>direct native scalar evaluator</td>
+<td>implemented</td>
+<td>native scalar evaluator and <code>RCV</code> vectorized chunk evaluator</td>
 </tr><tr><td><code>arrow_c + inproc_concurrent</code></td>
 <td>implemented</td>
-<td>rejected</td>
-<td>queued same-process path</td>
+<td>implemented</td>
+<td>queued same-process path, R callbacks still serialized on main R lane</td>
 </tr><tr><td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>design-only</td>
 <td>design-only</td>
 <td>future out-of-process transport</td>
-</tr></tbody></table><p>The current <code>arrow_c</code> vectorized rejection is an implementation gap, not a final product goal. Target support includes both <code>arrow_c + serial + vectorized</code> and <code>arrow_c + inproc_concurrent + vectorized</code>, with the same no-fallback and one-R-call-per-DuckDB-chunk semantics as <code>arrow_r</code> vectorized mode. In-process R callbacks cannot be truly parallel because R API work must stay on the recorded main R lane; real parallel R evaluation belongs to an out-of-process <code>arrow_ipc + multiprocess_parallel</code> plan.</p>
+</tr></tbody></table><p><code>arrow_c</code> vectorized mode now uses the <code>RCV</code> native evaluator token. In-process R callbacks cannot be truly parallel because R API work must stay on the recorded main R lane; real parallel R evaluation belongs to an out-of-process <code>arrow_ipc + multiprocess_parallel</code> plan.</p>
 </div>
 <div class="section level2">
 <h2 id="immediate-release--infrastructure-follow-up">Immediate release / infrastructure follow-up<a class="anchor" aria-label="anchor" href="#immediate-release--infrastructure-follow-up"></a></h2>
 <ul class="task-list"><li>
-<label><input type="checkbox"><strong>P0</strong> Watch R-universe until it builds commit <code>06d6f3d</code> or later.</label>
+<label><input type="checkbox"><strong>P0</strong> Watch R-universe until it builds the current <code>main</code> commit.</label>
 <ul><li>Acceptance: R-universe API <code>RemoteSha</code> matches a current <code>main</code> commit and status is success.</li>
 <li>If oldrelease fails, confirm <code>Depends: R (&gt;= 4.3)</code> is present in the built source package.</li>
 <li>If wasm fails, fetch logs and update <code>configure</code> / <code>Dockerfile.webr-test</code>.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P1</strong> Add or verify CI coverage for the generated marshalling matrix.</label>
+<label><input type="checkbox" checked>Add or verify CI coverage for the generated marshalling matrix.</label>
 <ul><li>Existing workflow: <code>.github/workflows/generated-marshalling-matrix.yaml</code>.</li>
-<li>Acceptance: push/PR run executes all 472 generated cases or an explicitly configured subset and uploads enough logs for failed cases.</li>
+<li>Implemented: release and R 4.3 Linux matrix jobs run generated cases with no-fallback counter assertions for <code>arrow_r</code> and <code>arrow_c</code> vectorized paths.</li>
+<li>Acceptance: push/PR run executes all generated cases or an explicitly configured subset and uploads enough logs for failed cases.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P1</strong> Add a CI/webR wasm build job or documented manual trigger.</label>
@@ -144,14 +157,14 @@
 </ul></div>
 <div class="section level2">
 <h2 id="execution-plan-and-introspection-work">Execution-plan and introspection work<a class="anchor" aria-label="anchor" href="#execution-plan-and-introspection-work"></a></h2>
-<ul class="task-list"><li>
+<ul><li>
 <label><input type="checkbox" checked>Add per-UDF execution introspection.</label>
 <ul><li>Implemented: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> plus native <code>rducks_udf_stat()</code> counters.</li>
 <li>Current counters: <code>dispatch_chunks</code>, <code>dispatch_rows</code>, <code>direct_chunks</code>, <code>queued_chunks</code>, <code>arrow_r_chunks</code>, <code>arrow_c_chunks</code>.</li>
 </ul></li>
-<li>
-<label><input type="checkbox"><strong>P1</strong> Extend no-fallback tests to generated matrix cases.</label>
-<ul><li>Acceptance: every generated <code>arrow_r</code>/<code>arrow_c</code> conformance case asserts the expected native counter moved and the other marshalling counter stayed zero.</li>
+<li>[~] <strong>P1</strong> Extend no-fallback tests to generated matrix cases.
+<ul><li>Current status: generated vectorized conformance cases assert the expected <code>arrow_r</code>/<code>arrow_c</code> counter moved and the other marshalling counter stayed zero.</li>
+<li>Remaining acceptance: extend the same counter assertions to scalar generated cases where native counters are meaningful.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P0</strong> Decide and document whether marshalling is a registration-time snapshot or a query-time session choice.</label>
@@ -159,8 +172,8 @@
 <li>Needed clarification: either make this the explicit public semantic or implement true query-time marshalling dispatch.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P2</strong> Add <code>rducks_list_udfs()</code> or equivalent connection-level registry view.</label>
-<ul><li>Acceptance: returns all UDFs registered through <code><a href="reference/rducks_register.html">rducks_register()</a></code> on the connection with mode, signature, plan snapshot, and counters.</li>
+<label><input type="checkbox" checked>Add <code><a href="reference/rducks_list_udfs.html">rducks_list_udfs()</a></code> connection-level registry view.</label>
+<ul><li>Implemented: returns UDFs registered through <code><a href="reference/rducks_register.html">rducks_register()</a></code> on the connection with mode, signature, plan snapshot, and counters.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P2</strong> Add counter reset support for benchmarks/tests.</label>
@@ -253,16 +266,15 @@
 <h2 id="native-arrow_c-work">Native <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow_c-work"></a></h2>
 <ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
 <li>
-<label><input type="checkbox"><strong>P2</strong> Implement native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
-<ul><li>Required combinations:
+<label><input type="checkbox" checked>Implement native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
+<ul><li>Implemented combinations:
 <ul><li>
 <code>arrow_c + serial + vectorized</code> for direct single-lane chunk calls.</li>
 <li>
 <code>arrow_c + inproc_concurrent + vectorized</code> for same-process queued DuckDB scheduling while keeping all R callbacks serialized on the main R lane.</li>
 </ul></li>
-<li>Do not enable by removing guards; implement the native vectorized evaluator, registration validation, queue path, and counters together.</li>
-<li>Acceptance: vectorized native path preserves one R call per DuckDB chunk, strict return-length checks, default/special NULL semantics, exotic/composite values, and no-fallback counters.</li>
-<li>Acceptance: <code>arrow_c + inproc_concurrent + vectorized</code> increments <code>queued_chunks</code> and <code>arrow_c_chunks</code>, never <code>arrow_r_chunks</code>, and does not scalar-row-loop the chunk.</li>
+<li>Current native evaluator token: <code>RCV</code>.</li>
+<li>Validated: preserves one R call per DuckDB chunk, strict return-length checks, default/special NULL semantics, and no-fallback counters for covered tests; <code>inproc_concurrent</code> increments queued and <code>arrow_c</code> counters.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P3</strong> Split <code>arrow_c</code> into worker-safe native phases and R-thread phases.</label>

@@ -2,8 +2,15 @@
 
 ## Rducks 0.0.0.9000
 
+- Implemented `arrow_c + vectorized` registrations for both `serial` and
+  `inproc_concurrent` execution plans. The native evaluator token is
+  `RCV`, and
+  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+  reports `arrow_c` counters for these chunk calls.
 - Added
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+  and
+  [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   with native per-UDF execution counters so users can inspect
   registration metadata and verify that `arrow_r`/`arrow_c` chunks ran
   through the requested evaluator without fallback.
