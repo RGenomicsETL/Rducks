@@ -206,6 +206,39 @@
 </ul></li>
 </ul></div>
 <div class="section level2">
+<h2 id="unified-task-scheduling-model">Unified task scheduling model<a class="anchor" aria-label="anchor" href="#unified-task-scheduling-model"></a></h2>
+<p>The same-process queue and future <code>multiprocess_parallel</code> backend should share a chunk-task abstraction. The semantic difference is not UDF registration; it is how a prepared chunk task is submitted, progressed, waited on, collected, and written back.</p>
+<p>Important boundary: DuckDB scalar UDF callbacks are synchronous. The <code>duckdb_vector</code> output is only valid during that callback, so even a non-blocking multiprocess submission must be collected and written back before that callback returns. Non-blocking submission means multiple outstanding chunk futures can overlap across DuckDB callbacks/workers or a broker loop; it does not mean returning to DuckDB before output is ready.</p>
+<ul class="task-list"><li>
+<label><input type="checkbox"><strong>P2</strong> Define a shared <code>rducks_chunk_task</code> lifecycle.</label>
+<ul><li>Proposed states: prepared, submitted, running, completed, writeback_done, cancelled, failed.</li>
+<li>Payload variants: borrowed same-callback DuckDB chunk, owned native snapshot, Arrow IPC bytes.</li>
+<li>Result variants: direct DuckDB output reference for synchronous callbacks, owned native result, Arrow IPC result bytes.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Refactor the in-process queue onto the shared scheduler interface.</label>
+<ul><li>
+<code>serial</code>: execute inline on the main R lane.</li>
+<li>
+<code>inproc_concurrent</code>: enqueue task to main-lane executor, wait with timeout, and drain/progress only on the recorded main R lane.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P3</strong> Plug <code>multiprocess_parallel</code> into the same scheduler interface.</label>
+<ul><li>
+<code>submit</code>: send owned Arrow IPC task bytes to a worker without R API calls in DuckDB worker threads.</li>
+<li>
+<code>progress</code>: poll sockets/process workers and complete futures.</li>
+<li>
+<code>collect</code>: decode owned Arrow IPC result bytes.</li>
+<li>
+<code>writeback</code>: fill the DuckDB output vector before the scalar callback returns.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Keep counters at the scheduler boundary.</label>
+<ul><li>Acceptance: the same counters can report submitted, completed, queued, timed out, cancelled, <code>arrow_r</code>, <code>arrow_c</code>, and <code>arrow_ipc</code> chunk paths.</li>
+</ul></li>
+</ul></div>
+<div class="section level2">
 <h2 id="native-arrow_c-work">Native <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow_c-work"></a></h2>
 <ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
 <li>
