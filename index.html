@@ -22,7 +22,7 @@
 
     <a class="navbar-brand me-2" href="index.html">Rducks</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        290ms      3.48    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    231ms      4.33    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        301ms      3.29    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    248ms      3.98    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:11:05</span></span>
+<span><span class="co">#&gt; 1 2026-05-04 22:18:49</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -265,7 +265,13 @@
 <span><span class="va">chunk_size</span> <span class="op">&lt;-</span> <span class="fl">1024L</span></span>
 <span><span class="va">sleep_s</span> <span class="op">&lt;-</span> <span class="fl">0.1</span></span>
 <span></span>
+<span><span class="co"># Benchmark-only Future polling tweak: small worker tasks can finish before</span></span>
+<span><span class="co"># the default polling interval notices them. This reduces wait latency; it is</span></span>
+<span><span class="co"># not required for Rducks correctness or for real parallelism.</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>future.wait.interval <span class="op">=</span> <span class="fl">0.001</span>, future.wait.alpha <span class="op">=</span> <span class="fl">1.01</span><span class="op">)</span></span>
 <span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future.mirai</span><span class="fu">::</span><span class="va">mirai_multisession</span>, workers <span class="op">=</span> <span class="va">workers</span><span class="op">)</span></span>
+<span><span class="co"># Warm workers so the measurement reflects chunk scheduling, not startup.</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/value.html" class="external-link">value</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/future.html" class="external-link">future</a></span><span class="op">(</span><span class="cn">NULL</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">rows</span> <span class="op">&lt;-</span> <span class="fl">0</span><span class="op">:</span><span class="op">(</span><span class="va">n</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">chunks</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/split.html" class="external-link">split</a></span><span class="op">(</span><span class="va">rows</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">ceiling</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">rows</span><span class="op">)</span> <span class="op">/</span> <span class="va">chunk_size</span><span class="op">)</span><span class="op">)</span></span>
@@ -325,7 +331,7 @@
 <span>  speedup <span class="op">=</span> <span class="va">seq_time</span> <span class="op">/</span> <span class="va">par_time</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;   rows chunks workers sequential_s parallel_s  speedup</span></span>
-<span><span class="co">#&gt; 1 8192      8       4        1.068      1.064 1.003759</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 8192      8       4        1.045      0.295 3.542373</span></span></code></pre></div>
 <p>The same benchmark is available as <code>tools/benchmark_owned_ipc_pipeline.R</code> for repeatable source-checkout runs. Results depend on provider, workload, chunk size, and worker startup state.</p>
 </div>
 <div class="section level2">
@@ -951,10 +957,10 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_rng() AS x FROM range(3)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;           x</span></span>
-<span><span class="co">#&gt; 1 0.8874720</span></span>
-<span><span class="co">#&gt; 2 0.8184697</span></span>
-<span><span class="co">#&gt; 3 0.3346775</span></span></code></pre></div>
+<span><span class="co">#&gt;            x</span></span>
+<span><span class="co">#&gt; 1 0.07729825</span></span>
+<span><span class="co">#&gt; 2 0.15246686</span></span>
+<span><span class="co">#&gt; 3 0.63664303</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>

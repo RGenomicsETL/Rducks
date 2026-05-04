@@ -100,8 +100,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        290ms      3.48    1.97MB
-#> 2 vectorized    231ms      4.33    2.34MB
+#> 1 scalar        301ms      3.29    1.97MB
+#> 2 vectorized    248ms      3.98    2.34MB
 ```
 
 ## Execution plans
@@ -175,7 +175,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:11:05
+#> 1 2026-05-04 22:18:49
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -235,7 +235,13 @@ n <- 8192L
 chunk_size <- 1024L
 sleep_s <- 0.1
 
+# Benchmark-only Future polling tweak: small worker tasks can finish before
+# the default polling interval notices them. This reduces wait latency; it is
+# not required for Rducks correctness or for real parallelism.
+options(future.wait.interval = 0.001, future.wait.alpha = 1.01)
 future::plan(future.mirai::mirai_multisession, workers = workers)
+# Warm workers so the measurement reflects chunk scheduling, not startup.
+invisible(future::value(future::future(NULL)))
 
 rows <- 0:(n - 1L)
 chunks <- split(rows, ceiling(seq_along(rows) / chunk_size))
@@ -295,7 +301,7 @@ data.frame(
   speedup = seq_time / par_time
 )
 #>   rows chunks workers sequential_s parallel_s  speedup
-#> 1 8192      8       4        1.068      1.064 1.003759
+#> 1 8192      8       4        1.045      0.295 3.542373
 ```
 
 The same benchmark is available as
@@ -615,10 +621,10 @@ reg_rng <- rducks_register(
 )
 
 dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
-#>           x
-#> 1 0.8874720
-#> 2 0.8184697
-#> 3 0.3346775
+#>            x
+#> 1 0.07729825
+#> 2 0.15246686
+#> 3 0.63664303
 ```
 
 ## Build notes
