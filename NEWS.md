@@ -1,5 +1,14 @@
 # Rducks 0.0.0.9000
 
+- Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
+  backends with Arrow IPC task/result payloads. Scalar registrations loop over
+  rows inside the worker, vectorized registrations call once per chunk, and the
+  queued native path splits submit and collect phases so multiple queued chunk
+  tasks can be outstanding before results are collected when DuckDB provides
+  concurrent UDF callbacks. `rducks_explain_udf()` now reports RIPC collect
+  batch counters for diagnosing whether chunks are actually overlapping.
+- Added an internal `%||%` compatibility shim so the package works under the
+  lowered R 4.3 dependency floor.
 - Implemented `arrow_c + vectorized` registrations for both `serial` and
   `inproc_concurrent` execution plans. The native evaluator token is `RCV`, and
   `rducks_explain_udf()` reports `arrow_c` counters for these chunk calls.

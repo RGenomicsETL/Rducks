@@ -19,6 +19,7 @@ Depends:
 Imports:
     DBI,
     duckdb (>= 1.5.0),
+    future,
     methods,
     nanoarrow,
     S7

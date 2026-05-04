@@ -4,7 +4,7 @@
 \alias{rducks_enable_inproc}
 \title{Enable in-process queued R UDF execution}
 \usage{
-rducks_enable_inproc(con, threads = NULL, external_threads = threads)
+rducks_enable_inproc(con, threads = NULL, external_threads = NULL)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection} already enabled with \code{\link[=rducks_enable]{rducks_enable()}}.}
@@ -13,8 +13,9 @@ rducks_enable_inproc(con, threads = NULL, external_threads = threads)
 enabling the in-process backend. Use \code{NULL} to leave unchanged.}
 
 \item{external_threads}{Optional positive integer to set with
-\verb{SET external_threads} before enabling the in-process backend. Defaults to
-\code{threads}; use \code{NULL} to leave unchanged.}
+\verb{SET external_threads} before enabling the in-process backend. Use \code{NULL}
+to leave unchanged. For actual DuckDB worker concurrency, keep this smaller
+than \code{threads} (for example \verb{threads = 4, external_threads = 1}).}
 }
 \value{
 \code{con}, invisibly.

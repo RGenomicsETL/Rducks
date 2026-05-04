@@ -38,15 +38,17 @@ DuckDB
       -> mode = "scalar", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> R row-loop adapter
       -> mode = "scalar", plan marshalling = "arrow_c": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
       -> mode = "vectorized", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
+      -> mode = "scalar", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker row loop -> Arrow IPC result
+      -> mode = "vectorized", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker chunk call -> Arrow IPC result
 ```
 
-Both scalar evaluators call the R function once per logical row. `arrow_c` moves
+All scalar evaluators call the R function once per logical row. `arrow_c` moves
 row iteration, call construction, NULL handling, return checking, and direct
 DuckDB vector reads/writes into C for supported scalar storage; the user function
 itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical scoping, and side
-effects keep ordinary R semantics. Vectorized mode calls the R function once per
-DuckDB chunk and currently supports `arrow_r` execution plans only; `arrow_c +
-vectorized` is rejected by plan validation rather than falling back.
+effects keep ordinary R semantics. `arrow_ipc` loops rows inside a Future worker.
+Vectorized mode calls the R function once per DuckDB chunk and supports
+`arrow_r`, `arrow_c`, and `arrow_ipc` plans without falling back between them.
 
 ## Thread model
 
@@ -128,14 +130,17 @@ Internally the current concurrency backends are:
   processed; workers must not return before the main lane has consumed the
   request. Direct `arrow_c` helpers remain main-lane-only unless split into pure
   native worker-safe phases.
-- `multiprocess_parallel`: future out-of-process execution for mirai-style or
-  another compute backend. This should serialize chunk payloads with Arrow IPC so mirai's
-  serialization configuration can move opaque raw payloads rather than
-  DuckDB-owned pointers or session-bound R objects.
+- `multiprocess_parallel`: out-of-process execution through the current generic
+  Future backend. The scalar-UDF callback implementation serializes chunk
+  payloads with Arrow IPC so workers receive raw task/result payloads rather
+  than DuckDB-owned pointers or session-bound R objects. It is real UDF
+  execution, but it is bounded by DuckDB's synchronous callback contract; the
+  production performance path should own the source and pre-split it into Arrow
+  IPC chunk tasks before submission.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
-reserved for serialized/out-of-process transport, not for the current
-callback-local DuckDB ⇄ R handoff.
+reserved for serialized/out-of-process transport and owned task payloads, not
+for the ordinary callback-local DuckDB ⇄ R handoff.
 
 ## Registration-safe mode
 

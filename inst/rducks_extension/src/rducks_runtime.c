@@ -34,6 +34,12 @@ static int rducks_set_execution_backend(rducks_runtime_entry_t *runtime, const c
         rducks_runtime_unlock();
         return 1;
     }
+    if (strcmp(backend, "multiprocess_parallel") == 0) {
+        rducks_runtime_lock();
+        runtime->execution_backend = RDUCKS_BACKEND_MULTIPROCESS_PARALLEL;
+        rducks_runtime_unlock();
+        return 1;
+    }
     snprintf(err, err_cap, "unsupported Rducks execution backend: %s", backend);
     return 0;
 }
@@ -49,6 +55,10 @@ static rducks_execution_backend_t rducks_get_execution_backend(rducks_runtime_en
 
 static int rducks_concurrent_inproc_enabled(rducks_runtime_entry_t *runtime) {
     return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_CONCURRENT_INPROC;
+}
+
+static int rducks_multiprocess_parallel_enabled(rducks_runtime_entry_t *runtime) {
+    return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_MULTIPROCESS_PARALLEL;
 }
 
 static rducks_r_scalar_meta_t *rducks_runtime_find_udf_locked(rducks_runtime_entry_t *runtime, const char *name) {
@@ -111,8 +121,21 @@ static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows
     rducks_runtime_lock();
     if (meta->eval_mode == RDUCKS_EVAL_R) {
         meta->arrow_r_chunks++;
+    } else if (meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        meta->arrow_ipc_chunks++;
     } else {
         meta->arrow_c_chunks++;
+    }
+    rducks_runtime_unlock();
+}
+
+static void rducks_udf_record_ripc_batch(rducks_r_scalar_meta_t *meta, size_t batch_size) {
+    if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC || batch_size == 0U) return;
+    rducks_runtime_lock();
+    meta->ripc_collect_batches++;
+    meta->ripc_collect_requests += (uint64_t)batch_size;
+    if ((uint64_t)batch_size > meta->ripc_collect_max_batch) {
+        meta->ripc_collect_max_batch = (uint64_t)batch_size;
     }
     rducks_runtime_unlock();
 }
@@ -140,9 +163,11 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
         snprintf(out, out_cap, "%s", meta->name ? meta->name : "");
     } else if (strcmp(field, "eval_mode") == 0) {
         snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "R" :
-                 (meta->eval_mode == RDUCKS_EVAL_RCV ? "RCV" : "RC"));
+                 (meta->eval_mode == RDUCKS_EVAL_RIPC ? "RIPC" :
+                  (meta->eval_mode == RDUCKS_EVAL_RCV ? "RCV" : "RC")));
     } else if (strcmp(field, "marshalling") == 0) {
-        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" : "arrow_c");
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" :
+                 (meta->eval_mode == RDUCKS_EVAL_RIPC ? "arrow_ipc" : "arrow_c"));
     } else if (strcmp(field, "dispatch_chunks") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_chunks);
     } else if (strcmp(field, "dispatch_rows") == 0) {
@@ -155,6 +180,14 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_r_chunks);
     } else if (strcmp(field, "arrow_c_chunks") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_chunks);
+    } else if (strcmp(field, "arrow_ipc_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_ipc_chunks);
+    } else if (strcmp(field, "ripc_collect_batches") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_batches);
+    } else if (strcmp(field, "ripc_collect_requests") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_requests);
+    } else if (strcmp(field, "ripc_collect_max_batch") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_max_batch);
     } else {
         ok = 0;
     }

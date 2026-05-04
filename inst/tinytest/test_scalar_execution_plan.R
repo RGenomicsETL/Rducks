@@ -23,13 +23,12 @@ expect_equal(inproc$supported_call_shapes, c("scalar", "vectorized"))
 
 ipc <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
 expect_equal(ipc$serialization, "arrow_ipc")
-expect_false(ipc$implemented)
+expect_true(ipc$implemented)
+expect_equal(ipc$supported_call_shapes, c("scalar", "vectorized"))
 expect_false(ipc$in_process)
-expect_false(ipc$uses_r_thread)
-expect_error(
-  Rducks:::rducks_assert_execution_plan_implemented(ipc),
-  "not implemented yet"
-)
+expect_true(ipc$uses_r_thread)
+expect_equal(ipc$future_options$packages, "Rducks")
+expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 
 expect_error(
   rducks_execution_plan("arrow_ipc", "serial"),
@@ -48,16 +47,6 @@ expect_silent(
   )
 )
 expect_equal(Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"), "RCV")
-
-legacy <- Rducks:::rducks_scalar_execution_plan(
-  concurrency = "chunk_concurrent",
-  backend = "serialized",
-  serialization = "arrow_ipc"
-)
-expect_equal(legacy$marshalling, "arrow_ipc")
-expect_equal(legacy$concurrency, "multiprocess_parallel")
-expect_equal(legacy$serialization, "arrow_ipc")
-expect_false(legacy$implemented)
 
 input <- data.frame(x = 1:3, y = c("a", "b", "c"))
 payload <- Rducks:::rducks_arrow_ipc_encode(input)

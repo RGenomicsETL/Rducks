@@ -51,7 +51,11 @@ rducks_native_udf_stat_fields <- c(
   "direct_chunks",
   "queued_chunks",
   "arrow_r_chunks",
-  "arrow_c_chunks"
+  "arrow_c_chunks",
+  "arrow_ipc_chunks",
+  "ripc_collect_batches",
+  "ripc_collect_requests",
+  "ripc_collect_max_batch"
 )
 
 rducks_native_udf_stats <- function(con, name) {
@@ -91,6 +95,10 @@ rducks_explain_udf_empty <- function() {
     queued_chunks = numeric(),
     arrow_r_chunks = numeric(),
     arrow_c_chunks = numeric(),
+    arrow_ipc_chunks = numeric(),
+    ripc_collect_batches = numeric(),
+    ripc_collect_requests = numeric(),
+    ripc_collect_max_batch = numeric(),
     stringsAsFactors = FALSE
   )
 }
@@ -119,6 +127,10 @@ rducks_explain_udf_row <- function(con, name) {
     queued_chunks = rducks_counter_value(stats, "queued_chunks"),
     arrow_r_chunks = rducks_counter_value(stats, "arrow_r_chunks"),
     arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
+    arrow_ipc_chunks = rducks_counter_value(stats, "arrow_ipc_chunks"),
+    ripc_collect_batches = rducks_counter_value(stats, "ripc_collect_batches"),
+    ripc_collect_requests = rducks_counter_value(stats, "ripc_collect_requests"),
+    ripc_collect_max_batch = rducks_counter_value(stats, "ripc_collect_max_batch"),
     stringsAsFactors = FALSE
   )
 }

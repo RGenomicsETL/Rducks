@@ -4,7 +4,7 @@
 \alias{rducks_disable_inproc}
 \title{Disable in-process queued R UDF execution}
 \usage{
-rducks_disable_inproc(con, threads = NULL, external_threads = threads)
+rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection}.}
@@ -12,7 +12,7 @@ rducks_disable_inproc(con, threads = NULL, external_threads = threads)
 \item{threads}{Optional positive integer to set with \verb{PRAGMA threads}.}
 
 \item{external_threads}{Optional positive integer to set with
-\verb{SET external_threads}. Defaults to \code{threads}.}
+\verb{SET external_threads}. Use \code{NULL} to leave unchanged.}
 }
 \value{
 \code{con}, invisibly.

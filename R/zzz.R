@@ -1,5 +1,11 @@
 .rducks_state <- new.env(parent = emptyenv())
 
+`%||%` <- if (exists("%||%", envir = baseenv(), mode = "function", inherits = FALSE)) {
+  get("%||%", envir = baseenv(), mode = "function", inherits = FALSE)
+} else {
+  function(x, y) if (is.null(x)) y else x
+}
+
 rducks_main_thread_token <- function() {
   token <- .rducks_state$main_thread_token
   if (is.null(token)) {

@@ -3,6 +3,7 @@
 #define RDUCKS_QUEUE_ERROR_SIZE 512
 #define RDUCKS_QUEUE_WAIT_MS 100U
 #define RDUCKS_QUEUE_TIMEOUT_TICKS 300U
+#define RDUCKS_RIPC_COALESCE_WAIT_MS 2U
 
 typedef enum rducks_udf_request_state {
     RDUCKS_REQUEST_PENDING = 0,
@@ -21,6 +22,10 @@ struct rducks_udf_request {
     rducks_r_scalar_meta_t *meta;
     duckdb_data_chunk input;
     duckdb_vector output;
+    SEXP ripc_future;
+    SEXP ripc_output_schema_xptr;
+    idx_t ripc_n;
+    int ripc_submitted;
     rducks_udf_request_state_t state;
     int ok;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
@@ -143,8 +148,125 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
         return rducks_rc_vectorized_execute(request->runtime, request->meta, request->input,
                                            request->output, err_msg, err_cap);
     }
+    if (request->meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        return rducks_ripc_execute(request->runtime, request->meta, request->input,
+                                  request->output, err_msg, err_cap);
+    }
     return rducks_r_scalar_execute(request->runtime, request->meta, request->input,
                                   request->output, err_msg, err_cap);
+}
+
+static int rducks_queue_submit_ripc_request_on_main(rducks_udf_request_t *request,
+                                                    char *err_msg, size_t err_cap) {
+    if (!request || !request->runtime || !request->meta) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC request is missing execution state");
+        return 0;
+    }
+    if (request->ripc_submitted) return 1;
+    if (!rducks_ripc_submit_chunk_on_main(request->runtime, request->meta, request->input,
+                                          &request->ripc_future, &request->ripc_output_schema_xptr,
+                                          &request->ripc_n, err_msg, err_cap)) {
+        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
+        request->ripc_submitted = 0;
+        return 0;
+    }
+    request->ripc_submitted = 1;
+    return 1;
+}
+
+static int rducks_queue_collect_ripc_request_on_main(rducks_udf_request_t *request,
+                                                     char *err_msg, size_t err_cap) {
+    int ok;
+    if (!request || !request->runtime || !request->meta || !request->ripc_submitted) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC request was not submitted");
+        return 0;
+    }
+    ok = rducks_ripc_collect_chunk_on_main(request->runtime, request->meta, request->ripc_future,
+                                          request->ripc_output_schema_xptr, request->ripc_n,
+                                          request->output, err_msg, err_cap);
+    rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
+    request->ripc_submitted = 0;
+    return ok;
+}
+
+static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, size_t count,
+                                                   char *err_msg, size_t err_cap) {
+    rducks_udf_request_t *request;
+    rducks_r_scalar_meta_t *meta;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP futures = R_NilValue;
+    SEXP schemas = R_NilValue;
+    SEXP ns = R_NilValue;
+    SEXP results = R_NilValue;
+    size_t i = 0;
+    int ok = 0;
+
+    if (!head || count == 0U || !head->runtime || !head->meta) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group is missing state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(head->runtime)) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group reached a non-main execution lane");
+        return 0;
+    }
+    meta = head->meta;
+    rducks_udf_record_ripc_batch(meta, count);
+
+    futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));
+    protect_count++;
+    schemas = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));
+    protect_count++;
+    ns = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)count));
+    protect_count++;
+
+    for (request = head; request && i < count; request = request->next, i++) {
+        if (!request->runtime || request->meta != meta || !request->ripc_submitted ||
+            !request->ripc_future || request->ripc_future == R_NilValue ||
+            !request->ripc_output_schema_xptr || request->ripc_output_schema_xptr == R_NilValue) {
+            snprintf(err_msg, err_cap, "Rducks queued RIPC collect group contains an invalid request");
+            goto done;
+        }
+        SET_VECTOR_ELT(futures, (R_xlen_t)i, request->ripc_future);
+        SET_VECTOR_ELT(schemas, (R_xlen_t)i, request->ripc_output_schema_xptr);
+        REAL(ns)[i] = (double)request->ripc_n;
+    }
+    if (i != count) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group length mismatch");
+        goto done;
+    }
+
+    results = rducks_ripc_call_collect_many_on_r_thread(meta, futures, schemas, ns, &protect_count, &r_err);
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-many failed");
+        goto done;
+    }
+    if (rducks_r_scalar_result_is_error(results, err_msg, err_cap)) goto done;
+    if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)count) {
+        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-many returned %lld results, expected %llu",
+                 (long long)(TYPEOF(results) == VECSXP ? XLENGTH(results) : -1),
+                 (unsigned long long)count);
+        goto done;
+    }
+
+    i = 0;
+    for (request = head; request && i < count; request = request->next, i++) {
+        if (!rducks_r_scalar_emit_arrow_result(request->runtime, request->meta, VECTOR_ELT(results, (R_xlen_t)i),
+                                              request->ripc_output_schema_xptr, request->ripc_n,
+                                              request->output, err_msg, err_cap)) {
+            goto done;
+        }
+    }
+    ok = 1;
+
+done:
+    i = 0;
+    for (request = head; request && i < count; request = request->next, i++) {
+        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
+        request->ripc_submitted = 0;
+    }
+    UNPROTECT(protect_count);
+    return ok;
 }
 
 static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {
@@ -157,6 +279,58 @@ static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err
         return 0;
     }
     return request->execute(request, err_msg, err_cap);
+}
+
+static int rducks_queue_request_is_ripc(rducks_udf_request_t *request) {
+    return request && request->meta && request->meta->eval_mode == RDUCKS_EVAL_RIPC;
+}
+
+static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
+                                        int ok, const char *err_msg) {
+    if (!runtime || !request) return;
+    rducks_queue_lock(runtime);
+    request->ok = ok;
+    if (!ok) {
+        rducks_queue_error_copy(request->error, sizeof(request->error), err_msg,
+                                "Rducks queued scalar UDF request failed");
+    }
+    request->state = RDUCKS_REQUEST_DONE;
+    runtime->queue_executed++;
+    rducks_queue_signal_all(runtime);
+    rducks_queue_unlock(runtime);
+}
+
+static void rducks_queue_append_local(rducks_udf_request_t **head, rducks_udf_request_t **tail,
+                                      rducks_udf_request_t *request) {
+    if (!request) return;
+    request->next = NULL;
+    if (*tail) {
+        (*tail)->next = request;
+    } else {
+        *head = request;
+    }
+    *tail = request;
+}
+
+static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *runtime) {
+    rducks_udf_request_t *request;
+    rducks_queue_lock(runtime);
+    request = rducks_queue_pop_locked(runtime);
+    rducks_queue_unlock(runtime);
+    return request;
+}
+
+static rducks_udf_request_t *rducks_queue_pop_request_after_wait(rducks_runtime_entry_t *runtime,
+                                                                 unsigned int wait_ms) {
+    rducks_udf_request_t *request;
+    rducks_queue_lock(runtime);
+    request = rducks_queue_pop_locked(runtime);
+    if (!request && wait_ms > 0U) {
+        (void)rducks_queue_wait_timed(runtime, wait_ms);
+        request = rducks_queue_pop_locked(runtime);
+    }
+    rducks_queue_unlock(runtime);
+    return request;
 }
 
 static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
@@ -319,29 +493,63 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
     if (max_requests <= 0) max_requests = 1000000;
 
     while (count < max_requests) {
-        rducks_udf_request_t *request;
-        char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
-        int ok;
+        rducks_udf_request_t *ripc_head = NULL;
+        rducks_udf_request_t *ripc_tail = NULL;
+        int popped_this_round = 0;
 
-        rducks_queue_lock(runtime);
-        request = rducks_queue_pop_locked(runtime);
-        rducks_queue_unlock(runtime);
-        if (!request) break;
+        while (count < max_requests) {
+            rducks_udf_request_t *request;
+            char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
+            int ok;
 
-        err_msg[0] = '\0';
-        ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
+            request = ripc_head ?
+                rducks_queue_pop_request_after_wait(runtime, RDUCKS_RIPC_COALESCE_WAIT_MS) :
+                rducks_queue_pop_request(runtime);
+            if (!request) break;
+            popped_this_round = 1;
 
-        rducks_queue_lock(runtime);
-        request->ok = ok;
-        if (!ok) {
-            rducks_queue_error_copy(request->error, sizeof(request->error), err_msg,
-                                    "Rducks queued scalar UDF request failed");
+            err_msg[0] = '\0';
+            if (rducks_queue_request_is_ripc(request)) {
+                ok = rducks_queue_submit_ripc_request_on_main(request, err_msg, sizeof(err_msg));
+                if (ok) {
+                    rducks_queue_append_local(&ripc_head, &ripc_tail, request);
+                } else {
+                    rducks_queue_finish_request(runtime, request, 0, err_msg);
+                }
+            } else {
+                ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
+                rducks_queue_finish_request(runtime, request, ok, err_msg);
+            }
+            count++;
         }
-        request->state = RDUCKS_REQUEST_DONE;
-        runtime->queue_executed++;
-        rducks_queue_signal_all(runtime);
-        rducks_queue_unlock(runtime);
-        count++;
+
+        while (ripc_head) {
+            rducks_udf_request_t *group_head = ripc_head;
+            rducks_udf_request_t *group_tail = ripc_head;
+            rducks_udf_request_t *next = ripc_head->next;
+            rducks_r_scalar_meta_t *meta = ripc_head->meta;
+            char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
+            size_t group_count = 1U;
+            int ok;
+
+            while (next && next->meta == meta) {
+                group_tail = next;
+                next = next->next;
+                group_count++;
+            }
+            group_tail->next = NULL;
+            err_msg[0] = '\0';
+            ok = rducks_queue_collect_ripc_group_on_main(group_head, group_count, err_msg, sizeof(err_msg));
+            while (group_head) {
+                rducks_udf_request_t *finished = group_head;
+                group_head = group_head->next;
+                finished->next = NULL;
+                rducks_queue_finish_request(runtime, finished, ok, err_msg);
+            }
+            ripc_head = next;
+        }
+
+        if (!popped_this_round) break;
     }
     return count;
 }

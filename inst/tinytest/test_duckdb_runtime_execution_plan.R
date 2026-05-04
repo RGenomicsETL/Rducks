@@ -38,8 +38,24 @@ local({
   rducks_disable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
 
-  expect_error(
-    rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel")),
-    "not implemented yet"
+  old_future_plan <- future::plan()
+  on.exit(future::plan(old_future_plan), add = TRUE)
+  future::plan(future::multisession, workers = 1)
+
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
+  reg_ipc <- rducks_register(
+    con, "plan_ipc_vec", function(x) x + 1L,
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
   )
+  expect_equal(reg_ipc$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+  result_ipc <- DBI::dbGetQuery(con, "SELECT plan_ipc_vec(i::INTEGER) AS x FROM range(3) t(i)")
+  expect_equal(result_ipc$x, 1:3)
+  explain_ipc <- rducks_explain_udf(con, "plan_ipc_vec")
+  expect_equal(explain_ipc$native_marshalling, "arrow_ipc")
+  expect_equal(explain_ipc$evaluator, "RIPC")
+  expect_true(explain_ipc$arrow_ipc_chunks >= 1)
+  expect_equal(explain_ipc$arrow_r_chunks, 0)
+  expect_equal(explain_ipc$arrow_c_chunks, 0)
 })

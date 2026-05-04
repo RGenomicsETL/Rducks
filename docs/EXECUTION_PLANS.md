@@ -113,7 +113,7 @@ observable plan remains one named plan with one declared support matrix.
 | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded R lane. |
 | `arrow_c` | `serial` | implemented as current native scalar | implemented | Native scalar evaluator plus `RCV` vectorized chunk evaluator; no fallback to `arrow_r`. |
 | `arrow_c` | `inproc_concurrent` | implemented for current native scalar | implemented | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
-| `arrow_ipc` | `multiprocess_parallel` | planned | planned | Owned Arrow IPC request/result bytes across process boundary. Scalar still batches transport by chunk and loops rows inside the worker. |
+| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The current UDF callback implementation is bounded by DuckDB's synchronous callback contract; the production speed path should be an owned prechunk source/pipeline. |
 
 Current API direction:
 
@@ -250,17 +250,26 @@ named `arrow_c` plan rather than a fallback to the public `arrow_r` evaluator.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
-- [ ] Define request envelope: UDF id, plan id, chunk id, schema, input IPC,
-      semantic options, timeout/cancellation metadata.
-- [ ] Define response envelope: chunk id, result IPC or structured error.
-- [ ] Encode DuckDB input chunks to owned Arrow IPC bytes in the DuckDB process.
-- [ ] Decode input IPC in worker R processes.
-- [ ] Execute scalar/vectorized call shape inside each worker.
-- [ ] Encode result IPC in worker R processes.
-- [ ] Import result IPC into DuckDB output vectors.
+- [~] Define request envelope: current Future tasks include schema, input IPC,
+      semantic options, and timeout; a production RPC envelope still needs UDF
+      id, task id, cancellation metadata, and worker lifecycle metadata.
+- [~] Define response envelope: current Future workers return Arrow IPC result
+      bytes or an R error propagated through Future; a production RPC envelope
+      should carry task id plus structured error metadata.
+- [x] Encode DuckDB input chunks to Arrow IPC bytes in the DuckDB process for
+      the current synchronous UDF callback implementation.
+- [x] Decode input IPC in worker R processes.
+- [x] Execute scalar/vectorized call shape inside each worker.
+- [x] Encode result IPC in worker R processes.
+- [x] Import result IPC into DuckDB output vectors.
+- [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
 - [ ] Add worker lifecycle/shutdown/cancellation tests.
 - [ ] Add tests proving hot-path payloads are Arrow IPC and not R
       `serialize()`/`unserialize()`.
+- [ ] Implement the production owned prechunk source/pipeline: split an input
+      source into owned Arrow IPC tasks, submit a window ahead, collect by task
+      sequence, and expose results without borrowed scalar-UDF callback
+      pointers.
 
 ### Iteration 7: release gates
 

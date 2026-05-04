@@ -1,5 +1,15 @@
 library(Rducks)
 
+rducks_test_stress_concurrency <- function() {
+  tolower(Sys.getenv("RDUCKS_STRESS_CONCURRENCY", "false")) %in% c("1", "true", "yes")
+}
+
+rducks_test_duckdb_threads <- function(default = 8L) {
+  threads <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_TEST_DUCKDB_THREADS", as.character(default))))
+  if (length(threads) != 1L || is.na(threads) || threads < 1L) threads <- default
+  max(1L, threads)
+}
+
 local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
@@ -58,6 +68,29 @@ local({
   expect_true(explain_c_vec$queued_chunks >= 1)
   expect_true(explain_c_vec$arrow_c_chunks >= 1)
   expect_equal(explain_c_vec$arrow_r_chunks, 0)
+  final <- rducks_inproc_stats(con)
+  expect_true(final$submitted[[1L]] > before$submitted[[1L]])
+  expect_equal(final$submitted, final$executed)
+  expect_equal(final$timeouts, 0)
+})
+
+if (rducks_test_stress_concurrency()) local({
+  threads <- rducks_test_duckdb_threads()
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+
+  invisible(rducks_register(con, "rducks_stress_plus_one", function(x) x + 1, DOUBLE, DOUBLE,
+                            mode = "vectorized", side_effects = TRUE))
+  rducks_enable_inproc(con, threads = threads, external_threads = 1L)
+
+  before <- rducks_inproc_stats(con)
+  out <- DBI::dbGetQuery(
+    con,
+    "SELECT sum(rducks_stress_plus_one(i::DOUBLE)) AS x FROM rducks_parallel_range(4096::UBIGINT) AS t(i)"
+  )
+  expect_equal(out$x, sum((0:4095) + 1))
+
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] > before$submitted[[1L]])
   expect_equal(final$submitted, final$executed)

@@ -4,11 +4,20 @@ suppressPackageStartupMessages({
   library(Rducks)
   library(DBI)
   library(duckdb)
+  library(future)
 })
 
 main <- function() {
 limit <- as.integer(Sys.getenv("RDUCKS_MATRIX_MAX", "0"))
 if (is.na(limit)) limit <- 0L
+include_ipc <- tolower(Sys.getenv("RDUCKS_MATRIX_INCLUDE_IPC", "false")) %in% c("1", "true", "yes")
+future_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_MATRIX_FUTURE_WORKERS", "1")))
+if (length(future_workers) != 1L || is.na(future_workers) || future_workers < 1L) future_workers <- 1L
+old_future_plan <- future::plan()
+on.exit(future::plan(old_future_plan), add = TRUE)
+if (include_ipc) {
+  future::plan(future::multisession, workers = future_workers)
+}
 
 con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
@@ -81,12 +90,13 @@ assert_vectorized_marshalling_counter <- function(name, marshalling, label) {
     )
   }
   expected <- paste0(marshalling, "_chunks")
-  other <- if (identical(marshalling, "arrow_c")) "arrow_r_chunks" else "arrow_c_chunks"
-  if (info[[expected]][[1L]] < 1 || info[[other]][[1L]] != 0) {
+  others <- setdiff(c("arrow_r_chunks", "arrow_c_chunks", "arrow_ipc_chunks"), expected)
+  bad_other <- vapply(others, function(field) info[[field]][[1L]] != 0, logical(1))
+  if (info[[expected]][[1L]] < 1 || any(bad_other)) {
     stop(
       "generated marshalling case violated no-fallback counters: ", label,
       " ", expected, "=", info[[expected]][[1L]],
-      " ", other, "=", info[[other]][[1L]],
+      " others=", paste(paste0(others, "=", vapply(others, function(field) info[[field]][[1L]], numeric(1))), collapse = ","),
       call. = FALSE
     )
   }
@@ -94,7 +104,12 @@ assert_vectorized_marshalling_counter <- function(name, marshalling, label) {
 }
 
 run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql2, label, include_null = TRUE) {
-  rducks_set_execution_plan(con, rducks_execution_plan(marshalling, "serial"))
+  plan <- if (identical(marshalling, "arrow_ipc")) {
+    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_timeout = 60)
+  } else {
+    rducks_execution_plan(marshalling, "serial")
+  }
+  rducks_set_execution_plan(con, plan)
   type_sql <- rducks_type_sql(type)
   values_sql <- if (include_null) {
     sprintf("(%s), (NULL::%s), (%s)", sql1, type_sql, sql2)
@@ -136,7 +151,10 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
 }
 
 run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
-  for (marshalling in c("arrow_r", "arrow_c")) {
+  include_ipc_for_type <- isTRUE(include_ipc) &&
+    Rducks:::rducks_arrow_ipc_mapping_supported(type)
+  marshallers <- c("arrow_r", "arrow_c", if (include_ipc_for_type) "arrow_ipc")
+  for (marshalling in marshallers) {
     run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
   }
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))

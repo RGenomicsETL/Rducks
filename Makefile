@@ -29,6 +29,9 @@ build: rd
 check: build
 	R CMD check $(PKGNAME)_$(PKGVERS).tar.gz
 
+rdm: install
+	Rscript -e 'rmarkdown::render("README.Rmd")'
+
 clean:
 	./cleanup
 	rm -rf $(PKGNAME).Rcheck

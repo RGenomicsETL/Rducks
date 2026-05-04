@@ -70,12 +70,14 @@ typedef enum rducks_exception_handling {
 typedef enum rducks_eval_mode {
     RDUCKS_EVAL_R = 0,
     RDUCKS_EVAL_RC = 1,
-    RDUCKS_EVAL_RCV = 2
+    RDUCKS_EVAL_RCV = 2,
+    RDUCKS_EVAL_RIPC = 3
 } rducks_eval_mode_t;
 
 typedef enum rducks_execution_backend {
     RDUCKS_BACKEND_SINGLE = 0,
-    RDUCKS_BACKEND_CONCURRENT_INPROC = 1
+    RDUCKS_BACKEND_CONCURRENT_INPROC = 1,
+    RDUCKS_BACKEND_MULTIPROCESS_PARALLEL = 2
 } rducks_execution_backend_t;
 
 typedef enum rducks_type_kind {
@@ -146,6 +148,10 @@ struct rducks_r_scalar_meta {
     uint64_t queued_chunks;
     uint64_t arrow_r_chunks;
     uint64_t arrow_c_chunks;
+    uint64_t arrow_ipc_chunks;
+    uint64_t ripc_collect_batches;
+    uint64_t ripc_collect_requests;
+    uint64_t ripc_collect_max_batch;
 };
 
 typedef struct rducks_r_scalar_bind_state {

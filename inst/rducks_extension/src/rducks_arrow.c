@@ -371,6 +371,173 @@ static int rducks_r_scalar_emit_arrow_result(rducks_runtime_entry_t *runtime, rd
     return rducks_import_arrow_result(runtime, result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap);
 }
 
+static SEXP rducks_named_list_get(SEXP x, const char *name) {
+    SEXP names;
+    R_xlen_t n;
+    if (!x || TYPEOF(x) != VECSXP || !name) return R_NilValue;
+    names = Rf_getAttrib(x, R_NamesSymbol);
+    if (TYPEOF(names) != STRSXP) return R_NilValue;
+    n = XLENGTH(x);
+    for (R_xlen_t i = 0; i < n; i++) {
+        SEXP nm = STRING_ELT(names, i);
+        if (nm != NA_STRING && strcmp(CHAR(nm), name) == 0) return VECTOR_ELT(x, i);
+    }
+    return R_NilValue;
+}
+
+static int rducks_ripc_bundle_valid(SEXP bundle) {
+    return TYPEOF(bundle) == VECSXP &&
+           Rf_isFunction(rducks_named_list_get(bundle, "execute")) &&
+           Rf_isFunction(rducks_named_list_get(bundle, "submit")) &&
+           Rf_isFunction(rducks_named_list_get(bundle, "collect")) &&
+           Rf_isFunction(rducks_named_list_get(bundle, "collect_many"));
+}
+
+static SEXP rducks_ripc_call_submit_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                SEXP input_array_xptr, SEXP input_schema_xptr,
+                                                SEXP output_schema_xptr, idx_t n,
+                                                int *protect_count, int *r_err) {
+    SEXP submit = rducks_named_list_get(meta->fun, "submit");
+    SEXP n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    (*protect_count)++;
+    SEXP call = PROTECT(Rf_lang5(submit, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static SEXP rducks_ripc_call_collect_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                 SEXP future, SEXP output_schema_xptr, idx_t n,
+                                                 int *protect_count, int *r_err) {
+    SEXP collect = rducks_named_list_get(meta->fun, "collect");
+    SEXP n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    (*protect_count)++;
+    SEXP call = PROTECT(Rf_lang4(collect, future, output_schema_xptr, n_sexp));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static SEXP rducks_ripc_call_collect_many_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                      SEXP futures, SEXP output_schemas, SEXP ns,
+                                                      int *protect_count, int *r_err) {
+    SEXP collect_many = rducks_named_list_get(meta->fun, "collect_many");
+    SEXP call = PROTECT(Rf_lang4(collect_many, futures, output_schemas, ns));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static void rducks_ripc_release_preserved(SEXP *future, SEXP *output_schema_xptr) {
+    if (future && *future && *future != R_NilValue) {
+        R_ReleaseObject(*future);
+        *future = R_NilValue;
+    }
+    if (output_schema_xptr && *output_schema_xptr && *output_schema_xptr != R_NilValue) {
+        R_ReleaseObject(*output_schema_xptr);
+        *output_schema_xptr = R_NilValue;
+    }
+}
+
+static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                            duckdb_data_chunk input,
+                                            SEXP *future_out, SEXP *output_schema_out, idx_t *n_out,
+                                            char *err_msg, size_t err_cap) {
+    idx_t n = 0;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP input_schema_xptr = R_NilValue;
+    SEXP input_array_xptr = R_NilValue;
+    SEXP output_schema_xptr = R_NilValue;
+    SEXP future = R_NilValue;
+
+    if (!runtime || !meta || !future_out || !output_schema_out || !n_out) {
+        snprintf(err_msg, err_cap, "Rducks RIPC submit request is missing state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(runtime)) {
+        snprintf(err_msg, err_cap, "Rducks RIPC Future submission reached a non-main execution lane");
+        return 0;
+    }
+    if (!rducks_ripc_bundle_valid(meta->fun)) {
+        snprintf(err_msg, err_cap, "Rducks RIPC metadata bundle is invalid");
+        return 0;
+    }
+
+    rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
+
+    if (!rducks_r_scalar_prepare_inprocess_arrow(runtime, meta, input, &input_schema_xptr, &input_array_xptr,
+                                                 &output_schema_xptr, &n, &protect_count, err_msg, err_cap)) {
+        goto fail;
+    }
+
+    future = rducks_ripc_call_submit_on_r_thread(meta, input_array_xptr, input_schema_xptr,
+                                                 output_schema_xptr, n, &protect_count, &r_err);
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC submit failed");
+        goto fail;
+    }
+    if (rducks_r_scalar_result_is_error(future, err_msg, err_cap)) goto fail;
+
+    R_PreserveObject(future);
+    R_PreserveObject(output_schema_xptr);
+    *future_out = future;
+    *output_schema_out = output_schema_xptr;
+    *n_out = n;
+    UNPROTECT(protect_count);
+    return 1;
+
+fail:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
+static int rducks_ripc_collect_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                             SEXP future, SEXP output_schema_xptr, idx_t n,
+                                             duckdb_vector output, char *err_msg, size_t err_cap) {
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP result = R_NilValue;
+    if (!runtime || !meta || !future || future == R_NilValue || !output_schema_xptr || output_schema_xptr == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RIPC collect request is missing state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(runtime)) {
+        snprintf(err_msg, err_cap, "Rducks RIPC Future collection reached a non-main execution lane");
+        return 0;
+    }
+    result = rducks_ripc_call_collect_on_r_thread(meta, future, output_schema_xptr, n, &protect_count, &r_err);
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect failed");
+        goto fail;
+    }
+    if (!rducks_r_scalar_emit_arrow_result(runtime, meta, result, output_schema_xptr, n, output, err_msg, err_cap)) goto fail;
+    UNPROTECT(protect_count);
+    return 1;
+fail:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
+static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                               duckdb_data_chunk input, duckdb_vector output,
+                               char *err_msg, size_t err_cap) {
+    SEXP future = R_NilValue;
+    SEXP output_schema_xptr = R_NilValue;
+    idx_t n = 0;
+    int ok;
+    if (!rducks_ripc_submit_chunk_on_main(runtime, meta, input, &future, &output_schema_xptr, &n, err_msg, err_cap)) {
+        rducks_ripc_release_preserved(&future, &output_schema_xptr);
+        return 0;
+    }
+    ok = rducks_ripc_collect_chunk_on_main(runtime, meta, future, output_schema_xptr, n, output, err_msg, err_cap);
+    rducks_ripc_release_preserved(&future, &output_schema_xptr);
+    return ok;
+}
+
 static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
                                    char *err_msg, size_t err_cap) {
     idx_t n = 0;
@@ -428,6 +595,13 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
             }
             return;
         }
+        if (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+            rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
+            if (!rducks_queue_submit_scalar(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+                duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued Future Arrow IPC UDF failed");
+            }
+            return;
+        }
         duckdb_scalar_function_set_error(
             info,
             "Rducks scalar UDF reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') "
@@ -436,7 +610,8 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 
-    if (rducks_concurrent_inproc_enabled(runtime)) {
+    if (rducks_concurrent_inproc_enabled(runtime) ||
+        (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC)) {
         rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
         if (!rducks_queue_submit_scalar_via_worker_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
@@ -457,6 +632,14 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     if (meta && meta->eval_mode == RDUCKS_EVAL_RCV) {
         if (!rducks_rc_vectorized_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC vectorized R function failed");
+            return;
+        }
+        return;
+    }
+
+    if (meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        if (!rducks_ripc_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks Future Arrow IPC R function failed");
             return;
         }
         return;

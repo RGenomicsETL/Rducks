@@ -8,7 +8,7 @@ rducks_set_execution_plan(
   con,
   plan = rducks_execution_plan(),
   threads = NULL,
-  external_threads = threads
+  external_threads = NULL
 )
 }
 \arguments{
@@ -19,7 +19,8 @@ rducks_set_execution_plan(
 \item{threads}{Optional positive integer to set with \verb{PRAGMA threads}.}
 
 \item{external_threads}{Optional positive integer to set with
-\verb{SET external_threads}. Defaults to \code{threads}.}
+\verb{SET external_threads}. Use \code{NULL} to leave unchanged. For actual DuckDB
+worker concurrency, keep this smaller than \code{threads}.}
 }
 \value{
 \code{con}, invisibly.

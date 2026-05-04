@@ -1135,6 +1135,46 @@ rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {
   nanoarrow::read_nanoarrow(as.raw(payload), lazy = lazy)
 }
 
+rducks_arrow_ipc_decode_array <- function(payload) {
+  stream <- rducks_arrow_ipc_decode_stream(payload, lazy = FALSE)
+  schema <- stream$get_schema()
+  array <- stream$get_next(schema)
+  if (is.null(array)) {
+    stop("Arrow IPC payload did not contain a record batch", call. = FALSE)
+  }
+  nanoarrow::nanoarrow_array_set_schema(array, schema)
+  list(array = array, schema = schema)
+}
+
+rducks_arrow_schema_to_spec <- function(schema) {
+  schema <- nanoarrow::as_nanoarrow_schema(schema)
+  list(
+    format = schema$format %||% "",
+    name = schema$name %||% "",
+    metadata = as.list(schema$metadata %||% list()),
+    flags = as.integer(schema$flags %||% 0L),
+    children = lapply(schema$children %||% list(), rducks_arrow_schema_to_spec),
+    dictionary = if (is.null(schema$dictionary)) NULL else rducks_arrow_schema_to_spec(schema$dictionary)
+  )
+}
+
+rducks_arrow_schema_from_spec <- function(spec) {
+  children <- lapply(spec$children %||% list(), rducks_arrow_schema_from_spec)
+  dictionary <- if (is.null(spec$dictionary)) NULL else rducks_arrow_schema_from_spec(spec$dictionary)
+  nanoarrow::nanoarrow_schema_modify(
+    nanoarrow::as_nanoarrow_schema(nanoarrow::na_na()),
+    list(
+      format = spec$format %||% "n",
+      name = spec$name %||% "",
+      metadata = as.list(spec$metadata %||% list()),
+      flags = as.integer(spec$flags %||% 0L),
+      children = children,
+      dictionary = dictionary
+    ),
+    validate = TRUE
+  )
+}
+
 rducks_scalar_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
   n <- as.integer(n)
   if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
@@ -1326,7 +1366,7 @@ rducks_scalar_results_to_arrow <- function(return_type, results, output_schema, 
 }
 
 rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handling,
-                                      plan = rducks_scalar_execution_plan()) {
+                                      plan = rducks_execution_plan()) {
   force(fun)
   force(spec)
   force(null_handling)
@@ -1351,7 +1391,7 @@ rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handli
 }
 
 rducks_make_vectorized_engine <- function(fun, spec, null_handling, exception_handling,
-                                          plan = rducks_scalar_execution_plan()) {
+                                          plan = rducks_execution_plan()) {
   force(fun)
   force(spec)
   force(null_handling)
@@ -1398,6 +1438,233 @@ rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema
   })
 }
 
+rducks_future_worker_eval_arrow_ipc_chunk <- function(input_payload,
+                                                      output_schema_spec,
+                                                      n,
+                                                      fun,
+                                                      arg_types,
+                                                      return_type,
+                                                      null_handling,
+                                                      exception_handling,
+                                                      mode) {
+  n <- as.integer(n)
+  mode <- rducks_match_mode(mode)
+  decoded <- rducks_arrow_ipc_decode_array(input_payload)
+  output_schema <- rducks_arrow_schema_from_spec(output_schema_spec)
+  prepared <- rducks_scalar_prepare_inputs(arg_types, decoded$array, decoded$schema, n)
+  results <- if (identical(mode, "scalar")) {
+    rducks_scalar_eval_prepared_rows(
+      fun,
+      arg_types,
+      return_type,
+      prepared,
+      null_handling,
+      exception_handling
+    )
+  } else {
+    rducks_vectorized_eval_prepared_chunk(
+      fun,
+      arg_types,
+      return_type,
+      prepared,
+      null_handling,
+      exception_handling
+    )
+  }
+  result_array <- rducks_scalar_results_to_arrow(return_type, results, output_schema, n)
+  rducks_arrow_ipc_encode(result_array)
+}
+
+rducks_future_worker_eval_vectorized_chunk <- function(input_payload,
+                                                       output_schema_spec,
+                                                       n,
+                                                       fun,
+                                                       arg_types,
+                                                       return_type,
+                                                       null_handling,
+                                                       exception_handling) {
+  rducks_future_worker_eval_arrow_ipc_chunk(
+    input_payload = input_payload,
+    output_schema_spec = output_schema_spec,
+    n = n,
+    fun = fun,
+    arg_types = arg_types,
+    return_type = return_type,
+    null_handling = null_handling,
+    exception_handling = exception_handling,
+    mode = "vectorized"
+  )
+}
+
+rducks_future_required_globals <- function(env, globals) {
+  required <- c(
+    "input_payload",
+    "output_schema_spec",
+    "n",
+    "fun",
+    "arg_types",
+    "return_type",
+    "null_handling",
+    "exception_handling",
+    "mode"
+  )
+  if (isTRUE(globals)) {
+    return(globals)
+  }
+  required_values <- mget(required, envir = env, inherits = FALSE)
+  if (identical(globals, FALSE)) {
+    return(required_values)
+  }
+  if (is.character(globals)) {
+    return(unique(c(required, globals)))
+  }
+  if (is.list(globals)) {
+    if (length(globals) && (is.null(names(globals)) || any(!nzchar(names(globals))))) {
+      stop("future_globals supplied as a list must be named", call. = FALSE)
+    }
+    required_values[setdiff(names(globals), names(required_values))] <- globals[setdiff(names(globals), names(required_values))]
+    return(required_values)
+  }
+  TRUE
+}
+
+rducks_future_values <- function(futs, timeout, stdout) {
+  batch <- is.list(futs) && !inherits(futs, "Future")
+  relay_conditions <- !batch
+  wait_for_values <- function() future::value(futs, stdout = stdout, signal = relay_conditions)
+  values <- if (is.null(timeout)) {
+    tryCatch(
+      wait_for_values(),
+      error = function(e) {
+        lapply(as.list(futs), function(fut) try(future::cancel(fut), silent = TRUE))
+        stop("Rducks Future worker failed: ", conditionMessage(e), call. = FALSE)
+      }
+    )
+  } else {
+    old <- options(future.wait.timeout = as.numeric(timeout))
+    on.exit(options(old), add = TRUE)
+    tryCatch(
+      wait_for_values(),
+      error = function(e) {
+        lapply(as.list(futs), function(fut) try(future::cancel(fut), silent = TRUE))
+        stop("Rducks Future worker failed while waiting up to ", timeout, " seconds: ", conditionMessage(e), call. = FALSE)
+      }
+    )
+  }
+  if (batch) {
+    for (value in values) {
+      if (inherits(value, "error")) {
+        stop("Rducks Future worker failed: ", conditionMessage(value), call. = FALSE)
+      }
+    }
+  }
+  values
+}
+
+rducks_future_value <- function(fut, timeout, stdout) {
+  rducks_future_values(fut, timeout, stdout)
+}
+
+rducks_future_start_vectorized_chunk <- function(engine, input_payload, output_schema_spec, n) {
+  opts <- engine$plan$future_options %||% rducks_future_options()
+  fun <- engine$fun
+  arg_types <- engine$arg_types
+  return_type <- engine$return_type
+  null_handling <- engine$null_handling
+  exception_handling <- engine$exception_handling
+  mode <- engine$mode %||% "vectorized"
+  globals <- rducks_future_required_globals(environment(), opts$globals)
+  future::future(
+    {
+      Rducks:::rducks_future_worker_eval_arrow_ipc_chunk(
+        input_payload = input_payload,
+        output_schema_spec = output_schema_spec,
+        n = n,
+        fun = fun,
+        arg_types = arg_types,
+        return_type = return_type,
+        null_handling = null_handling,
+        exception_handling = exception_handling,
+        mode = mode
+      )
+    },
+    globals = globals,
+    packages = opts$packages,
+    seed = opts$seed,
+    stdout = opts$stdout,
+    conditions = opts$conditions,
+    label = paste0("rducks-arrow-ipc-", mode)
+  )
+}
+
+rducks_future_collect_vectorized_chunk <- function(engine, fut) {
+  opts <- engine$plan$future_options %||% rducks_future_options()
+  rducks_future_value(fut, opts$timeout, stdout = opts$stdout)
+}
+
+rducks_future_collect_vectorized_chunks <- function(engine, futs) {
+  opts <- engine$plan$future_options %||% rducks_future_options()
+  rducks_future_values(futs, opts$timeout, stdout = opts$stdout)
+}
+
+rducks_future_submit_vectorized_chunk <- function(engine, input_payload, output_schema_spec, n) {
+  fut <- rducks_future_start_vectorized_chunk(engine, input_payload, output_schema_spec, n)
+  rducks_future_collect_vectorized_chunk(engine, fut)
+}
+
+rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+  n <- as.integer(n)
+  if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
+    stop("input nanoarrow array pointer is not valid", call. = FALSE)
+  }
+  if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
+    stop("output nanoarrow schema pointer is not valid", call. = FALSE)
+  }
+  input_payload <- rducks_arrow_ipc_encode(input_array)
+  output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
+  rducks_future_start_vectorized_chunk(engine, input_payload, output_schema_spec, n)
+}
+
+rducks_arrow_ipc_future_collect_arrow_chunk <- function(engine, fut, output_schema, n) {
+  n <- as.integer(n)
+  if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
+    stop("output nanoarrow schema pointer is not valid", call. = FALSE)
+  }
+  result_payload <- rducks_future_collect_vectorized_chunk(engine, fut)
+  decoded_result <- rducks_arrow_ipc_decode_array(result_payload)
+  decoded_result$array
+}
+
+rducks_arrow_ipc_future_collect_many_arrow_chunks <- function(engine, futs, output_schemas, ns) {
+  if (!is.list(futs)) {
+    stop("futs must be a list of Future objects", call. = FALSE)
+  }
+  if (!is.list(output_schemas) || length(output_schemas) != length(futs)) {
+    stop("output_schemas must be a list with one schema per Future", call. = FALSE)
+  }
+  if (length(ns) != length(futs)) {
+    stop("ns must have one row count per Future", call. = FALSE)
+  }
+  for (schema in output_schemas) {
+    if (!nanoarrow::nanoarrow_pointer_is_valid(schema)) {
+      stop("output nanoarrow schema pointer is not valid", call. = FALSE)
+    }
+  }
+  result_payloads <- rducks_future_collect_vectorized_chunks(engine, futs)
+  lapply(result_payloads, function(payload) rducks_arrow_ipc_decode_array(payload)$array)
+}
+
+rducks_arrow_ipc_future_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+  tryCatch({
+    fut <- rducks_arrow_ipc_future_submit_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+    rducks_arrow_ipc_future_collect_arrow_chunk(engine, fut, output_schema, n)
+  }, error = function(e) {
+    msg <- paste0("Rducks Future Arrow IPC R function or marshal error: ", conditionMessage(e))
+    .rducks_state$last_arrow_error <- msg
+    rducks_arrow_error(msg)
+  })
+}
+
 rducks_rc_prepare_inputs <- rducks_scalar_prepare_inputs
 
 rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, plan, engine, eval_rows) {
@@ -1420,7 +1687,7 @@ rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, 
 rducks_make_rc_scalar_bundle <- function(fun, spec,
                                          null_handling = "default",
                                          exception_handling = "rethrow",
-                                         plan = rducks_scalar_execution_plan()) {
+                                         plan = rducks_execution_plan()) {
   engine <- rducks_make_scalar_engine(
     fun, spec,
     null_handling = null_handling,
@@ -1440,7 +1707,7 @@ rducks_make_rc_scalar_bundle <- function(fun, spec,
 rducks_make_rc_vectorized_bundle <- function(fun, spec,
                                              null_handling = "default",
                                              exception_handling = "rethrow",
-                                             plan = rducks_scalar_execution_plan()) {
+                                             plan = rducks_execution_plan()) {
   engine <- rducks_make_vectorized_engine(
     fun, spec,
     null_handling = null_handling,
@@ -1458,7 +1725,7 @@ rducks_make_rc_vectorized_bundle <- function(fun, spec,
 }
 
 rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
-                                             plan = rducks_scalar_execution_plan()) {
+                                             plan = rducks_execution_plan()) {
   engine <- rducks_make_scalar_engine(fun, spec, null_handling, exception_handling, plan = plan)
   function(input_array, input_schema, output_schema, n) {
     rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
@@ -1466,9 +1733,66 @@ rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception
 }
 
 rducks_make_arrow_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
-                                                 plan = rducks_scalar_execution_plan()) {
+                                                 plan = rducks_execution_plan()) {
   engine <- rducks_make_vectorized_engine(fun, spec, null_handling, exception_handling, plan = plan)
   function(input_array, input_schema, output_schema, n) {
     rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
   }
+}
+
+rducks_make_arrow_ipc_future_wrapper <- function(fun, spec, null_handling, exception_handling,
+                                                  mode = c("scalar", "vectorized"),
+                                                  plan = rducks_execution_plan()) {
+  mode <- rducks_match_mode(mode)
+  engine <- if (identical(mode, "scalar")) {
+    rducks_make_scalar_engine(fun, spec, null_handling, exception_handling, plan = plan)
+  } else {
+    rducks_make_vectorized_engine(fun, spec, null_handling, exception_handling, plan = plan)
+  }
+  engine$mode <- mode
+  list(
+    execute = function(input_array, input_schema, output_schema, n) {
+      rducks_arrow_ipc_future_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+    },
+    submit = function(input_array, input_schema, output_schema, n) {
+      tryCatch(
+        rducks_arrow_ipc_future_submit_arrow_chunk(engine, input_array, input_schema, output_schema, n),
+        error = function(e) {
+          msg <- paste0("Rducks Future Arrow IPC submit error: ", conditionMessage(e))
+          .rducks_state$last_arrow_error <- msg
+          rducks_arrow_error(msg)
+        }
+      )
+    },
+    collect = function(fut, output_schema, n) {
+      tryCatch(
+        rducks_arrow_ipc_future_collect_arrow_chunk(engine, fut, output_schema, n),
+        error = function(e) {
+          msg <- paste0("Rducks Future Arrow IPC collect error: ", conditionMessage(e))
+          .rducks_state$last_arrow_error <- msg
+          rducks_arrow_error(msg)
+        }
+      )
+    },
+    collect_many = function(futs, output_schemas, ns) {
+      tryCatch(
+        rducks_arrow_ipc_future_collect_many_arrow_chunks(engine, futs, output_schemas, ns),
+        error = function(e) {
+          msg <- paste0("Rducks Future Arrow IPC collect-many error: ", conditionMessage(e))
+          .rducks_state$last_arrow_error <- msg
+          rducks_arrow_error(msg)
+        }
+      )
+    }
+  )
+}
+
+rducks_make_arrow_ipc_future_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
+                                                        plan = rducks_execution_plan()) {
+  rducks_make_arrow_ipc_future_wrapper(fun, spec, null_handling, exception_handling, mode = "scalar", plan = plan)
+}
+
+rducks_make_arrow_ipc_future_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
+                                                            plan = rducks_execution_plan()) {
+  rducks_make_arrow_ipc_future_wrapper(fun, spec, null_handling, exception_handling, mode = "vectorized", plan = plan)
 }

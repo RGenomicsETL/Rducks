@@ -21,8 +21,10 @@ library(Rducks)
 
 Rducks registers R functions as DuckDB SQL functions. It ships as an R package
 plus a DuckDB extension. The loaded DuckDB extension registers R functions on a
-DuckDB connection and performs the current nanoarrow scalar/vectorized execution
-bridge over DuckDB Arrow C Data.
+DuckDB connection and executes scalar/vectorized chunks through explicit
+`arrow_r`, `arrow_c`, or `arrow_ipc` marshalling plans. In-process plans use
+DuckDB Arrow C Data plus nanoarrow; the multiprocess plan uses Arrow IPC
+request/result payloads through a generic Future provider.
 
 ## How it works
 
@@ -34,8 +36,14 @@ current scalar/vectorized R function execution.
 When you call `rducks_enable()`, Rducks loads the bundled
 `rducks.duckdb_extension` into that DuckDB connection, enables DuckDB's lossless
 Arrow conversion, and records the current R thread as the only lane allowed to
-call R. With `threads = "single"`, it also sets `external_threads=1` and
-`PRAGMA threads=1`; use that registration-safe setting while adding UDFs.
+call R. During extension initialization, DuckDB passes the extension entrypoint a
+`duckdb_connection` plus extension metadata/access handles. Rducks obtains the
+underlying `duckdb_database` via `access->get_database(info)`, keys native
+runtime state by that database handle, and opens an extension-owned
+`duckdb_connection` for registration work that must be owned by the extension
+rather than by R wrapper internals. With `threads = "single"`, `rducks_enable()`
+also sets `external_threads=1` and `PRAGMA threads=1`; use that
+registration-safe setting while adding UDFs.
 
 When you call `rducks_register()`, Rducks normalizes the declared DuckDB type
 objects, checks that Arrow C Data marshalling is available, and preserves the R
@@ -49,12 +57,13 @@ Query execution is described by a connection-level execution plan with two
 orthogonal pieces:
 
 - marshalling: `arrow_r` is the Arrow C Data plus nanoarrow/R reference path;
-  `arrow_c` is the native C/DuckDB-vector path used by scalar native execution;
-  `arrow_ipc` is reserved for the future owned-IPC multiprocess transport.
+  `arrow_c` is the native extension path for scalar row calls and vectorized
+  chunk calls; `arrow_ipc` uses Arrow IPC bytes as the explicit process
+  transport payload.
 - concurrency: `serial` evaluates one chunk at a time in-process;
   `inproc_concurrent` allows concurrent DuckDB callbacks but still runs all R
-  API work on the recorded R execution lane; `multiprocess_parallel` is the
-  future process-isolated chunk-parallel plan.
+  API work on the recorded R execution lane; `multiprocess_parallel` uses the
+  current generic Future backend for process-isolated chunk work.
 
 `rducks_enable()` selects the reference `arrow_r + serial` plan.
 `rducks_enable_inproc()` is a compatibility helper that switches the concurrency
@@ -62,11 +71,14 @@ part to `inproc_concurrent` while preserving the current marshalling choice. No
 R API work runs on DuckDB worker threads, and the in-process queue has
 timeout/error paths rather than a hidden pump.
 
-For scalar mode, `arrow_r` maps to the R/nanoarrow evaluator and `arrow_c` maps
-to the native C row-loop evaluator. Both still evaluate the user R function once
-per logical row on the recorded R lane. Vectorized mode currently uses the
-`arrow_r` reference path only; `arrow_c` vectorized execution is deliberately an
-explicit not-implemented plan rather than a hidden fallback.
+For scalar mode, `arrow_r` maps to the R/nanoarrow row evaluator, `arrow_c`
+maps to the native C row-loop evaluator, and `arrow_ipc` loops over logical rows
+inside the worker process. For vectorized mode, `arrow_r`, `arrow_c`, and
+`arrow_ipc` call the R function once per chunk. The `arrow_c` vectorized path
+uses native evaluator token `RCV`; `arrow_ipc` uses evaluator token `RIPC`.
+Per-UDF counters report the requested path (`arrow_c_chunks` or
+`arrow_ipc_chunks`), not `arrow_r_chunks`, so tests can detect accidental
+fallback.
 
 ## Getting started
 
@@ -117,9 +129,9 @@ dbGetQuery(con, "SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i
 In vectorized mode, `null_handling = "default"` evaluates only rows with no
 top-level SQL NULL inputs and scatters SQL NULLs back into the result.
 `null_handling = "special"` passes all rows using the same NA/NULL shapes as
-scalar mode. The return length must match the number of evaluated rows. For now,
-vectorized mode is supported by `arrow_r` execution plans only and requires at
-least one declared argument.
+scalar mode. The return length must match the number of evaluated rows.
+Vectorized mode is supported by both `arrow_r` and `arrow_c` execution plans and
+requires at least one declared argument.
 
 A tiny benchmark with `bench` can show the call-shape difference for simple R
 work. The result is illustrative rather than a performance guarantee.
@@ -146,11 +158,15 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 Register UDFs in the registration-safe configuration. Then call
 `rducks_enable_inproc()` to switch query execution to the explicit in-process
 queue. Pass `threads`/`external_threads` there if you want to raise DuckDB's
-thread settings for queued execution. R calls are still serialized on the
-recorded main R thread, but queued worker requests have timeout/error paths
-rather than deadlocking indefinitely. The helper preserves the current
-marshalling choice: `arrow_r + inproc_concurrent` supports scalar and vectorized
-UDFs, while `arrow_c + inproc_concurrent` currently supports scalar UDFs.
+thread settings for queued execution. DuckDB interprets `external_threads` as
+threads supplied by the caller rather than DuckDB-created worker threads, so use
+values such as `threads = 4, external_threads = 1` for stress tests instead of
+`external_threads = threads`. R calls are still serialized on the recorded main
+R thread, but queued worker requests have timeout/error paths rather than
+deadlocking indefinitely. The helper preserves the current
+marshalling choice: both `arrow_r + inproc_concurrent` and
+`arrow_c + inproc_concurrent` support scalar and vectorized UDFs. R callbacks
+are still serialized on the recorded R lane.
 
 ```{r inproc-queue}
 reg_sleepy <- rducks_register(
@@ -176,22 +192,35 @@ rducks_inproc_stats(con)
 rducks_disable_inproc(con, threads = 1)
 ```
 
-### Scalar evaluation implementations
+### Evaluation implementations
 
-`mode = "scalar"` has two evaluator implementations selected by the active
+`mode = "scalar"` has three evaluator implementations selected by the active
 connection execution plan:
 
 - `arrow_r` uses the original R/nanoarrow row-loop adapter.
 - `arrow_c` uses a native C row-loop adapter. It evaluates the same R function
   once per logical row, so ordinary R semantics including S3/S7 dispatch, RNG,
   lexical scope, and side effects still come from R's evaluator.
+- `arrow_ipc` encodes each chunk as Arrow IPC and loops over logical rows inside
+  a Future worker process.
 
-Both evaluators preserve the same scalar-mode contract: `null_handling =
-"default"` skips calls for top-level SQL NULL inputs, `null_handling =
-"special"` calls the R function with the documented R missing-value shape, and
-`side_effects = TRUE` marks the DuckDB function volatile. Rducks includes
-`arrow_r`-vs-`arrow_c` conformance tests for scalar, exact, composite, enum,
-union, NULL, error, and RNG behavior.
+`mode = "vectorized"` also has three plan implementations:
+
+- `arrow_r` uses the reference R/nanoarrow chunk adapter.
+- `arrow_c` uses native extension dispatch with evaluator token `RCV` and the
+  vectorized chunk adapter. This is a named `arrow_c` path with explicit
+  counters, not a hidden fallback to the public `arrow_r` evaluator.
+- `arrow_ipc` encodes each chunk as Arrow IPC and calls the R function once per
+  chunk inside a Future worker process.
+
+All scalar evaluators preserve the same scalar-mode contract:
+`null_handling = "default"` skips calls for top-level SQL NULL inputs,
+`null_handling = "special"` calls the R function with the documented R
+missing-value shape, and `side_effects = TRUE` marks the DuckDB function
+volatile. Rducks includes `arrow_r`-vs-`arrow_c` conformance tests for scalar,
+exact, composite, enum, union, NULL, error, RNG, and vectorized chunk behavior.
+The generated conformance matrix can also include `arrow_ipc +
+multiprocess_parallel` cases with `RDUCKS_MATRIX_INCLUDE_IPC=true`.
 
 The `arrow_c` implementation uses borrowed DuckDB input vectors only during the native
 UDF callback. Per-row R arguments are fresh R objects, so a user function may
@@ -199,6 +228,19 @@ retain them without observing later row mutation. Direct DuckDB output-buffer
 writes are used where implemented; strings and raw values are assigned through
 DuckDB's vector assignment API, which copies into DuckDB-owned storage. Rducks
 does not retain pointers into DuckDB-owned chunks after the callback returns.
+
+The current `arrow_ipc + multiprocess_parallel` UDF callback implementation is
+real and uses Arrow IPC request/result payloads through Future workers. It is
+not the maximally parallel multiprocess architecture because DuckDB scalar UDF
+callbacks are synchronous: each callback owns only its current input chunk and
+output vector, and that output vector must be filled before the callback
+returns. For throughput, the intended multiprocess path is an owned prechunk
+pipeline: split an input source into owned Arrow IPC chunk tasks, submit a
+window of tasks to workers, collect by sequence, and then expose the result. The
+development benchmark `tools/benchmark_owned_ipc_pipeline.R` exercises that
+shape and shows why it is the preferred hot path. Same-host shared-memory
+payloads such as `mori` can be considered later as an optimization after the
+owned-task boundary is in place.
 
 `u32` is passed through R numeric (`double`). `BIGINT`, `UBIGINT`, `HUGEINT`,
 and `UHUGEINT` use exact Rducks integer classes backed by canonical decimal
@@ -208,7 +250,10 @@ strings.
 
 Rducks currently builds `rducks.duckdb_extension` at install time, loads it into
 DuckDB with `rducks_enable()`, and registers scalar or vectorized R UDFs with
-`rducks_register()`. The input/output type set is `BOOLEAN`,
+`rducks_register()`. Implemented execution plans are `arrow_r + serial`,
+`arrow_r + inproc_concurrent`, `arrow_c + serial`, `arrow_c +
+inproc_concurrent`, and `arrow_ipc + multiprocess_parallel`. The input/output
+type set is `BOOLEAN`,
 `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`,
 `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`,
 `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,

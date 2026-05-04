@@ -73,11 +73,12 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 #' @param threads Optional positive integer to set with `PRAGMA threads` before
 #'   enabling the in-process backend. Use `NULL` to leave unchanged.
 #' @param external_threads Optional positive integer to set with
-#'   `SET external_threads` before enabling the in-process backend. Defaults to
-#'   `threads`; use `NULL` to leave unchanged.
+#'   `SET external_threads` before enabling the in-process backend. Use `NULL`
+#'   to leave unchanged. For actual DuckDB worker concurrency, keep this smaller
+#'   than `threads` (for example `threads = 4, external_threads = 1`).
 #' @return `con`, invisibly.
 #' @export
-rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads) {
+rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
   rducks_assert_duckdb_connection(con)
   current <- rducks_current_execution_plan(con)
   plan <- rducks_execution_plan(current$marshalling, "inproc_concurrent")
@@ -93,10 +94,10 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = threads
 #' @param con A `duckdb_connection`.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.
 #' @param external_threads Optional positive integer to set with
-#'   `SET external_threads`. Defaults to `threads`.
+#'   `SET external_threads`. Use `NULL` to leave unchanged.
 #' @return `con`, invisibly.
 #' @export
-rducks_disable_inproc <- function(con, threads = NULL, external_threads = threads) {
+rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) {
   rducks_assert_duckdb_connection(con)
   current <- rducks_current_execution_plan(con)
   plan <- rducks_execution_plan(current$marshalling, "serial")
@@ -167,7 +168,7 @@ rducks_validate_thread_count <- function(x, name) {
   as.integer(x)
 }
 
-rducks_configure_duckdb_threads <- function(con, threads = NULL, external_threads = threads) {
+rducks_configure_duckdb_threads <- function(con, threads = NULL, external_threads = NULL) {
   threads <- rducks_validate_thread_count(threads, "threads")
   external_threads <- rducks_validate_thread_count(external_threads, "external_threads")
   if (!is.null(threads) && !is.null(external_threads) && external_threads > threads) {
@@ -198,11 +199,12 @@ rducks_configure_duckdb_threads <- function(con, threads = NULL, external_thread
 #' @param plan An `rducks_execution_plan()` object.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.
 #' @param external_threads Optional positive integer to set with
-#'   `SET external_threads`. Defaults to `threads`.
+#'   `SET external_threads`. Use `NULL` to leave unchanged. For actual DuckDB
+#'   worker concurrency, keep this smaller than `threads`.
 #' @return `con`, invisibly.
 #' @export
 rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
-                                      threads = NULL, external_threads = threads) {
+                                      threads = NULL, external_threads = NULL) {
   rducks_assert_duckdb_connection(con)
   plan <- rducks_as_execution_plan(plan)
   rducks_assert_execution_plan_implemented(plan)

@@ -8,9 +8,9 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values",
     length_semantics = "one output value per R function call",
     error_semantics = "R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
-    threading = "R API work runs on the recorded main R thread; rducks_enable(..., threads = 'single') is the registration-safe default, and rducks_enable_inproc() enables an extension-owned in-process queue that still serializes R calls on that main R lane",
-    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow scalar adapter materializes one R function value per DuckDB row",
-    notes = "current production path is single-lane; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation"
+    threading = "R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside Future workers after Arrow IPC encoding",
+    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport",
+    notes = "scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation"
   ),
   vectorized = list(
     mode = "vectorized",
@@ -21,9 +21,9 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
     length_semantics = "return length must equal the number of evaluated rows in the chunk",
     error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
-    threading = "same execution-plan threading rules as scalar mode; currently supported by arrow_r plans only",
-    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; the nanoarrow vectorized adapter materializes one R column value per declared argument",
-    notes = "batch/chunk call-shape used by future serialized Arrow IPC backends; zero-argument vectorized UDFs are not exposed yet"
+    threading = "same execution-plan threading rules as scalar mode for arrow_r/arrow_c; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend",
+    copy_semantics = "DuckDB chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport",
+    notes = "batch/chunk call-shape used by the Future-based Arrow IPC backend; zero-argument vectorized UDFs are not exposed yet; production multiprocess speed should use an owned prechunk pipeline"
   )
 )
 

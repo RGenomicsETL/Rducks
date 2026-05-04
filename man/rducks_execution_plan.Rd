@@ -6,21 +6,31 @@
 \usage{
 rducks_execution_plan(
   marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
-  concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel")
+  concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
+  future_globals = TRUE,
+  future_packages = NULL,
+  future_seed = FALSE,
+  future_stdout = FALSE,
+  future_conditions = "condition",
+  future_timeout = NULL
 )
 }
 \arguments{
 \item{marshalling}{Chunk marshalling implementation. \code{"arrow_r"} uses Arrow C
 Data plus nanoarrow/R materialization and is the reference implementation.
 \code{"arrow_c"} uses native C/DuckDB-vector materialization for supported
-plans. \code{"arrow_ipc"} reserves owned Arrow IPC bytes as the future
-multiprocess transport boundary.}
+plans. \code{"arrow_ipc"} uses Arrow IPC bytes as the explicit task/result
+payload for the Future-based multiprocess path.}
 
 \item{concurrency}{Concurrency contract. \code{"serial"} evaluates one chunk at a
 time in the calling process. \code{"inproc_concurrent"} allows in-process DuckDB
 callback concurrency while keeping R API work serialized on the recorded R
-execution lane. \code{"multiprocess_parallel"} is the future process-isolated
-chunk-parallel plan and requires \code{marshalling = "arrow_ipc"}.}
+execution lane. \code{"multiprocess_parallel"} uses the current \code{future} backend
+for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.}
+
+\item{future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout}{Options forwarded to \code{future::future()} for \code{arrow_ipc + multiprocess_parallel} registrations. Use \code{future_packages} for packages
+that workers should attach and \code{future_globals} when automatic global
+capture needs help.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.
