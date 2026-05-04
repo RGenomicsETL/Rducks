@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        294ms      3.38    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    234ms      4.24    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        289ms      3.43    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    238ms      4.14    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:49:58</span></span>
+<span><span class="co">#&gt; 1 2026-05-04 22:51:37</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -261,8 +261,8 @@
 <span><span class="co">#&gt; 1                5                    5                     5</span></span>
 <span><span class="co">#&gt;   ripc_collect_max_batch</span></span>
 <span><span class="co">#&gt; 1                      1</span></span></code></pre></div>
-<p>The <code>ripc_collect_max_batch</code> counter is deliberately shown here. A value of <code>1</code> means the scalar-UDF callback integration submitted and collected one borrowed DuckDB callback chunk at a time, because DuckDB requires the output vector to be filled before the callback returns. That path is useful for UDF integration and correctness tests, but it is not the multiprocess throughput benchmark.</p>
-<p>The throughput-oriented path is the owned prechunk Arrow IPC pipeline in <code>tools/benchmark_owned_ipc_pipeline.R</code>: it owns input and result chunks before worker submission, so multiple Future tasks can be outstanding at once.</p>
+<p>The <code>ripc_collect_max_batch</code> counter is deliberately shown here. A value of <code>1</code> means this registered-UDF path submitted and waited for one DuckDB callback chunk at a time. That is a correctness/diagnostic example, not a speed benchmark.</p>
+<p>Parallel speedups require a different shape: first split/copy the input into owned Arrow IPC chunks, then submit many chunks to workers at once. A synchronous DuckDB scalar-UDF callback cannot do that because it must fill its current output vector before returning.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
