@@ -100,8 +100,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        292ms      3.40    1.97MB
-#> 2 vectorized    235ms      4.23    2.34MB
+#> 1 scalar        292ms      3.42    1.97MB
+#> 2 vectorized    235ms      4.24    2.34MB
 ```
 
 ## Execution plans
@@ -175,7 +175,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-04 22:55:10
+#> 1 2026-05-05 00:10:15
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -217,22 +217,27 @@ dbGetQuery(con, "SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) A
 rducks_explain_udf(con, "r_ipc_plus_one")[, c(
   "name", "mode", "plan_id", "evaluator",
   "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests",
-  "ripc_collect_max_batch"
+  "ripc_collect_max_batch", "ripc_submit_wave_max",
+  "ripc_collect_ready_max", "duckdb_pending_tasks_executed"
 )]
 #>             name       mode                         plan_id evaluator
 #> 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC
 #>   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
 #> 1                5                    5                     5
-#>   ripc_collect_max_batch
-#> 1                      1
+#>   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max
+#> 1                      1                    1                      1
+#>   duckdb_pending_tasks_executed
+#> 1                             0
 ```
 
 This is the real `arrow_ipc + multiprocess_parallel` UDF implementation.
 The native extension submits Arrow IPC chunk work through the
 Future-backed RIPC path and imports the returned Arrow IPC result into
-DuckDB. The `ripc_collect_max_batch` counter reports how many submitted
-RIPC chunk requests the native queue collected together in one batch for
-this query.
+DuckDB. The `ripc_collect_max_batch`, `ripc_submit_wave_max`, and
+`ripc_collect_ready_max` counters report native queue batch/wave sizes.
+For Rducks-owned scheduler diagnostics, `rducks_query_stream(con, sql)`
+executes SQL through the extension’s streaming pending-result loop and
+increments `duckdb_pending_tasks_executed`.
 
 ## Current scope
 
@@ -627,6 +632,8 @@ extension build and metadata details.
   : List registered Rducks UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
   : Describe Rducks execution mode semantics
+- [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+  : Execute SQL through the Rducks streaming scheduler
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)

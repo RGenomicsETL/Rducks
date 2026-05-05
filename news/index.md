@@ -2,6 +2,13 @@
 
 ## Rducks 0.0.1
 
+- Added
+  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md),
+  a C-API-only Rducks-owned streaming query surface that prepares SQL on
+  the extension-captured DuckDB connection, drives DuckDB’s streaming
+  pending-result API, drains queued Rducks work between pending tasks,
+  records pending-task progress, and fetches result chunks back through
+  DuckDB.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic
   `future` backends with Arrow IPC task/result payloads. Scalar
   registrations loop over rows inside the worker, vectorized
@@ -9,12 +16,12 @@
   submit and collect phases so queued chunk tasks can be submitted
   before grouped result collection.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  now reports queue-pending, RIPC-in-flight, and RIPC collect batch
-  counters for diagnosing whether chunks are actually overlapping. Arrow
-  IPC encoding for nanoarrow arrays now uses a native buffer writer
-  instead of an R `rawConnection`, avoiding large transient allocations.
-  Enum arguments and returns are supported through an explicit Rducks
-  enum-storage IPC convention.
+  now reports queue-pending, RIPC-in-flight, RIPC submit/collect wave,
+  and Rducks-owned pending-query counters for diagnosing whether chunks
+  are actually overlapping. Arrow IPC encoding for nanoarrow arrays now
+  uses a native buffer writer instead of an R `rawConnection`, avoiding
+  large transient allocations. Enum arguments and returns are supported
+  through an explicit Rducks enum-storage IPC convention.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
 - Implemented `arrow_c + vectorized` registrations for both `serial` and
@@ -42,9 +49,8 @@
   [`rducks_current_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.md)
   to separate UDF semantics from connection-level
   marshalling/concurrency policy. The `arrow_r + serial` plan is the
-  reference implementation; `arrow_c + vectorized` and planned
-  `arrow_ipc + multiprocess_parallel` execution now fail explicitly
-  through plan validation rather than silently falling back.
+  reference implementation; unsupported execution-plan combinations fail
+  explicitly through plan validation rather than silently falling back.
 - Removed per-registration evaluator selection from
   [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
   The evaluator is now derived from the active execution plan, so

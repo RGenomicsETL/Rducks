@@ -23,8 +23,8 @@ and semantic README/docs.
 - **P1 correctness hardening**: no-fallback tests, plan-transition
   tests, lifetime/GC tests, and native/R-thread boundary tests.
 - **P2 observability and required feature gaps**: listing UDFs, counter
-  reset, README/docs examples, richer diagnostics, and planned `arrow_c`
-  vectorized support.
+  reset, README/docs examples, richer diagnostics, and remaining
+  vectorized-plan hardening.
 - **P3 future backends**: owned queued boundaries and Arrow IPC
   multiprocess execution.
 
@@ -264,9 +264,17 @@ interface.
   `future` providers, submits Arrow IPC chunk tasks separately from
   collection, and can collect a group of queued futures after
   submission. Native counters expose `ripc_collect_batches`,
-  `ripc_collect_requests`, and `ripc_collect_max_batch`; current DuckDB
-  scalar UDF tests usually show max batch size 1.
-- Optional non-UDF source/query surface: send owned Arrow IPC task bytes
+  `ripc_collect_requests`, `ripc_collect_max_batch`,
+  `ripc_submit_wave_max`, `ripc_collect_ready_max`, and
+  `duckdb_pending_tasks_executed`.
+- Implemented query-scheduler surface:
+  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+  executes SQL through an extension-owned table function that drives
+  DuckDB’s streaming pending-result API, drains queued Rducks work
+  between pending tasks, and fetches result chunks back through DuckDB.
+  Stress diagnostics can now show `queue_pending_max`,
+  `ripc_inflight_max`, and RIPC batch/wave maxima above 1.
+- Future non-UDF source/query surface: send owned Arrow IPC task bytes
   to workers, keep multiple chunks outstanding, collect by task
   sequence, decode owned Arrow IPC result bytes, and expose the result
   to DuckDB/R without relying on borrowed scalar-UDF callback pointers.
@@ -298,7 +306,7 @@ explicit async DuckDB query handle.
 - Constraint: this must be an explicit async-query API, not a hidden UDF
   pump. Do not depend on `duckdb` R private slots or a background R
   event loop unless that is the public API contract.
-- Acceptance before promotion out of P3: prototype pending-query polling
+- Acceptance before promotion out of P3: implement pending-query polling
   over `duckdb_pending_result`, document lifecycle/cancellation/error
   semantics, and test that users can interleave R work between polls.
 

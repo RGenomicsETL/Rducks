@@ -52,7 +52,7 @@
 <li>
 <strong>P1 correctness hardening</strong>: no-fallback tests, plan-transition tests, lifetime/GC tests, and native/R-thread boundary tests.</li>
 <li>
-<strong>P2 observability and required feature gaps</strong>: listing UDFs, counter reset, README/docs examples, richer diagnostics, and planned <code>arrow_c</code> vectorized support.</li>
+<strong>P2 observability and required feature gaps</strong>: listing UDFs, counter reset, README/docs examples, richer diagnostics, and remaining vectorized-plan hardening.</li>
 <li>
 <strong>P3 future backends</strong>: owned queued boundaries and Arrow IPC multiprocess execution.</li>
 </ul></div>
@@ -238,8 +238,9 @@
 <code>inproc_concurrent</code>: enqueue task to main-lane executor, wait with timeout, and drain/progress only on the recorded main R lane.</li>
 </ul></li>
 <li>[~] <strong>P3</strong> Plug <code>multiprocess_parallel</code> into the same scheduler interface.
-<ul><li>Current scalar-callback implementation: <code>arrow_ipc</code> uses generic <code>future</code> providers, submits Arrow IPC chunk tasks separately from collection, and can collect a group of queued futures after submission. Native counters expose <code>ripc_collect_batches</code>, <code>ripc_collect_requests</code>, and <code>ripc_collect_max_batch</code>; current DuckDB scalar UDF tests usually show max batch size 1.</li>
-<li>Optional non-UDF source/query surface: send owned Arrow IPC task bytes to workers, keep multiple chunks outstanding, collect by task sequence, decode owned Arrow IPC result bytes, and expose the result to DuckDB/R without relying on borrowed scalar-UDF callback pointers.</li>
+<ul><li>Current scalar-callback implementation: <code>arrow_ipc</code> uses generic <code>future</code> providers, submits Arrow IPC chunk tasks separately from collection, and can collect a group of queued futures after submission. Native counters expose <code>ripc_collect_batches</code>, <code>ripc_collect_requests</code>, <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, <code>ripc_collect_ready_max</code>, and <code>duckdb_pending_tasks_executed</code>.</li>
+<li>Implemented query-scheduler surface: <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> executes SQL through an extension-owned table function that drives DuckDB’s streaming pending-result API, drains queued Rducks work between pending tasks, and fetches result chunks back through DuckDB. Stress diagnostics can now show <code>queue_pending_max</code>, <code>ripc_inflight_max</code>, and RIPC batch/wave maxima above 1.</li>
+<li>Future non-UDF source/query surface: send owned Arrow IPC task bytes to workers, keep multiple chunks outstanding, collect by task sequence, decode owned Arrow IPC result bytes, and expose the result to DuckDB/R without relying on borrowed scalar-UDF callback pointers.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P2</strong> Keep counters at the scheduler boundary.</label>
@@ -254,7 +255,7 @@
 <ul><li>Relevant C/extension APIs in the current headers include <code>duckdb_pending_prepared()</code>, <code>duckdb_pending_execute_task()</code>, <code>duckdb_pending_execute_check_state()</code>, <code>duckdb_execute_pending()</code>, <code>duckdb_pending_prepared_streaming()</code>, <code>duckdb_execute_tasks()</code>, and <code>duckdb_create_task_state()</code> / <code>duckdb_execute_n_tasks_state()</code>.</li>
 <li>Possible shape: <code>aioduckdb_query(con, sql)</code> returns a pending handle; <code>aioduckdb_poll(handle, max_tasks)</code>, <code>aioduckdb_ready(handle)</code>, <code>aioduckdb_collect(handle)</code>, and <code>aioduckdb_cancel(handle)</code> are explicit user operations.</li>
 <li>Constraint: this must be an explicit async-query API, not a hidden UDF pump. Do not depend on <code>duckdb</code> R private slots or a background R event loop unless that is the public API contract.</li>
-<li>Acceptance before promotion out of P3: prototype pending-query polling over <code>duckdb_pending_result</code>, document lifecycle/cancellation/error semantics, and test that users can interleave R work between polls.</li>
+<li>Acceptance before promotion out of P3: implement pending-query polling over <code>duckdb_pending_result</code>, document lifecycle/cancellation/error semantics, and test that users can interleave R work between polls.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">

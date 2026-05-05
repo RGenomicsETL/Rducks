@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        292ms      3.40    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    235ms      4.23    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        292ms      3.42    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    235ms      4.24    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-04 22:55:10</span></span>
+<span><span class="co">#&gt; 1 2026-05-05 00:10:15</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -253,15 +253,18 @@
 <span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"evaluator"</span>,</span>
 <span>  <span class="st">"arrow_ipc_chunks"</span>, <span class="st">"ripc_collect_batches"</span>, <span class="st">"ripc_collect_requests"</span>,</span>
-<span>  <span class="st">"ripc_collect_max_batch"</span></span>
+<span>  <span class="st">"ripc_collect_max_batch"</span>, <span class="st">"ripc_submit_wave_max"</span>,</span>
+<span>  <span class="st">"ripc_collect_ready_max"</span>, <span class="st">"duckdb_pending_tasks_executed"</span></span>
 <span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;             name       mode                         plan_id evaluator</span></span>
 <span><span class="co">#&gt; 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests</span></span>
 <span><span class="co">#&gt; 1                5                    5                     5</span></span>
-<span><span class="co">#&gt;   ripc_collect_max_batch</span></span>
-<span><span class="co">#&gt; 1                      1</span></span></code></pre></div>
-<p>This is the real <code>arrow_ipc + multiprocess_parallel</code> UDF implementation. The native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. The <code>ripc_collect_max_batch</code> counter reports how many submitted RIPC chunk requests the native queue collected together in one batch for this query.</p>
+<span><span class="co">#&gt;   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max</span></span>
+<span><span class="co">#&gt; 1                      1                    1                      1</span></span>
+<span><span class="co">#&gt;   duckdb_pending_tasks_executed</span></span>
+<span><span class="co">#&gt; 1                             0</span></span></code></pre></div>
+<p>This is the real <code>arrow_ipc + multiprocess_parallel</code> UDF implementation. The native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes. For Rducks-owned scheduler diagnostics, <code>rducks_query_stream(con, sql)</code> executes SQL through the extension’s streaming pending-result loop and increments <code>duckdb_pending_tasks_executed</code>.</p>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
