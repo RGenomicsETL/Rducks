@@ -1,11 +1,7 @@
 /* Included by ../rducks_extension.c. */
 
 static int rducks_is_main_thread(rducks_runtime_entry_t *runtime) {
-    char current[128];
-    char expected[128];
-    if (!rducks_get_main_thread_token(runtime, expected, sizeof(expected))) return 0;
-    rducks_current_thread_token(current, sizeof(current));
-    return strcmp(current, expected) == 0;
+    return rducks_is_recorded_main_thread(runtime);
 }
 
 static int rducks_allow_calling_thread_r_execution(rducks_runtime_entry_t *runtime, char *err, size_t err_cap) {
@@ -98,6 +94,25 @@ static void rducks_runtime_unregister_udf(rducks_runtime_entry_t *runtime, rduck
         }
         prev = cur;
         cur = cur->registry_next;
+    }
+    rducks_runtime_unlock();
+}
+
+static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) {
+    /* Used when a DuckDB extension reload invalidates catalog-owned function
+     * metadata. Detach registry bookkeeping without calling R API; preserved R
+     * evaluators may leak until a future explicit main-lane release path.
+     */
+    rducks_r_scalar_meta_t *cur;
+    if (!runtime) return;
+    rducks_runtime_lock();
+    cur = runtime->udf_registry_head;
+    runtime->udf_registry_head = NULL;
+    while (cur) {
+        rducks_r_scalar_meta_t *next = cur->registry_next;
+        cur->registry_next = NULL;
+        cur->runtime = NULL;
+        cur = next;
     }
     rducks_runtime_unlock();
 }

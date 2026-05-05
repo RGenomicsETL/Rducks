@@ -32,6 +32,10 @@ struct rducks_udf_request {
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 };
 
+/* Queue lock discipline: do not call rducks_runtime_lock() while holding
+ * runtime->queue_lock. Runtime counter/registry updates are performed before or
+ * after queue critical sections to keep the lock graph acyclic.
+ */
 static void rducks_queue_lock(rducks_runtime_entry_t *runtime) {
 #ifdef _WIN32
     EnterCriticalSection(&runtime->queue_lock);

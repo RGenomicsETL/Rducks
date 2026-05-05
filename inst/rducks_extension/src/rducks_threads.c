@@ -5,35 +5,70 @@ static void rducks_current_thread_token(char *buf, size_t cap) {
 #ifdef _WIN32
     snprintf(buf, cap, "win:%lu", (unsigned long)GetCurrentThreadId());
 #else
-    pthread_t self = pthread_self();
-    unsigned char bytes[sizeof(self)];
-    size_t pos = 0;
-    memcpy(bytes, &self, sizeof(self));
-    pos += (size_t)snprintf(buf + pos, cap - pos, "posix:");
-    for (size_t i = 0; i < sizeof(self) && pos + 2U < cap; i++) {
-        pos += (size_t)snprintf(buf + pos, cap - pos, "%02x", bytes[i]);
-    }
+    /* Diagnostic label only. POSIX treats pthread_t as opaque, so do not
+     * serialize its bytes or compare its representation. Main-thread identity
+     * checks use pthread_equal() against the package-owned pthread_t pointer
+     * passed through rducks_set_main_thread_token().
+     */
+    snprintf(buf, cap, "posix:pthread");
 #endif
     buf[cap - 1U] = '\0';
 }
 
-static void rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const char *token) {
-    if (!runtime) return;
+static int rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const char *token) {
+    if (!runtime || !token || !token[0]) return 0;
+#ifdef _WIN32
+    const char *prefix = "win:";
+    char *end = NULL;
+    unsigned long value;
+    if (strncmp(token, prefix, strlen(prefix)) != 0) return 0;
+    errno = 0;
+    value = strtoul(token + strlen(prefix), &end, 10);
+    if (errno != 0 || !end || *end != '\0') return 0;
     rducks_runtime_lock();
-    snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token ? token : "");
-    runtime->main_thread_token_set = token && token[0];
+    snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token);
+    runtime->main_thread_id = (DWORD)value;
+    runtime->main_thread_token_set = 1;
     rducks_runtime_unlock();
+    return 1;
+#else
+    const char *prefix = "posix-pthread-ptr:";
+    char *end = NULL;
+    unsigned long long value;
+    const pthread_t *thread_id;
+    if (strncmp(token, prefix, strlen(prefix)) != 0) return 0;
+    errno = 0;
+    value = strtoull(token + strlen(prefix), &end, 10);
+    if (errno != 0 || !end || *end != '\0' || value == 0ULL) return 0;
+    thread_id = (const pthread_t *)(uintptr_t)value;
+    rducks_runtime_lock();
+    snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token);
+    runtime->main_thread_id = thread_id;
+    runtime->main_thread_token_set = 1;
+    rducks_runtime_unlock();
+    return 1;
+#endif
 }
 
-static int rducks_get_main_thread_token(rducks_runtime_entry_t *runtime, char *buf, size_t cap) {
-    int out;
-    if (!runtime || !buf || cap == 0U) return 0;
+static int rducks_is_recorded_main_thread(rducks_runtime_entry_t *runtime) {
+    int token_set;
+#ifdef _WIN32
+    DWORD main_thread_id;
+#else
+    const pthread_t *main_thread_id;
+#endif
+    if (!runtime) return 0;
     rducks_runtime_lock();
-    out = runtime->main_thread_token_set;
-    if (out) {
-        snprintf(buf, cap, "%s", runtime->main_thread_token);
+    token_set = runtime->main_thread_token_set;
+    if (token_set) {
+        main_thread_id = runtime->main_thread_id;
     }
     rducks_runtime_unlock();
-    if (out) buf[cap - 1U] = '\0';
-    return out;
+    if (!token_set) return 0;
+#ifdef _WIN32
+    return GetCurrentThreadId() == main_thread_id;
+#else
+    if (!main_thread_id) return 0;
+    return pthread_equal(pthread_self(), *main_thread_id) != 0;
+#endif
 }

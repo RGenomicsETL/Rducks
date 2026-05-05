@@ -211,7 +211,11 @@ static void rducks_set_main_thread_token_scalar(duckdb_function_info info, duckd
             duckdb_scalar_function_set_error(info, "out of memory setting Rducks main thread token");
             return;
         }
-        rducks_set_main_thread_token(runtime, token);
+        if (!rducks_set_main_thread_token(runtime, token)) {
+            free(token);
+            duckdb_scalar_function_set_error(info, "invalid Rducks main thread token");
+            return;
+        }
         free(token);
         out[i] = true;
     }

@@ -62,19 +62,22 @@ SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr, SEXP nanoarrow_dll_path_sexp
 #include <pthread.h>
 #endif
 
+#ifndef _WIN32
+static pthread_t rducks_main_thread_id;
+#endif
+
 SEXP RDUCKS_current_thread_token(void) {
     char buf[128];
 #ifdef _WIN32
     snprintf(buf, sizeof(buf), "win:%lu", (unsigned long)GetCurrentThreadId());
 #else
-    pthread_t self = pthread_self();
-    unsigned char bytes[sizeof(self)];
-    size_t pos = 0;
-    memcpy(bytes, &self, sizeof(self));
-    pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "posix:");
-    for (size_t i = 0; i < sizeof(self) && pos + 2U < sizeof(buf); i++) {
-        pos += (size_t)snprintf(buf + pos, sizeof(buf) - pos, "%02x", bytes[i]);
-    }
+    /* This value is only a handshake token passed to the DuckDB extension.
+     * Store pthread_t in package-owned native storage and pass its address; the
+     * extension compares the pointed-to pthread_t with pthread_equal().
+     */
+    rducks_main_thread_id = pthread_self();
+    snprintf(buf, sizeof(buf), "posix-pthread-ptr:%llu",
+             (unsigned long long)(uintptr_t)&rducks_main_thread_id);
 #endif
     buf[sizeof(buf) - 1U] = '\0';
     return Rf_mkString(buf);

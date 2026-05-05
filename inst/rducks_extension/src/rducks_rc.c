@@ -1171,11 +1171,8 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
     rducks_rc_direct_vector_view_t output_view;
 
     if (meta->arity > 0) {
-        inputs = (rducks_rc_direct_vector_view_t *)calloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
-        if (!inputs) {
-            snprintf(err_msg, err_cap, "out of memory allocating Rducks RC direct input views");
-            return 0;
-        }
+        inputs = (rducks_rc_direct_vector_view_t *)R_alloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
+        memset(inputs, 0, meta->arity * sizeof(rducks_rc_direct_vector_view_t));
         for (size_t col = 0; col < meta->arity; col++) {
             rducks_rc_direct_input_view_init(&inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
         }
@@ -1213,7 +1210,6 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
                 continue;
             }
             snprintf(err_msg, err_cap, "Rducks RC R function error");
-            free(inputs);
             return 0;
         }
 
@@ -1222,17 +1218,14 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
         if (r_err) {
             UNPROTECT(3); /* checked, value, args */
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
-            free(inputs);
             return 0;
         }
         if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, checked, err_msg, err_cap)) {
             UNPROTECT(3); /* checked, value, args */
-            free(inputs);
             return 0;
         }
         UNPROTECT(3); /* checked, value, args */
     }
-    free(inputs);
     return 1;
 }
 

@@ -272,6 +272,11 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
         snprintf(err, err_cap, "failed to reopen Rducks extension connection");
         return 0;
     }
+    if (!rducks_runtime_configure_connection(new_connection, err, err_cap)) {
+        duckdb_disconnect(&new_connection);
+        return 0;
+    }
+    rducks_runtime_forget_udf_registry(runtime);
     rducks_runtime_lock();
     old_connection = runtime->connection;
     runtime->database = database;

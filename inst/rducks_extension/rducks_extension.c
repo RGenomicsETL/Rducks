@@ -114,6 +114,11 @@ typedef struct rducks_runtime_entry {
     int registration_surface_ready;
     char main_thread_token[128];
     int main_thread_token_set;
+#ifdef _WIN32
+    DWORD main_thread_id;
+#else
+    const pthread_t *main_thread_id;
+#endif
     rducks_execution_backend_t execution_backend;
     rducks_udf_request_t *queue_head;
     rducks_udf_request_t *queue_tail;
@@ -175,6 +180,11 @@ static rducks_runtime_entry_t **g_runtime_entries = NULL;
 static idx_t g_runtime_count = 0;
 static idx_t g_runtime_capacity = 0;
 
+/* Locking discipline: avoid nesting the global runtime registry lock and a
+ * runtime queue lock. Queue operations should release runtime->queue_lock before
+ * updating registry/stat counters under g_runtime_lock. If future code must
+ * nest these locks, re-audit every caller and document one global order here.
+ */
 #ifdef _WIN32
 static CRITICAL_SECTION g_runtime_lock;
 static INIT_ONCE g_runtime_lock_once = INIT_ONCE_STATIC_INIT;
@@ -250,6 +260,23 @@ static void rducks_runtime_queue_destroy_entry(rducks_runtime_entry_t *entry) {
     entry->queue_initialized = 0;
 }
 
+static int rducks_runtime_configure_connection(duckdb_connection connection, char *err, size_t err_cap) {
+    duckdb_result result;
+    memset(&result, 0, sizeof(result));
+    if (!connection) {
+        snprintf(err, err_cap, "Rducks runtime connection is missing");
+        return 0;
+    }
+    if (duckdb_query(connection, "SET arrow_lossless_conversion=true", &result) == DuckDBError) {
+        const char *msg = duckdb_result_error(&result);
+        snprintf(err, err_cap, "%s", (msg && msg[0]) ? msg : "failed to configure Rducks extension connection");
+        duckdb_destroy_result(&result);
+        return 0;
+    }
+    duckdb_destroy_result(&result);
+    return 1;
+}
+
 static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database database, char *err, size_t err_cap) {
     rducks_runtime_entry_t *entry;
     if (!database) {
@@ -290,6 +317,14 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
         duckdb_free(entry);
         rducks_runtime_unlock();
         snprintf(err, err_cap, "failed to open Rducks extension connection");
+        return NULL;
+    }
+    if (!rducks_runtime_configure_connection(entry->connection, err, err_cap)) {
+        duckdb_disconnect(&entry->connection);
+        rducks_runtime_queue_destroy_entry(entry);
+        memset(entry, 0, sizeof(*entry));
+        duckdb_free(entry);
+        rducks_runtime_unlock();
         return NULL;
     }
     g_runtime_entries[g_runtime_count++] = entry;
