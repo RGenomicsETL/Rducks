@@ -89,6 +89,16 @@ Run with `lobstr` in this session:
   `duckdb_connection` wrapper itself. A no-subclass GC cleanup path therefore
   needs either a weak reference/finalizer keyed by duckdb-r's `conn_ref`
   external pointer, or an assigned Rducks-owned guard environment/externalptr.
+- DuckDB exposes an instance-cache C API: cached opens can return distinct
+  `duckdb_database` handles backed by the same underlying database instance.
+  DuckDB extension loading also hands C extensions a load-state
+  `DatabaseWrapper`. Therefore raw `duckdb_database` wrapper pointers are not a
+  durable runtime identity.
+- Rducks UDFs are database/catalog-scoped, not only connection-scoped: a UDF
+  registered on one connection is callable from another connection to the same
+  database. A weakref finalizer for one collected connection must therefore not
+  blindly release preserved R functions while another live connection can still
+  call catalog entries that point at the same native metadata.
 - A small C probe showed the current R runtime finalizes independently
   unreachable external pointers in reverse registration order, so an Rducks
   guard external pointer registered after duckdb-r's `conn_ref` finalizer can
@@ -119,6 +129,10 @@ Run with `lobstr` in this session:
 2. **Runtime token contents.**
    - Problem: DuckDB `current_connection_id()` is not globally unique across
      independent database instances; raw wrapper addresses can be reused.
+   - Additional problem: DuckDB's C instance-cache API can create multiple
+     `duckdb_database` wrapper handles for the same underlying database
+     instance, and extension loading creates a load-state wrapper. Do not use
+     raw `duckdb_database` pointers as stable runtime ids.
    - Decision: define a native Rducks token such as `(runtime_id, generation)`.
      It may include DuckDB database/connection details for diagnostics, but the
      unique part should be Rducks-owned and monotonic within the process.
@@ -129,6 +143,14 @@ Run with `lobstr` in this session:
    - GC path: key Rducks cleanup to collection of the DuckDB connection external
      pointer, clear token-keyed R stores, and call a native idempotent release
      path that does not require a live DuckDB connection.
+   - Do not equate one connection's collection with database-runtime death.
+     Track Rducks-enabled connection anchors per runtime. Only runtime-wide
+     release should consider dropping/releasing UDF state.
+   - If releasing preserved R functions from the weakref finalizer, first make
+     native UDF metadata inert under lock: future calls must error cleanly rather
+     than calling a released `SEXP`, and later DuckDB metadata destructors must
+     not double-release. Releasing is only safe when no in-flight callbacks use
+     the metadata.
    - Explicit disconnect caveat: if users call `DBI::dbDisconnect(con)` but keep
      `con` referenced, a weakref/finalizer will not run until `con@conn_ref`
      becomes unreachable. A subclass/wrapper or explicit `rducks_release(con)` is
@@ -167,8 +189,8 @@ Run with `lobstr` in this session:
     `.rducks_state$registrations`.
   - Add a weakref/finalizer lifecycle anchor keyed by the DuckDB connection
     external pointer (`conn_ref`) or by an assigned Rducks-owned guard object.
-    On finalization, remove token-keyed R-side stores and call idempotent native
-    runtime release.
+    On finalization, remove token-keyed R-side stores and decrement a native
+    runtime anchor count.
   - If the token/lifecycle anchor is stored on the R connection wrapper rather
     than keyed to `conn_ref`, the enabled connection object must be returned and
     assigned by the caller.
@@ -176,11 +198,15 @@ Run with `lobstr` in this session:
     a new connection see stale plans or stale UDF metadata.
 
 - [ ] Implement idempotent runtime release.
-  - Target API: `rducks_release(con)`.
-  - Native cleanup: invalidate/remove runtime entry, drain/reset queue state,
-    disconnect extension-owned DuckDB connection, detach UDF registry
-    bookkeeping.
+  - Target API: `rducks_release(con)` plus weakref-driven runtime-anchor release.
+  - Native cleanup: invalidate/remove runtime entry only when safe, drain/reset
+    queue state, disconnect extension-owned DuckDB connection, detach UDF
+    registry bookkeeping.
   - R cleanup: remove token-keyed plan and registration stores.
+  - R-function cleanup: either keep the current leak-until-session-end policy, or
+    mark UDF metadata released/inert and call `R_ReleaseObject()` from the R
+    weakref finalizer on the recorded main R thread. Do not release preserved R
+    functions while catalog metadata can still call them.
   - Must not call DBI/SQL from finalizers.
   - Must not call R API from off-main native destructors.
 
