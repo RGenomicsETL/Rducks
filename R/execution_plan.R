@@ -101,8 +101,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   payload for the Future-based multiprocess path.
 #' @param concurrency Concurrency contract. `"serial"` evaluates one chunk at a
 #'   time in the calling process. `"inproc_concurrent"` allows in-process DuckDB
-#'   callback concurrency while keeping R API work serialized on the recorded R
-#'   execution lane. `"multiprocess_parallel"` uses the current `future` backend
+#'   callback concurrency while keeping R API work serialized on the recorded
+#'   main R thread. `"multiprocess_parallel"` uses the current `future` backend
 #'   for process-isolated chunk work and requires `marshalling = "arrow_ipc"`.
 #' @param future_globals,future_packages,future_seed,future_stdout,future_conditions,future_timeout
 #'   Options forwarded to `future::future()` for `arrow_ipc +

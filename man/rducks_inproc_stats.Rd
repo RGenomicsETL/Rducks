@@ -15,7 +15,7 @@ A one-row data frame with columns \code{submitted}, \code{executed}, and
 }
 \description{
 Returns diagnostic counters for the extension-owned in-process queue.
-\code{submitted} counts requests submitted to the main R execution lane,
-\code{executed} counts requests drained by that lane, and \code{timeouts} counts
+\code{submitted} counts requests submitted to the recorded main R thread,
+\code{executed} counts requests drained by that thread, and \code{timeouts} counts
 requests that were abandoned rather than waiting indefinitely.
 }

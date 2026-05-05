@@ -47,6 +47,17 @@ library(Rducks)
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 
+reg_hello <- rducks_register(
+  con,
+  name = "r_hello",
+  fun = function() "hello from R",
+  args = NULL,
+  returns = VARCHAR,
+  mode = "scalar"
+)
+
+dbGetQuery(con, "SELECT r_hello() AS message")
+
 reg_plus_one <- rducks_register(
   con,
   name = "r_plus_one",
@@ -58,6 +69,9 @@ reg_plus_one <- rducks_register(
 
 dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 ```
+
+Use `args = NULL` for a zero-argument scalar UDF. `null_handling` only affects
+SQL NULL inputs, so the default is appropriate for `r_hello()`.
 
 `rducks_register()` returns an `rducks_registration` object that records the
 connection, normalized signature, and registration options. You do not need to

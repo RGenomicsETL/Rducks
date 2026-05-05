@@ -110,6 +110,9 @@ rducks_as_type <- function(x) {
 }
 
 rducks_as_type_list <- function(x) {
+  if (is.null(x)) {
+    return(list())
+  }
   if (inherits(x, "rducks_type")) {
     return(list(x))
   }

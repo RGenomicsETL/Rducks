@@ -18,6 +18,6 @@ rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 \code{con}, invisibly.
 }
 \description{
-Switches a Rducks-enabled DuckDB connection back to the direct single-lane
-backend. Optionally updates DuckDB thread settings at the same time.
+Switches a Rducks-enabled DuckDB connection back to the direct serial backend.
+Optionally updates DuckDB thread settings at the same time.
 }

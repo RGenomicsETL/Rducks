@@ -33,6 +33,19 @@ library(Rducks)
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 
+reg_hello <- rducks_register(
+  con,
+  name = "r_hello",
+  fun = function() "hello from R",
+  args = NULL,
+  returns = VARCHAR,
+  mode = "scalar"
+)
+
+dbGetQuery(con, "SELECT r_hello() AS message")
+#>        message
+#> 1 hello from R
+
 reg_plus_one <- rducks_register(
   con,
   name = "r_plus_one",
@@ -46,6 +59,9 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 #>    x
 #> 1 42
 ```
+
+Use `args = NULL` for a zero-argument scalar UDF. `null_handling` only
+affects SQL NULL inputs, so the default is appropriate for `r_hello()`.
 
 `rducks_register()` returns an `rducks_registration` object that records
 the connection, normalized signature, and registration options. You do
@@ -115,8 +131,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        298ms      3.35    1.97MB
-#> 2 vectorized    243ms      4.13    2.34MB
+#> 1 scalar        296ms      3.42    1.97MB
+#> 2 vectorized    237ms      4.20    2.34MB
 ```
 
 ## Execution plans
@@ -370,8 +386,8 @@ arrow_ipc_noop_benchmark$parallel_probe
 #> 1 2e+05                0
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           9.235             1.000000
-#> 2 threads=5           6.500             1.420769
+#> 1 threads=1           8.960             1.000000
+#> 2 threads=5           6.321             1.417497
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -484,8 +500,8 @@ arrow_ipc_sleep_benchmark$parallel_probe
 #> 1 4096             1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.355             1.000000
-#> 2 threads=5           0.700             3.364286
+#> 1 threads=1           2.299             1.000000
+#> 2 threads=5           0.705             3.260993
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4

@@ -10,6 +10,10 @@ local({
   expect_equal(reg1$spec$mode, "scalar")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_plus_one(41.0) AS x")$x, 42)
 
+  reg0 <- rducks_register(con, "rducks_hello", function() "hello from R", NULL, VARCHAR)
+  expect_equal(reg0$spec$args, character())
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_hello() AS x")$x, "hello from R")
+
   invisible(rducks_register(
     con,
     "rducks_gc_survives",

@@ -23,9 +23,10 @@ rducks_register(
 
 \item{fun}{R function.}
 
-\item{args}{Argument type specification. Use exported DuckDB-style type
-objects such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]},
-\code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}.}
+\item{args}{Argument type specification. Use \code{NULL} for a zero-argument
+scalar UDF. Otherwise use exported DuckDB-style type objects such as
+\code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or
+\code{MAP(VARCHAR, INTEGER)}.}
 
 \item{returns}{Return type specification.}
 

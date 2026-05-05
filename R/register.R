@@ -47,9 +47,10 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
 #' @param fun R function.
-#' @param args Argument type specification. Use exported DuckDB-style type
-#'   objects such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
-#'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
+#' @param args Argument type specification. Use `NULL` for a zero-argument
+#'   scalar UDF. Otherwise use exported DuckDB-style type objects such as
+#'   `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
+#'   `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
 #' @param mode Registration mode. `"scalar"` calls the R function once per
 #'   DuckDB row. `"vectorized"` calls the R function once per DuckDB chunk with

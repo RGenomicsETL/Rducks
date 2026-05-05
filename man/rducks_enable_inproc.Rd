@@ -24,7 +24,7 @@ than \code{threads} (for example \verb{threads = 4, external_threads = 1}).}
 Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
 backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 callbacks submit chunk requests to an extension-owned queue, and the recorded
-main R execution lane drains the queue and performs all R API work. This is a
+main R thread drains the queue and performs all R API work. This is a
 same-process scheduling mode, not a performance promise; R function calls are
 still serialized on the main R thread. This helper changes only the
 concurrency part of the active execution plan; marshalling stays \code{arrow_r} or

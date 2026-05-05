@@ -58,7 +58,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 #' Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
 #' backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
 #' callbacks submit chunk requests to an extension-owned queue, and the recorded
-#' main R execution lane drains the queue and performs all R API work. This is a
+#' main R thread drains the queue and performs all R API work. This is a
 #' same-process scheduling mode, not a performance promise; R function calls are
 #' still serialized on the main R thread. This helper changes only the
 #' concurrency part of the active execution plan; marshalling stays `arrow_r` or
@@ -88,8 +88,8 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 
 #' Disable in-process queued R UDF execution
 #'
-#' Switches a Rducks-enabled DuckDB connection back to the direct single-lane
-#' backend. Optionally updates DuckDB thread settings at the same time.
+#' Switches a Rducks-enabled DuckDB connection back to the direct serial backend.
+#' Optionally updates DuckDB thread settings at the same time.
 #'
 #' @param con A `duckdb_connection`.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.
@@ -108,8 +108,8 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' Inspect in-process queue counters
 #'
 #' Returns diagnostic counters for the extension-owned in-process queue.
-#' `submitted` counts requests submitted to the main R execution lane,
-#' `executed` counts requests drained by that lane, and `timeouts` counts
+#' `submitted` counts requests submitted to the recorded main R thread,
+#' `executed` counts requests drained by that thread, and `timeouts` counts
 #' requests that were abandoned rather than waiting indefinitely.
 #'
 #' @param con A `duckdb_connection`.
@@ -131,8 +131,8 @@ rducks_inproc_stats <- function(con) {
 #' Exercise the in-process queue
 #'
 #' Runs a native self-test that submits `n` requests from worker threads to the
-#' extension-owned main-thread queue and drains them on the recorded R execution
-#' lane. This validates the queue/condition-variable path without calling an R
+#' extension-owned main-thread queue and drains them on the recorded main R
+#' thread. This validates the queue/condition-variable path without calling an R
 #' UDF.
 #'
 #' @param con A `duckdb_connection`.

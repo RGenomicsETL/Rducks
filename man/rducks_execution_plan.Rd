@@ -24,8 +24,8 @@ payload for the Future-based multiprocess path.}
 
 \item{concurrency}{Concurrency contract. \code{"serial"} evaluates one chunk at a
 time in the calling process. \code{"inproc_concurrent"} allows in-process DuckDB
-callback concurrency while keeping R API work serialized on the recorded R
-execution lane. \code{"multiprocess_parallel"} uses the current \code{future} backend
+callback concurrency while keeping R API work serialized on the recorded
+main R thread. \code{"multiprocess_parallel"} uses the current \code{future} backend
 for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.}
 
 \item{future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout}{Options forwarded to \code{future::future()} for \code{arrow_ipc + multiprocess_parallel} registrations. Use \code{future_packages} for packages
