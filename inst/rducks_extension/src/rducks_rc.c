@@ -131,16 +131,21 @@ static SEXP rducks_rc_arg_at(const rducks_type_desc_t *type, SEXP values, SEXP n
 }
 
 static SEXP rducks_rc_call_user(SEXP fun, SEXP args, int *r_err) {
+    PROTECT(fun);
+    PROTECT(args);
     SEXP call = PROTECT(Rf_lcons(fun, args));
     SEXP value = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
-    UNPROTECT(2);
+    UNPROTECT(4);
     return value;
 }
 
 static SEXP rducks_rc_check_return(SEXP check_return_fun, SEXP return_type, SEXP value, int *r_err) {
+    PROTECT(check_return_fun);
+    PROTECT(return_type);
+    PROTECT(value);
     SEXP call = PROTECT(Rf_lang3(check_return_fun, return_type, value));
     SEXP checked = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
-    UNPROTECT(2);
+    UNPROTECT(5);
     return checked;
 }
 
@@ -1201,9 +1206,8 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
 
         int r_err = 0;
         SEXP value = PROTECT(rducks_rc_call_user(fun, args, &r_err));
-        UNPROTECT(1); /* args */
         if (r_err) {
-            UNPROTECT(1); /* value */
+            UNPROTECT(2); /* value, args */
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
                 rducks_rc_output_set_null(&output_view, row);
                 continue;
@@ -1215,19 +1219,18 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
 
         r_err = 0;
         SEXP checked = PROTECT(rducks_rc_check_return(check_return_fun, return_type, value, &r_err));
-        UNPROTECT(1); /* value */
         if (r_err) {
-            UNPROTECT(1); /* checked */
+            UNPROTECT(3); /* checked, value, args */
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
             free(inputs);
             return 0;
         }
         if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, checked, err_msg, err_cap)) {
-            UNPROTECT(1); /* checked */
+            UNPROTECT(3); /* checked, value, args */
             free(inputs);
             return 0;
         }
-        UNPROTECT(1); /* checked */
+        UNPROTECT(3); /* checked, value, args */
     }
     free(inputs);
     return 1;
@@ -1324,9 +1327,8 @@ static SEXP rducks_rc_eval_arrow_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
 
         r_err = 0;
         SEXP value = PROTECT(rducks_rc_call_user(fun, args, &r_err));
-        UNPROTECT(1); /* args */
         if (r_err) {
-            UNPROTECT(1); /* value */
+            UNPROTECT(2); /* value, args */
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
                 SET_VECTOR_ELT(results, (R_xlen_t)row, R_NilValue);
                 continue;
@@ -1337,14 +1339,13 @@ static SEXP rducks_rc_eval_arrow_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
 
         r_err = 0;
         SEXP checked = PROTECT(rducks_rc_check_return(check_return_fun, return_type, value, &r_err));
-        UNPROTECT(1); /* value */
         if (r_err) {
-            UNPROTECT(1); /* checked */
+            UNPROTECT(3); /* checked, value, args */
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
             return R_NilValue;
         }
         SET_VECTOR_ELT(results, (R_xlen_t)row, checked);
-        UNPROTECT(1); /* checked */
+        UNPROTECT(3); /* checked, value, args */
     }
 
     result_call = PROTECT(Rf_lang5(result_array_fun, return_type, results, output_schema_xptr, n_sexp));
