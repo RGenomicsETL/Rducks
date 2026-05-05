@@ -58,20 +58,53 @@ Implemented behavior to preserve:
 - `side_effects = TRUE` marks the DuckDB scalar function volatile; it does not
   alter R-thread or queue semantics.
 
+## Empirical notes from connection-object checks
+
+Run with `lobstr` in this session:
+
+- `duckdb_connection` is an S4 object (`typeof(con) == "S4"`), not an
+  environment (`is.environment(con) == FALSE`). It contains slots including
+  `conn_ref`, but the R wrapper itself follows ordinary copy-on-modify behavior.
+- Setting an attribute on `con` inside a helper function changed the helper's
+  local copy, not the caller's object. Therefore a hidden attribute/guard or S4
+  subclass only works if the user keeps the returned object, e.g.
+  `con <- rducks_enable(con)`.
+- Calling `rducks_enable(con)` without assignment did not change the R wrapper
+  address or attributes; it only changed DuckDB/Rducks state reachable through
+  the external pointer and package stores.
+- Opening several independent `:memory:` databases in one R session produced
+  distinct live SEXP keys, but DuckDB `current_connection_id()` was the same for
+  each independent database instance. Two connections from the same duckdb
+  driver/database produced different `current_connection_id()` values. So a
+  DuckDB connection id is useful within a database instance but is not a global
+  R-side connection key by itself.
+
 ## Decisions needed
 
 1. **Connection object model for R-side state.**
    - Problem: R-side stores still key by SEXP address via `rducks_connection_key()`.
      Freed R object addresses can be reused.
-   - Decision: should `rducks_enable(con)` return a `rducks_connection` subclass
-     that users must assign (`con <- rducks_enable(con)`), or should we keep
-     returning the original `duckdb_connection` invisibly and attach an Rducks
-     attribute/guard?
+   - Empirical result: S4 `duckdb_connection` wrappers are not environments and
+     are not mutated in the caller by assigning attributes inside
+     `rducks_enable()` unless the modified object is returned and assigned.
+   - Decision: should `rducks_enable(con)` change contract to return a
+     `rducks_connection` subclass/wrapper that users must assign
+     (`con <- rducks_enable(con)`), or should we keep the current non-mutating
+     API and accept explicit release/manual cleanup limitations?
+   - If using an attribute/guard rather than a subclass, it still requires
+     assignment to be reliable.
    - My recommendation: use a returned subclass/wrapper if we want a reliable
-     `dbDisconnect()` method; use an attribute only if preserving the current
-     API shape is more important than automatic cleanup.
+     `dbDisconnect()` method and R-side cleanup; document the assignment
+     requirement clearly.
 
-2. **Runtime release API shape.**
+2. **Runtime token contents.**
+   - Problem: DuckDB `current_connection_id()` is not globally unique across
+     independent database instances; raw wrapper addresses can be reused.
+   - Decision: define a native Rducks token such as `(runtime_id, generation)`.
+     It may include DuckDB database/connection details for diagnostics, but the
+     unique part should be Rducks-owned and monotonic within the process.
+
+3. **Runtime release API shape.**
    - Problem: DuckDB has no database/connection close hook in the C extension
      API. The extension-owned connection can pin the runtime.
    - Decision: should `rducks_release(con)` be required before `dbDisconnect()`,
@@ -79,18 +112,18 @@ Implemented behavior to preserve:
    - Non-decision already made for now: native cleanup may leak preserved R
      closures rather than calling R API off the main R thread.
 
-3. **Duplicate registration semantics.**
+4. **Duplicate registration semantics.**
    - Decide whether duplicate `name`/signature registration errors, overwrites,
      or creates overloads.
    - This blocks clear `rducks_unregister()` semantics.
 
-4. **Registration-time vs query-time marshalling contract.**
+5. **Registration-time vs query-time marshalling contract.**
    - Current implementation is registration-time marshalling.
    - Decision: document this as public semantics now, or redesign for query-time
      marshalling dispatch.
    - My recommendation: document registration-time marshalling for now.
 
-5. **`rducks_inproc_stats()` scope.**
+6. **`rducks_inproc_stats()` scope.**
    - Current function exposes runtime-wide `submitted`, `executed`, `timeouts`.
    - Per-UDF pressure/batching counters are available through
      `rducks_explain_udf()`.
@@ -102,10 +135,12 @@ Implemented behavior to preserve:
 - [ ] Replace SEXP-address keying for R-side connection state.
   - Target: a stable Rducks runtime token from the native extension, for example
     `SELECT rducks_connection_token()` or a `.Call` equivalent.
-  - Token should be Rducks-owned and generation-safe, not just a raw R object
-    address.
+  - Token should be Rducks-owned and generation-safe, e.g. `(runtime_id,
+    generation)`, not just a raw R object address or DuckDB connection id.
   - Use it for `.rducks_state$connection_plans` and
     `.rducks_state$registrations`.
+  - If the token is stored on the R connection wrapper, the enabled connection
+    object must be returned and assigned by the caller.
   - Acceptance: repeated connect/register/disconnect/reconnect loops cannot make
     a new connection see stale plans or stale UDF metadata.
 
