@@ -84,11 +84,18 @@ Run with `lobstr` in this session:
   unreachable, even if users never call `DBI::dbDisconnect()`.
 - S4 class extension does not itself create a finalizer. R finalizers are only
   for environments and external pointers.
+- Current R weak references can only use reference objects as keys
+  (`NILSXP`, `ENVSXP`, `EXTPTRSXP`, or byte-code objects), not the S4
+  `duckdb_connection` wrapper itself. A no-subclass GC cleanup path therefore
+  needs either a weak reference/finalizer keyed by duckdb-r's `conn_ref`
+  external pointer, or an assigned Rducks-owned guard environment/externalptr.
 - A small C probe showed the current R runtime finalizes independently
   unreachable external pointers in reverse registration order, so an Rducks
   guard external pointer registered after duckdb-r's `conn_ref` finalizer can
   empirically run first. R's `reg.finalizer()` documentation does not promise
-  this ordering, so this must not be the primary lifecycle guarantee.
+  this ordering, so this must not be the primary lifecycle guarantee. Cleanup
+  must be idempotent and must not depend on whether duckdb-r's disconnect
+  finalizer has already run.
 
 ## Decisions needed
 
@@ -98,15 +105,16 @@ Run with `lobstr` in this session:
    - Empirical result: S4 `duckdb_connection` wrappers are not environments and
      are not mutated in the caller by assigning attributes inside
      `rducks_enable()` unless the modified object is returned and assigned.
-   - Decision: should `rducks_enable(con)` change contract to return a
-     `rducks_connection` subclass/wrapper that users must assign
-     (`con <- rducks_enable(con)`), or should we keep the current non-mutating
-     API and accept explicit release/manual cleanup limitations?
-   - If using an attribute/guard rather than a subclass, it still requires
-     assignment to be reliable.
-   - My recommendation: use a returned subclass/wrapper if we want a reliable
-     `dbDisconnect()` method and R-side cleanup; document the assignment
-     requirement clearly.
+   - Refined direction: no S4 subclass is needed merely to clear Rducks state
+     when the DuckDB connection external pointer is collected. A C weakref/
+     finalizer keyed by `conn_ref` can remove token-keyed registries when the
+     connection becomes unreachable.
+   - Remaining decision: are we willing to use read-only access to duckdb-r's
+     `conn_ref` slot for this lifecycle anchor? If not, the alternative is an
+     Rducks-owned guard object, which requires `con <- rducks_enable(con)`.
+   - A subclass/wrapper is only needed if we want to intercept explicit
+     `DBI::dbDisconnect(con)` and run Rducks cleanup immediately before
+     delegating to duckdb-r.
 
 2. **Runtime token contents.**
    - Problem: DuckDB `current_connection_id()` is not globally unique across
@@ -118,16 +126,15 @@ Run with `lobstr` in this session:
 3. **Runtime release API shape and finalizer ordering.**
    - Problem: DuckDB has no database/connection close hook in the C extension
      API. The extension-owned connection can pin the runtime.
-   - Explicit path: a `rducks_connection` `dbDisconnect()` method can guarantee
-     `rducks_release(con)` runs before delegating to duckdb-r disconnect, but
-     only if users hold/call `dbDisconnect()` on the returned Rducks connection
-     object.
-   - GC fallback: duckdb-r's `conn_ref` finalizer will run when the connection is
-     unreachable. We cannot rely on undocumented finalizer ordering to guarantee
-     an independent Rducks finalizer runs before it.
-   - Decision: should `rducks_release(con)` be required before `dbDisconnect()`,
-     or should a `rducks_connection` `dbDisconnect()` method make it automatic
-     for explicit disconnects, with GC fallback documented as best-effort?
+   - GC path: key Rducks cleanup to collection of the DuckDB connection external
+     pointer, clear token-keyed R stores, and call a native idempotent release
+     path that does not require a live DuckDB connection.
+   - Explicit disconnect caveat: if users call `DBI::dbDisconnect(con)` but keep
+     `con` referenced, a weakref/finalizer will not run until `con@conn_ref`
+     becomes unreachable. A subclass/wrapper or explicit `rducks_release(con)` is
+     still needed for deterministic cleanup at disconnect time.
+   - Cleanup must not rely on finalizer ordering relative to duckdb-r's own
+     `conn_ref` finalizer.
    - Non-decision already made for now: native cleanup may leak preserved R
      closures rather than calling R API off the main R thread.
 
@@ -158,8 +165,13 @@ Run with `lobstr` in this session:
     generation)`, not just a raw R object address or DuckDB connection id.
   - Use it for `.rducks_state$connection_plans` and
     `.rducks_state$registrations`.
-  - If the token is stored on the R connection wrapper, the enabled connection
-    object must be returned and assigned by the caller.
+  - Add a weakref/finalizer lifecycle anchor keyed by the DuckDB connection
+    external pointer (`conn_ref`) or by an assigned Rducks-owned guard object.
+    On finalization, remove token-keyed R-side stores and call idempotent native
+    runtime release.
+  - If the token/lifecycle anchor is stored on the R connection wrapper rather
+    than keyed to `conn_ref`, the enabled connection object must be returned and
+    assigned by the caller.
   - Acceptance: repeated connect/register/disconnect/reconnect loops cannot make
     a new connection see stale plans or stale UDF metadata.
 
