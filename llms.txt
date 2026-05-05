@@ -103,8 +103,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        291ms      3.39    1.97MB
-#> 2 vectorized    231ms      4.29    2.34MB
+#> 1 scalar        296ms      3.40    1.97MB
+#> 2 vectorized    235ms      4.23    2.34MB
 ```
 
 ## Execution plans
@@ -154,34 +154,40 @@ settings such as `threads = 4, external_threads = 1`; do not set
 `external_threads = threads` unless you intentionally want no
 DuckDB-created worker pool.
 
+The small example below is a diagnostic check, not a speed benchmark.
+First,
+[`rducks_inproc_self_test()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_self_test.md)
+sends native queue round trips without calling an R UDF. Then a one-row
+UDF query shows one UDF chunk routed through the same queue. The counter
+deltas make the intended behaviour explicit.
+
 ``` r
 
-reg_sleepy <- rducks_register(
+reg_inproc_plus_one <- rducks_register(
   con,
-  name = "r_sleepy_time",
-  fun = function(x) {
-    Sys.sleep(0.001)
-    Sys.time()
-  },
+  name = "r_inproc_plus_one",
+  fun = function(x) x + 1,
   args = DOUBLE,
-  returns = TIMESTAMP,
-  side_effects = TRUE
+  returns = DOUBLE
 )
 
 rducks_enable_inproc(con)
 
+stats0 <- rducks_inproc_stats(con)
 rducks_inproc_self_test(con, 3)
 #> [1] 3
-rducks_inproc_stats(con)
+stats1 <- rducks_inproc_stats(con)
+stats1 - stats0
 #>   submitted executed timeouts
 #> 1         3        3        0
 
-dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
-#>                     x
-#> 1 2026-05-05 07:25:59
-rducks_inproc_stats(con)
+dbGetQuery(con, "SELECT r_inproc_plus_one(i::DOUBLE) AS x FROM range(1) AS t(i)")
+#>   x
+#> 1 1
+stats2 <- rducks_inproc_stats(con)
+stats2 - stats1
 #>   submitted executed timeouts
-#> 1         4        4        0
+#> 1         1        1        0
 
 rducks_disable_inproc(con, threads = 1)
 ```
@@ -330,11 +336,11 @@ arrow_ipc_noop_benchmark <- local({
 
 arrow_ipc_noop_benchmark$parallel_probe
 #>    rows main_lane_rows
-#> 1 2e+05              0
+#> 1 2e+05         122880
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           9.010             1.000000
-#> 2 threads=5           6.259             1.439527
+#> 1 threads=1           9.029             1.000000
+#> 2 threads=5           6.252             1.444178
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -448,8 +454,8 @@ arrow_ipc_sleep_benchmark$parallel_probe
 #> 1 4096           1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.395             1.000000
-#> 2 threads=5           0.710             3.373239
+#> 1 threads=1           2.387             1.000000
+#> 2 threads=5           0.712             3.352528
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4
