@@ -56,8 +56,6 @@
   : List registered Rducks UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
   : Describe Rducks execution mode semantics
-- [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
-  : Execute SQL through the Rducks streaming scheduler
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)

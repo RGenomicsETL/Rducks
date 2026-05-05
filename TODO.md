@@ -263,17 +263,12 @@ interface.
 - Current scalar-callback implementation: `arrow_ipc` uses generic
   `future` providers, submits Arrow IPC chunk tasks separately from
   collection, and can collect a group of queued futures after
-  submission. Native counters expose `ripc_collect_batches`,
-  `ripc_collect_requests`, `ripc_collect_max_batch`,
-  `ripc_submit_wave_max`, `ripc_collect_ready_max`, and
-  `duckdb_pending_tasks_executed`.
-- Implemented query-scheduler surface:
-  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
-  executes SQL through an extension-owned table function that drives
-  DuckDB’s streaming pending-result API, drains queued Rducks work
-  between pending tasks, and fetches result chunks back through DuckDB.
-  Stress diagnostics can now show `queue_pending_max`,
-  `ripc_inflight_max`, and RIPC batch/wave maxima above 1.
+  submission. A main-lane RIPC callback cooperatively drains queued
+  worker callbacks into the same wave, avoiding the single-request
+  timeout path for parallel DuckDB UDF execution. Native counters expose
+  `ripc_collect_batches`, `ripc_collect_requests`,
+  `ripc_collect_max_batch`, `ripc_submit_wave_max`, and
+  `ripc_collect_ready_max`.
 - Future non-UDF source/query surface: send owned Arrow IPC task bytes
   to workers, keep multiple chunks outstanding, collect by task
   sequence, decode owned Arrow IPC result bytes, and expose the result
@@ -284,31 +279,6 @@ interface.
 - Acceptance: the same counters can report submitted, completed, queued,
   timed out, cancelled, `arrow_r`, `arrow_c`, and `arrow_ipc` chunk
   paths.
-
-## Potential async DuckDB / `aioduckdb` interface
-
-This is a parking lot and may belong in a separate package. DuckDB
-pending-query APIs are more naturally useful for an explicit async query
-interface than for the current R UDF scheduler.
-
-**P3** Keep DuckDB pending-query/task APIs as a later reference for an
-explicit async DuckDB query handle.
-
-- Relevant C/extension APIs in the current headers include
-  `duckdb_pending_prepared()`, `duckdb_pending_execute_task()`,
-  `duckdb_pending_execute_check_state()`, `duckdb_execute_pending()`,
-  `duckdb_pending_prepared_streaming()`, `duckdb_execute_tasks()`, and
-  `duckdb_create_task_state()` / `duckdb_execute_n_tasks_state()`.
-- Possible shape: `aioduckdb_query(con, sql)` returns a pending handle;
-  `aioduckdb_poll(handle, max_tasks)`, `aioduckdb_ready(handle)`,
-  `aioduckdb_collect(handle)`, and `aioduckdb_cancel(handle)` are
-  explicit user operations.
-- Constraint: this must be an explicit async-query API, not a hidden UDF
-  pump. Do not depend on `duckdb` R private slots or a background R
-  event loop unless that is the public API contract.
-- Acceptance before promotion out of P3: implement pending-query polling
-  over `duckdb_pending_result`, document lifecycle/cancellation/error
-  semantics, and test that users can interleave R work between polls.
 
 ## Native `arrow_c` work
 
