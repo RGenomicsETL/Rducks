@@ -113,7 +113,7 @@ observable plan remains one named plan with one declared support matrix.
 | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded R lane. |
 | `arrow_c` | `serial` | implemented as current native scalar | implemented | Native scalar evaluator plus `RCV` vectorized chunk evaluator; no fallback to `arrow_r`. |
 | `arrow_c` | `inproc_concurrent` | implemented for current native scalar | implemented | Same semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded R lane. |
-| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, collecting Future results, and importing returned Arrow IPC into the DuckDB output vector. |
+| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, cooperatively draining queued worker callbacks when execution reaches the main R lane, collecting Future results, and importing returned Arrow IPC into the DuckDB output vector. |
 
 Current API direction:
 
@@ -268,9 +268,6 @@ named `arrow_c` plan rather than a fallback to the public `arrow_r` evaluator.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
-- [x] Add a C-API-only `rducks_query_stream()` scheduler surface that drives
-      DuckDB streaming pending execution, drains queued Rducks work between
-      pending tasks, fetches result chunks, and exposes RIPC wave diagnostics.
 - [ ] Add worker lifecycle/shutdown/cancellation tests.
 - [ ] Add tests proving hot-path payloads are Arrow IPC and not R
       `serialize()`/`unserialize()`.

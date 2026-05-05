@@ -1,18 +1,14 @@
 # Rducks 0.0.1
 
-- Added `rducks_query_stream()`, a C-API-only Rducks-owned streaming query
-  surface that prepares SQL on the extension-captured DuckDB connection, drives
-  DuckDB's streaming pending-result API, drains queued Rducks work between
-  pending tasks, records pending-task progress, and fetches result chunks back
-  through DuckDB.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
   rows inside the worker, vectorized registrations call once per chunk, and the
   queued native path splits submit and collect phases so queued chunk tasks can
-  be submitted before grouped result collection. `rducks_explain_udf()` now
-  reports queue-pending, RIPC-in-flight, RIPC submit/collect wave, and
-  Rducks-owned pending-query counters for diagnosing whether chunks are actually
-  overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
+  be submitted before grouped result collection. Main-lane RIPC callbacks now
+  cooperatively drain queued worker callbacks into the same submit/collect wave,
+  avoiding the single-request timeout path for parallel DuckDB UDF execution.
+  `rducks_explain_udf()` now reports queue-pending, RIPC-in-flight, and RIPC submit/collect wave counters
+  for diagnosing whether chunks are actually overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.

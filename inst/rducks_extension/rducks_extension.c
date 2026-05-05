@@ -120,7 +120,6 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_submitted;
     uint64_t queue_executed;
     uint64_t queue_timeouts;
-    uint64_t duckdb_pending_tasks_executed;
     rducks_r_scalar_meta_t *udf_registry_head;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;
@@ -311,6 +310,10 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
                                                         rducks_r_scalar_meta_t *meta,
                                                         duckdb_data_chunk input, duckdb_vector output,
                                                         char *err_msg, size_t err_cap);
+static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *runtime,
+                                                        rducks_r_scalar_meta_t *meta,
+                                                        duckdb_data_chunk input, duckdb_vector output,
+                                                        char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
                                   uint64_t *out_value, char *err_msg, size_t err_cap);
@@ -325,6 +328,5 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #include "src/rducks_rc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
-#include "src/rducks_query_stream.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_surfaces.c"

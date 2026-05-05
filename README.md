@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        292ms      3.42    1.97MB
-#> 2 vectorized    235ms      4.24    2.34MB
+#> 1 scalar        294ms      3.38    1.97MB
+#> 2 vectorized    235ms      4.23    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-05 00:10:15
+#> 1 2026-05-05 00:59:26
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -213,7 +213,7 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
   "name", "mode", "plan_id", "evaluator",
   "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests",
   "ripc_collect_max_batch", "ripc_submit_wave_max",
-  "ripc_collect_ready_max", "duckdb_pending_tasks_executed"
+  "ripc_collect_ready_max"
 )]
 #>             name       mode                         plan_id evaluator
 #> 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC
@@ -221,18 +221,236 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 #> 1                5                    5                     5
 #>   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max
 #> 1                      1                    1                      1
-#>   duckdb_pending_tasks_executed
-#> 1                             0
 ```
 
 This is the real `arrow_ipc + multiprocess_parallel` UDF implementation.
 The native extension submits Arrow IPC chunk work through the
 Future-backed RIPC path and imports the returned Arrow IPC result into
-DuckDB. The `ripc_collect_max_batch`, `ripc_submit_wave_max`, and
+DuckDB. When a RIPC callback runs on the recorded main R lane, it can
+submit its own chunk and queued worker chunks before grouped collection.
+The `ripc_collect_max_batch`, `ripc_submit_wave_max`, and
 `ripc_collect_ready_max` counters report native queue batch/wave sizes.
-For Rducks-owned scheduler diagnostics, `rducks_query_stream(con, sql)`
-executes SQL through the extension’s streaming pending-result loop and
-increments `duckdb_pending_tasks_executed`.
+
+### Ordinary DuckDB table-scan no-op benchmark
+
+The following benchmark chunk is evaluated when this README is rendered.
+It uses an ordinary DuckDB table scan over a table created from
+`range()`, not an Rducks table source. The `parallel_probe` query
+verifies that DuckDB actually uses a non-main worker lane for this table
+scan before timing the no-op UDF.
+
+``` r
+arrow_ipc_noop_benchmark <- local({
+  future::plan(future.mirai::mirai_multisession, workers = 4)
+
+  bench_con <- DBI::dbConnect(
+    duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+    dbdir = ":memory:"
+  )
+  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+
+  rducks_enable(bench_con, threads = "single")
+  bench_plan <- rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    future_timeout = 120
+  )
+
+  bench_n <- 200000L
+  DBI::dbExecute(
+    bench_con,
+    sprintf(
+      "CREATE TABLE bench_input AS SELECT i::BIGINT AS i FROM range(%d) AS t(i)",
+      bench_n
+    )
+  )
+  DBI::dbExecute(bench_con, "PRAGMA threads=5")
+  DBI::dbExecute(bench_con, "SET external_threads=1")
+  parallel_probe <- DBI::dbGetQuery(
+    bench_con,
+    paste(
+      "SELECT count(*) AS rows,",
+      "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows",
+      "FROM bench_input"
+    )
+  )
+  stopifnot(parallel_probe$main_lane_rows[[1L]] < parallel_probe$rows[[1L]])
+
+  rducks_set_execution_plan(bench_con, bench_plan, threads = 1L, external_threads = 1L)
+  invisible(rducks_register(
+    bench_con,
+    name = "r_ipc_noop_bench",
+    fun = function(x) as.numeric(x) + 1,
+    args = BIGINT,
+    returns = DOUBLE,
+    mode = "vectorized",
+    side_effects = FALSE
+  ))
+
+  expected <- DBI::dbGetQuery(bench_con, "SELECT sum(i + 1) AS x FROM bench_input")$x[[1L]]
+  sql <- "SELECT sum(r_ipc_noop_bench(i)) AS x FROM bench_input"
+
+  time_query <- function(threads) {
+    rducks_set_execution_plan(
+      bench_con, bench_plan,
+      threads = threads,
+      external_threads = 1L
+    )
+    invisible(DBI::dbGetQuery(bench_con, sql)) # warm this execution shape
+    elapsed <- system.time(out <- DBI::dbGetQuery(bench_con, sql))[["elapsed"]]
+    stopifnot(isTRUE(all.equal(as.numeric(out$x), as.numeric(expected))))
+    elapsed
+  }
+
+  elapsed <- data.frame(
+    mode = c("threads=1", "threads=5"),
+    elapsed_seconds = c(time_query(1L), time_query(5L))
+  )
+  elapsed$speedup_vs_threads_1 <- elapsed$elapsed_seconds[[1L]] / elapsed$elapsed_seconds
+
+  diagnostics <- rducks_explain_udf(bench_con, "r_ipc_noop_bench")[, c(
+    "queue_pending_max", "ripc_inflight_max", "ripc_submit_wave_max",
+    "ripc_collect_ready_max", "ripc_collect_max_batch"
+  )]
+
+  list(
+    parallel_probe = parallel_probe,
+    elapsed = elapsed,
+    diagnostics = diagnostics
+  )
+})
+
+arrow_ipc_noop_benchmark$parallel_probe
+#>    rows main_lane_rows
+#> 1 2e+05              0
+arrow_ipc_noop_benchmark$elapsed
+#>        mode elapsed_seconds speedup_vs_threads_1
+#> 1 threads=1           9.030             1.000000
+#> 2 threads=5           6.275             1.439044
+arrow_ipc_noop_benchmark$diagnostics
+#>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
+#> 1                 1                 2                    2
+#>   ripc_collect_ready_max ripc_collect_max_batch
+#> 1                      2                      2
+```
+
+### Ordinary DuckDB multi-file sleep benchmark
+
+This benchmark also uses ordinary DuckDB input: four temporary CSV files
+read by DuckDB’s `read_csv()` table function. The UDF sleeps for 0.50
+seconds once per vectorized DuckDB chunk. The probe again checks that
+the source runs on a non-main worker lane before timing the UDF query.
+
+``` r
+arrow_ipc_sleep_benchmark <- local({
+  future::plan(future.mirai::mirai_multisession, workers = 4)
+
+  bench_con <- DBI::dbConnect(
+    duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+    dbdir = ":memory:"
+  )
+  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+
+  rducks_enable(bench_con, threads = "single")
+  bench_plan <- rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    future_timeout = 120
+  )
+  rducks_set_execution_plan(bench_con, bench_plan)
+
+  csv_dir <- tempfile("rducks-csv-bench-")
+  dir.create(csv_dir)
+  csv_files <- file.path(csv_dir, paste0("part", seq_len(4L), ".csv"))
+  start <- 0L
+  for (file in csv_files) {
+    values <- start + seq_len(1024L) - 1L
+    writeLines(c("i", as.character(values)), file)
+    start <- start + 1024L
+  }
+  csv_paths <- paste(sprintf("'%s'", csv_files), collapse = ",")
+  csv_source <- sprintf(
+    "read_csv([%s], types={'i':'BIGINT'}, header=true)",
+    csv_paths
+  )
+
+  invisible(rducks_register(
+    bench_con,
+    name = "r_ipc_sleep_half_second_bench",
+    fun = function(x) {
+      Sys.sleep(0.50)
+      as.numeric(x) + 1
+    },
+    args = BIGINT,
+    returns = DOUBLE,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+
+  DBI::dbExecute(bench_con, "PRAGMA threads=5")
+  DBI::dbExecute(bench_con, "SET external_threads=1")
+  parallel_probe <- DBI::dbGetQuery(
+    bench_con,
+    sprintf(
+      paste(
+        "SELECT count(*) AS rows,",
+        "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows",
+        "FROM %s"
+      ),
+      csv_source
+    )
+  )
+  stopifnot(parallel_probe$main_lane_rows[[1L]] < parallel_probe$rows[[1L]])
+
+  expected <- 4096L * 4097L / 2
+  sql <- sprintf("SELECT sum(r_ipc_sleep_half_second_bench(i)) AS x FROM %s", csv_source)
+
+  time_query <- function(threads) {
+    rducks_set_execution_plan(
+      bench_con, bench_plan,
+      threads = threads,
+      external_threads = 1L
+    )
+    invisible(DBI::dbGetQuery(bench_con, sql)) # warm this execution shape
+    elapsed <- system.time(out <- DBI::dbGetQuery(bench_con, sql))[["elapsed"]]
+    stopifnot(isTRUE(all.equal(as.numeric(out$x), expected)))
+    elapsed
+  }
+
+  elapsed <- data.frame(
+    mode = c("threads=1", "threads=5"),
+    elapsed_seconds = c(time_query(1L), time_query(5L))
+  )
+  elapsed$speedup_vs_threads_1 <- elapsed$elapsed_seconds[[1L]] / elapsed$elapsed_seconds
+
+  diagnostics <- rducks_explain_udf(bench_con, "r_ipc_sleep_half_second_bench")[, c(
+    "queue_pending_max", "ripc_inflight_max", "ripc_submit_wave_max",
+    "ripc_collect_ready_max", "ripc_collect_max_batch"
+  )]
+
+  list(
+    parallel_probe = parallel_probe,
+    elapsed = elapsed,
+    diagnostics = diagnostics
+  )
+})
+
+arrow_ipc_sleep_benchmark$parallel_probe
+#>   rows main_lane_rows
+#> 1 4096           1024
+arrow_ipc_sleep_benchmark$elapsed
+#>        mode elapsed_seconds speedup_vs_threads_1
+#> 1 threads=1           2.360             1.000000
+#> 2 threads=5           0.704             3.352273
+arrow_ipc_sleep_benchmark$diagnostics
+#>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
+#> 1                 3                 4                    4
+#>   ripc_collect_ready_max ripc_collect_max_batch
+#> 1                      4                      4
+```
+
+These timings are diagnostics, not a portable performance promise. In
+particular, cheap UDFs can be slower with `multiprocess_parallel`
+because Arrow IPC and Future scheduling overhead dominate much of the
+work being done.
 
 ## Current scope
 

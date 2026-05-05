@@ -196,13 +196,6 @@ static void rducks_udf_record_ripc_collect_ready(rducks_r_scalar_meta_t *meta, s
     rducks_runtime_unlock();
 }
 
-static void rducks_runtime_record_pending_task(rducks_runtime_entry_t *runtime) {
-    if (!runtime) return;
-    rducks_runtime_lock();
-    runtime->duckdb_pending_tasks_executed++;
-    rducks_runtime_unlock();
-}
-
 static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *name, const char *field,
                                    char *out, size_t out_cap, char *err, size_t err_cap) {
     rducks_r_scalar_meta_t *meta;
@@ -259,8 +252,6 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_submit_wave_max);
     } else if (strcmp(field, "ripc_collect_ready_max") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_ready_max);
-    } else if (strcmp(field, "duckdb_pending_tasks_executed") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)(meta->runtime ? meta->runtime->duckdb_pending_tasks_executed : 0U));
     } else if (strcmp(field, "ripc_inflight_current") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_inflight_current);
     } else if (strcmp(field, "ripc_inflight_max") == 0) {

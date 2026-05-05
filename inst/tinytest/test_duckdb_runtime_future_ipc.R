@@ -53,7 +53,6 @@ local({
   expect_equal(explain$ripc_collect_requests, explain$arrow_ipc_chunks)
   expect_true(explain$ripc_collect_max_batch >= 1)
   expect_equal(explain$queue_pending_current, 0)
-  expect_true(explain$queue_pending_max >= 1)
   expect_equal(explain$ripc_inflight_current, 0)
   expect_true(explain$ripc_inflight_max >= 1)
   expect_equal(explain$arrow_r_chunks, 0)
@@ -129,7 +128,7 @@ local({
     stress_workers <- max(2L, rducks_test_future_workers(default = 2L, cap = 4L))
     future::plan(future::multisession, workers = stress_workers)
     invisible(rducks_register(
-      con, "future_ipc_stream_sleep",
+      con, "future_ipc_parallel_sleep",
       function(x) {
         Sys.sleep(0.02)
         as.numeric(x) + 1
@@ -139,18 +138,16 @@ local({
       side_effects = TRUE
     ))
     rducks_set_execution_plan(con, plan, threads = stress_workers + 1L, external_threads = 1L)
-    stream_out <- rducks_query_stream(
+    parallel_out <- DBI::dbGetQuery(
       con,
-      "SELECT sum(future_ipc_stream_sleep(i)) AS x FROM rducks_parallel_range(4096::UBIGINT)"
+      "SELECT sum(future_ipc_parallel_sleep(i)) AS x FROM rducks_parallel_range(8192::UBIGINT)"
     )
-    expect_equal(stream_out$x, sum(seq_len(4096)))
-    stream_explain <- rducks_explain_udf(con, "future_ipc_stream_sleep")
-    expect_true(stream_explain$queue_pending_max >= 2)
-    expect_true(stream_explain$ripc_inflight_max >= 2)
-    expect_true(stream_explain$ripc_submit_wave_max >= 2)
-    expect_true(stream_explain$ripc_collect_ready_max >= 2)
-    expect_true(stream_explain$ripc_collect_max_batch >= 2)
-    expect_true(stream_explain$duckdb_pending_tasks_executed >= 1)
-    expect_true(DBI::dbGetQuery(con, "SELECT rducks_pending_tasks_executed() AS n")$n >= 1)
+    expect_equal(parallel_out$x, sum(seq_len(8192)))
+    parallel_explain <- rducks_explain_udf(con, "future_ipc_parallel_sleep")
+    expect_true(parallel_explain$queue_pending_max >= 2)
+    expect_true(parallel_explain$ripc_inflight_max >= 2)
+    expect_true(parallel_explain$ripc_submit_wave_max >= 2)
+    expect_true(parallel_explain$ripc_collect_ready_max >= 2)
+    expect_true(parallel_explain$ripc_collect_max_batch >= 2)
   }
 })

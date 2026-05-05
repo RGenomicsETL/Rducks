@@ -137,15 +137,9 @@ Internally the current concurrency backends are:
   implemented in the native extension (`rducks_arrow.c` and
   `rducks_worker_queue.c`) and is real DuckDB UDF execution: C submits Arrow IPC
   chunk work, collects Future results, and imports returned Arrow IPC into the
-  DuckDB output vector.
-
-`rducks_query_stream()` is the first Rducks-owned streaming scheduler surface.
-It is implemented as a DuckDB C table function that prepares the inner SQL on
-Rducks' extension-captured connection, drives DuckDB's streaming pending-result
-API, drains the Rducks main-lane queue between pending tasks, and fetches result
-chunks back through DuckDB. This keeps the scheduler in the extension boundary
-without using DuckDB R private slots or calling R APIs from DuckDB worker
-threads.
+  DuckDB output vector. When a RIPC callback runs on the recorded main R lane,
+  it cooperatively drains queued worker callbacks into the same submit/collect
+  wave so parallel DuckDB execution does not depend on an external query pump.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

@@ -613,8 +613,15 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 
-    if (rducks_concurrent_inproc_enabled(runtime) ||
-        (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC)) {
+    if (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
+        if (!rducks_queue_submit_ripc_cooperative_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks cooperative Future Arrow IPC UDF failed");
+        }
+        return;
+    }
+
+    if (rducks_concurrent_inproc_enabled(runtime)) {
         rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
         if (!rducks_queue_submit_scalar_via_worker_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");

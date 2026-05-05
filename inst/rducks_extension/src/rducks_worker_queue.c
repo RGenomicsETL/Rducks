@@ -4,6 +4,7 @@
 #define RDUCKS_QUEUE_WAIT_MS 100U
 #define RDUCKS_QUEUE_TIMEOUT_TICKS 300U
 #define RDUCKS_RIPC_COALESCE_WAIT_MS 2U
+#define RDUCKS_RIPC_MAIN_WAVE_MAX 64U
 
 typedef enum rducks_udf_request_state {
     RDUCKS_REQUEST_PENDING = 0,
@@ -489,6 +490,120 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
         return 0;
     }
     return 1;
+}
+
+static int rducks_queue_collect_ripc_groups_on_main(rducks_runtime_entry_t *runtime,
+                                                    rducks_udf_request_t *ripc_head,
+                                                    rducks_udf_request_t *local_request,
+                                                    char *err_msg, size_t err_cap) {
+    int all_ok = 1;
+    int local_ok = 0;
+    if (!runtime || !ripc_head) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect groups are missing state");
+        return 0;
+    }
+
+    while (ripc_head) {
+        rducks_udf_request_t *group_head = ripc_head;
+        rducks_udf_request_t *group_tail = ripc_head;
+        rducks_udf_request_t *next = ripc_head->next;
+        rducks_r_scalar_meta_t *meta = ripc_head->meta;
+        char group_err[RDUCKS_QUEUE_ERROR_SIZE];
+        size_t group_count = 1U;
+        int group_has_local = (group_head == local_request);
+        int ok;
+
+        while (next && next->meta == meta) {
+            group_tail = next;
+            if (next == local_request) group_has_local = 1;
+            next = next->next;
+            group_count++;
+        }
+        group_tail->next = NULL;
+        rducks_udf_record_ripc_submit_wave(meta, group_count);
+        group_err[0] = '\0';
+        ok = rducks_queue_collect_ripc_group_on_main(group_head, group_count, group_err, sizeof(group_err));
+        if (group_has_local) local_ok = ok;
+        if (!ok) {
+            all_ok = 0;
+            if (err_msg && err_cap > 0U && err_msg[0] == '\0') {
+                rducks_queue_error_copy(err_msg, err_cap, group_err, "Rducks queued Future Arrow IPC collect group failed");
+            }
+        }
+
+        while (group_head) {
+            rducks_udf_request_t *finished = group_head;
+            group_head = group_head->next;
+            finished->next = NULL;
+            if (finished != local_request) {
+                rducks_queue_finish_request(runtime, finished, ok, group_err);
+            }
+        }
+        ripc_head = next;
+    }
+
+    if (local_request && !local_ok) return 0;
+    return all_ok;
+}
+
+static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *runtime,
+                                                        rducks_r_scalar_meta_t *meta,
+                                                        duckdb_data_chunk input, duckdb_vector output,
+                                                        char *err_msg, size_t err_cap) {
+    rducks_udf_request_t local_request;
+    rducks_udf_request_t *ripc_head = NULL;
+    rducks_udf_request_t *ripc_tail = NULL;
+    size_t submitted = 0U;
+
+    if (!runtime || !meta || meta->eval_mode != RDUCKS_EVAL_RIPC) {
+        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler is missing state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(runtime)) {
+        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler must run on the main R execution lane");
+        return 0;
+    }
+
+    memset(&local_request, 0, sizeof(local_request));
+    local_request.runtime = runtime;
+    local_request.meta = meta;
+    local_request.input = input;
+    local_request.output = output;
+    local_request.state = RDUCKS_REQUEST_RUNNING;
+    local_request.error[0] = '\0';
+
+    if (!rducks_queue_submit_ripc_request_on_main(&local_request, err_msg, err_cap)) {
+        rducks_ripc_release_preserved(&local_request.ripc_future, &local_request.ripc_output_schema_xptr);
+        return 0;
+    }
+    rducks_queue_append_local(&ripc_head, &ripc_tail, &local_request);
+    submitted++;
+
+    while (submitted < RDUCKS_RIPC_MAIN_WAVE_MAX) {
+        rducks_udf_request_t *request;
+        char request_err[RDUCKS_QUEUE_ERROR_SIZE];
+        int ok;
+
+        request = rducks_queue_pop_request_after_wait(runtime, RDUCKS_RIPC_COALESCE_WAIT_MS);
+        if (!request) break;
+        request_err[0] = '\0';
+
+        if (rducks_queue_request_is_ripc(request)) {
+            ok = rducks_queue_submit_ripc_request_on_main(request, request_err, sizeof(request_err));
+            if (ok) {
+                rducks_queue_append_local(&ripc_head, &ripc_tail, request);
+            } else {
+                rducks_queue_finish_request(runtime, request, 0, request_err);
+            }
+        } else {
+            ok = rducks_queue_execute_on_main(request, request_err, sizeof(request_err));
+            rducks_queue_finish_request(runtime, request, ok, request_err);
+        }
+        submitted++;
+    }
+
+    err_msg[0] = '\0';
+    return rducks_queue_collect_ripc_groups_on_main(runtime, ripc_head, &local_request, err_msg, err_cap);
 }
 
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {

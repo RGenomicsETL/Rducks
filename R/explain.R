@@ -60,7 +60,6 @@ rducks_native_udf_stat_fields <- c(
   "ripc_collect_max_batch",
   "ripc_submit_wave_max",
   "ripc_collect_ready_max",
-  "duckdb_pending_tasks_executed",
   "ripc_inflight_current",
   "ripc_inflight_max"
 )
@@ -110,7 +109,6 @@ rducks_explain_udf_empty <- function() {
     ripc_collect_max_batch = numeric(),
     ripc_submit_wave_max = numeric(),
     ripc_collect_ready_max = numeric(),
-    duckdb_pending_tasks_executed = numeric(),
     ripc_inflight_current = numeric(),
     ripc_inflight_max = numeric(),
     stringsAsFactors = FALSE
@@ -149,7 +147,6 @@ rducks_explain_udf_row <- function(con, name) {
     ripc_collect_max_batch = rducks_counter_value(stats, "ripc_collect_max_batch"),
     ripc_submit_wave_max = rducks_counter_value(stats, "ripc_submit_wave_max"),
     ripc_collect_ready_max = rducks_counter_value(stats, "ripc_collect_ready_max"),
-    duckdb_pending_tasks_executed = rducks_counter_value(stats, "duckdb_pending_tasks_executed"),
     ripc_inflight_current = rducks_counter_value(stats, "ripc_inflight_current"),
     ripc_inflight_max = rducks_counter_value(stats, "ripc_inflight_max"),
     stringsAsFactors = FALSE
