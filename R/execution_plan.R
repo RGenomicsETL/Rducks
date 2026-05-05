@@ -195,8 +195,85 @@ rducks_connection_plan_store <- function() {
   store
 }
 
+rducks_connection_ref_token_store <- function() {
+  store <- .rducks_state$connection_ref_tokens
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv())
+    .rducks_state$connection_ref_tokens <- store
+  }
+  store
+}
+
+rducks_connection_ref <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  # Read-only access to duckdb-r's connection external pointer. Do not mutate
+  # its tag, protected value, attributes, or finalizer list outside
+  # reg.finalizer().
+  methods::slot(con, "conn_ref")
+}
+
+rducks_connection_ref_key <- function(conn_ref) {
+  .Call(RDUCKS_sexp_addr, conn_ref)
+}
+
+rducks_next_connection_token <- function() {
+  counter <- .rducks_state$connection_token_counter %||% 0
+  counter <- counter + 1
+  .rducks_state$connection_token_counter <- counter
+  paste0("rducks-connection-", counter)
+}
+
+rducks_remove_store_entry <- function(store, key) {
+  if (!is.null(store) && exists(key, envir = store, inherits = FALSE)) {
+    rm(list = key, envir = store)
+  }
+  invisible(NULL)
+}
+
+rducks_cleanup_connection_token <- function(ref_key, token) {
+  token_store <- .rducks_state$connection_ref_tokens
+  if (!is.null(token_store) && exists(ref_key, envir = token_store, inherits = FALSE)) {
+    current <- get(ref_key, envir = token_store, inherits = FALSE)
+    if (identical(current, token)) {
+      rm(list = ref_key, envir = token_store)
+    }
+  }
+  rducks_remove_store_entry(.rducks_state$connection_plans, token)
+  rducks_remove_store_entry(.rducks_state$registrations, token)
+  invisible(NULL)
+}
+
+rducks_connection_finalizer <- function(ref_key, token) {
+  # Build the finalizer in an environment that contains only scalar keys. If the
+  # finalizer closure captures `con` or `conn_ref`, the weak-reference key stays
+  # reachable and cleanup never runs.
+  env <- new.env(parent = environment(rducks_connection_finalizer))
+  env$ref_key <- ref_key
+  env$token <- token
+  finalizer <- function(e) {
+    rducks_cleanup_connection_token(ref_key, token)
+    invisible(NULL)
+  }
+  environment(finalizer) <- env
+  finalizer
+}
+
+rducks_register_connection_finalizer <- function(conn_ref, ref_key, token) {
+  reg.finalizer(conn_ref, rducks_connection_finalizer(ref_key, token), onexit = TRUE)
+  invisible(token)
+}
+
 rducks_connection_key <- function(con) {
-  .Call(RDUCKS_sexp_addr, con)
+  conn_ref <- rducks_connection_ref(con)
+  ref_key <- rducks_connection_ref_key(conn_ref)
+  store <- rducks_connection_ref_token_store()
+  if (exists(ref_key, envir = store, inherits = FALSE)) {
+    return(get(ref_key, envir = store, inherits = FALSE))
+  }
+  token <- rducks_next_connection_token()
+  assign(ref_key, token, envir = store)
+  rducks_register_connection_finalizer(conn_ref, ref_key, token)
+  token
 }
 
 rducks_store_connection_plan <- function(con, plan) {
