@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        294ms      3.38    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    235ms      4.23    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        293ms      3.39    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    241ms      4.16    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-05 00:59:26</span></span>
+<span><span class="co">#&gt; 1 2026-05-05 05:57:37</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -262,7 +262,7 @@
 <span><span class="co">#&gt; 1                5                    5                     5</span></span>
 <span><span class="co">#&gt;   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max</span></span>
 <span><span class="co">#&gt; 1                      1                    1                      1</span></span></code></pre></div>
-<p>This is the real <code>arrow_ipc + multiprocess_parallel</code> UDF implementation. The native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback runs on the recorded main R lane, it can submit its own chunk and queued worker chunks before grouped collection. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes.</p>
+<p>For <code>arrow_ipc + multiprocess_parallel</code>, the native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback runs on the recorded main R lane, it can submit its own chunk and queued worker chunks before grouped collection. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes.</p>
 <div class="section level3">
 <h3 id="ordinary-duckdb-table-scan-no-op-benchmark">Ordinary DuckDB table-scan no-op benchmark<a class="anchor" aria-label="anchor" href="#ordinary-duckdb-table-scan-no-op-benchmark"></a>
 </h3>
@@ -349,11 +349,11 @@
 <span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
 <span><span class="co">#&gt;    rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 2e+05              0</span></span>
+<span><span class="co">#&gt; 1 2e+05          77120</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           9.030             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           6.275             1.439044</span></span>
+<span><span class="co">#&gt; 1 threads=1           9.007             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           6.295             1.430818</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 1                 2                    2</span></span>
@@ -459,11 +459,11 @@
 <span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
 <span><span class="co">#&gt;   rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 4096           1024</span></span>
+<span><span class="co">#&gt; 1 4096           2048</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           2.360             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           0.704             3.352273</span></span>
+<span><span class="co">#&gt; 1 threads=1           2.351              1.00000</span></span>
+<span><span class="co">#&gt; 2 threads=5           0.717              3.27894</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 3                 4                    4</span></span>
