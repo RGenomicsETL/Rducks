@@ -86,6 +86,21 @@ Run with `lobstr` in this session:
   `current_connection_id()` values. So a DuckDB connection id is useful
   within a database instance but is not a global R-side connection key
   by itself.
+- duckdb-r registers
+  `reg.finalizer(conn@conn_ref, onexit = TRUE, rapi_disconnect)` when
+  connecting. Therefore the DuckDB connection is disconnected by
+  GC/session-exit finalization when `conn@conn_ref` becomes unreachable,
+  even if users never call
+  [`DBI::dbDisconnect()`](https://dbi.r-dbi.org/reference/dbDisconnect.html).
+- S4 class extension does not itself create a finalizer. R finalizers
+  are only for environments and external pointers.
+- A small C probe showed the current R runtime finalizes independently
+  unreachable external pointers in reverse registration order, so an
+  Rducks guard external pointer registered after duckdb-r’s `conn_ref`
+  finalizer can empirically run first. R’s
+  [`reg.finalizer()`](https://rdrr.io/r/base/reg.finalizer.html)
+  documentation does not promise this ordering, so this must not be the
+  primary lifecycle guarantee.
 
 ## Decisions needed
 
@@ -115,12 +130,21 @@ Run with `lobstr` in this session:
       `(runtime_id, generation)`. It may include DuckDB
       database/connection details for diagnostics, but the unique part
       should be Rducks-owned and monotonic within the process.
-3.  **Runtime release API shape.**
+3.  **Runtime release API shape and finalizer ordering.**
     - Problem: DuckDB has no database/connection close hook in the C
       extension API. The extension-owned connection can pin the runtime.
+    - Explicit path: a `rducks_connection` `dbDisconnect()` method can
+      guarantee `rducks_release(con)` runs before delegating to duckdb-r
+      disconnect, but only if users hold/call `dbDisconnect()` on the
+      returned Rducks connection object.
+    - GC fallback: duckdb-r’s `conn_ref` finalizer will run when the
+      connection is unreachable. We cannot rely on undocumented
+      finalizer ordering to guarantee an independent Rducks finalizer
+      runs before it.
     - Decision: should `rducks_release(con)` be required before
       `dbDisconnect()`, or should a `rducks_connection` `dbDisconnect()`
-      method make it automatic?
+      method make it automatic for explicit disconnects, with GC
+      fallback documented as best-effort?
     - Non-decision already made for now: native cleanup may leak
       preserved R closures rather than calling R API off the main R
       thread.
