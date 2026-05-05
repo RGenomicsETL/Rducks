@@ -22,14 +22,16 @@ library(nanoarrow)
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
 [![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
 
-Rducks registers R functions as DuckDB SQL functions. It ships as an R package
-plus a DuckDB extension. UDF inputs and outputs move through explicit execution
-plans:
+Rducks registers R functions as DuckDB SQL functions using a DuckDB C
+extension, including a small set of unstable DuckDB C extension API functions.
+The extension records the DuckDB database instance handle at initialization and
+keeps an extension-owned connection associated with that runtime. UDF inputs and
+outputs move through explicit execution plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized calls.
-- `arrow_ipc`: process-isolated path using Arrow IPC request/result payloads
-  and a generic Future backend.
+- `arrow_ipc`: process-isolated R execution using Arrow IPC request/result
+  payloads and a generic Future backend.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row; `mode = "vectorized"` means
@@ -735,8 +737,26 @@ Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 ```
 
 The DuckDB Arrow C Data path requires DuckDB's unstable C extension API, so the
-extension metadata uses `C_STRUCT_UNSTABLE` and must match the bundled DuckDB header/runtime
-version. See `docs/BUILD.md` for the extension build and metadata details.
+extension metadata uses `C_STRUCT_UNSTABLE` and must match the bundled DuckDB
+header/runtime version. See `docs/BUILD.md` for the extension build and metadata
+details.
+
+## DuckDB C extension ABI surface
+
+The extension entrypoint receives the DuckDB database handle from DuckDB's
+extension access struct, stores it in a per-database runtime record, and opens an
+extension-owned DuckDB connection for native callback support. On extension
+reload, Rducks verifies that the active connection has the SQL surface registered
+and re-registers it when needed.
+
+The following unstable DuckDB C extension ABI entries are derived by scanning the
+Rducks extension C sources and matching `duckdb_*` calls against the versioned
+sections of the bundled `duckdb_extension.h`:
+
+```{r used-unstable-duckdb-api, echo=FALSE, results='asis'}
+source("tools/used_duckdb_unstable_api.R")
+cat(rducks_used_duckdb_unstable_api_markdown())
+```
 
 ```{r cleanup, include=FALSE}
 dbDisconnect(con, shutdown = TRUE)

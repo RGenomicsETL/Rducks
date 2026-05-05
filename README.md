@@ -6,15 +6,18 @@
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
 [![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
 
-Rducks registers R functions as DuckDB SQL functions. It ships as an R
-package plus a DuckDB extension. UDF inputs and outputs move through
-explicit execution plans:
+Rducks registers R functions as DuckDB SQL functions using a DuckDB C
+extension, including a small set of unstable DuckDB C extension API
+functions. The extension records the DuckDB database instance handle at
+initialization and keeps an extension-owned connection associated with
+that runtime. UDF inputs and outputs move through explicit execution
+plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized
   calls.
-- `arrow_ipc`: process-isolated path using Arrow IPC request/result
-  payloads and a generic Future backend.
+- `arrow_ipc`: process-isolated R execution using Arrow IPC
+  request/result payloads and a generic Future backend.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
@@ -99,8 +102,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        293ms      3.39    1.97MB
-#> 2 vectorized    241ms      4.16    2.34MB
+#> 1 scalar        291ms      3.39    1.97MB
+#> 2 vectorized    231ms      4.29    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +174,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-05 05:57:37
+#> 1 2026-05-05 07:25:59
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -321,11 +324,11 @@ arrow_ipc_noop_benchmark <- local({
 
 arrow_ipc_noop_benchmark$parallel_probe
 #>    rows main_lane_rows
-#> 1 2e+05          77120
+#> 1 2e+05              0
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           9.007             1.000000
-#> 2 threads=5           6.295             1.430818
+#> 1 threads=1           9.010             1.000000
+#> 2 threads=5           6.259             1.439527
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -435,11 +438,11 @@ arrow_ipc_sleep_benchmark <- local({
 
 arrow_ipc_sleep_benchmark$parallel_probe
 #>   rows main_lane_rows
-#> 1 4096           2048
+#> 1 4096           1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.351              1.00000
-#> 2 threads=5           0.717              3.27894
+#> 1 threads=1           2.395             1.000000
+#> 2 threads=5           0.710             3.373239
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4
@@ -775,3 +778,25 @@ The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API,
 so the extension metadata uses `C_STRUCT_UNSTABLE` and must match the
 bundled DuckDB header/runtime version. See `docs/BUILD.md` for the
 extension build and metadata details.
+
+## DuckDB C extension ABI surface
+
+The extension entrypoint receives the DuckDB database handle from
+DuckDB’s extension access struct, stores it in a per-database runtime
+record, and opens an extension-owned DuckDB connection for native
+callback support. On extension reload, Rducks verifies that the active
+connection has the SQL surface registered and re-registers it when
+needed.
+
+The following unstable DuckDB C extension ABI entries are derived by
+scanning the Rducks extension C sources and matching `duckdb_*` calls
+against the versioned sections of the bundled `duckdb_extension.h`:
+
+| ABI group                                      | Functions used                                                                                                                                                                                                                                                                                       | Count |
+|------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
+| `unstable_new_arrow_functions`                 | `duckdb_data_chunk_from_arrow`, `duckdb_data_chunk_to_arrow`, `duckdb_destroy_arrow_converted_schema`, `duckdb_schema_from_arrow`, `duckdb_to_arrow_schema`                                                                                                                                          |     5 |
+| `unstable_new_error_data_functions`            | `duckdb_destroy_error_data`, `duckdb_error_data_has_error`, `duckdb_error_data_message`                                                                                                                                                                                                              |     3 |
+| `unstable_new_open_connect_functions`          | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_arrow_options`, `duckdb_destroy_arrow_options`, `duckdb_destroy_client_context`                                                                                                                                                    |     4 |
+| `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy`                                           |     6 |
+| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_client_context`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init` |     7 |
+| `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`, `duckdb_vector_reference_vector`                                                                                                                              |     5 |
