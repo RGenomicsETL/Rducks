@@ -6,17 +6,18 @@ should describe what still needs doing.
 
 ## Current facts
 
-- Current pushed baseline when this file was refreshed:
-  `4ac8ba2 Document null-argument UDFs and refresh TODO`.
-- Local validation at that baseline:
-  - `R CMD INSTALL .` OK
-  - `make test` OK: 530 tinytest results
-  - `README.Rmd` rendered to `README.md`
-- GitHub Actions at that baseline:
+- Current development baseline when this file was refreshed:
+  weakref-based R-side lifecycle cleanup in progress after
+  `ed05eee Track database-cache lifecycle risks`.
+- Local validation for the weakref cleanup change:
+  - `make install` OK
+  - `make test` OK: 541 tinytest results
+  - `README.Rmd` not rerendered for this internal lifecycle change
+- Last checked GitHub Actions before the weakref cleanup change:
   - `R-CMD-check.yaml`: success, including R 4.3
   - `Generated marshalling matrix`: success, release and R 4.3
   - `pkgdown.yaml`: success
-- R-universe at that baseline:
+- Last checked R-universe before the weakref cleanup change:
   - `RemoteSha = 4ac8ba2079dc13e91c511246fdd9cad4defb654f`
   - `_status = success`
   - Linux/macOS/Windows binaries success
@@ -26,7 +27,8 @@ should describe what still needs doing.
 
 - Use DuckDB C API / C extension API only; no DuckDB C++ API in the
   extension.
-- Do not touch duckdb-r internals such as `con@conn_ref`.
+- Do not mutate duckdb-r internals. Current exception: read-only access
+  to the `conn_ref` slot is used as the weakref lifecycle anchor.
 - Keep R API work on the recorded main R thread for same-process
   execution.
 - Destructors/finalizers that may run off the main R thread must not
@@ -111,6 +113,16 @@ Run with `lobstr` in this session:
   must therefore not blindly release preserved R functions while another
   live connection can still call catalog entries that point at the same
   native metadata.
+- Implemented R-side baseline: `.rducks_state$connection_plans` and
+  `.rducks_state$registrations` are keyed by Rducks-generated connection
+  tokens, not SEXP addresses. A
+  [`reg.finalizer()`](https://rdrr.io/r/base/reg.finalizer.html) weakref
+  on duckdb-r’s `conn_ref` removes those token-keyed entries when the
+  external pointer is collected.
+- Important limitation: if a preserved UDF closure environment itself
+  references the DuckDB connection, the connection is still reachable
+  and the weakref finalizer correctly cannot run. Explicit release is
+  still needed to break that class of cycle.
 - A small C probe showed the current R runtime finalizes independently
   unreachable external pointers in reverse registration order, so an
   Rducks guard external pointer registered after duckdb-r’s `conn_ref`
@@ -123,24 +135,20 @@ Run with `lobstr` in this session:
 ## Decisions needed
 
 1.  **Connection object model for R-side state.**
-    - Problem: R-side stores still key by SEXP address via
-      `rducks_connection_key()`. Freed R object addresses can be reused.
+    - R-side SEXP-address keying has been replaced for plan/registration
+      stores.
     - Empirical result: S4 `duckdb_connection` wrappers are not
       environments and are not mutated in the caller by assigning
       attributes inside
       [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
       unless the modified object is returned and assigned.
-    - Refined direction: no S4 subclass is needed merely to clear Rducks
-      state when the DuckDB connection external pointer is collected. A
-      C weakref/ finalizer keyed by `conn_ref` can remove token-keyed
-      registries when the connection becomes unreachable.
-    - Remaining decision: are we willing to use read-only access to
-      duckdb-r’s `conn_ref` slot for this lifecycle anchor? If not, the
-      alternative is an Rducks-owned guard object, which requires
-      `con <- rducks_enable(con)`.
-    - A subclass/wrapper is only needed if we want to intercept explicit
-      `DBI::dbDisconnect(con)` and run Rducks cleanup immediately before
-      delegating to duckdb-r.
+    - Chosen baseline: no S4 subclass is needed merely to clear Rducks
+      R-side state when the DuckDB connection external pointer is
+      collected. Rducks now uses read-only access to duckdb-r’s
+      `conn_ref` slot as the weakref anchor.
+    - Remaining decision: whether to add a subclass/wrapper only to
+      intercept explicit `DBI::dbDisconnect(con)` and run Rducks cleanup
+      immediately before delegating to duckdb-r.
 2.  **Runtime token contents.**
     - Problem: DuckDB `current_connection_id()` is not globally unique
       across independent database instances; raw wrapper addresses can
@@ -202,22 +210,25 @@ Run with `lobstr` in this session:
 
 Replace SEXP-address keying for R-side connection state.
 
+- Current implementation: Rducks-generated connection tokens are
+  assigned per duckdb-r `conn_ref` external pointer and used for
+  `.rducks_state$connection_plans` and `.rducks_state$registrations`.
+- Current lifecycle anchor: `reg.finalizer(conn_ref, ...)` removes
+  token-keyed R-side stores when the DuckDB connection external pointer
+  is collected.
+- Covered by `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
+
+Add native runtime token/anchor accounting.
+
 - Target: a stable Rducks runtime token from the native extension, for
   example `SELECT rducks_connection_token()` or a `.Call` equivalent.
 - Token should be Rducks-owned and generation-safe,
-  e.g. `(runtime_id, generation)`, not just a raw R object address or
-  DuckDB connection id.
-- Use it for `.rducks_state$connection_plans` and
-  `.rducks_state$registrations`.
-- Add a weakref/finalizer lifecycle anchor keyed by the DuckDB
-  connection external pointer (`conn_ref`) or by an assigned
-  Rducks-owned guard object. On finalization, remove token-keyed R-side
-  stores and decrement a native runtime anchor count.
-- If the token/lifecycle anchor is stored on the R connection wrapper
-  rather than keyed to `conn_ref`, the enabled connection object must be
-  returned and assigned by the caller.
+  e.g. `(runtime_id, generation)`, not just a raw R object address, raw
+  `duckdb_database` wrapper pointer, or DuckDB connection id.
+- Add native anchor accounting separately from the R-side cleanup now in
+  place.
 - Acceptance: repeated connect/register/disconnect/reconnect loops
-  cannot make a new connection see stale plans or stale UDF metadata.
+  cannot make a new connection see stale native runtime state.
 
 Implement idempotent runtime release.
 

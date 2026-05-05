@@ -37,17 +37,16 @@
 <p>This file is development-facing. Keep user-facing changes in <code>NEWS.md</code> and README/docs. Do not use this file as a historical changelog; it should describe what still needs doing.</p>
 <div class="section level2">
 <h2 id="current-facts">Current facts<a class="anchor" aria-label="anchor" href="#current-facts"></a></h2>
-<ul><li>Current pushed baseline when this file was refreshed: <code>4ac8ba2 Document null-argument UDFs and refresh TODO</code>.</li>
-<li>Local validation at that baseline:
+<ul><li>Current development baseline when this file was refreshed: weakref-based R-side lifecycle cleanup in progress after <code>ed05eee Track database-cache lifecycle risks</code>.</li>
+<li>Local validation for the weakref cleanup change:
 <ul><li>
-<code>R CMD INSTALL .</code> OK</li>
+<code>make install</code> OK</li>
 <li>
-<code>make test</code> OK: 530 tinytest results</li>
+<code>make test</code> OK: 541 tinytest results</li>
 <li>
-<code>README.Rmd</code> rendered to <code>README.md</code>
-</li>
+<code>README.Rmd</code> not rerendered for this internal lifecycle change</li>
 </ul></li>
-<li>GitHub Actions at that baseline:
+<li>Last checked GitHub Actions before the weakref cleanup change:
 <ul><li>
 <code>R-CMD-check.yaml</code>: success, including R 4.3</li>
 <li>
@@ -55,7 +54,7 @@
 <li>
 <code>pkgdown.yaml</code>: success</li>
 </ul></li>
-<li>R-universe at that baseline:
+<li>Last checked R-universe before the weakref cleanup change:
 <ul><li><code>RemoteSha = 4ac8ba2079dc13e91c511246fdd9cad4defb654f</code></li>
 <li><code>_status = success</code></li>
 <li>Linux/macOS/Windows binaries success</li>
@@ -65,7 +64,7 @@
 <div class="section level2">
 <h2 id="non-negotiable-constraints">Non-negotiable constraints<a class="anchor" aria-label="anchor" href="#non-negotiable-constraints"></a></h2>
 <ul><li>Use DuckDB C API / C extension API only; no DuckDB C++ API in the extension.</li>
-<li>Do not touch duckdb-r internals such as <code>con@conn_ref</code>.</li>
+<li>Do not mutate duckdb-r internals. Current exception: read-only access to the <code>conn_ref</code> slot is used as the weakref lifecycle anchor.</li>
 <li>Keep R API work on the recorded main R thread for same-process execution.</li>
 <li>Destructors/finalizers that may run off the main R thread must not call R API.</li>
 <li>No hidden fallback:
@@ -128,17 +127,18 @@
 <li>Current R weak references can only use reference objects as keys (<code>NILSXP</code>, <code>ENVSXP</code>, <code>EXTPTRSXP</code>, or byte-code objects), not the S4 <code>duckdb_connection</code> wrapper itself. A no-subclass GC cleanup path therefore needs either a weak reference/finalizer keyed by duckdb-r’s <code>conn_ref</code> external pointer, or an assigned Rducks-owned guard environment/externalptr.</li>
 <li>DuckDB exposes an instance-cache C API: cached opens can return distinct <code>duckdb_database</code> handles backed by the same underlying database instance. DuckDB extension loading also hands C extensions a load-state <code>DatabaseWrapper</code>. Therefore raw <code>duckdb_database</code> wrapper pointers are not a durable runtime identity.</li>
 <li>Rducks UDFs are database/catalog-scoped, not only connection-scoped: a UDF registered on one connection is callable from another connection to the same database. A weakref finalizer for one collected connection must therefore not blindly release preserved R functions while another live connection can still call catalog entries that point at the same native metadata.</li>
+<li>Implemented R-side baseline: <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code> are keyed by Rducks-generated connection tokens, not SEXP addresses. A <code><a href="https://rdrr.io/r/base/reg.finalizer.html" class="external-link">reg.finalizer()</a></code> weakref on duckdb-r’s <code>conn_ref</code> removes those token-keyed entries when the external pointer is collected.</li>
+<li>Important limitation: if a preserved UDF closure environment itself references the DuckDB connection, the connection is still reachable and the weakref finalizer correctly cannot run. Explicit release is still needed to break that class of cycle.</li>
 <li>A small C probe showed the current R runtime finalizes independently unreachable external pointers in reverse registration order, so an Rducks guard external pointer registered after duckdb-r’s <code>conn_ref</code> finalizer can empirically run first. R’s <code><a href="https://rdrr.io/r/base/reg.finalizer.html" class="external-link">reg.finalizer()</a></code> documentation does not promise this ordering, so this must not be the primary lifecycle guarantee. Cleanup must be idempotent and must not depend on whether duckdb-r’s disconnect finalizer has already run.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="decisions-needed">Decisions needed<a class="anchor" aria-label="anchor" href="#decisions-needed"></a></h2>
 <ol style="list-style-type: decimal"><li>
 <strong>Connection object model for R-side state.</strong>
-<ul><li>Problem: R-side stores still key by SEXP address via <code>rducks_connection_key()</code>. Freed R object addresses can be reused.</li>
+<ul><li>R-side SEXP-address keying has been replaced for plan/registration stores.</li>
 <li>Empirical result: S4 <code>duckdb_connection</code> wrappers are not environments and are not mutated in the caller by assigning attributes inside <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> unless the modified object is returned and assigned.</li>
-<li>Refined direction: no S4 subclass is needed merely to clear Rducks state when the DuckDB connection external pointer is collected. A C weakref/ finalizer keyed by <code>conn_ref</code> can remove token-keyed registries when the connection becomes unreachable.</li>
-<li>Remaining decision: are we willing to use read-only access to duckdb-r’s <code>conn_ref</code> slot for this lifecycle anchor? If not, the alternative is an Rducks-owned guard object, which requires <code>con &lt;- rducks_enable(con)</code>.</li>
-<li>A subclass/wrapper is only needed if we want to intercept explicit <code>DBI::dbDisconnect(con)</code> and run Rducks cleanup immediately before delegating to duckdb-r.</li>
+<li>Chosen baseline: no S4 subclass is needed merely to clear Rducks R-side state when the DuckDB connection external pointer is collected. Rducks now uses read-only access to duckdb-r’s <code>conn_ref</code> slot as the weakref anchor.</li>
+<li>Remaining decision: whether to add a subclass/wrapper only to intercept explicit <code>DBI::dbDisconnect(con)</code> and run Rducks cleanup immediately before delegating to duckdb-r.</li>
 </ul></li>
 <li>
 <strong>Runtime token contents.</strong>
@@ -177,13 +177,17 @@
 <div class="section level2">
 <h2 id="p0-connection-identity-and-lifecycle">P0: connection identity and lifecycle<a class="anchor" aria-label="anchor" href="#p0-connection-identity-and-lifecycle"></a></h2>
 <ul class="task-list"><li>
-<label><input type="checkbox">Replace SEXP-address keying for R-side connection state.</label>
+<label><input type="checkbox" checked>Replace SEXP-address keying for R-side connection state.</label>
+<ul><li>Current implementation: Rducks-generated connection tokens are assigned per duckdb-r <code>conn_ref</code> external pointer and used for <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code>.</li>
+<li>Current lifecycle anchor: <code>reg.finalizer(conn_ref, ...)</code> removes token-keyed R-side stores when the DuckDB connection external pointer is collected.</li>
+<li>Covered by <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
+</ul></li>
+<li>
+<label><input type="checkbox">Add native runtime token/anchor accounting.</label>
 <ul><li>Target: a stable Rducks runtime token from the native extension, for example <code>SELECT rducks_connection_token()</code> or a <code>.Call</code> equivalent.</li>
-<li>Token should be Rducks-owned and generation-safe, e.g. <code>(runtime_id, generation)</code>, not just a raw R object address or DuckDB connection id.</li>
-<li>Use it for <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code>.</li>
-<li>Add a weakref/finalizer lifecycle anchor keyed by the DuckDB connection external pointer (<code>conn_ref</code>) or by an assigned Rducks-owned guard object. On finalization, remove token-keyed R-side stores and decrement a native runtime anchor count.</li>
-<li>If the token/lifecycle anchor is stored on the R connection wrapper rather than keyed to <code>conn_ref</code>, the enabled connection object must be returned and assigned by the caller.</li>
-<li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot make a new connection see stale plans or stale UDF metadata.</li>
+<li>Token should be Rducks-owned and generation-safe, e.g. <code>(runtime_id, generation)</code>, not just a raw R object address, raw <code>duckdb_database</code> wrapper pointer, or DuckDB connection id.</li>
+<li>Add native anchor accounting separately from the R-side cleanup now in place.</li>
+<li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot make a new connection see stale native runtime state.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Implement idempotent runtime release.</label>
