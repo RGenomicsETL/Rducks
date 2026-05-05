@@ -50,14 +50,14 @@
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
 <p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a></p>
-<p>Rducks registers R functions as DuckDB SQL functions. It ships as an R package plus a DuckDB extension. UDF inputs and outputs move through explicit execution plans:</p>
+<p>Rducks registers R functions as DuckDB SQL functions using a DuckDB C extension, including a small set of unstable DuckDB C extension API functions. The extension records the DuckDB database instance handle at initialization and keeps an extension-owned connection associated with that runtime. UDF inputs and outputs move through explicit execution plans:</p>
 <ul>
 <li>
 <code>arrow_r</code>: reference path using DuckDB Arrow C Data plus nanoarrow/R.</li>
 <li>
 <code>arrow_c</code>: native extension path for supported scalar and vectorized calls.</li>
 <li>
-<code>arrow_ipc</code>: process-isolated path using Arrow IPC request/result payloads and a generic Future backend.</li>
+<code>arrow_ipc</code>: process-isolated R execution using Arrow IPC request/result payloads and a generic Future backend.</li>
 </ul>
 <p>The user-facing UDF semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row; <code>mode = "vectorized"</code> means one R call per DuckDB chunk.</p>
 <div class="section level2">
@@ -123,8 +123,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        293ms      3.39    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    241ms      4.16    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        291ms      3.39    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    231ms      4.29    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -216,7 +216,7 @@
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sleepy_time(1.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     x</span></span>
-<span><span class="co">#&gt; 1 2026-05-05 05:57:37</span></span>
+<span><span class="co">#&gt; 1 2026-05-05 07:25:59</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   submitted executed timeouts</span></span>
 <span><span class="co">#&gt; 1         4        4        0</span></span>
@@ -349,11 +349,11 @@
 <span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
 <span><span class="co">#&gt;    rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 2e+05          77120</span></span>
+<span><span class="co">#&gt; 1 2e+05              0</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           9.007             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           6.295             1.430818</span></span>
+<span><span class="co">#&gt; 1 threads=1           9.010             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           6.259             1.439527</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 1                 2                    2</span></span>
@@ -459,11 +459,11 @@
 <span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
 <span><span class="co">#&gt;   rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 4096           2048</span></span>
+<span><span class="co">#&gt; 1 4096           1024</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           2.351              1.00000</span></span>
-<span><span class="co">#&gt; 2 threads=5           0.717              3.27894</span></span>
+<span><span class="co">#&gt; 1 threads=1           2.395             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           0.710             3.373239</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 3                 4                    4</span></span>
@@ -1107,6 +1107,68 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <p>DuckDB C API headers are refreshed explicitly with:</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
 <p>The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
+</div>
+<div class="section level2">
+<h2 id="duckdb-c-extension-abi-surface">DuckDB C extension ABI surface<a class="anchor" aria-label="anchor" href="#duckdb-c-extension-abi-surface"></a>
+</h2>
+<p>The extension entrypoint receives the DuckDB database handle from DuckDB’s extension access struct, stores it in a per-database runtime record, and opens an extension-owned DuckDB connection for native callback support. On extension reload, Rducks verifies that the active connection has the SQL surface registered and re-registers it when needed.</p>
+<p>The following unstable DuckDB C extension ABI entries are derived by scanning the Rducks extension C sources and matching <code>duckdb_*</code> calls against the versioned sections of the bundled <code>duckdb_extension.h</code>:</p>
+<table class="table">
+<colgroup>
+<col width="13%">
+<col width="84%">
+<col width="2%">
+</colgroup>
+<thead><tr>
+<th>ABI group</th>
+<th>Functions used</th>
+<th align="right">Count</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>unstable_new_arrow_functions</code></td>
+<td>
+<code>duckdb_data_chunk_from_arrow</code>, <code>duckdb_data_chunk_to_arrow</code>, <code>duckdb_destroy_arrow_converted_schema</code>, <code>duckdb_schema_from_arrow</code>, <code>duckdb_to_arrow_schema</code>
+</td>
+<td align="right">5</td>
+</tr>
+<tr>
+<td><code>unstable_new_error_data_functions</code></td>
+<td>
+<code>duckdb_destroy_error_data</code>, <code>duckdb_error_data_has_error</code>, <code>duckdb_error_data_message</code>
+</td>
+<td align="right">3</td>
+</tr>
+<tr>
+<td><code>unstable_new_open_connect_functions</code></td>
+<td>
+<code>duckdb_client_context_get_connection_id</code>, <code>duckdb_connection_get_arrow_options</code>, <code>duckdb_destroy_arrow_options</code>, <code>duckdb_destroy_client_context</code>
+</td>
+<td align="right">4</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_functions</code></td>
+<td>
+<code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_get_client_context</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>
+</td>
+<td align="right">6</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_state_functions</code></td>
+<td>
+<code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_client_context</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_init</code>
+</td>
+<td align="right">7</td>
+</tr>
+<tr>
+<td><code>unstable_new_vector_functions</code></td>
+<td>
+<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_vector_copy_sel</code>, <code>duckdb_vector_reference_vector</code>
+</td>
+<td align="right">5</td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
