@@ -1,8 +1,8 @@
 # Inspect in-process queue counters
 
 Returns diagnostic counters for the extension-owned in-process queue.
-`submitted` counts requests submitted to the main R execution lane,
-`executed` counts requests drained by that lane, and `timeouts` counts
+`submitted` counts requests submitted to the recorded main R thread,
+`executed` counts requests drained by that thread, and `timeouts` counts
 requests that were abandoned rather than waiting indefinitely.
 
 ## Usage

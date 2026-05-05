@@ -71,6 +71,19 @@
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
 <span></span>
+<span><span class="va">reg_hello</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_hello"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="st">"hello from R"</span>,</span>
+<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">VARCHAR</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_hello() AS message"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;        message</span></span>
+<span><span class="co">#&gt; 1 hello from R</span></span>
+<span></span>
 <span><span class="va">reg_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_plus_one"</span>,</span>
@@ -83,6 +96,7 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41.0) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
+<p>Use <code>args = NULL</code> for a zero-argument scalar UDF. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
 <p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB.</p>
 <div class="section level3">
 <h3 id="arrow-conversion-setting">Arrow conversion setting<a class="anchor" aria-label="anchor" href="#arrow-conversion-setting"></a>
@@ -128,8 +142,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        298ms      3.35    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    243ms      4.13    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        296ms      3.42    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    237ms      4.20    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -380,8 +394,8 @@
 <span><span class="co">#&gt; 1 2e+05                0</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           9.235             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           6.500             1.420769</span></span>
+<span><span class="co">#&gt; 1 threads=1           8.960             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           6.321             1.417497</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 1                 2                    2</span></span>
@@ -490,8 +504,8 @@
 <span><span class="co">#&gt; 1 4096             1024</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           2.355             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           0.700             3.364286</span></span>
+<span><span class="co">#&gt; 1 threads=1           2.299             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           0.705             3.260993</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 3                 4                    4</span></span>

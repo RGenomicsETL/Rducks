@@ -43,9 +43,10 @@ rducks_register(
 
 - args:
 
-  Argument type specification. Use exported DuckDB-style type objects
-  such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
-  `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
+  Argument type specification. Use `NULL` for a zero-argument scalar
+  UDF. Otherwise use exported DuckDB-style type objects such as
+  `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`,
+  or `MAP(VARCHAR, INTEGER)`.
 
 - returns:
 

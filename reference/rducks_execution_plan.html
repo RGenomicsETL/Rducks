@@ -75,8 +75,8 @@ payload for the Future-based multiprocess path.</p></dd>
 <dt id="arg-concurrency">concurrency<a class="anchor" aria-label="anchor" href="#arg-concurrency"></a></dt>
 <dd><p>Concurrency contract. <code>"serial"</code> evaluates one chunk at a
 time in the calling process. <code>"inproc_concurrent"</code> allows in-process DuckDB
-callback concurrency while keeping R API work serialized on the recorded R
-execution lane. <code>"multiprocess_parallel"</code> uses the current <code>future</code> backend
+callback concurrency while keeping R API work serialized on the recorded
+main R thread. <code>"multiprocess_parallel"</code> uses the current <code>future</code> backend
 for process-isolated chunk work and requires <code>marshalling = "arrow_ipc"</code>.</p></dd>
 
 

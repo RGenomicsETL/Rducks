@@ -1,8 +1,7 @@
 # Disable in-process queued R UDF execution
 
-Switches a Rducks-enabled DuckDB connection back to the direct
-single-lane backend. Optionally updates DuckDB thread settings at the
-same time.
+Switches a Rducks-enabled DuckDB connection back to the direct serial
+backend. Optionally updates DuckDB thread settings at the same time.
 
 ## Usage
 

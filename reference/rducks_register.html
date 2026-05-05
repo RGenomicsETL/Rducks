@@ -87,9 +87,10 @@ use <code><a href="rducks_enable_inproc.html">rducks_enable_inproc()</a></code> 
 
 
 <dt id="arg-args">args<a class="anchor" aria-label="anchor" href="#arg-args"></a></dt>
-<dd><p>Argument type specification. Use exported DuckDB-style type
-objects such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>,
-<code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
+<dd><p>Argument type specification. Use <code>NULL</code> for a zero-argument
+scalar UDF. Otherwise use exported DuckDB-style type objects such as
+<code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or
+<code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>

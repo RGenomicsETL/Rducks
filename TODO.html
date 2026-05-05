@@ -34,7 +34,7 @@
 
 <div id="rducks-todo" class="section level1">
 
-<p>This file tracks implementation work, tests, and semantic clarifications that are not yet complete. It is intentionally development-facing; user-facing release notes stay in <code>NEWS.md</code>.</p>
+<p>This file tracks implementation work, tests, and semantic clarifications that are not yet complete. It is development-facing; user-facing release notes stay in <code>NEWS.md</code>.</p>
 <div class="section level2">
 <h2 id="status-legend">Status legend<a class="anchor" aria-label="anchor" href="#status-legend"></a></h2>
 <ul><li>
@@ -45,41 +45,39 @@
 <code>[x]</code> implemented and locally validated</li>
 </ul></div>
 <div class="section level2">
-<h2 id="priority-lanes">Priority lanes<a class="anchor" aria-label="anchor" href="#priority-lanes"></a></h2>
-<p>Current short-term scope: <strong>type coverage</strong>. Do not start new backend design work until the implemented plan matrix is covered across declared types, NULL/error semantics, local tests, generated matrix cases, CI, and semantic README/docs.</p>
+<h2 id="current-priority-tracks">Current priority tracks<a class="anchor" aria-label="anchor" href="#current-priority-tracks"></a></h2>
+<p>Current short-term scope: <strong>connection/runtime identity and lifecycle</strong>, then the remaining concurrency hardening. The type-coverage push is largely complete for the implemented plan matrix; do not add new public execution modes until the runtime identity, release, and stale-state issues are fixed.</p>
 <ul><li>
-<strong>P0 release gates</strong>: r-universe/oldrelease/wasm status, package checks, and semantic text that prevents users from misunderstanding the current API.</li>
+<strong>P0 release gates</strong>: package checks, r-universe/oldrelease/wasm status, and README/API text that prevents users from misunderstanding current semantics.</li>
 <li>
-<strong>P1 correctness hardening</strong>: no-fallback tests, plan-transition tests, lifetime/GC tests, and native/R-thread boundary tests.</li>
+<strong>P0 connection identity/lifecycle</strong>: replace SEXP-address R-side keys, define explicit runtime release, and make repeated connect/disconnect safe.</li>
 <li>
-<strong>P2 observability and required feature gaps</strong>: listing UDFs, counter reset, README/docs examples, richer diagnostics, and remaining vectorized-plan hardening.</li>
+<strong>P1 correctness hardening</strong>: no-fallback tests, queue timeout/join behavior, main-R-thread resource release, plan-transition tests, and GC/lifetime tests.</li>
 <li>
-<strong>P3 future backends</strong>: owned queued boundaries and Arrow IPC multiprocess execution.</li>
+<strong>P2 observability</strong>: richer queue counters, counter reset, native/R state cross-checks, and generated/native counter-field consistency.</li>
+<li>
+<strong>P3 future performance/backends</strong>: owned chunk boundaries, persistent worker transports, and Arrow IPC overhead reduction.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="current-baseline">Current baseline<a class="anchor" aria-label="anchor" href="#current-baseline"></a></h2>
-<ul><li><p>Code baseline validated before adding this tracker: <code>cfa8e2c Add UDF execution introspection</code>.</p></li>
-<li><p>Initial tracker commit: <code>06d6f3d Add implementation TODO tracker</code>.</p></li>
+<ul><li><p>Current pushed baseline when this tracker was refreshed: <code>454441b Tighten README thread wording</code>.</p></li>
 <li>
-<p>Locally validated at the code baseline:</p>
-<ul><li>
-<code>make test</code> OK: 457 tinytest results</li>
-<li>
-<code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 472 cases</li>
-<li>
-<code>make check</code> OK</li>
-<li>local <code>ghcr.io/r-wasm/webr:main</code> + <code>rwasm::build()</code> OK</li>
+<p>Recent implementation commits to preserve:</p>
+<ul><li><code>7d054cf Cooperatively batch RIPC callbacks</code></li>
+<li><code>5738c45 Refresh Rducks surfaces on extension reload</code></li>
+<li><code>49146d2 Document unstable DuckDB extension API usage</code></li>
+<li><code>eeb9ee3 Protect RC scalar return values across checks</code></li>
+<li><code>46d947e Harden Rducks runtime refresh and thread checks</code></li>
+<li><code>7f4b71e Clarify Arrow conversion and in-process queue docs</code></li>
+<li><code>454441b Tighten README thread wording</code></li>
 </ul></li>
 <li>
-<p>Latest local coverage validation after <code>arrow_c + vectorized</code> work:</p>
+<p>Latest local validation after native/runtime hardening:</p>
 <ul><li>
-<code>make install</code> OK</li>
+<code>R CMD INSTALL .</code> OK</li>
 <li>
-<code>make test</code> OK: 478 tinytest results</li>
-<li>
-<code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 706 cases</li>
-<li>
-<code>make check</code> OK</li>
+<code>make test</code> OK: 528 tinytest results</li>
+<li>README rendered from <code>README.Rmd</code> for the latest documentation commits</li>
 </ul></li>
 <li>
 <p>R-universe may lag GitHub pushes. Check the API before assuming oldrelease or wasm results include the latest commits:</p>
@@ -107,6 +105,7 @@
 <li>Keep all R API calls on the recorded main R thread for same-process execution.</li>
 <li>Do not use DuckDB C++ APIs, patch <code>duckdb</code> R, use <code>con@conn_ref</code>, add a package-side queue/pump, or rely on hidden progress callbacks.</li>
 <li>Same-process concurrency target is no deadlocks and explicit errors on unsupported paths; it is not a promise of faster R evaluation.</li>
+<li>Keep <code>arrow_lossless_conversion=true</code> documented: it affects DuckDB-to-Arrow conversion at the Rducks boundary, not stored DuckDB values or SQL semantics.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="implemented-plan-matrix-to-preserve">Implemented plan matrix to preserve<a class="anchor" aria-label="anchor" href="#implemented-plan-matrix-to-preserve"></a></h2>
@@ -121,7 +120,7 @@
 </tr><tr><td><code>arrow_r + inproc_concurrent</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>queued same-process path</td>
+<td>queued same-process path; R API work stays on the recorded main R thread</td>
 </tr><tr><td><code>arrow_c + serial</code></td>
 <td>implemented</td>
 <td>implemented</td>
@@ -129,16 +128,58 @@
 </tr><tr><td><code>arrow_c + inproc_concurrent</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>queued same-process path, R callbacks still serialized on main R lane</td>
+<td>queued same-process path with <code>arrow_c</code> marshalling; R callbacks still run on the recorded main R thread</td>
 </tr><tr><td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
 <td>Future-backed Arrow IPC provider, evaluator <code>RIPC</code>
 </td>
-</tr></tbody></table><p><code>arrow_c</code> vectorized mode now uses the <code>RCV</code> native evaluator token. The current <code>arrow_ipc + multiprocess_parallel</code> path uses generic <code>future</code> backends and Arrow IPC payloads. Scalar mode loops over logical rows inside the worker; vectorized mode calls the R function once per chunk. The provider splits submit and collect phases so queued chunk futures can overlap when DuckDB provides multiple concurrent UDF callbacks. It is implemented, but it is not the final persistent RPC hot path.</p>
+</tr></tbody></table><p><code>arrow_c</code> vectorized mode uses the <code>RCV</code> native evaluator token. The current <code>arrow_ipc + multiprocess_parallel</code> path uses generic <code>future</code> backends and Arrow IPC payloads. Scalar mode loops over logical rows inside the worker; vectorized mode calls the R function once per chunk. The provider splits submit and collect phases so queued chunk futures can overlap when DuckDB provides multiple concurrent UDF callbacks.</p>
 </div>
 <div class="section level2">
-<h2 id="immediate-release--infrastructure-follow-up">Immediate release / infrastructure follow-up<a class="anchor" aria-label="anchor" href="#immediate-release--infrastructure-follow-up"></a></h2>
+<h2 id="recently-completed-hardening">Recently completed hardening<a class="anchor" aria-label="anchor" href="#recently-completed-hardening"></a></h2>
+<ul class="task-list"><li><label><input type="checkbox" checked>Native RIPC submit/collect batching and counters.</label></li>
+<li><label><input type="checkbox" checked>Removed the rejected <code>rducks_query_stream()</code> direction.</label></li>
+<li><label><input type="checkbox" checked>Extension reload refreshes SQL surfaces when needed.</label></li>
+<li><label><input type="checkbox" checked>Programmatic unstable DuckDB C extension ABI scanner and README table.</label></li>
+<li><label><input type="checkbox" checked>RC scalar return values protected across return checks.</label></li>
+<li><label><input type="checkbox" checked>POSIX thread identity now uses <code>pthread_equal()</code> instead of comparing serialized <code>pthread_t</code> bytes; Windows keeps <code>GetCurrentThreadId()</code>.</label></li>
+<li><label><input type="checkbox" checked>Runtime refresh now clears stale UDF registry bookkeeping and configures the refreshed extension-owned connection with <code>arrow_lossless_conversion=true</code>.</label></li>
+<li><label><input type="checkbox" checked>RC direct input view allocation uses <code>R_alloc()</code> instead of <code>calloc()</code> to avoid leaks on R longjmp paths.</label></li>
+<li><label><input type="checkbox" checked>Queue/global-runtime lock discipline documented.</label></li>
+<li><label><input type="checkbox" checked>README documents <code>arrow_lossless_conversion=true</code> and uses a real DuckDB table-scan diagnostic for in-process queued execution.</label></li>
+</ul></div>
+<div class="section level2">
+<h2 id="p0-connection-identity-and-lifecycle">P0: connection identity and lifecycle<a class="anchor" aria-label="anchor" href="#p0-connection-identity-and-lifecycle"></a></h2>
+<ul class="task-list"><li>
+<label><input type="checkbox"><strong>Replace SEXP-address keying for R-side connection state.</strong></label>
+<ul><li>Current risk: <code>rducks_connection_key()</code> uses <code>.Call(RDUCKS_sexp_addr, con)</code>. R can reuse freed SEXP addresses, so <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code> can collide with dead connections.</li>
+<li>Target: C extension exposes an opaque Rducks runtime/connection token, for example <code>SELECT rducks_connection_token()</code>, based on an Rducks-owned monotonic runtime id/generation rather than a raw R SEXP address.</li>
+<li>R side uses that token as the key for plan and registration stores.</li>
+<li>Decide whether the token is attached as a hidden attribute or via a <code>rducks_connection</code> subclass/wrapper; document that users should keep the object returned by <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> if the API changes.</li>
+<li>Acceptance: repeated <code>dbConnect()</code> / <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> / register / <code>dbDisconnect()</code> loops cannot make a new connection see stale plans or UDF registration metadata.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>Add explicit Rducks runtime release.</strong></label>
+<ul><li>Target API: <code>rducks_release(con)</code> is idempotent.</li>
+<li>Native work: release or invalidate the runtime entry, drain/reset queue state, disconnect extension-owned DuckDB connection, and detach UDF registry bookkeeping. Do not call R API from off-main destructors.</li>
+<li>R work: remove the connection token from <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code>.</li>
+<li>Best-effort fallback: an Rducks-owned external pointer/finalizer may call a non-SQL <code>.Call</code> cleanup path, but finalizers must not call DBI/SQL.</li>
+<li>Acceptance: repeated release/disconnect is harmless and does not leave stale R-side state for subsequent connections.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>Define <code>dbDisconnect()</code> integration.</strong></label>
+<ul><li>Preferred design if subclassing/wrapping is adopted: a <code>dbDisconnect()</code> method for <code>rducks_connection</code> calls <code>rducks_release(conn)</code> before delegating to duckdb-r.</li>
+<li>If plain attributes remain the implementation, document the explicit <code>rducks_release(con); DBI::dbDisconnect(con)</code> pattern and add tests.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>Main-thread release queue for preserved R objects.</strong></label>
+<ul><li>Current behavior: metadata destroyed off the main R thread avoids <code>R_ReleaseObject()</code>, intentionally leaking preserved functions rather than calling R API unsafely.</li>
+<li>Target: deterministic release on the recorded main R thread, likely keyed by the same opaque runtime token and UDF name.</li>
+</ul></li>
+</ul></div>
+<div class="section level2">
+<h2 id="p0p1-release-and-infrastructure-follow-up">P0/P1: release and infrastructure follow-up<a class="anchor" aria-label="anchor" href="#p0p1-release-and-infrastructure-follow-up"></a></h2>
 <ul class="task-list"><li>
 <label><input type="checkbox"><strong>P0</strong> Watch R-universe until it builds the current <code>main</code> commit.</label>
 <ul><li>Acceptance: R-universe API <code>RemoteSha</code> matches a current <code>main</code> commit and status is success.</li>
@@ -146,14 +187,12 @@
 <li>If wasm fails, fetch logs and update <code>configure</code> / <code>Dockerfile.webr-test</code>.</li>
 </ul></li>
 <li>
-<label><input type="checkbox" checked>Add or verify CI coverage for the generated marshalling matrix.</label>
-<ul><li>Existing workflow: <code>.github/workflows/generated-marshalling-matrix.yaml</code>.</li>
-<li>Implemented: release and R 4.3 Linux matrix jobs run generated cases with no-fallback counter assertions for <code>arrow_r</code> and <code>arrow_c</code> vectorized paths.</li>
-<li>Acceptance: push/PR run executes all generated cases or an explicitly configured subset and uploads enough logs for failed cases.</li>
-</ul></li>
-<li>
 <label><input type="checkbox"><strong>P1</strong> Add a CI/webR wasm build job or documented manual trigger.</label>
 <ul><li>Acceptance: it runs <code>rwasm::build()</code> in <code>ghcr.io/r-wasm/webr:main</code> and verifies the <code>.tgz</code> artifact exists.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P0</strong> Add R 4.3 validation.</label>
+<ul><li>Acceptance: package installs and core tests run under R 4.3.x, matching the lowered dependency floor.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -161,7 +200,11 @@
 <ul><li>
 <label><input type="checkbox" checked>Add per-UDF execution introspection.</label>
 <ul><li>Implemented: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> plus native <code>rducks_udf_stat()</code> counters.</li>
-<li>Current counters: <code>dispatch_chunks</code>, <code>dispatch_rows</code>, <code>direct_chunks</code>, <code>queued_chunks</code>, <code>arrow_r_chunks</code>, <code>arrow_c_chunks</code>.</li>
+<li>Current counters include dispatch, queue, evaluator, and RIPC batching counters.</li>
+</ul></li>
+<li>
+<label><input type="checkbox" checked>Add <code><a href="reference/rducks_list_udfs.html">rducks_list_udfs()</a></code> connection-level registry view.</label>
+<ul><li>Caveat until P0 identity work is done: the R-side registry is keyed by the unsafe SEXP-address key.</li>
 </ul></li>
 <li>[~] <strong>P1</strong> Extend no-fallback tests to generated matrix cases.
 <ul><li>Current status: generated vectorized conformance cases assert the expected <code>arrow_r</code>/<code>arrow_c</code> counter moved and the other marshalling counter stayed zero.</li>
@@ -169,12 +212,18 @@
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P0</strong> Decide and document whether marshalling is a registration-time snapshot or a query-time session choice.</label>
-<ul><li>Current behavior: active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses native evaluator (<code>R</code>/<code>RC</code>) stored in DuckDB UDF metadata; later plan changes alter concurrency backend but do not retarget an already registered UDF’s marshalling.</li>
+<ul><li>Current behavior: active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses native evaluator (<code>R</code>/<code>RC</code>/<code>RCV</code>/<code>RIPC</code>) stored in DuckDB UDF metadata; later plan changes alter concurrency backend but do not retarget an already registered UDF’s marshalling.</li>
 <li>Needed clarification: either make this the explicit public semantic or implement true query-time marshalling dispatch.</li>
 </ul></li>
 <li>
-<label><input type="checkbox" checked>Add <code><a href="reference/rducks_list_udfs.html">rducks_list_udfs()</a></code> connection-level registry view.</label>
-<ul><li>Implemented: returns UDFs registered through <code><a href="reference/rducks_register.html">rducks_register()</a></code> on the connection with mode, signature, plan snapshot, and counters.</li>
+<label><input type="checkbox"><strong>P1</strong> Define duplicate-registration and UDF lifecycle semantics.</label>
+<ul><li>Questions: should duplicate name/signature registrations error, overwrite, or create overloads? Is <code>rducks_unregister()</code> feasible/desirable? What is guaranteed after connection close?</li>
+<li>Acceptance: tests and docs cover duplicate registration, dropped R-side registration objects, and connection teardown.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P1</strong> Handle partial failures in <code><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>.</label>
+<ul><li>Current drift: thread settings may be changed before native backend setup fails, while the R-side plan cache remains old.</li>
+<li>Acceptance: either roll back thread settings on failure or document the partial-application contract and test the error path.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P2</strong> Add counter reset support for benchmarks/tests.</label>
@@ -185,9 +234,13 @@
 <ul><li>Acceptance: R-side <code><a href="reference/rducks_current_execution_plan.html">rducks_current_execution_plan()</a></code> can be cross-checked against native backend state to detect stale R-side connection-plan storage.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P1</strong> Define duplicate-registration and UDF lifecycle semantics.</label>
-<ul><li>Questions: should duplicate name/signature registrations error, overwrite, or create overloads? Is <code>rducks_unregister()</code> feasible/desirable? What is guaranteed after connection close?</li>
-<li>Acceptance: tests and docs cover duplicate registration, dropped R-side registration objects, and connection teardown.</li>
+<label><input type="checkbox"><strong>P2</strong> Mark or skip missing R-side registration records.</label>
+<ul><li>Current behavior: <code>rducks_explain_udf_row()</code> can return rows with <code>NA</code> metadata when the R-side record is absent.</li>
+<li>Acceptance: either add <code>rducks_managed = TRUE/FALSE</code> or make <code><a href="reference/rducks_list_udfs.html">rducks_list_udfs()</a></code> omit rows without current-session Rducks metadata.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Generate/discover native UDF stat fields instead of mirroring names by hand in R and C.</label>
+<ul><li>Acceptance: adding a native counter does not require manually synchronizing an R character vector with a C <code>strcmp</code> cascade.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -197,17 +250,9 @@
 <li>Known limitation: queued UDF requests currently borrow <code>duckdb_data_chunk</code> / <code>duckdb_vector</code> pointers synchronously.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Implement an owned input snapshot for worker-originating chunk requests.</label>
-<ul><li>Acceptance: worker request can outlive the original DuckDB callback frame without borrowed input pointers.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P3</strong> Implement owned result payloads plus safe writeback.</label>
-<ul><li>Acceptance: main R lane fills owned result memory; DuckDB output writeback is performed at a safe boundary with no R API on worker threads.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P1</strong> Implement a main-thread release queue for R-owned resources.</label>
-<ul><li>Current issue: metadata destroyed off-main avoids <code>R_ReleaseObject()</code>, which can leak preserved functions by design.</li>
-<li>Acceptance: all <code>R_PreserveObject()</code> calls have deterministic main-thread release or documented lifetime limits.</li>
+<label><input type="checkbox"><strong>P1</strong> Fix unbounded waits after a request starts running.</label>
+<ul><li>Current issue: timeout policy applies while a request is <code>PENDING</code>; a <code>RUNNING</code> request can still wait indefinitely.</li>
+<li>Related issue: <code>rducks_queue_submit_scalar_via_worker_on_main()</code> can still fall through to an infinite <code>pthread_join()</code>/Windows wait.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P1</strong> Add stress tests for no-deadlock behavior.</label>
@@ -218,85 +263,87 @@
 <ul><li>Current constants: <code>RDUCKS_QUEUE_WAIT_MS</code>, <code>RDUCKS_QUEUE_TIMEOUT_TICKS</code>.</li>
 <li>Acceptance: docs and tests cover timeout error text and counter increments.</li>
 </ul></li>
-</ul></div>
-<div class="section level2">
-<h2 id="unified-task-scheduling-model">Unified task scheduling model<a class="anchor" aria-label="anchor" href="#unified-task-scheduling-model"></a></h2>
-<p>The same-process queue and future <code>multiprocess_parallel</code> backend should share a chunk-task abstraction. The semantic difference is not UDF registration; it is how a prepared chunk task is submitted, progressed, waited on, collected, and written back.</p>
-<p>Implemented boundary: the <code>arrow_ipc + multiprocess_parallel</code> scalar-UDF path is native-extension code. C submits Arrow IPC chunk work, collects Future results, and imports returned Arrow IPC into the DuckDB output vector. Because DuckDB scalar UDF callbacks are synchronous, the <code>duckdb_vector</code> output is valid only during that callback; the callback implementation must complete writeback before returning.</p>
-<p>Optional future non-UDF surface: if we add a source/query pipeline separate from scalar UDF callbacks, it should pre-split input into owned Arrow IPC chunk tasks, submit a window of tasks ahead, collect results by sequence number, and only then hand data back to DuckDB/R. Mori/shared-memory payloads can be explored later as a same-host payload optimization.</p>
-<ul><li>
-<label><input type="checkbox"><strong>P2</strong> Define a shared <code>rducks_chunk_task</code> lifecycle.</label>
-<ul><li>Proposed states: prepared, submitted, running, completed, writeback_done, cancelled, failed.</li>
-<li>Payload variants: borrowed same-callback DuckDB chunk, owned native snapshot, Arrow IPC bytes.</li>
-<li>Result variants: direct DuckDB output reference for synchronous callbacks, owned native result, Arrow IPC result bytes.</li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Add runtime-wide queue pressure counters.</label>
+<ul><li>Current <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> exposes only <code>submitted</code>, <code>executed</code>, and <code>timeouts</code>; per-UDF pending counters exist in <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code>.</li>
+<li>Acceptance: <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> includes runtime-wide current/max pending counts or clearly points users to per-UDF diagnostics.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P2</strong> Refactor the in-process queue onto the shared scheduler interface.</label>
-<ul><li>
-<code>serial</code>: execute inline on the main R lane.</li>
-<li>
-<code>inproc_concurrent</code>: enqueue task to main-lane executor, wait with timeout, and drain/progress only on the recorded main R lane.</li>
-</ul></li>
-<li>[~] <strong>P3</strong> Plug <code>multiprocess_parallel</code> into the same scheduler interface.
-<ul><li>Current scalar-callback implementation: <code>arrow_ipc</code> uses generic <code>future</code> providers, submits Arrow IPC chunk tasks separately from collection, and can collect a group of queued futures after submission. A main-lane RIPC callback cooperatively drains queued worker callbacks into the same wave, avoiding the single-request timeout path for parallel DuckDB UDF execution. Native counters expose <code>ripc_collect_batches</code>, <code>ripc_collect_requests</code>, <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code>.</li>
-<li>Future non-UDF source/query surface: send owned Arrow IPC task bytes to workers, keep multiple chunks outstanding, collect by task sequence, decode owned Arrow IPC result bytes, and expose the result to DuckDB/R without relying on borrowed scalar-UDF callback pointers.</li>
+<label><input type="checkbox"><strong>P3</strong> Implement an owned input snapshot for worker-originating chunk requests.</label>
+<ul><li>Acceptance: worker request can outlive the original DuckDB callback frame without borrowed input pointers.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P2</strong> Keep counters at the scheduler boundary.</label>
-<ul><li>Acceptance: the same counters can report submitted, completed, queued, timed out, cancelled, <code>arrow_r</code>, <code>arrow_c</code>, and <code>arrow_ipc</code> chunk paths.</li>
-</ul></li>
-</ul></div>
-<div class="section level2">
-<h2 id="native-arrow_c-work">Native <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow_c-work"></a></h2>
-<ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
-<li>
-<label><input type="checkbox" checked>Implement native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
-<ul><li>Implemented combinations:
-<ul><li>
-<code>arrow_c + serial + vectorized</code> for direct single-lane chunk calls.</li>
-<li>
-<code>arrow_c + inproc_concurrent + vectorized</code> for same-process queued DuckDB scheduling while keeping all R callbacks serialized on the main R lane.</li>
-</ul></li>
-<li>Current native evaluator token: <code>RCV</code>.</li>
-<li>Validated: preserves one R call per DuckDB chunk, strict return-length checks, default/special NULL semantics, and no-fallback counters for covered tests; <code>inproc_concurrent</code> increments queued and <code>arrow_c</code> counters.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P3</strong> Split <code>arrow_c</code> into worker-safe native phases and R-thread phases.</label>
-<ul><li>Acceptance: a pure-native phase can run without touching SEXPs or R APIs; any R API phase is explicitly routed to the main R lane.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P1</strong> Add focused tests for every <code>arrow_c</code> fallback-to-arrow-R risk.</label>
-<ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for all supported <code>arrow_c</code> cases.</li>
+<label><input type="checkbox"><strong>P3</strong> Implement owned result payloads plus safe writeback.</label>
+<ul><li>Acceptance: main R thread fills owned result memory; DuckDB output writeback is performed at a safe boundary with no R API on worker threads.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="arrow-ipc--multiprocess-work">Arrow IPC / multiprocess work<a class="anchor" aria-label="anchor" href="#arrow-ipc--multiprocess-work"></a></h2>
-<ul class="task-list"><li>
-<label><input type="checkbox"><strong>P3</strong> Specify the out-of-process request envelope.</label>
+<ul><li>[~] <code>arrow_ipc + multiprocess_parallel</code> scalar and vectorized UDF paths are implemented through generic <code>future</code> backends.
+<ul><li>Current implementation uses Arrow IPC bytes for chunk tasks/results and cooperatively batches queued callbacks into grouped collection waves.</li>
+<li>Known limitations: cheap/no-op UDFs are dominated by Arrow IPC/Future overhead; small query shapes do not always provide enough DuckDB parallelism to show overlap.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P1</strong> Fix cooperative queue counter under-reporting.</label>
+<ul><li>Current issue: cooperative RIPC path can make runtime-wide <code>submitted/executed</code> counters look lower than per-UDF queued chunk counts.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Reduce Arrow IPC/Future overhead for cheap UDFs.</label>
+<ul><li>Acceptance: benchmarked improvement without hidden fallback or fake results.</li>
+</ul></li>
+<li><label><input type="checkbox"><strong>P2</strong> Improve batching beyond small waves for typical DuckDB physical scans.</label></li>
+<li>
+<label><input type="checkbox"><strong>P3</strong> Specify a future persistent worker/request envelope.</label>
 <ul><li>Include UDF id/name, signature, mode, null/error semantics, chunk sequence, timeout, cancellation token, and schema metadata.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Keep Arrow IPC hot-path payloads as Arrow IPC bytes.</label>
-<ul><li>Acceptance: hot data path has tests or instrumentation proving it does not use R <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> / <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">unserialize()</a></code>.</li>
-<li>Current enum handling: declared <code>ENUM(...)</code> values use an explicit Rducks enum-storage convention over Arrow IPC integer arrays plus descriptor-carried levels, not general Arrow dictionary IPC.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P3</strong> Decide worker transport for the first MVP.</label>
-<ul><li>Option A: mirai APIs for process management, accepting R serialization only for metadata/control if unavoidable.</li>
-<li>Option B: custom raw nanonext/NNG/socket protocol for raw Arrow IPC.</li>
+<label><input type="checkbox"><strong>P3</strong> Decide worker transport beyond generic <code>future</code> if needed.</label>
+<ul><li>Constraint: hot data path remains Arrow IPC bytes; no R <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> / <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">unserialize()</a></code> fallback for chunk payloads.</li>
 <li>Constraint: do not link against uninstalled <code>nanonext.so</code> internals.</li>
 </ul></li>
+<li><label><input type="checkbox"><strong>P3</strong> Implement persistent worker startup/shutdown and function distribution if generic <code>future</code> is not enough.</label></li>
+<li><label><input type="checkbox"><strong>P3</strong> Implement backpressure, cancellation, and error propagation for a persistent worker transport.</label></li>
+</ul></div>
+<div class="section level2">
+<h2 id="native-arrow--arrow_c-work">Native Arrow / <code>arrow_c</code> work<a class="anchor" aria-label="anchor" href="#native-arrow--arrow_c-work"></a></h2>
+<ul class="task-list"><li><label><input type="checkbox" checked>Scalar <code>arrow_c</code> direct-buffer evaluator for implemented types.</label></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Implement worker startup/shutdown and function distribution.</label>
-<ul><li>Acceptance: workers can load required package code, bind function metadata, and report initialization errors deterministically.</li>
+<label><input type="checkbox" checked>Native <code>arrow_c + vectorized</code> as a first-class implementation.</label>
+<ul><li>Implemented combinations:
+<ul><li><code>arrow_c + serial + vectorized</code></li>
+<li><code>arrow_c + inproc_concurrent + vectorized</code></li>
+</ul></li>
+<li>Current native evaluator token: <code>RCV</code>.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Implement backpressure, cancellation, and error propagation.</label>
-<ul><li>Acceptance: worker failure returns a DuckDB error or NULL according to the registered <code>exception_handling</code> semantics, without leaking jobs.</li>
+<label><input type="checkbox"><strong>P1</strong> Add focused tests for every <code>arrow_c</code> fallback-to-<code>arrow_r</code> risk.</label>
+<ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for all supported <code>arrow_c</code> cases.</li>
 </ul></li>
 <li>
-<label><input type="checkbox"><strong>P3</strong> Add conformance tests against <code>arrow_r + serial</code>.</label>
-<ul><li>Acceptance: scalar and vectorized results match the reference for supported types and NULL/error modes.</li>
+<label><input type="checkbox"><strong>P1</strong> Defensively clear Arrow C Data release callbacks on conversion failure.</label>
+<ul><li>Current issue: some failure paths do not defensively zero <code>array-&gt;release</code>.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P2</strong> Re-audit Arrow validity handling.</label>
+<ul><li>Current concern: <code>rducks_arrow_validity()</code> relies on nanoarrow/DuckDB validity-buffer behavior that should be made explicit or guarded.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P3</strong> Split <code>arrow_c</code> into worker-safe native phases and R-thread phases.</label>
+<ul><li>Acceptance: a pure-native phase can run without touching SEXPs or R APIs; any R API phase is explicitly routed to the recorded main R thread.</li>
+</ul></li>
+</ul></div>
+<div class="section level2">
+<h2 id="r-api-protection-and-longjmp-safety">R API, protection, and longjmp safety<a class="anchor" aria-label="anchor" href="#r-api-protection-and-longjmp-safety"></a></h2>
+<ul class="task-list"><li><label><input type="checkbox" checked>RC scalar return values protected across checks.</label></li>
+<li><label><input type="checkbox" checked>RC direct input views use <code>R_alloc()</code> to avoid leaking on R longjmp.</label></li>
+<li>
+<label><input type="checkbox"><strong>P1</strong> Audit remaining <code>Rf_*</code> longjmp paths in generated/native wrappers.</label>
+<ul><li>Acceptance: no heap allocation or borrowed-pointer state is leaked across <code>Rf_error()</code> / longjmp paths; use <code>R_alloc()</code> or <code>R_UnwindProtect()</code> where appropriate.</li>
+</ul></li>
+<li>
+<label><input type="checkbox"><strong>P1</strong> Add GC/lifetime tests.</label>
+<ul><li>Drop R registration objects, run <code><a href="https://rdrr.io/r/base/gc.html" class="external-link">gc()</a></code>, then call the DuckDB UDF.</li>
+<li>Close/release connections after registrations and confirm no crashes or stale R-side metadata.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -326,21 +373,13 @@
 <label><input type="checkbox"><strong>P3</strong> Prototype a C-API-only table-function + <code>CREATE TEMP VIEW</code> pattern.</label>
 <ul><li>Acceptance: uses <code>duckdb_register_table_function()</code> and <code>duckdb_query()</code> with <code>CREATE TEMP VIEW ... AS SELECT * FROM ...</code>; no DuckDB C++ relation API.</li>
 </ul></li>
-<li>
-<label><input type="checkbox"><strong>P3</strong> Document copy semantics if data-source registration enters scope.</label>
-<ul><li>Acceptance: distinguish zero-copy registration/lazy scan from per-chunk copying/conversion into DuckDB vectors.</li>
-</ul></li>
+<li><label><input type="checkbox"><strong>P3</strong> Document copy semantics if data-source registration enters scope.</label></li>
 </ul></div>
 <div class="section level2">
 <h2 id="test-backlog">Test backlog<a class="anchor" aria-label="anchor" href="#test-backlog"></a></h2>
 <ul class="task-list"><li>
-<label><input type="checkbox"><strong>P1</strong> Add GC/lifetime tests.</label>
-<ul><li>Drop R registration objects, run <code><a href="https://rdrr.io/r/base/gc.html" class="external-link">gc()</a></code>, then call the DuckDB UDF.</li>
-<li>Close connections after registrations and confirm no crashes.</li>
-</ul></li>
-<li>
-<label><input type="checkbox"><strong>P1</strong> Add repeated connect/disconnect tests.</label>
-<ul><li>Acceptance: runtime registry and per-UDF registry do not use stale database handles or stale connection-plan state.</li>
+<label><input type="checkbox"><strong>P1</strong> Add repeated connect/disconnect/release tests.</label>
+<ul><li>Acceptance: runtime registry and R-side stores do not use stale database handles, stale connection-plan state, or stale registration records.</li>
 </ul></li>
 <li>
 <label><input type="checkbox"><strong>P1</strong> Add plan-transition tests.</label>
@@ -359,15 +398,14 @@
 <label><input type="checkbox"><strong>P2</strong> Add native sanitizer or valgrind workflow if feasible.</label>
 <ul><li>Acceptance: at least extension build/load and a representative UDF suite run under memory checking on Linux.</li>
 </ul></li>
-<li>
-<label><input type="checkbox"><strong>P0</strong> Add R 4.3 validation.</label>
-<ul><li>Acceptance: package installs and core tests run under R 4.3.x, matching the lowered dependency floor.</li>
-</ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="semantic-documentation-backlog">Semantic documentation backlog<a class="anchor" aria-label="anchor" href="#semantic-documentation-backlog"></a></h2>
 <p>Note: <code>docs/</code> is ignored in this repository; use <code>git add -f docs/...</code> for docs that should be committed.</p>
-<ul class="task-list"><li>
+<ul class="task-list"><li><label><input type="checkbox" checked>README documents <code>arrow_lossless_conversion=true</code>.</label></li>
+<li><label><input type="checkbox" checked>README quick start shows a zero-argument scalar UDF with <code>args = NULL</code>.</label></li>
+<li><label><input type="checkbox" checked>README in-process queue example uses a DuckDB table scan with <code>threads = 4, external_threads = 1</code>, reports main-thread vs worker-thread probe rows, and states that speedup should not be inferred.</label></li>
+<li>
 <label><input type="checkbox"><strong>P0</strong> Update <code>docs/EXECUTION_PLANS.md</code> with:</label>
 <ul><li>implemented matrix above</li>
 <li>no-fallback principle</li>
@@ -375,7 +413,7 @@
 <li>
 <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> counters and examples</li>
 </ul></li>
-<li><label><input type="checkbox"><strong>P2</strong> Update README with a short <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> example after API stabilizes.</label></li>
+<li><label><input type="checkbox"><strong>P1</strong> Replace remaining imprecise internal/docs wording about R-thread execution with “recorded main R thread” where that is what is meant.</label></li>
 <li><label><input type="checkbox"><strong>P1</strong> Keep <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code> aligned with docs and tests.</label></li>
 <li>
 <label><input type="checkbox"><strong>P1</strong> Publish an explicit type/mode/plan support table.</label>
