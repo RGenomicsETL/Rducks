@@ -251,6 +251,39 @@ static bool rducks_register_version(duckdb_connection con) {
     return rducks_register_noarg_scalar(con, "rducks_version", DUCKDB_TYPE_VARCHAR, rducks_version_scalar, false);
 }
 
+static int rducks_registration_surface_available(duckdb_connection connection) {
+    duckdb_prepared_statement stmt = NULL;
+    duckdb_state rc;
+    if (!connection) return 0;
+    rc = duckdb_prepare(connection, "SELECT rducks_version()", &stmt);
+    if (stmt) duckdb_destroy_prepare(&stmt);
+    return rc == DuckDBSuccess;
+}
+
+static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, duckdb_database database,
+                                             char *err, size_t err_cap) {
+    duckdb_connection old_connection = NULL;
+    duckdb_connection new_connection = NULL;
+    if (!runtime || !database) {
+        snprintf(err, err_cap, "Rducks runtime refresh is missing database state");
+        return 0;
+    }
+    if (duckdb_connect(database, &new_connection) == DuckDBError || !new_connection) {
+        snprintf(err, err_cap, "failed to reopen Rducks extension connection");
+        return 0;
+    }
+    rducks_runtime_lock();
+    old_connection = runtime->connection;
+    runtime->database = database;
+    runtime->connection = new_connection;
+    runtime->registration_surface_ready = 0;
+    rducks_runtime_unlock();
+    if (old_connection) {
+        duckdb_disconnect(&old_connection);
+    }
+    return 1;
+}
+
 DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
                             duckdb_extension_info info,
                             struct duckdb_extension_access *access) {
@@ -276,7 +309,13 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
     rducks_runtime_lock();
     int ready = runtime->registration_surface_ready;
     rducks_runtime_unlock();
-    if (!ready) {
+    if (!rducks_registration_surface_available(connection)) {
+        if (ready && !rducks_runtime_refresh_connection(runtime, database, err, sizeof(err))) {
+            if (access) {
+                access->set_error(info, err[0] ? err : "failed to refresh Rducks runtime connection");
+            }
+            return false;
+        }
         if (!rducks_register_version(connection) || !rducks_register_queue_stats(connection, runtime) ||
             !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
             !rducks_register_main_thread_token_surface(connection, runtime) ||
@@ -287,9 +326,9 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             }
             return false;
         }
-        rducks_runtime_lock();
-        runtime->registration_surface_ready = 1;
-        rducks_runtime_unlock();
     }
+    rducks_runtime_lock();
+    runtime->registration_surface_ready = 1;
+    rducks_runtime_unlock();
     return true;
 }

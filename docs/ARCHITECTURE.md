@@ -135,8 +135,8 @@ Internally the current concurrency backends are:
   payloads with Arrow IPC so workers receive raw task/result payloads rather
   than DuckDB-owned pointers or session-bound R objects. This path is
   implemented in the native extension (`rducks_arrow.c` and
-  `rducks_worker_queue.c`) and is real DuckDB UDF execution: C submits Arrow IPC
-  chunk work, collects Future results, and imports returned Arrow IPC into the
+  `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects Future
+  results, and imports returned Arrow IPC into the
   DuckDB output vector. When a RIPC callback runs on the recorded main R lane,
   it cooperatively drains queued worker callbacks into the same submit/collect
   wave so parallel DuckDB execution does not depend on an external query pump.

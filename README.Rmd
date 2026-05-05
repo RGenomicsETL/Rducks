@@ -205,13 +205,12 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 )]
 ```
 
-This is the real `arrow_ipc + multiprocess_parallel` UDF implementation. The
-native extension submits Arrow IPC chunk work through the Future-backed RIPC
-path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback
-runs on the recorded main R lane, it can submit its own chunk and queued worker
-chunks before grouped collection. The `ripc_collect_max_batch`,
-`ripc_submit_wave_max`, and `ripc_collect_ready_max` counters report native
-queue batch/wave sizes.
+For `arrow_ipc + multiprocess_parallel`, the native extension submits Arrow IPC
+chunk work through the Future-backed RIPC path and imports the returned Arrow IPC
+result into DuckDB. When a RIPC callback runs on the recorded main R lane, it can
+submit its own chunk and queued worker chunks before grouped collection. The
+`ripc_collect_max_batch`, `ripc_submit_wave_max`, and
+`ripc_collect_ready_max` counters report native queue batch/wave sizes.
 
 ### Ordinary DuckDB table-scan no-op benchmark
 

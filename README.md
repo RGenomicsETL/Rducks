@@ -99,8 +99,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        294ms      3.38    1.97MB
-#> 2 vectorized    235ms      4.23    2.34MB
+#> 1 scalar        293ms      3.39    1.97MB
+#> 2 vectorized    241ms      4.16    2.34MB
 ```
 
 ## Execution plans
@@ -171,7 +171,7 @@ rducks_inproc_stats(con)
 
 dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
 #>                     x
-#> 1 2026-05-05 00:59:26
+#> 1 2026-05-05 05:57:37
 rducks_inproc_stats(con)
 #>   submitted executed timeouts
 #> 1         4        4        0
@@ -223,13 +223,13 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 #> 1                      1                    1                      1
 ```
 
-This is the real `arrow_ipc + multiprocess_parallel` UDF implementation.
-The native extension submits Arrow IPC chunk work through the
-Future-backed RIPC path and imports the returned Arrow IPC result into
-DuckDB. When a RIPC callback runs on the recorded main R lane, it can
-submit its own chunk and queued worker chunks before grouped collection.
-The `ripc_collect_max_batch`, `ripc_submit_wave_max`, and
-`ripc_collect_ready_max` counters report native queue batch/wave sizes.
+For `arrow_ipc + multiprocess_parallel`, the native extension submits
+Arrow IPC chunk work through the Future-backed RIPC path and imports the
+returned Arrow IPC result into DuckDB. When a RIPC callback runs on the
+recorded main R lane, it can submit its own chunk and queued worker
+chunks before grouped collection. The `ripc_collect_max_batch`,
+`ripc_submit_wave_max`, and `ripc_collect_ready_max` counters report
+native queue batch/wave sizes.
 
 ### Ordinary DuckDB table-scan no-op benchmark
 
@@ -321,11 +321,11 @@ arrow_ipc_noop_benchmark <- local({
 
 arrow_ipc_noop_benchmark$parallel_probe
 #>    rows main_lane_rows
-#> 1 2e+05              0
+#> 1 2e+05          77120
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           9.030             1.000000
-#> 2 threads=5           6.275             1.439044
+#> 1 threads=1           9.007             1.000000
+#> 2 threads=5           6.295             1.430818
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -435,11 +435,11 @@ arrow_ipc_sleep_benchmark <- local({
 
 arrow_ipc_sleep_benchmark$parallel_probe
 #>   rows main_lane_rows
-#> 1 4096           1024
+#> 1 4096           2048
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.360             1.000000
-#> 2 threads=5           0.704             3.352273
+#> 1 threads=1           2.351              1.00000
+#> 2 threads=5           0.717              3.27894
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4
