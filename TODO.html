@@ -116,12 +116,28 @@
 <code>side_effects = TRUE</code> marks the DuckDB scalar function volatile; it does not alter R-thread or queue semantics.</li>
 </ul></div>
 <div class="section level2">
+<h2 id="empirical-notes-from-connection-object-checks">Empirical notes from connection-object checks<a class="anchor" aria-label="anchor" href="#empirical-notes-from-connection-object-checks"></a></h2>
+<p>Run with <code>lobstr</code> in this session:</p>
+<ul><li>
+<code>duckdb_connection</code> is an S4 object (<code>typeof(con) == "S4"</code>), not an environment (<code>is.environment(con) == FALSE</code>). It contains slots including <code>conn_ref</code>, but the R wrapper itself follows ordinary copy-on-modify behavior.</li>
+<li>Setting an attribute on <code>con</code> inside a helper function changed the helper’s local copy, not the caller’s object. Therefore a hidden attribute/guard or S4 subclass only works if the user keeps the returned object, e.g. <code>con &lt;- rducks_enable(con)</code>.</li>
+<li>Calling <code>rducks_enable(con)</code> without assignment did not change the R wrapper address or attributes; it only changed DuckDB/Rducks state reachable through the external pointer and package stores.</li>
+<li>Opening several independent <code>:memory:</code> databases in one R session produced distinct live SEXP keys, but DuckDB <code>current_connection_id()</code> was the same for each independent database instance. Two connections from the same duckdb driver/database produced different <code>current_connection_id()</code> values. So a DuckDB connection id is useful within a database instance but is not a global R-side connection key by itself.</li>
+</ul></div>
+<div class="section level2">
 <h2 id="decisions-needed">Decisions needed<a class="anchor" aria-label="anchor" href="#decisions-needed"></a></h2>
 <ol style="list-style-type: decimal"><li>
 <strong>Connection object model for R-side state.</strong>
 <ul><li>Problem: R-side stores still key by SEXP address via <code>rducks_connection_key()</code>. Freed R object addresses can be reused.</li>
-<li>Decision: should <code>rducks_enable(con)</code> return a <code>rducks_connection</code> subclass that users must assign (<code>con &lt;- rducks_enable(con)</code>), or should we keep returning the original <code>duckdb_connection</code> invisibly and attach an Rducks attribute/guard?</li>
-<li>My recommendation: use a returned subclass/wrapper if we want a reliable <code>dbDisconnect()</code> method; use an attribute only if preserving the current API shape is more important than automatic cleanup.</li>
+<li>Empirical result: S4 <code>duckdb_connection</code> wrappers are not environments and are not mutated in the caller by assigning attributes inside <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> unless the modified object is returned and assigned.</li>
+<li>Decision: should <code>rducks_enable(con)</code> change contract to return a <code>rducks_connection</code> subclass/wrapper that users must assign (<code>con &lt;- rducks_enable(con)</code>), or should we keep the current non-mutating API and accept explicit release/manual cleanup limitations?</li>
+<li>If using an attribute/guard rather than a subclass, it still requires assignment to be reliable.</li>
+<li>My recommendation: use a returned subclass/wrapper if we want a reliable <code>dbDisconnect()</code> method and R-side cleanup; document the assignment requirement clearly.</li>
+</ul></li>
+<li>
+<strong>Runtime token contents.</strong>
+<ul><li>Problem: DuckDB <code>current_connection_id()</code> is not globally unique across independent database instances; raw wrapper addresses can be reused.</li>
+<li>Decision: define a native Rducks token such as <code>(runtime_id, generation)</code>. It may include DuckDB database/connection details for diagnostics, but the unique part should be Rducks-owned and monotonic within the process.</li>
 </ul></li>
 <li>
 <strong>Runtime release API shape.</strong>
@@ -152,8 +168,9 @@
 <ul class="task-list"><li>
 <label><input type="checkbox">Replace SEXP-address keying for R-side connection state.</label>
 <ul><li>Target: a stable Rducks runtime token from the native extension, for example <code>SELECT rducks_connection_token()</code> or a <code>.Call</code> equivalent.</li>
-<li>Token should be Rducks-owned and generation-safe, not just a raw R object address.</li>
+<li>Token should be Rducks-owned and generation-safe, e.g. <code>(runtime_id, generation)</code>, not just a raw R object address or DuckDB connection id.</li>
 <li>Use it for <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code>.</li>
+<li>If the token is stored on the R connection wrapper, the enabled connection object must be returned and assigned by the caller.</li>
 <li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot make a new connection see stale plans or stale UDF metadata.</li>
 </ul></li>
 <li>
