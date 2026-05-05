@@ -51,6 +51,19 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 the connection, normalized signature, and registration options. You do
 not need to keep this object for the UDF to keep working in DuckDB.
 
+### Arrow conversion setting
+
+`rducks_enable()` sets DuckDB’s `arrow_lossless_conversion=true` setting
+on the user connection, and the Rducks extension also sets it on its own
+internal DuckDB connection. Rducks uses DuckDB’s Arrow C Data conversion
+APIs for several execution plans, and this setting tells DuckDB to
+preserve DuckDB-specific type identity in Arrow metadata when possible
+instead of exporting only a more generic Arrow representation. This
+matters for types such as `UUID`, `BIT`, `HUGEINT`/`UHUGEINT`,
+`TIME WITH TIME ZONE`, and JSON aliases. It does not change stored
+DuckDB values or SQL evaluation; it only affects DuckDB-to-Arrow
+conversion used at the Rducks boundary.
+
 ## Scalar and vectorized modes
 
 Scalar mode calls the R function once per DuckDB row. Vectorized mode
@@ -102,8 +115,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        296ms      3.40    1.97MB
-#> 2 vectorized    235ms      4.23    2.34MB
+#> 1 scalar        292ms      3.41    1.97MB
+#> 2 vectorized    236ms      4.25    2.34MB
 ```
 
 ## Execution plans
@@ -151,11 +164,14 @@ settings such as `threads = 4, external_threads = 1`; do not set
 `external_threads = threads` unless you intentionally want no
 DuckDB-created worker pool.
 
-The small example below is a diagnostic check, not a speed benchmark.
-First, `rducks_inproc_self_test()` sends native queue round trips
-without calling an R UDF. Then a one-row UDF query shows one UDF chunk
-routed through the same queue. The counter deltas make the intended
-behaviour explicit.
+The example below uses an ordinary DuckDB table scan, not an Rducks
+table source. It is a diagnostic, not a speed benchmark. The
+`rducks_thread_is_main()` probe shows whether DuckDB evaluated a scan on
+the recorded R lane or on worker lanes. The UDF query then runs over the
+same table and the queue counters show how many DuckDB chunks were
+routed through the in-process queue. Do not infer an expected speed gain
+from this mode: R API work is still serialized on the recorded R lane,
+and the queue plus Arrow marshalling add overhead.
 
 ``` r
 reg_inproc_plus_one <- rducks_register(
@@ -166,23 +182,46 @@ reg_inproc_plus_one <- rducks_register(
   returns = DOUBLE
 )
 
-rducks_enable_inproc(con)
+rducks_enable_inproc(con, threads = 4, external_threads = 1)
+rducks_current_execution_plan(con)$plan_id
+#> [1] "arrow_r+inproc_concurrent"
+
+dbGetQuery(
+  con,
+  "SELECT current_setting('threads') AS threads, current_setting('external_threads') AS external_threads"
+)
+#>   threads external_threads
+#> 1       4                1
+
+inproc_n <- 200000L
+invisible(DBI::dbExecute(
+  con,
+  sprintf(
+    "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x, i::UBIGINT AS tid FROM range(%d) AS t(i)",
+    inproc_n
+  )
+))
+
+dbGetQuery(
+  con,
+  paste(
+    "SELECT count(*)::VARCHAR AS rows,",
+    "sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_lane_rows,",
+    "(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_lane_rows",
+    "FROM inproc_input"
+  )
+)
+#>     rows main_lane_rows worker_lane_rows
+#> 1 200000         122880            77120
 
 stats0 <- rducks_inproc_stats(con)
-rducks_inproc_self_test(con, 3)
-#> [1] 3
+dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
+#>         total
+#> 1 20000100000
 stats1 <- rducks_inproc_stats(con)
 stats1 - stats0
 #>   submitted executed timeouts
-#> 1         3        3        0
-
-dbGetQuery(con, "SELECT r_inproc_plus_one(i::DOUBLE) AS x FROM range(1) AS t(i)")
-#>   x
-#> 1 1
-stats2 <- rducks_inproc_stats(con)
-stats2 - stats1
-#>   submitted executed timeouts
-#> 1         1        1        0
+#> 1        98       98        0
 
 rducks_disable_inproc(con, threads = 1)
 ```
@@ -332,8 +371,8 @@ arrow_ipc_noop_benchmark$parallel_probe
 #> 1 2e+05         122880
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           9.029             1.000000
-#> 2 threads=5           6.252             1.444178
+#> 1 threads=1           8.952             1.000000
+#> 2 threads=5           6.357             1.408211
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -446,8 +485,8 @@ arrow_ipc_sleep_benchmark$parallel_probe
 #> 1 4096           1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.387             1.000000
-#> 2 threads=5           0.712             3.352528
+#> 1 threads=1           2.358             1.000000
+#> 2 threads=5           0.704             3.349432
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4

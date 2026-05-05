@@ -63,6 +63,18 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 connection, normalized signature, and registration options. You do not need to
 keep this object for the UDF to keep working in DuckDB.
 
+### Arrow conversion setting
+
+`rducks_enable()` sets DuckDB's `arrow_lossless_conversion=true` setting on the
+user connection, and the Rducks extension also sets it on its own internal
+DuckDB connection. Rducks uses DuckDB's Arrow C Data conversion APIs for several
+execution plans, and this setting tells DuckDB to preserve DuckDB-specific type
+identity in Arrow metadata when possible instead of exporting only a more generic
+Arrow representation. This matters for types such as `UUID`, `BIT`,
+`HUGEINT`/`UHUGEINT`, `TIME WITH TIME ZONE`, and JSON aliases. It does not
+change stored DuckDB values or SQL evaluation; it only affects DuckDB-to-Arrow
+conversion used at the Rducks boundary.
+
 ## Scalar and vectorized modes
 
 Scalar mode calls the R function once per DuckDB row. Vectorized mode calls the
@@ -147,10 +159,13 @@ than DuckDB-created worker threads. For stress tests, prefer settings such as
 `threads = 4, external_threads = 1`; do not set `external_threads = threads`
 unless you intentionally want no DuckDB-created worker pool.
 
-The small example below is a diagnostic check, not a speed benchmark. First,
-`rducks_inproc_self_test()` sends native queue round trips without calling an R
-UDF. Then a one-row UDF query shows one UDF chunk routed through the same queue.
-The counter deltas make the intended behaviour explicit.
+The example below uses an ordinary DuckDB table scan, not an Rducks table
+source. It is a diagnostic, not a speed benchmark. The `rducks_thread_is_main()`
+probe shows whether DuckDB evaluated a scan on the recorded R lane or on worker
+lanes. The UDF query then runs over the same table and the queue counters show
+how many DuckDB chunks were routed through the in-process queue. Do not infer an
+expected speed gain from this mode: R API work is still serialized on the
+recorded R lane, and the queue plus Arrow marshalling add overhead.
 
 ```{r inproc-queue}
 reg_inproc_plus_one <- rducks_register(
@@ -161,16 +176,37 @@ reg_inproc_plus_one <- rducks_register(
   returns = DOUBLE
 )
 
-rducks_enable_inproc(con)
+rducks_enable_inproc(con, threads = 4, external_threads = 1)
+rducks_current_execution_plan(con)$plan_id
+
+dbGetQuery(
+  con,
+  "SELECT current_setting('threads') AS threads, current_setting('external_threads') AS external_threads"
+)
+
+inproc_n <- 200000L
+invisible(DBI::dbExecute(
+  con,
+  sprintf(
+    "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x, i::UBIGINT AS tid FROM range(%d) AS t(i)",
+    inproc_n
+  )
+))
+
+dbGetQuery(
+  con,
+  paste(
+    "SELECT count(*)::VARCHAR AS rows,",
+    "sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_lane_rows,",
+    "(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_lane_rows",
+    "FROM inproc_input"
+  )
+)
 
 stats0 <- rducks_inproc_stats(con)
-rducks_inproc_self_test(con, 3)
+dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
 stats1 <- rducks_inproc_stats(con)
 stats1 - stats0
-
-dbGetQuery(con, "SELECT r_inproc_plus_one(i::DOUBLE) AS x FROM range(1) AS t(i)")
-stats2 <- rducks_inproc_stats(con)
-stats2 - stats1
 
 rducks_disable_inproc(con, threads = 1)
 ```
