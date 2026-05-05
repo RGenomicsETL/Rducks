@@ -117,8 +117,8 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        292ms      3.41    1.97MB
-#> 2 vectorized    236ms      4.25    2.34MB
+#> 1 scalar        298ms      3.35    1.97MB
+#> 2 vectorized    243ms      4.13    2.34MB
 ```
 
 ## Execution plans
@@ -131,7 +131,7 @@ side-effect flag.
 | Plan | Scalar | Vectorized | Notes |
 |----|----|----|----|
 | `arrow_r + serial` | implemented | implemented | reference implementation |
-| `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded R lane |
+| `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
 | `arrow_c + serial` | implemented | implemented | native evaluator token `RC` for scalar, `RCV` for vectorized |
 | `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with `arrow_c` marshalling |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through the active Future backend; evaluator token `RIPC` |
@@ -160,7 +160,7 @@ Register UDFs in the registration-safe configuration. Then call
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
 to switch query execution to the explicit in-process queue. This is a
 liveness and scheduling feature for same-process callbacks; it still
-serializes R API work on the recorded R lane.
+serializes R API work on the recorded main R thread.
 
 DuckDB interprets `external_threads` as threads supplied by the caller
 rather than DuckDB-created worker threads. For stress tests, prefer
@@ -168,14 +168,14 @@ settings such as `threads = 4, external_threads = 1`; do not set
 `external_threads = threads` unless you intentionally want no
 DuckDB-created worker pool.
 
-The example below uses an ordinary DuckDB table scan, not an Rducks
-table source. It is a diagnostic, not a speed benchmark. The
-`rducks_thread_is_main()` probe shows whether DuckDB evaluated a scan on
-the recorded R lane or on worker lanes. The UDF query then runs over the
+The example below uses a DuckDB table scan, not an Rducks table source.
+It is a diagnostic, not a speed benchmark. The `rducks_thread_is_main()`
+probe shows whether DuckDB evaluated a scan on the recorded main R
+thread or on DuckDB worker threads. The UDF query then runs over the
 same table and the queue counters show how many DuckDB chunks were
 routed through the in-process queue. Do not infer an expected speed gain
-from this mode: R API work is still serialized on the recorded R lane,
-and the queue plus Arrow marshalling add overhead.
+from this mode: R API work is still serialized on the recorded main R
+thread, and the queue plus Arrow marshalling add overhead.
 
 ``` r
 
@@ -211,13 +211,13 @@ dbGetQuery(
   con,
   paste(
     "SELECT count(*)::VARCHAR AS rows,",
-    "sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_lane_rows,",
-    "(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_lane_rows",
+    "sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_thread_rows,",
+    "(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_thread_rows",
     "FROM inproc_input"
   )
 )
-#>     rows main_lane_rows worker_lane_rows
-#> 1 200000         122880            77120
+#>     rows main_thread_rows worker_thread_rows
+#> 1 200000           122880              77120
 
 stats0 <- rducks_inproc_stats(con)
 dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
@@ -279,18 +279,17 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 For `arrow_ipc + multiprocess_parallel`, the native extension submits
 Arrow IPC chunk work through the Future-backed RIPC path and imports the
 returned Arrow IPC result into DuckDB. When a RIPC callback runs on the
-recorded main R lane, it can submit its own chunk and queued worker
+recorded main R thread, it can submit its own chunk and queued worker
 chunks before grouped collection. The `ripc_collect_max_batch`,
 `ripc_submit_wave_max`, and `ripc_collect_ready_max` counters report
 native queue batch/wave sizes.
 
-### Ordinary DuckDB table-scan no-op benchmark
+### DuckDB table-scan no-op benchmark
 
-The following benchmark chunk is evaluated when this README is rendered.
-It uses an ordinary DuckDB table scan over a table created from
+This benchmark uses a DuckDB table scan over a table created from
 [`range()`](https://rdrr.io/r/base/range.html), not an Rducks table
 source. The `parallel_probe` query verifies that DuckDB actually uses a
-non-main worker lane for this table scan before timing the no-op UDF.
+non-main worker thread for this table scan before timing the no-op UDF.
 
 ``` r
 
@@ -323,11 +322,11 @@ arrow_ipc_noop_benchmark <- local({
     bench_con,
     paste(
       "SELECT count(*) AS rows,",
-      "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows",
+      "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows",
       "FROM bench_input"
     )
   )
-  stopifnot(parallel_probe$main_lane_rows[[1L]] < parallel_probe$rows[[1L]])
+  stopifnot(parallel_probe$main_thread_rows[[1L]] < parallel_probe$rows[[1L]])
 
   rducks_set_execution_plan(bench_con, bench_plan, threads = 1L, external_threads = 1L)
   invisible(rducks_register(
@@ -374,12 +373,12 @@ arrow_ipc_noop_benchmark <- local({
 })
 
 arrow_ipc_noop_benchmark$parallel_probe
-#>    rows main_lane_rows
-#> 1 2e+05         122880
+#>    rows main_thread_rows
+#> 1 2e+05                0
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           8.952             1.000000
-#> 2 threads=5           6.357             1.408211
+#> 1 threads=1           9.235             1.000000
+#> 2 threads=5           6.500             1.420769
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -387,12 +386,12 @@ arrow_ipc_noop_benchmark$diagnostics
 #> 1                      2                      2
 ```
 
-### Ordinary DuckDB multi-file sleep benchmark
+### DuckDB multi-file sleep benchmark
 
-This benchmark also uses ordinary DuckDB input: four temporary CSV files
-read by DuckDB’s `read_csv()` table function. The UDF sleeps for 0.50
-seconds once per vectorized DuckDB chunk. The probe again checks that
-the source runs on a non-main worker lane before timing the UDF query.
+This benchmark uses DuckDB input: four temporary CSV files read by
+DuckDB’s `read_csv()` table function. The UDF sleeps for 0.50 seconds
+once per vectorized DuckDB chunk. The probe again checks that the source
+runs on a non-main worker thread before timing the UDF query.
 
 ``` r
 
@@ -447,13 +446,13 @@ arrow_ipc_sleep_benchmark <- local({
     sprintf(
       paste(
         "SELECT count(*) AS rows,",
-        "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows",
+        "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows",
         "FROM %s"
       ),
       csv_source
     )
   )
-  stopifnot(parallel_probe$main_lane_rows[[1L]] < parallel_probe$rows[[1L]])
+  stopifnot(parallel_probe$main_thread_rows[[1L]] < parallel_probe$rows[[1L]])
 
   expected <- 4096L * 4097L / 2
   sql <- sprintf("SELECT sum(r_ipc_sleep_half_second_bench(i)) AS x FROM %s", csv_source)
@@ -489,12 +488,12 @@ arrow_ipc_sleep_benchmark <- local({
 })
 
 arrow_ipc_sleep_benchmark$parallel_probe
-#>   rows main_lane_rows
-#> 1 4096           1024
+#>   rows main_thread_rows
+#> 1 4096             1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.358             1.000000
-#> 2 threads=5           0.704             3.349432
+#> 1 threads=1           2.355             1.000000
+#> 2 threads=5           0.700             3.364286
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4

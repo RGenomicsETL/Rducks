@@ -128,8 +128,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        292ms      3.41    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    236ms      4.25    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        298ms      3.35    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    243ms      4.13    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -159,7 +159,7 @@
 <td><code>arrow_r + inproc_concurrent</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>queued same-process callbacks; R API work stays on the recorded R lane</td>
+<td>queued same-process callbacks; R API work stays on the recorded main R thread</td>
 </tr>
 <tr>
 <td><code>arrow_c + serial</code></td>
@@ -196,9 +196,9 @@
 <div class="section level2">
 <h2 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
 </h2>
-<p>Register UDFs in the registration-safe configuration. Then call <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> to switch query execution to the explicit in-process queue. This is a liveness and scheduling feature for same-process callbacks; it still serializes R API work on the recorded R lane.</p>
+<p>Register UDFs in the registration-safe configuration. Then call <code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> to switch query execution to the explicit in-process queue. This is a liveness and scheduling feature for same-process callbacks; it still serializes R API work on the recorded main R thread.</p>
 <p>DuckDB interprets <code>external_threads</code> as threads supplied by the caller rather than DuckDB-created worker threads. For stress tests, prefer settings such as <code>threads = 4, external_threads = 1</code>; do not set <code>external_threads = threads</code> unless you intentionally want no DuckDB-created worker pool.</p>
-<p>The example below uses an ordinary DuckDB table scan, not an Rducks table source. It is a diagnostic, not a speed benchmark. The <code>rducks_thread_is_main()</code> probe shows whether DuckDB evaluated a scan on the recorded R lane or on worker lanes. The UDF query then runs over the same table and the queue counters show how many DuckDB chunks were routed through the in-process queue. Do not infer an expected speed gain from this mode: R API work is still serialized on the recorded R lane, and the queue plus Arrow marshalling add overhead.</p>
+<p>The example below uses a DuckDB table scan, not an Rducks table source. It is a diagnostic, not a speed benchmark. The <code>rducks_thread_is_main()</code> probe shows whether DuckDB evaluated a scan on the recorded main R thread or on DuckDB worker threads. The UDF query then runs over the same table and the queue counters show how many DuckDB chunks were routed through the in-process queue. Do not infer an expected speed gain from this mode: R API work is still serialized on the recorded main R thread, and the queue plus Arrow marshalling add overhead.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_inproc_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -232,13 +232,13 @@
 <span>  <span class="va">con</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>    <span class="st">"SELECT count(*)::VARCHAR AS rows,"</span>,</span>
-<span>    <span class="st">"sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_lane_rows,"</span>,</span>
-<span>    <span class="st">"(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_lane_rows"</span>,</span>
+<span>    <span class="st">"sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_thread_rows,"</span>,</span>
+<span>    <span class="st">"(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_thread_rows"</span>,</span>
 <span>    <span class="st">"FROM inproc_input"</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt;     rows main_lane_rows worker_lane_rows</span></span>
-<span><span class="co">#&gt; 1 200000         122880            77120</span></span>
+<span><span class="co">#&gt;     rows main_thread_rows worker_thread_rows</span></span>
+<span><span class="co">#&gt; 1 200000           122880              77120</span></span>
 <span></span>
 <span><span class="va">stats0</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input"</span><span class="op">)</span></span>
@@ -290,11 +290,11 @@
 <span><span class="co">#&gt; 1                5                    5                     5</span></span>
 <span><span class="co">#&gt;   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max</span></span>
 <span><span class="co">#&gt; 1                      1                    1                      1</span></span></code></pre></div>
-<p>For <code>arrow_ipc + multiprocess_parallel</code>, the native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback runs on the recorded main R lane, it can submit its own chunk and queued worker chunks before grouped collection. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes.</p>
+<p>For <code>arrow_ipc + multiprocess_parallel</code>, the native extension submits Arrow IPC chunk work through the Future-backed RIPC path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback runs on the recorded main R thread, it can submit its own chunk and queued worker chunks before grouped collection. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes.</p>
 <div class="section level3">
-<h3 id="ordinary-duckdb-table-scan-no-op-benchmark">Ordinary DuckDB table-scan no-op benchmark<a class="anchor" aria-label="anchor" href="#ordinary-duckdb-table-scan-no-op-benchmark"></a>
+<h3 id="duckdb-table-scan-no-op-benchmark">DuckDB table-scan no-op benchmark<a class="anchor" aria-label="anchor" href="#duckdb-table-scan-no-op-benchmark"></a>
 </h3>
-<p>The following benchmark chunk is evaluated when this README is rendered. It uses an ordinary DuckDB table scan over a table created from <code><a href="https://rdrr.io/r/base/range.html" class="external-link">range()</a></code>, not an Rducks table source. The <code>parallel_probe</code> query verifies that DuckDB actually uses a non-main worker lane for this table scan before timing the no-op UDF.</p>
+<p>This benchmark uses a DuckDB table scan over a table created from <code><a href="https://rdrr.io/r/base/range.html" class="external-link">range()</a></code>, not an Rducks table source. The <code>parallel_probe</code> query verifies that DuckDB actually uses a non-main worker thread for this table scan before timing the no-op UDF.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">arrow_ipc_noop_benchmark</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future.mirai</span><span class="fu">::</span><span class="va">mirai_multisession</span>, workers <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
@@ -325,11 +325,11 @@
 <span>    <span class="va">bench_con</span>,</span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>      <span class="st">"SELECT count(*) AS rows,"</span>,</span>
-<span>      <span class="st">"sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows"</span>,</span>
+<span>      <span class="st">"sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows"</span>,</span>
 <span>      <span class="st">"FROM bench_input"</span></span>
 <span>    <span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">parallel_probe</span><span class="op">$</span><span class="va">main_lane_rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span> <span class="op">&lt;</span> <span class="va">parallel_probe</span><span class="op">$</span><span class="va">rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">parallel_probe</span><span class="op">$</span><span class="va">main_thread_rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span> <span class="op">&lt;</span> <span class="va">parallel_probe</span><span class="op">$</span><span class="va">rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
 <span></span>
 <span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">bench_con</span>, <span class="va">bench_plan</span>, threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
@@ -376,12 +376,12 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
-<span><span class="co">#&gt;    rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 2e+05         122880</span></span>
+<span><span class="co">#&gt;    rows main_thread_rows</span></span>
+<span><span class="co">#&gt; 1 2e+05                0</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           8.952             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           6.357             1.408211</span></span>
+<span><span class="co">#&gt; 1 threads=1           9.235             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           6.500             1.420769</span></span>
 <span><span class="va">arrow_ipc_noop_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 1                 2                    2</span></span>
@@ -389,9 +389,9 @@
 <span><span class="co">#&gt; 1                      2                      2</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="ordinary-duckdb-multi-file-sleep-benchmark">Ordinary DuckDB multi-file sleep benchmark<a class="anchor" aria-label="anchor" href="#ordinary-duckdb-multi-file-sleep-benchmark"></a>
+<h3 id="duckdb-multi-file-sleep-benchmark">DuckDB multi-file sleep benchmark<a class="anchor" aria-label="anchor" href="#duckdb-multi-file-sleep-benchmark"></a>
 </h3>
-<p>This benchmark also uses ordinary DuckDB input: four temporary CSV files read by DuckDB’s <code>read_csv()</code> table function. The UDF sleeps for 0.50 seconds once per vectorized DuckDB chunk. The probe again checks that the source runs on a non-main worker lane before timing the UDF query.</p>
+<p>This benchmark uses DuckDB input: four temporary CSV files read by DuckDB’s <code>read_csv()</code> table function. The UDF sleeps for 0.50 seconds once per vectorized DuckDB chunk. The probe again checks that the source runs on a non-main worker thread before timing the UDF query.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">arrow_ipc_sleep_benchmark</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future.mirai</span><span class="fu">::</span><span class="va">mirai_multisession</span>, workers <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
@@ -444,13 +444,13 @@
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
 <span>      <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>        <span class="st">"SELECT count(*) AS rows,"</span>,</span>
-<span>        <span class="st">"sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_lane_rows"</span>,</span>
+<span>        <span class="st">"sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows"</span>,</span>
 <span>        <span class="st">"FROM %s"</span></span>
 <span>      <span class="op">)</span>,</span>
 <span>      <span class="va">csv_source</span></span>
 <span>    <span class="op">)</span></span>
 <span>  <span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">parallel_probe</span><span class="op">$</span><span class="va">main_lane_rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span> <span class="op">&lt;</span> <span class="va">parallel_probe</span><span class="op">$</span><span class="va">rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="va">parallel_probe</span><span class="op">$</span><span class="va">main_thread_rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span> <span class="op">&lt;</span> <span class="va">parallel_probe</span><span class="op">$</span><span class="va">rows</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
 <span></span>
 <span>  <span class="va">expected</span> <span class="op">&lt;-</span> <span class="fl">4096L</span> <span class="op">*</span> <span class="fl">4097L</span> <span class="op">/</span> <span class="fl">2</span></span>
 <span>  <span class="va">sql</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"SELECT sum(r_ipc_sleep_half_second_bench(i)) AS x FROM %s"</span>, <span class="va">csv_source</span><span class="op">)</span></span>
@@ -486,12 +486,12 @@
 <span><span class="op">}</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">parallel_probe</span></span>
-<span><span class="co">#&gt;   rows main_lane_rows</span></span>
-<span><span class="co">#&gt; 1 4096           1024</span></span>
+<span><span class="co">#&gt;   rows main_thread_rows</span></span>
+<span><span class="co">#&gt; 1 4096             1024</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">elapsed</span></span>
 <span><span class="co">#&gt;        mode elapsed_seconds speedup_vs_threads_1</span></span>
-<span><span class="co">#&gt; 1 threads=1           2.358             1.000000</span></span>
-<span><span class="co">#&gt; 2 threads=5           0.704             3.349432</span></span>
+<span><span class="co">#&gt; 1 threads=1           2.355             1.000000</span></span>
+<span><span class="co">#&gt; 2 threads=5           0.700             3.364286</span></span>
 <span><span class="va">arrow_ipc_sleep_benchmark</span><span class="op">$</span><span class="va">diagnostics</span></span>
 <span><span class="co">#&gt;   queue_pending_max ripc_inflight_max ripc_submit_wave_max</span></span>
 <span><span class="co">#&gt; 1                 3                 4                    4</span></span>
