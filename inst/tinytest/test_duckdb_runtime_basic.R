@@ -5,6 +5,7 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
+  expect_equal(rducks_query_stream(con, "SELECT 1::INTEGER AS a, 2::DOUBLE AS b"), data.frame(a = 1L, b = 2))
 
   reg1 <- rducks_register(con, "rducks_plus_one", function(x) x + 1, DOUBLE, DOUBLE)
   expect_inherits(reg1, "rducks_registration")

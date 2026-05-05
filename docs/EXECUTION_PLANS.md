@@ -268,6 +268,9 @@ named `arrow_c` plan rather than a fallback to the public `arrow_r` evaluator.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
+- [x] Add a C-API-only `rducks_query_stream()` scheduler surface that drives
+      DuckDB streaming pending execution, drains queued Rducks work between
+      pending tasks, fetches result chunks, and exposes RIPC wave diagnostics.
 - [ ] Add worker lifecycle/shutdown/cancellation tests.
 - [ ] Add tests proving hot-path payloads are Arrow IPC and not R
       `serialize()`/`unserialize()`.

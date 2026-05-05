@@ -1,12 +1,18 @@
 # Rducks 0.0.1
 
+- Added `rducks_query_stream()`, a C-API-only Rducks-owned streaming query
+  surface that prepares SQL on the extension-captured DuckDB connection, drives
+  DuckDB's streaming pending-result API, drains queued Rducks work between
+  pending tasks, records pending-task progress, and fetches result chunks back
+  through DuckDB.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
   rows inside the worker, vectorized registrations call once per chunk, and the
   queued native path splits submit and collect phases so queued chunk tasks can
   be submitted before grouped result collection. `rducks_explain_udf()` now
-  reports queue-pending, RIPC-in-flight, and RIPC collect batch counters for
-  diagnosing whether chunks are actually overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
+  reports queue-pending, RIPC-in-flight, RIPC submit/collect wave, and
+  Rducks-owned pending-query counters for diagnosing whether chunks are actually
+  overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
@@ -27,9 +33,9 @@
 - Added explicit execution-plan helpers `rducks_execution_plan()`,
   `rducks_set_execution_plan()`, and `rducks_current_execution_plan()` to
   separate UDF semantics from connection-level marshalling/concurrency policy.
-  The `arrow_r + serial` plan is the reference implementation; `arrow_c +
-  vectorized` and planned `arrow_ipc + multiprocess_parallel` execution now fail
-  explicitly through plan validation rather than silently falling back.
+  The `arrow_r + serial` plan is the reference implementation; unsupported
+  execution-plan combinations fail explicitly through plan validation rather than
+  silently falling back.
 - Removed per-registration evaluator selection from `rducks_register()`. The
   evaluator is now derived from the active execution plan, so conformance tests
   compare plan-native registrations instead of mixing evaluator choices inside a

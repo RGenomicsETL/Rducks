@@ -178,6 +178,19 @@ static void rducks_queue_timeouts_stat_scalar(duckdb_function_info info, duckdb_
     for (idx_t i = 0; i < n; i++) out[i] = value;
 }
 
+static void rducks_pending_tasks_executed_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    uint64_t value = 0;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    if (runtime) {
+        rducks_runtime_lock();
+        value = runtime->duckdb_pending_tasks_executed;
+        rducks_runtime_unlock();
+    }
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
 static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -241,6 +254,8 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                            rducks_queue_executed_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_timeouts", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_timeouts_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_pending_tasks_executed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_pending_tasks_executed_scalar, true) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
@@ -279,6 +294,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
     if (!ready) {
         if (!rducks_register_version(connection) || !rducks_register_queue_stats(connection, runtime) ||
             !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
+            !rducks_register_query_stream(connection, runtime) ||
             !rducks_register_main_thread_token_surface(connection, runtime) ||
             !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_udf_stat_surface(connection, runtime) ||
             !rducks_register_scalar_surface(connection, runtime)) {

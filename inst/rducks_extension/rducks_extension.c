@@ -120,6 +120,7 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_submitted;
     uint64_t queue_executed;
     uint64_t queue_timeouts;
+    uint64_t duckdb_pending_tasks_executed;
     rducks_r_scalar_meta_t *udf_registry_head;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;
@@ -154,6 +155,8 @@ struct rducks_r_scalar_meta {
     uint64_t ripc_collect_batches;
     uint64_t ripc_collect_requests;
     uint64_t ripc_collect_max_batch;
+    uint64_t ripc_submit_wave_max;
+    uint64_t ripc_collect_ready_max;
     uint64_t ripc_inflight_current;
     uint64_t ripc_inflight_max;
 };
@@ -322,5 +325,6 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #include "src/rducks_rc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
+#include "src/rducks_query_stream.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_surfaces.c"

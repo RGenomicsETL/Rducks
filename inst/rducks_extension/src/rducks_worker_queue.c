@@ -248,6 +248,7 @@ static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, s
                  (unsigned long long)count);
         goto done;
     }
+    rducks_udf_record_ripc_collect_ready(meta, count);
 
     i = 0;
     for (request = head; request && i < count; request = request->next, i++) {
@@ -542,6 +543,7 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
                 group_count++;
             }
             group_tail->next = NULL;
+            rducks_udf_record_ripc_submit_wave(meta, group_count);
             err_msg[0] = '\0';
             ok = rducks_queue_collect_ripc_group_on_main(group_head, group_count, err_msg, sizeof(err_msg));
             while (group_head) {

@@ -214,6 +214,26 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
   invisible(con)
 }
 
+#' Execute SQL through the Rducks streaming scheduler
+#'
+#' Runs `sql` through the C API `rducks_query_stream()` table-function surface.
+#' This path is intended for Rducks-owned scheduling: the native extension
+#' prepares the inner query on its captured DuckDB connection, drives
+#' DuckDB's streaming pending-result API, drains queued Rducks work between
+#' pending tasks, and returns fetched result chunks to R.
+#'
+#' @param con A `duckdb_connection` with Rducks enabled.
+#' @param sql SQL query string to execute.
+#' @return A data frame result.
+#' @export
+rducks_query_stream <- function(con, sql) {
+  rducks_assert_duckdb_connection(con)
+  if (!is.character(sql) || length(sql) != 1L || is.na(sql) || !nzchar(sql)) {
+    stop("sql must be a non-empty character scalar", call. = FALSE)
+  }
+  DBI::dbGetQuery(con, sprintf("SELECT * FROM rducks_query_stream(%s)", rducks_sql_string(sql)))
+}
+
 rducks_set_execution_backend <- function(con, backend) {
   ok <- DBI::dbGetQuery(
     con,

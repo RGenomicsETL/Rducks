@@ -200,15 +200,19 @@ dbGetQuery(con, "SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) A
 rducks_explain_udf(con, "r_ipc_plus_one")[, c(
   "name", "mode", "plan_id", "evaluator",
   "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests",
-  "ripc_collect_max_batch"
+  "ripc_collect_max_batch", "ripc_submit_wave_max",
+  "ripc_collect_ready_max", "duckdb_pending_tasks_executed"
 )]
 ```
 
 This is the real `arrow_ipc + multiprocess_parallel` UDF implementation. The
 native extension submits Arrow IPC chunk work through the Future-backed RIPC
 path and imports the returned Arrow IPC result into DuckDB. The
-`ripc_collect_max_batch` counter reports how many submitted RIPC chunk requests
-the native queue collected together in one batch for this query.
+`ripc_collect_max_batch`, `ripc_submit_wave_max`, and
+`ripc_collect_ready_max` counters report native queue batch/wave sizes. For
+Rducks-owned scheduler diagnostics, `rducks_query_stream(con, sql)` executes SQL
+through the extension's streaming pending-result loop and increments
+`duckdb_pending_tasks_executed`.
 
 ```{r reset-after-ipc, include=FALSE}
 rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
