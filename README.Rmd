@@ -147,26 +147,30 @@ than DuckDB-created worker threads. For stress tests, prefer settings such as
 `threads = 4, external_threads = 1`; do not set `external_threads = threads`
 unless you intentionally want no DuckDB-created worker pool.
 
+The small example below is a diagnostic check, not a speed benchmark. First,
+`rducks_inproc_self_test()` sends native queue round trips without calling an R
+UDF. Then a one-row UDF query shows one UDF chunk routed through the same queue.
+The counter deltas make the intended behaviour explicit.
+
 ```{r inproc-queue}
-reg_sleepy <- rducks_register(
+reg_inproc_plus_one <- rducks_register(
   con,
-  name = "r_sleepy_time",
-  fun = function(x) {
-    Sys.sleep(0.001)
-    Sys.time()
-  },
+  name = "r_inproc_plus_one",
+  fun = function(x) x + 1,
   args = DOUBLE,
-  returns = TIMESTAMP,
-  side_effects = TRUE
+  returns = DOUBLE
 )
 
 rducks_enable_inproc(con)
 
+stats0 <- rducks_inproc_stats(con)
 rducks_inproc_self_test(con, 3)
-rducks_inproc_stats(con)
+stats1 <- rducks_inproc_stats(con)
+stats1 - stats0
 
-dbGetQuery(con, "SELECT r_sleepy_time(1.0) AS x")
-rducks_inproc_stats(con)
+dbGetQuery(con, "SELECT r_inproc_plus_one(i::DOUBLE) AS x FROM range(1) AS t(i)")
+stats2 <- rducks_inproc_stats(con)
+stats2 - stats1
 
 rducks_disable_inproc(con, threads = 1)
 ```
