@@ -455,7 +455,10 @@ Run with `lobstr` in this session:
     expectations, and keeps the hot data path as Arrow IPC bytes with no R
     `serialize()` / `unserialize()` fallback for chunk payloads.
 
-- [ ] Decide worker transport beyond generic `future` if needed.
+- [x] Decide worker transport beyond generic `future` if needed.
+  - `docs/PERSISTENT_PROVIDER.md` keeps generic Future as the correctness
+    adapter, selects mirai as the first persistent-worker target, and defers
+    nanonext to a later lower-level transport if public APIs are needed.
   - Do not link against uninstalled `nanonext.so` internals.
 
 - [ ] Implement persistent worker startup/shutdown, backpressure, cancellation,

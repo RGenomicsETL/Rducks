@@ -132,6 +132,21 @@ returns. Therefore, the first persistent implementation should support:
 Running same-process requests cannot be cancelled safely without an owned input
 snapshot and owned result/writeback design. That is a separate architecture item.
 
+## Transport decision
+
+The transport order is:
+
+1. Keep `future_provider` as the portable correctness/reference adapter.
+2. Implement `mirai_provider` first for persistent workers, because mirai daemon
+   processes can preload evaluator/schema state and fit the provider contract
+   without linking against private native symbols.
+3. Consider `nanonext_provider` only after the mirai path proves that lower-level
+   collect-any, backpressure, or notification control is necessary.
+
+Do not link against uninstalled `nanonext.so` internals or any private package
+symbols. If nanonext is used later, use its public R/native API surface and keep
+all transport code behind the provider boundary.
+
 ## Candidate providers
 
 - `future_provider`: portable reference adapter; correctness first; per-task
