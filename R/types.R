@@ -579,7 +579,7 @@ rducks_scalar_mapping_supported <- function(type) {
 rducks_arrow_c_direct_sequence_child_supported <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
-  if (identical(kind, "enum")) {
+  if (kind %in% c("decimal", "enum")) {
     return(TRUE)
   }
   if (kind %in% c("list", "array", "struct", "map", "union")) {

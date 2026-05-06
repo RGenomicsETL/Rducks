@@ -276,10 +276,13 @@ Run with `lobstr` in this session:
     MAP, and UNION descriptors when their children are themselves
     direct-supported.
 
-- [ ] Add generated matrix no-fallback coverage for every supported scalar,
+- [x] Add generated matrix no-fallback coverage for every supported scalar,
   DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.
   - Acceptance: `rducks_explain_udf()` shows `arrow_c_chunks > 0` and
     `arrow_r_chunks == 0` for supported `arrow_c` cases.
+  - The generated matrix now asserts the expected direct-support allowlist and
+    only runs `arrow_c` no-fallback counter checks for descriptors that the
+    direct-support predicate accepts.
 
 - [x] Implement native direct `arrow_c` composite/union marshalling.
   - Done: recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT, MAP,

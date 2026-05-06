@@ -157,9 +157,10 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
 }
 
 run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
+  include_arrow_c_for_type <- Rducks:::rducks_arrow_c_direct_mapping_supported(type)
   include_ipc_for_type <- isTRUE(include_ipc) &&
     Rducks:::rducks_arrow_ipc_mapping_supported(type)
-  marshallers <- c("arrow_r", "arrow_c", if (include_ipc_for_type) "arrow_ipc")
+  marshallers <- c("arrow_r", if (include_arrow_c_for_type) "arrow_c", if (include_ipc_for_type) "arrow_ipc")
   for (marshalling in marshallers) {
     run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
   }
@@ -243,6 +244,40 @@ scalar_cases <- list(
   list(name = "union", type = UNION(code = INTEGER, label = VARCHAR), sql1 = "union_value(code := 42)::UNION(code INTEGER, label VARCHAR)", sql2 = "union_value(label := 'duck')::UNION(code INTEGER, label VARCHAR)", r1 = rducks_union("code", 42L), r2 = rducks_union("label", "duck"))
 )
 
+assert_expected_arrow_c_direct_support <- function() {
+  case_names <- vapply(scalar_cases, `[[`, character(1), "name")
+  cases_by_name <- setNames(scalar_cases, case_names)
+  expected <- setNames(lapply(scalar_cases, `[[`, "type"), case_names)
+
+  sequence_child_names <- c(
+    "bool", "i8", "u8", "i16", "u16", "i32", "u32",
+    "f32", "f64", "varchar", "date", "time", "timestamp",
+    "decimal", "enum", "union"
+  )
+  for (name in case_names) {
+    type <- cases_by_name[[name]]$type
+    expected[[paste0("struct_", name)]] <- STRUCT(a = type, b = type)
+  }
+  for (name in sequence_child_names) {
+    type <- cases_by_name[[name]]$type
+    expected[[paste0("list_", name)]] <- LIST(type)
+    expected[[paste0("array_", name)]] <- ARRAY(type, 2)
+    expected[[paste0("map_varchar_", name)]] <- MAP(VARCHAR, type)
+  }
+
+  unsupported <- names(expected)[!vapply(expected, Rducks:::rducks_arrow_c_direct_mapping_supported, logical(1))]
+  if (length(unsupported)) {
+    stop(
+      "generated marshalling matrix expected arrow_c direct support for: ",
+      paste(unsupported, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+assert_expected_arrow_c_direct_support()
+
 tryCatch({
   for (case in scalar_cases) {
     run_identity(case)
@@ -254,9 +289,7 @@ tryCatch({
     for (shape in c("list", "array", "struct")) {
       run_composite_identity(case, shape)
     }
-    if (!identical(case$name, "union")) {
-      run_composite_identity(case, "map")
-    }
+    run_composite_identity(case, "map")
   }
 
   message("generated marshalling matrix completed: ", run_counter, " cases")

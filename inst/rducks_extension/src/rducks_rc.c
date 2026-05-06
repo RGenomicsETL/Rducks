@@ -196,6 +196,7 @@ static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *d
         desc->kind == RDUCKS_KIND_UNION) {
         return rducks_rc_direct_type_supported(desc);
     }
+    if (desc->kind == RDUCKS_KIND_DECIMAL) return 1;
     if (rducks_rc_direct_enum_supported(desc)) return 1;
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
