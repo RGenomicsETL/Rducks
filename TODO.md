@@ -355,15 +355,21 @@ Still-open or blocked decisions:
     validity buffers and raw bit-packed Arrow validity buffers, honors array
     offsets, rejects short buffers, and has focused tinytest coverage.
 
-- [ ] Audit remaining `Rf_*` longjmp paths.
-  - Use `R_alloc()` or `R_UnwindProtect()` where heap state would otherwise leak
-    across `Rf_error()`.
-  - IPC native encoding now uses `R_UnwindProtect()` around raw-vector
+- [x] Audit remaining `Rf_*` longjmp paths.
+  - IPC native encoding uses `R_UnwindProtect()` around raw-vector
     allocation/copy so Arrow writer, stream, preserved nanoarrow external
     pointers, and native buffers are released if `Rf_allocVector()` longjmps.
   - Direct `arrow_c`, Arrow/R, and RIPC submit/collect callbacks are fenced with
     `R_tryCatchError()` + `R_UnwindProtect()`; RIPC abnormal-unwind cleanup
     releases preserved Future/schema objects and marks in-flight tasks done.
+  - The remaining direct-RC conversion helpers called inside DuckDB callbacks
+    borrow callback vectors, allocate temporary C buffers with `R_alloc()`, or
+    allocate R-managed `SEXP`s under the top-level RC error boundary. No
+    remaining callback path holds `malloc`/Arrow/DuckDB handles across a raw
+    `Rf_error()` without a cleanup boundary.
+  - Package `.Call` helper code outside DuckDB callbacks may still use ordinary
+    R errors, but those paths do not cross DuckDB callback frames or hold native
+    callback-frame resources.
 
 - [x] Add GC/lifetime tests.
   - Tests drop R registration objects, run `gc()`, then call DuckDB UDFs.
