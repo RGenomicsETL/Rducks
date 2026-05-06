@@ -298,12 +298,13 @@ not the old Arrow/R helper bridge.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
-- [~] Define request envelope: current Future tasks include schema, input IPC,
-      semantic options, and timeout; a production RPC envelope still needs UDF
-      id, task id, cancellation metadata, and worker lifecycle metadata.
-- [~] Define response envelope: current Future workers return Arrow IPC result
-      bytes or an R error propagated through Future; a production RPC envelope
-      should carry task id plus structured error metadata.
+- [x] Define request envelope: the persistent-provider contract and internal
+      mirai prototype use UDF id, task id, chunk id, row count, optional timeout,
+      and Arrow IPC bytes. The generic Future adapter still carries more worker
+      state per task for portability.
+- [x] Define response envelope: the persistent-provider contract and internal
+      mirai prototype return task id, UDF id, chunk id, status, Arrow IPC result
+      bytes, and structured error text.
 - [x] Encode DuckDB input chunks to Arrow IPC bytes in the DuckDB process for
       the current synchronous UDF callback implementation.
 - [x] Decode input IPC in worker R processes.
@@ -311,7 +312,8 @@ not the old Arrow/R helper bridge.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
-- [ ] Add worker lifecycle/shutdown/cancellation tests.
+- [x] Add worker lifecycle/shutdown/cancellation tests for the internal mirai
+      provider prototype.
 - [x] Add tests proving provider worker chunk input/output payloads are raw
       Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a

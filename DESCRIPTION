@@ -27,6 +27,7 @@ LinkingTo:
     nanoarrow
 Suggests:
     bench,
+    mirai,
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

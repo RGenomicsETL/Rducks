@@ -139,7 +139,9 @@ The transport order is:
 1. Keep `future_provider` as the portable correctness/reference adapter.
 2. Implement `mirai_provider` first for persistent workers, because mirai daemon
    processes can preload evaluator/schema state and fit the provider contract
-   without linking against private native symbols.
+   without linking against private native symbols. An internal R-side prototype,
+   `rducks_mirai_provider()`, now exercises this boundary outside the public UDF
+   engine.
 3. Consider `nanonext_provider` only after the mirai path proves that lower-level
    collect-any, backpressure, or notification control is necessary.
 
@@ -151,9 +153,10 @@ all transport code behind the provider boundary.
 
 - `future_provider`: portable reference adapter; correctness first; per-task
   Future overhead remains.
-- `mirai_provider`: preferred first persistent-process provider because daemon
-  workers can preload evaluator/schema state and avoid spawning work from
-  scratch per chunk.
+- `mirai_provider`: internal prototype present. It starts persistent daemons,
+  preloads evaluator/schema state with `mirai::everywhere()`, submits only task
+  ids, UDF ids, row counts, and Arrow IPC bytes per chunk, and returns structured
+  result envelopes. It is not yet exposed as a public UDF engine.
 - `nanonext_provider`: lower-level request/reply or pipeline transport when the
   provider needs explicit collect-any, backpressure, and notification primitives.
 
