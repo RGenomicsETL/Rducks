@@ -329,6 +329,9 @@ DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   shows `arrow_c_chunks > 0` and `arrow_r_chunks == 0` for supported
   `arrow_c` cases.
+- The generated matrix now asserts the expected direct-support allowlist
+  and only runs `arrow_c` no-fallback counter checks for descriptors
+  that the direct-support predicate accepts.
 
 Implement native direct `arrow_c` composite/union marshalling.
 

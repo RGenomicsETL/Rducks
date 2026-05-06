@@ -247,8 +247,9 @@
 <li>Supported direct cases include scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION descriptors when their children are themselves direct-supported.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
+<p><label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
 <ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases.</li>
+<li>The generated matrix now asserts the expected direct-support allowlist and only runs <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label></p>
