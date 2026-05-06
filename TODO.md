@@ -329,8 +329,9 @@ Run with `lobstr` in this session:
 
 - [x] Expand `rducks_inproc_stats()` beyond submitted/executed/timeouts.
   - Runtime-wide pending/running current and max counters are exposed alongside
-    submitted, executed, timeouts, configured pending timeout, and explicit
-    running-timeout support status.
+    submitted, executed, timeouts, configured pending timeout, explicit
+    running-timeout support status, main-thread drain attempts, non-empty drain
+    batches, and maximum drain batch size.
 
 - [x] Gate dev/test SQL probes behind `RDUCKS_DEV_SURFACES=true`.
   - `rducks_parallel_range`, `rducks_parallel_thread_probe`,

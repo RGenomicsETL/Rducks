@@ -19,8 +19,8 @@ local({
   before <- rducks_inproc_stats(con)
   expect_equal(names(before), c(
     "submitted", "executed", "timeouts", "pending_current", "pending_max",
-    "running_current", "running_max", "pending_timeout_ms",
-    "running_timeout_supported"
+    "running_current", "running_max", "main_drains", "main_drain_batches",
+    "main_drain_max_batch", "pending_timeout_ms", "running_timeout_supported"
   ))
   expect_equal(before$submitted, 0)
   expect_equal(before$executed, 0)
@@ -29,6 +29,9 @@ local({
   expect_equal(before$pending_max, 0)
   expect_equal(before$running_current, 0)
   expect_equal(before$running_max, 0)
+  expect_equal(before$main_drains, 0)
+  expect_equal(before$main_drain_batches, 0)
+  expect_equal(before$main_drain_max_batch, 0)
   expect_true(before$pending_timeout_ms[[1L]] > 0)
   expect_false(before$running_timeout_supported[[1L]])
 
@@ -43,6 +46,9 @@ local({
   expect_true(after$pending_max >= 1)
   expect_equal(after$running_current, 0)
   expect_true(after$running_max >= 1)
+  expect_true(after$main_drains >= 1)
+  expect_true(after$main_drain_batches >= 1)
+  expect_true(after$main_drain_max_batch >= 1)
 
   invisible(rducks_register(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
   invisible(rducks_register(con, "rducks_queue_plus_one_vec", function(x) x + 1, DOUBLE, DOUBLE,

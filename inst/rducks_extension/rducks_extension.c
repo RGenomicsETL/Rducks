@@ -132,6 +132,9 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_pending_max;
     uint64_t queue_running_current;
     uint64_t queue_running_max;
+    uint64_t queue_main_drains;
+    uint64_t queue_main_drain_batches;
+    uint64_t queue_main_drain_max_batch;
     rducks_r_scalar_meta_t *udf_registry_head;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;

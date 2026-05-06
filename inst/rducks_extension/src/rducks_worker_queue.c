@@ -715,6 +715,16 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
 
         if (!popped_this_round) break;
     }
+
+    rducks_queue_lock(runtime);
+    runtime->queue_main_drains++;
+    if (count > 0) {
+        runtime->queue_main_drain_batches++;
+        if ((uint64_t)count > runtime->queue_main_drain_max_batch) {
+            runtime->queue_main_drain_max_batch = (uint64_t)count;
+        }
+    }
+    rducks_queue_unlock(runtime);
     return count;
 }
 

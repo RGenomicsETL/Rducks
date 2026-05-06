@@ -155,7 +155,10 @@ typedef enum rducks_queue_stat_field {
     RDUCKS_QUEUE_STAT_PENDING_CURRENT,
     RDUCKS_QUEUE_STAT_PENDING_MAX,
     RDUCKS_QUEUE_STAT_RUNNING_CURRENT,
-    RDUCKS_QUEUE_STAT_RUNNING_MAX
+    RDUCKS_QUEUE_STAT_RUNNING_MAX,
+    RDUCKS_QUEUE_STAT_MAIN_DRAINS,
+    RDUCKS_QUEUE_STAT_MAIN_DRAIN_BATCHES,
+    RDUCKS_QUEUE_STAT_MAIN_DRAIN_MAX_BATCH
 } rducks_queue_stat_field_t;
 
 static uint64_t rducks_queue_stat_value_locked(rducks_runtime_entry_t *runtime,
@@ -175,6 +178,12 @@ static uint64_t rducks_queue_stat_value_locked(rducks_runtime_entry_t *runtime,
         return runtime->queue_running_current;
     case RDUCKS_QUEUE_STAT_RUNNING_MAX:
         return runtime->queue_running_max;
+    case RDUCKS_QUEUE_STAT_MAIN_DRAINS:
+        return runtime->queue_main_drains;
+    case RDUCKS_QUEUE_STAT_MAIN_DRAIN_BATCHES:
+        return runtime->queue_main_drain_batches;
+    case RDUCKS_QUEUE_STAT_MAIN_DRAIN_MAX_BATCH:
+        return runtime->queue_main_drain_max_batch;
     default:
         return 0;
     }
@@ -227,6 +236,21 @@ static void rducks_queue_running_current_stat_scalar(duckdb_function_info info, 
 static void rducks_queue_running_max_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                                  duckdb_vector output) {
     rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_RUNNING_MAX);
+}
+
+static void rducks_queue_main_drains_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                 duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_MAIN_DRAINS);
+}
+
+static void rducks_queue_main_drain_batches_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                        duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_MAIN_DRAIN_BATCHES);
+}
+
+static void rducks_queue_main_drain_max_batch_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                          duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_MAIN_DRAIN_MAX_BATCH);
 }
 
 typedef enum rducks_preserved_release_stat_field {
@@ -485,6 +509,12 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                            rducks_queue_running_current_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_max", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_running_max_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_main_drains", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_main_drains_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_main_drain_batches", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_main_drain_batches_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_main_drain_max_batch", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_main_drain_max_batch_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_pending_timeout_ms", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_pending_timeout_ms_scalar, false) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_timeout_supported", DUCKDB_TYPE_BOOLEAN,
