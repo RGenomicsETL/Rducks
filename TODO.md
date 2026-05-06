@@ -366,14 +366,19 @@ Remove the main-thread self-shim and its unbounded join.
 
 Fix or document queued request waits once a request is `RUNNING`.
 
-- Current timeout only applies while a request is `PENDING` because
-  queued scalar UDF requests borrow DuckDB callback-frame input/output
-  storage.
+- [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+  exposes `running_timeout_supported = FALSE` and
+  `docs/SUPPORT_MATRIX.md` explains that once a queued request is
+  running, borrowed DuckDB callback-frame input/output storage prevents
+  safe cancellation; only pending timeout is supported.
 
 Add stress tests for no-deadlock behavior.
 
-- Repeated queued UDF calls with multiple DuckDB threads should complete
-  or fail with documented timeout text, never hang.
+- Default tinytests cover queued scalar/vectorized `arrow_r` and direct
+  `arrow_c` execution through `rducks_parallel_range()` and assert
+  submitted requests complete without timeouts.
+- `RDUCKS_STRESS_CONCURRENCY=true` enables a larger multi-threaded
+  queued UDF stress case.
 
 Add a main-thread release queue for preserved R objects, or explicitly
 document the leak-until-session-end policy.
@@ -582,8 +587,10 @@ Add a webR runtime smoke test, not just a build test.
 
 Document wasm support level.
 
-- Clarify whether Rducks on wasm is build-only, package-load smoke
-  tested, or full DuckDB-extension runtime tested.
+- `docs/WASM.md` clarifies that wasm/webR support is
+  experimental/build-only for now and must not be claimed as
+  runtime-supported until a real extension-load/register/query smoke
+  test is committed.
 
 ## Documentation backlog
 
@@ -614,14 +621,16 @@ Keep roxygen/Rd wording aligned with README.
 
 Publish an explicit type/mode/plan support table.
 
-- Include scalar/vectorized support, `arrow_r`/`arrow_c`, NULL handling,
-  and copy/borrow expectations.
+- `docs/SUPPORT_MATRIX.md` covers scalar/vectorized engine support,
+  `arrow_r`/direct `arrow_c`/experimental `arrow_ipc`, type-family
+  coverage, NULL/error policy, and copy/borrow expectations.
 
 Clarify ownership/lifetime semantics.
 
-- Preserved R functions, per-connection/runtime registry, external
-  pointer and nanoarrow object lifetime, and limitations around off-main
-  destruction.
+- `docs/SUPPORT_MATRIX.md` documents process, database/catalog runtime,
+  and DBI connection attachment scope, preserved R closures, main-thread
+  release queue behavior, and why running queued cancellation is
+  unsupported.
 
 ## Release hygiene
 

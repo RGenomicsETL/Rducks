@@ -235,12 +235,15 @@
 <ul><li>Main-thread in-process callbacks now drain queued worker requests before and after inline execution instead of spawning a synthetic worker thread.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Fix or document queued request waits once a request is <code>RUNNING</code>.</label></p>
-<ul><li>Current timeout only applies while a request is <code>PENDING</code> because queued scalar UDF requests borrow DuckDB callback-frame input/output storage.</li>
+<p><label><input type="checkbox" checked>Fix or document queued request waits once a request is <code>RUNNING</code>.</label></p>
+<ul><li>
+<code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> exposes <code>running_timeout_supported = FALSE</code> and <code>docs/SUPPORT_MATRIX.md</code> explains that once a queued request is running, borrowed DuckDB callback-frame input/output storage prevents safe cancellation; only pending timeout is supported.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add stress tests for no-deadlock behavior.</label></p>
-<ul><li>Repeated queued UDF calls with multiple DuckDB threads should complete or fail with documented timeout text, never hang.</li>
+<p><label><input type="checkbox" checked>Add stress tests for no-deadlock behavior.</label></p>
+<ul><li>Default tinytests cover queued scalar/vectorized <code>arrow_r</code> and direct <code>arrow_c</code> execution through <code>rducks_parallel_range()</code> and assert submitted requests complete without timeouts.</li>
+<li>
+<code>RDUCKS_STRESS_CONCURRENCY=true</code> enables a larger multi-threaded queued UDF stress case.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label></p>
@@ -363,8 +366,9 @@
 <ul><li>Install the built <code>.tgz</code> in webR and run at least package load, native helper calls, and a minimal DuckDB extension load if supported.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Document wasm support level.</label>
-<ul><li>Clarify whether Rducks on wasm is build-only, package-load smoke tested, or full DuckDB-extension runtime tested.</li>
+<label><input type="checkbox" checked>Document wasm support level.</label>
+<ul><li>
+<code>docs/WASM.md</code> clarifies that wasm/webR support is experimental/build-only for now and must not be claimed as runtime-supported until a real extension-load/register/query smoke test is committed.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -383,12 +387,14 @@
 <ul><li>Run <code>make rd</code> after roxygen changes.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Publish an explicit type/mode/plan support table.</label></p>
-<ul><li>Include scalar/vectorized support, <code>arrow_r</code>/<code>arrow_c</code>, NULL handling, and copy/borrow expectations.</li>
+<p><label><input type="checkbox" checked>Publish an explicit type/mode/plan support table.</label></p>
+<ul><li>
+<code>docs/SUPPORT_MATRIX.md</code> covers scalar/vectorized engine support, <code>arrow_r</code>/direct <code>arrow_c</code>/experimental <code>arrow_ipc</code>, type-family coverage, NULL/error policy, and copy/borrow expectations.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Clarify ownership/lifetime semantics.</label></p>
-<ul><li>Preserved R functions, per-connection/runtime registry, external pointer and nanoarrow object lifetime, and limitations around off-main destruction.</li>
+<p><label><input type="checkbox" checked>Clarify ownership/lifetime semantics.</label></p>
+<ul><li>
+<code>docs/SUPPORT_MATRIX.md</code> documents process, database/catalog runtime, and DBI connection attachment scope, preserved R closures, main-thread release queue behavior, and why running queued cancellation is unsupported.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
