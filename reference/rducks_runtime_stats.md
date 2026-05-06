@@ -9,7 +9,11 @@ marked as a stale registry alias, and `stale_entries` means entries
 retained only to avoid reusing an old raw database address. DuckDB's C
 extension API does not currently provide a clean database-close callback
 for this package, so these counters are accounting diagnostics rather
-than deterministic lifetime guarantees.
+than deterministic lifetime guarantees. `connections_current` and
+`native_release_supported` are derived R-side summary fields: native
+runtime entries and successful extension-owned connections are currently
+retained for the process lifetime unless a failure path closes them
+during initialization.
 
 ## Usage
 
