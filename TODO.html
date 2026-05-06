@@ -334,8 +334,8 @@
 <div class="section level2">
 <h2 id="p2p3-arrow-ipc-and-worker-execution">P2/P3: Arrow IPC and worker execution<a class="anchor" aria-label="anchor" href="#p2p3-arrow-ipc-and-worker-execution"></a></h2>
 <ul class="task-list"><li>
-<p><label><input type="checkbox">Fix cooperative RIPC counter under-reporting.</label></p>
-<ul><li>Runtime-wide <code>submitted/executed</code> can be lower than per-UDF queued chunk counts on cooperative paths.</li>
+<p><label><input type="checkbox" checked>Fix cooperative RIPC counter under-reporting.</label></p>
+<ul><li>Main-thread cooperative RIPC local requests now increment runtime-wide submitted/executed/running queue counters, so runtime queue stats are no longer lower than per-UDF queued chunk counts on the cooperative path.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Remove the hidden slow R encoder fallback from the primary Arrow IPC encoder.</label></p>

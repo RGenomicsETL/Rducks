@@ -521,8 +521,10 @@ vector.
 
 Fix cooperative RIPC counter under-reporting.
 
-- Runtime-wide `submitted/executed` can be lower than per-UDF queued
-  chunk counts on cooperative paths.
+- Main-thread cooperative RIPC local requests now increment runtime-wide
+  submitted/executed/running queue counters, so runtime queue stats are
+  no longer lower than per-UDF queued chunk counts on the cooperative
+  path.
 
 Remove the hidden slow R encoder fallback from the primary Arrow IPC
 encoder.
