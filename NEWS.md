@@ -27,7 +27,8 @@
   `arrow_r`/`arrow_c` chunks ran through the requested evaluator without
   fallback. Added `rducks_release_stats()` to inspect process-local counters for
   preserved R objects queued by off-main DuckDB metadata destructors and drained
-  later on the recorded main R thread.
+  later on the recorded main R thread. Added `rducks_runtime_stats()` to inspect
+  native runtime registry and extension-owned connection accounting.
 - Added an R-universe badge to the README and lowered the package R dependency
   floor to R 4.3.
 - Added wasm/webR build detection in `configure`, including the DuckDB wasm

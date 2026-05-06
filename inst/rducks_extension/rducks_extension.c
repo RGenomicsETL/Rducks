@@ -190,6 +190,12 @@ static idx_t g_runtime_capacity = 0;
  * R-side keys. They are intentionally not durable across R sessions.
  */
 static uint64_t g_runtime_next_process_id = 1;
+static uint64_t g_runtime_entries_created = 0;
+static uint64_t g_runtime_stale_aliases = 0;
+static uint64_t g_runtime_connections_opened = 0;
+static uint64_t g_runtime_connections_closed = 0;
+static uint64_t g_runtime_connection_open_failed = 0;
+static uint64_t g_runtime_queue_init_failed = 0;
 
 /* Locking discipline: avoid nesting the global runtime registry lock and a
  * runtime queue lock. Queue operations should release runtime->queue_lock before
@@ -210,10 +216,15 @@ static void rducks_runtime_lock(void) {
     InitOnceExecuteOnce(&g_runtime_lock_once, rducks_runtime_lock_init_once, NULL, NULL);
     EnterCriticalSection(&g_runtime_lock);
 }
+static int rducks_runtime_try_lock(void) {
+    InitOnceExecuteOnce(&g_runtime_lock_once, rducks_runtime_lock_init_once, NULL, NULL);
+    return TryEnterCriticalSection(&g_runtime_lock) ? 1 : 0;
+}
 static void rducks_runtime_unlock(void) { LeaveCriticalSection(&g_runtime_lock); }
 #else
 static pthread_mutex_t g_runtime_lock = PTHREAD_MUTEX_INITIALIZER;
 static void rducks_runtime_lock(void) { pthread_mutex_lock(&g_runtime_lock); }
+static int rducks_runtime_try_lock(void) { return pthread_mutex_trylock(&g_runtime_lock) == 0 ? 1 : 0; }
 static void rducks_runtime_unlock(void) { pthread_mutex_unlock(&g_runtime_lock); }
 #endif
 
@@ -326,6 +337,7 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
             entry->database = NULL;
             entry->registration_surface_ready = 0;
             entry->generation++;
+            g_runtime_stale_aliases++;
         }
         rducks_runtime_unlock();
     }
@@ -354,12 +366,14 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
     entry->generation = 1;
     entry->execution_backend = RDUCKS_BACKEND_SINGLE;
     if (!rducks_runtime_queue_init_entry(entry)) {
+        g_runtime_queue_init_failed++;
         duckdb_free(entry);
         rducks_runtime_unlock();
         snprintf(err, err_cap, "failed to initialize Rducks runtime queue");
         return NULL;
     }
     if (duckdb_connect(database, &entry->connection) == DuckDBError || !entry->connection) {
+        g_runtime_connection_open_failed++;
         rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);
@@ -367,8 +381,10 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
         snprintf(err, err_cap, "failed to open Rducks extension connection");
         return NULL;
     }
+    g_runtime_connections_opened++;
     if (!rducks_runtime_configure_connection(entry->connection, err, err_cap)) {
         duckdb_disconnect(&entry->connection);
+        g_runtime_connections_closed++;
         rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);
@@ -376,6 +392,7 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
         return NULL;
     }
     g_runtime_entries[g_runtime_count++] = entry;
+    g_runtime_entries_created++;
     rducks_runtime_unlock();
     return entry;
 }

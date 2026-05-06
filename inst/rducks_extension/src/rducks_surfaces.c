@@ -276,6 +276,114 @@ static void rducks_release_pending_stat_scalar(duckdb_function_info info, duckdb
     rducks_preserved_release_stat_scalar_impl(info, input, output, RDUCKS_RELEASE_STAT_PENDING);
 }
 
+typedef enum rducks_runtime_stat_field {
+    RDUCKS_RUNTIME_STAT_REGISTRY_ENTRIES = 0,
+    RDUCKS_RUNTIME_STAT_ACTIVE_ENTRIES,
+    RDUCKS_RUNTIME_STAT_STALE_ENTRIES,
+    RDUCKS_RUNTIME_STAT_ENTRIES_CREATED,
+    RDUCKS_RUNTIME_STAT_STALE_ALIASES,
+    RDUCKS_RUNTIME_STAT_CONNECTIONS_OPENED,
+    RDUCKS_RUNTIME_STAT_CONNECTIONS_CLOSED,
+    RDUCKS_RUNTIME_STAT_CONNECTION_OPEN_FAILED,
+    RDUCKS_RUNTIME_STAT_QUEUE_INIT_FAILED
+} rducks_runtime_stat_field_t;
+
+static uint64_t rducks_runtime_stat_value_locked(rducks_runtime_stat_field_t field) {
+    uint64_t active = 0;
+    uint64_t stale = 0;
+    for (idx_t i = 0; i < g_runtime_count; i++) {
+        if (!g_runtime_entries[i]) continue;
+        if (g_runtime_entries[i]->database) active++;
+        else stale++;
+    }
+    switch (field) {
+    case RDUCKS_RUNTIME_STAT_REGISTRY_ENTRIES:
+        return (uint64_t)g_runtime_count;
+    case RDUCKS_RUNTIME_STAT_ACTIVE_ENTRIES:
+        return active;
+    case RDUCKS_RUNTIME_STAT_STALE_ENTRIES:
+        return stale;
+    case RDUCKS_RUNTIME_STAT_ENTRIES_CREATED:
+        return g_runtime_entries_created;
+    case RDUCKS_RUNTIME_STAT_STALE_ALIASES:
+        return g_runtime_stale_aliases;
+    case RDUCKS_RUNTIME_STAT_CONNECTIONS_OPENED:
+        return g_runtime_connections_opened;
+    case RDUCKS_RUNTIME_STAT_CONNECTIONS_CLOSED:
+        return g_runtime_connections_closed;
+    case RDUCKS_RUNTIME_STAT_CONNECTION_OPEN_FAILED:
+        return g_runtime_connection_open_failed;
+    case RDUCKS_RUNTIME_STAT_QUEUE_INIT_FAILED:
+        return g_runtime_queue_init_failed;
+    default:
+        return 0;
+    }
+}
+
+static void rducks_runtime_stat_scalar_impl(duckdb_function_info info, duckdb_data_chunk input,
+                                            duckdb_vector output, rducks_runtime_stat_field_t field) {
+    (void)info;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    uint64_t value;
+    /* This scalar executes inside DuckDB. Use a non-blocking registry-lock
+     * attempt so diagnostics cannot deadlock behind rducks_enable() code that
+     * may be holding the registry lock while entering DuckDB connection APIs.
+     */
+    if (!rducks_runtime_try_lock()) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime stats are temporarily unavailable");
+        return;
+    }
+    value = rducks_runtime_stat_value_locked(field);
+    rducks_runtime_unlock();
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_runtime_registry_entries_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                        duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_REGISTRY_ENTRIES);
+}
+
+static void rducks_runtime_active_entries_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                      duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_ACTIVE_ENTRIES);
+}
+
+static void rducks_runtime_stale_entries_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                     duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_STALE_ENTRIES);
+}
+
+static void rducks_runtime_entries_created_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                       duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_ENTRIES_CREATED);
+}
+
+static void rducks_runtime_stale_aliases_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                     duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_STALE_ALIASES);
+}
+
+static void rducks_runtime_connections_opened_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                          duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_CONNECTIONS_OPENED);
+}
+
+static void rducks_runtime_connections_closed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                          duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_CONNECTIONS_CLOSED);
+}
+
+static void rducks_runtime_connection_open_failed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                             duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_CONNECTION_OPEN_FAILED);
+}
+
+static void rducks_runtime_queue_init_failed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                         duckdb_vector output) {
+    rducks_runtime_stat_scalar_impl(info, input, output, RDUCKS_RUNTIME_STAT_QUEUE_INIT_FAILED);
+}
+
 static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -355,6 +463,24 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                            rducks_release_failed_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_pending", DUCKDB_TYPE_UBIGINT,
                                            rducks_release_pending_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_registry_entries", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_registry_entries_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_active_entries", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_active_entries_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_stale_entries", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_stale_entries_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_entries_created", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_entries_created_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_stale_aliases", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_stale_aliases_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_connections_opened", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_connections_opened_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_connections_closed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_connections_closed_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_connection_open_failed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_connection_open_failed_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_queue_init_failed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_runtime_queue_init_failed_stat_scalar, true) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
