@@ -272,18 +272,20 @@ Run with `lobstr` in this session:
   - `arrow_c` registration now fails for signatures that cannot yet use the
     native direct DuckDB-vector path instead of falling through to the R/Arrow
     bridge.
-  - Supported direct cases include scalar, DECIMAL, and ENUM descriptors.
-  - Remaining composite/union signatures are implementation gaps to close in C,
+  - Supported direct cases include scalar, DECIMAL, ENUM, LIST, and ARRAY
+    descriptors when their children are themselves direct-supported.
+  - Remaining STRUCT/MAP/UNION signatures are implementation gaps to close in C,
     not desired long-term failures.
 
 - [ ] Add generated matrix no-fallback coverage for every supported scalar,
-  DECIMAL, and ENUM direct type.
+  DECIMAL, ENUM, LIST, and ARRAY direct type.
   - Acceptance: `rducks_explain_udf()` shows `arrow_c_chunks > 0` and
     `arrow_r_chunks == 0` for supported `arrow_c` cases.
 
 - [ ] Implement native direct `arrow_c` composite/union marshalling.
-  - Add recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT, MAP,
-    and UNION instead of relying on the old R/Arrow bridge.
+  - Done: recursive DuckDB-vector readers/writers for LIST and ARRAY.
+  - Remaining: STRUCT, MAP, and UNION instead of relying on the old R/Arrow
+    bridge.
   - Acceptance: those signatures register under `arrow_c`, execute through
     `arrow_c_chunks`, and keep `arrow_r_chunks == 0`.
 

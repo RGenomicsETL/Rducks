@@ -576,6 +576,21 @@ rducks_scalar_mapping_supported <- function(type) {
   FALSE
 }
 
+rducks_arrow_c_direct_sequence_child_supported <- function(type) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  kind <- rducks_type_kind(type)
+  if (identical(kind, "enum")) {
+    return(TRUE)
+  }
+  if (kind %in% c("list", "array")) {
+    return(rducks_arrow_c_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
+  }
+  identical(kind, "scalar") && rducks_type_token(type) %in% c(
+    "bool", "i8", "u8", "i16", "u16", "i32", "u32",
+    "f32", "f64", "varchar", "date", "time", "timestamp"
+  )
+}
+
 rducks_arrow_c_direct_mapping_supported <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
@@ -584,6 +599,9 @@ rducks_arrow_c_direct_mapping_supported <- function(type) {
   }
   if (identical(kind, "scalar")) {
     return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
+  }
+  if (kind %in% c("list", "array")) {
+    return(rducks_arrow_c_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
   }
   FALSE
 }

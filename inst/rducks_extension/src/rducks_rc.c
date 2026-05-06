@@ -180,13 +180,46 @@ static SEXP rducks_rc_call_vectorized_eval(SEXP eval_rows_fun, SEXP fun, SEXP ar
 }
 
 
+static int rducks_rc_direct_enum_supported(const rducks_type_desc_t *desc) {
+    return desc && desc->kind == RDUCKS_KIND_ENUM &&
+           (desc->enum_internal_type == DUCKDB_TYPE_UTINYINT ||
+            desc->enum_internal_type == DUCKDB_TYPE_USMALLINT ||
+            desc->enum_internal_type == DUCKDB_TYPE_UINTEGER);
+}
+
+static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *desc) {
+    if (!desc) return 0;
+    if (rducks_rc_direct_enum_supported(desc)) return 1;
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY) {
+        return rducks_rc_direct_sequence_child_supported(desc->child);
+    }
+    if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL:
+    case RDUCKS_TYPE_I8:
+    case RDUCKS_TYPE_U8:
+    case RDUCKS_TYPE_I16:
+    case RDUCKS_TYPE_U16:
+    case RDUCKS_TYPE_I32:
+    case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_F32:
+    case RDUCKS_TYPE_F64:
+    case RDUCKS_TYPE_VARCHAR:
+    case RDUCKS_TYPE_DATE:
+    case RDUCKS_TYPE_TIME:
+    case RDUCKS_TYPE_TIMESTAMP:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     if (!desc) return 0;
     if (desc->kind == RDUCKS_KIND_DECIMAL) return 1;
-    if (desc->kind == RDUCKS_KIND_ENUM) {
-        return desc->enum_internal_type == DUCKDB_TYPE_UTINYINT ||
-               desc->enum_internal_type == DUCKDB_TYPE_USMALLINT ||
-               desc->enum_internal_type == DUCKDB_TYPE_UINTEGER;
+    if (desc->kind == RDUCKS_KIND_ENUM) return rducks_rc_direct_enum_supported(desc);
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY) {
+        return rducks_rc_direct_sequence_child_supported(desc->child);
     }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
@@ -246,6 +279,18 @@ static void rducks_rc_direct_output_view_init(rducks_rc_direct_vector_view_t *vi
 static int rducks_rc_direct_view_valid_at(const rducks_rc_direct_vector_view_t *view, idx_t row) {
     if (!view->validity) return 1;
     return duckdb_validity_row_is_valid(view->validity, row) ? 1 : 0;
+}
+
+static int rducks_rc_idx_add(idx_t a, idx_t b, idx_t *out) {
+    if (UINT64_MAX - a < b) return 0;
+    *out = a + b;
+    return 1;
+}
+
+static int rducks_rc_idx_mul(idx_t a, idx_t b, idx_t *out) {
+    if (b != 0 && a > UINT64_MAX / b) return 0;
+    *out = a * b;
+    return 1;
 }
 
 static void rducks_rc_output_set_null(rducks_rc_direct_vector_view_t *output, idx_t row) {
@@ -917,9 +962,173 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     }
 }
 
+static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row);
+
+static SEXP rducks_rc_make_posixct_vector(R_xlen_t n) {
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    SEXP tz = PROTECT(Rf_mkString("UTC"));
+    SET_STRING_ELT(cls, 0, Rf_mkChar("POSIXct"));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("POSIXt"));
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    Rf_setAttrib(out, Rf_install("tzone"), tz);
+    UNPROTECT(3);
+    return out;
+}
+
+static SEXP rducks_rc_make_date_vector(R_xlen_t n) {
+    SEXP out = PROTECT(Rf_allocVector(REALSXP, n));
+    SEXP cls = PROTECT(Rf_mkString("Date"));
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(2);
+    return out;
+}
+
+static SEXP rducks_rc_make_enum_vector(const rducks_type_desc_t *desc, R_xlen_t n) {
+    SEXP out = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP levels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)desc->field_count));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    for (size_t i = 0; i < desc->field_count; i++) {
+        SET_STRING_ELT(levels, (R_xlen_t)i, Rf_mkChar(desc->field_names[i] ? desc->field_names[i] : ""));
+    }
+    SET_STRING_ELT(cls, 0, Rf_mkChar("rducks_enum"));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("factor"));
+    Rf_setAttrib(out, R_LevelsSymbol, levels);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(3);
+    return out;
+}
+
+static SEXP rducks_rc_direct_sequence_arg(const rducks_type_desc_t *child_desc, duckdb_vector child_vector,
+                                          idx_t start, idx_t len) {
+    rducks_rc_direct_vector_view_t child_view;
+    R_xlen_t n;
+    SEXP out;
+    idx_t end = 0;
+    if (len > (idx_t)R_XLEN_T_MAX || !rducks_rc_idx_add(start, len, &end)) {
+        Rf_error("Rducks LIST/ARRAY value is too large to materialize in R");
+    }
+    n = (R_xlen_t)len;
+    rducks_rc_direct_input_view_init(&child_view, child_vector);
+    if (child_desc->kind == RDUCKS_KIND_ENUM) {
+        out = PROTECT(rducks_rc_make_enum_vector(child_desc, n));
+        for (idx_t j = 0; j < len; j++) {
+            if (!rducks_rc_direct_view_valid_at(&child_view, start + j)) {
+                INTEGER(out)[(R_xlen_t)j] = NA_INTEGER;
+            } else {
+                uint32_t index = rducks_rc_enum_index_from_data(child_desc, child_view.data, start + j);
+                INTEGER(out)[(R_xlen_t)j] = index < child_desc->field_count ? (int)index + 1 : NA_INTEGER;
+            }
+        }
+        UNPROTECT(1);
+        return out;
+    }
+    if (child_desc->kind == RDUCKS_KIND_SCALAR) {
+        switch (child_desc->scalar) {
+        case RDUCKS_TYPE_BOOL:
+            out = PROTECT(Rf_allocVector(LGLSXP, n));
+            for (idx_t j = 0; j < len; j++) LOGICAL(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (((bool *)child_view.data)[start + j] ? TRUE : FALSE) : NA_LOGICAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I8:
+            out = PROTECT(Rf_allocVector(INTSXP, n));
+            for (idx_t j = 0; j < len; j++) INTEGER(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (int)((int8_t *)child_view.data)[start + j] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U8:
+            out = PROTECT(Rf_allocVector(INTSXP, n));
+            for (idx_t j = 0; j < len; j++) INTEGER(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (int)((uint8_t *)child_view.data)[start + j] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I16:
+            out = PROTECT(Rf_allocVector(INTSXP, n));
+            for (idx_t j = 0; j < len; j++) INTEGER(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (int)((int16_t *)child_view.data)[start + j] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U16:
+            out = PROTECT(Rf_allocVector(INTSXP, n));
+            for (idx_t j = 0; j < len; j++) INTEGER(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (int)((uint16_t *)child_view.data)[start + j] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I32:
+            out = PROTECT(Rf_allocVector(INTSXP, n));
+            for (idx_t j = 0; j < len; j++) INTEGER(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (int)((int32_t *)child_view.data)[start + j] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U32:
+            out = PROTECT(Rf_allocVector(REALSXP, n));
+            for (idx_t j = 0; j < len; j++) REAL(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (double)((uint32_t *)child_view.data)[start + j] : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_F32:
+            out = PROTECT(Rf_allocVector(REALSXP, n));
+            for (idx_t j = 0; j < len; j++) REAL(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (double)((float *)child_view.data)[start + j] : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_F64:
+        case RDUCKS_TYPE_TIME:
+            out = PROTECT(Rf_allocVector(REALSXP, n));
+            for (idx_t j = 0; j < len; j++) {
+                if (!rducks_rc_direct_view_valid_at(&child_view, start + j)) REAL(out)[(R_xlen_t)j] = NA_REAL;
+                else if (child_desc->scalar == RDUCKS_TYPE_TIME) REAL(out)[(R_xlen_t)j] = (double)((duckdb_time *)child_view.data)[start + j].micros / 1000000.0;
+                else REAL(out)[(R_xlen_t)j] = ((double *)child_view.data)[start + j];
+            }
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_DATE:
+            out = PROTECT(rducks_rc_make_date_vector(n));
+            for (idx_t j = 0; j < len; j++) REAL(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (double)((duckdb_date *)child_view.data)[start + j].days : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_TIMESTAMP:
+            out = PROTECT(rducks_rc_make_posixct_vector(n));
+            for (idx_t j = 0; j < len; j++) REAL(out)[(R_xlen_t)j] = rducks_rc_direct_view_valid_at(&child_view, start + j) ? (double)((duckdb_timestamp *)child_view.data)[start + j].micros / 1000000.0 : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_VARCHAR:
+            out = PROTECT(Rf_allocVector(STRSXP, n));
+            for (idx_t j = 0; j < len; j++) {
+                if (!rducks_rc_direct_view_valid_at(&child_view, start + j)) SET_STRING_ELT(out, (R_xlen_t)j, NA_STRING);
+                else {
+                    duckdb_string_t *data = (duckdb_string_t *)child_view.data;
+                    uint32_t slen = duckdb_string_t_length(data[start + j]);
+                    const char *ptr = duckdb_string_t_data(&data[start + j]);
+                    if (slen > (uint32_t)INT_MAX) {
+                        Rf_error("Rducks VARCHAR value is too large to materialize in R");
+                    }
+                    SET_STRING_ELT(out, (R_xlen_t)j, Rf_mkCharLenCE(ptr, (int)slen, CE_UTF8));
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        default:
+            break;
+        }
+    }
+    out = PROTECT(Rf_allocVector(VECSXP, n));
+    for (idx_t j = 0; j < len; j++) {
+        SET_VECTOR_ELT(out, (R_xlen_t)j, rducks_rc_direct_arg(child_desc, &child_view, start + j));
+    }
+    UNPROTECT(1);
+    return out;
+}
+
 static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row) {
     SEXP out;
     if (!rducks_rc_direct_view_valid_at(input, row)) return rducks_rc_missing_arg(desc);
+    if (desc->kind == RDUCKS_KIND_LIST) {
+        duckdb_list_entry *entries = (duckdb_list_entry *)input->data;
+        duckdb_vector child = duckdb_list_vector_get_child(input->vector);
+        return rducks_rc_direct_sequence_arg(desc->child, child, (idx_t)entries[row].offset, (idx_t)entries[row].length);
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        duckdb_vector child = duckdb_array_vector_get_child(input->vector);
+        idx_t start = 0;
+        if (!rducks_rc_idx_mul(row, desc->array_size, &start)) {
+            Rf_error("Rducks ARRAY child index overflow");
+        }
+        return rducks_rc_direct_sequence_arg(desc->child, child, start, desc->array_size);
+    }
     if (desc->kind == RDUCKS_KIND_ENUM) {
         uint32_t index = rducks_rc_enum_index_from_data(desc, input->data, row);
         return rducks_rc_make_enum(desc, index < desc->field_count ? (int32_t)index : -1);
@@ -1036,6 +1245,9 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         duckdb_string_t *data = (duckdb_string_t *)input->data;
         uint32_t len = duckdb_string_t_length(data[row]);
         const char *ptr = duckdb_string_t_data(&data[row]);
+        if (len > (uint32_t)INT_MAX) {
+            Rf_error("Rducks VARCHAR value is too large to materialize in R");
+        }
         out = PROTECT(Rf_allocVector(STRSXP, 1));
         SET_STRING_ELT(out, 0, Rf_mkCharLenCE(ptr, (int)len, CE_UTF8));
         UNPROTECT(1);
@@ -1146,6 +1358,70 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     }
     rducks_rc_output_set_valid_if_needed(output, row);
+    if (desc->kind == RDUCKS_KIND_LIST) {
+        R_xlen_t len = XLENGTH(value);
+        idx_t offset = duckdb_list_vector_get_size(output->vector);
+        idx_t required = 0;
+        duckdb_list_entry *entries = (duckdb_list_entry *)output->data;
+        duckdb_vector child;
+        rducks_rc_direct_vector_view_t child_view;
+        if (len < 0 || !rducks_rc_idx_add(offset, (idx_t)len, &required)) {
+            snprintf(err_msg, err_cap, "Rducks LIST return length is invalid");
+            return 0;
+        }
+        if (duckdb_list_vector_reserve(output->vector, required) == DuckDBError) {
+            snprintf(err_msg, err_cap, "failed to reserve DuckDB LIST child storage");
+            return 0;
+        }
+        child = duckdb_list_vector_get_child(output->vector);
+        rducks_rc_direct_output_view_init(&child_view, child);
+        for (R_xlen_t j = 0; j < len; j++) {
+            int ok = 1;
+            SEXP element = PROTECT(rducks_rc_vector_value_at(value, (idx_t)j, &ok));
+            if (!ok || !rducks_rc_write_direct_output(desc->child, &child_view, offset + (idx_t)j, element, err_msg, err_cap)) {
+                UNPROTECT(1);
+                if (ok && !err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB LIST child value");
+                return 0;
+            }
+            UNPROTECT(1);
+        }
+        if (duckdb_list_vector_set_size(output->vector, required) == DuckDBError) {
+            snprintf(err_msg, err_cap, "failed to commit DuckDB LIST child storage");
+            return 0;
+        }
+        entries[row].offset = offset;
+        entries[row].length = (uint64_t)len;
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        R_xlen_t len = XLENGTH(value);
+        duckdb_vector child;
+        rducks_rc_direct_vector_view_t child_view;
+        idx_t base = 0;
+        if (len != (R_xlen_t)desc->array_size) {
+            snprintf(err_msg, err_cap, "Rducks ARRAY return value must have length %llu", (unsigned long long)desc->array_size);
+            return 0;
+        }
+        if (!rducks_rc_idx_mul(row, desc->array_size, &base)) {
+            snprintf(err_msg, err_cap, "Rducks ARRAY child index overflow");
+            return 0;
+        }
+        child = duckdb_array_vector_get_child(output->vector);
+        rducks_rc_direct_output_view_init(&child_view, child);
+        for (R_xlen_t j = 0; j < len; j++) {
+            int ok = 1;
+            SEXP element = PROTECT(rducks_rc_vector_value_at(value, (idx_t)j, &ok));
+            idx_t child_row = 0;
+            if (!rducks_rc_idx_add(base, (idx_t)j, &child_row) ||
+                !ok || !rducks_rc_write_direct_output(desc->child, &child_view, child_row, element, err_msg, err_cap)) {
+                UNPROTECT(1);
+                if (ok && !err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB ARRAY child value");
+                return 0;
+            }
+            UNPROTECT(1);
+        }
+        return 1;
+    }
     if (desc->kind == RDUCKS_KIND_ENUM) {
         uint32_t index = 0;
         if (!rducks_rc_enum_value_index(desc, value, &index, err_msg, err_cap)) {
