@@ -38,6 +38,20 @@ local({
   rducks_disable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
 
+  before_threads <- Rducks:::rducks_connection_threads(con)
+  before_external_threads <- Rducks:::rducks_connection_external_threads(con)
+  bad_plan <- rducks_execution_plan("arrow_c", "serial")
+  bad_plan$backend <- "invalid_backend_for_rollback_test"
+  new_threads <- if (identical(before_threads, 1L)) 2L else 1L
+  new_external_threads <- if (new_threads > 1L && identical(before_external_threads, 1L)) new_threads else 1L
+  expect_error(
+    rducks_set_execution_plan(con, bad_plan, threads = new_threads, external_threads = new_external_threads),
+    "unsupported Rducks execution backend"
+  )
+  expect_equal(Rducks:::rducks_connection_threads(con), before_threads)
+  expect_equal(Rducks:::rducks_connection_external_threads(con), before_external_threads)
+  expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
+
   old_future_plan <- future::plan()
   on.exit(future::plan(old_future_plan), add = TRUE)
   future::plan(future::multisession, workers = 1)

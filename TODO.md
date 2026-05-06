@@ -255,10 +255,9 @@ Run with `lobstr` in this session:
   - Acceptance: `rducks_explain_udf()` shows `arrow_c_chunks > 0` and
     `arrow_r_chunks == 0` for supported `arrow_c` cases.
 
-- [ ] Handle partial failures in `rducks_set_execution_plan()`.
-  - Current risk: thread settings may change before native backend setup fails,
-    while the R-side plan cache remains old.
-  - Either roll back thread settings or document partial application.
+- [x] Handle partial failures in `rducks_set_execution_plan()`.
+  - Thread settings are restored when thread/backend setup fails before the
+    R-side plan cache is updated.
 
 - [ ] Defensively clear Arrow C Data release callbacks on conversion failure.
 

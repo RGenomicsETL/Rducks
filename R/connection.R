@@ -189,6 +189,26 @@ rducks_configure_duckdb_threads <- function(con, threads = NULL, external_thread
   invisible(con)
 }
 
+rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
+  threads <- suppressWarnings(as.integer(threads))
+  external_threads <- suppressWarnings(as.integer(external_threads))
+  current_threads <- rducks_connection_threads(con)
+  set_threads <- !is.na(threads) && threads >= 1L
+  set_external <- !is.na(external_threads) && external_threads >= 1L
+  if (set_external && set_threads && !is.na(current_threads) && threads < current_threads) {
+    try(DBI::dbExecute(con, sprintf("SET external_threads=%d", external_threads)), silent = TRUE)
+    try(DBI::dbExecute(con, sprintf("PRAGMA threads=%d", threads)), silent = TRUE)
+  } else {
+    if (set_threads) {
+      try(DBI::dbExecute(con, sprintf("PRAGMA threads=%d", threads)), silent = TRUE)
+    }
+    if (set_external) {
+      try(DBI::dbExecute(con, sprintf("SET external_threads=%d", external_threads)), silent = TRUE)
+    }
+  }
+  invisible(con)
+}
+
 #' Set the Rducks execution plan for a connection
 #'
 #' Sets connection/session policy for Rducks chunk execution. Registration still
@@ -214,8 +234,18 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
   rducks_assert_duckdb_connection(con)
   plan <- rducks_as_execution_plan(plan)
   rducks_assert_execution_plan_implemented(plan)
-  rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
-  rducks_set_execution_backend(con, plan$backend)
+  old_threads <- rducks_connection_threads(con)
+  old_external_threads <- rducks_connection_external_threads(con)
+  tryCatch(
+    {
+      rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
+      rducks_set_execution_backend(con, plan$backend)
+    },
+    error = function(e) {
+      rducks_restore_duckdb_threads(con, old_threads, old_external_threads)
+      stop(e)
+    }
+  )
   rducks_store_connection_plan(con, plan)
   invisible(con)
 }
