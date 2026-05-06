@@ -489,13 +489,15 @@ current callbacks, but not for an asynchronous same-process design.
 - [ ] Keep roxygen/Rd wording aligned with README.
   - Run `make rd` after roxygen changes.
 
-- [ ] Publish an explicit type/mode/plan support table.
-  - Include scalar/vectorized support, `arrow_r`/`arrow_c`, NULL handling, and
-    copy/borrow expectations.
+- [x] Publish an explicit type/mode/plan support table.
+  - `docs/SUPPORT_MATRIX.md` covers scalar/vectorized engine support,
+    `arrow_r`/direct `arrow_c`/experimental `arrow_ipc`, type-family coverage,
+    NULL/error policy, and copy/borrow expectations.
 
-- [ ] Clarify ownership/lifetime semantics.
-  - Preserved R functions, per-connection/runtime registry, external pointer and
-    nanoarrow object lifetime, and limitations around off-main destruction.
+- [x] Clarify ownership/lifetime semantics.
+  - `docs/SUPPORT_MATRIX.md` documents process, database/catalog runtime, and
+    DBI connection attachment scope, preserved R closures, main-thread release
+    queue behavior, and why running queued cancellation is unsupported.
 
 ## Release hygiene
 
