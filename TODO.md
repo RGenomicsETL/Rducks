@@ -50,7 +50,8 @@ what still needs doing.
 - [x] Execution-plan simplification: valid plan pairs expose concrete
   `engine_id`s while preserving the readable marshalling/concurrency API.
 - [ ] Persistent worker/provider architecture: generic Future remains the
-  portable reference provider; persistent mirai/nanonext-style workers with
+  portable reference provider; `docs/PERSISTENT_PROVIDER.md` now specifies the
+  provider contract/envelopes, but persistent mirai/nanonext-style workers with
   preloaded evaluator/schema state are still future work.
 - [ ] `rducks_unregister()`: not implemented; DuckDB reports extension-created
   functions as internal catalog entries that cannot be dropped through the
@@ -442,12 +443,12 @@ Run with `lobstr` in this session:
 
 - [ ] Improve batching beyond small waves for typical DuckDB physical scans.
 
-- [ ] Specify a persistent worker/request envelope if generic `future` is not
+- [x] Specify a persistent worker/request envelope if generic `future` is not
   enough.
-  - Include UDF id/name, signature, mode, null/error semantics, chunk sequence,
-    timeout, cancellation token, and schema metadata.
-  - Hot data path remains Arrow IPC bytes; no R `serialize()` / `unserialize()`
-    fallback for chunk payloads.
+  - `docs/PERSISTENT_PROVIDER.md` defines provider operations,
+    registration/task/result envelopes, collect-any/backpressure/cancellation
+    expectations, and keeps the hot data path as Arrow IPC bytes with no R
+    `serialize()` / `unserialize()` fallback for chunk payloads.
 
 - [ ] Decide worker transport beyond generic `future` if needed.
   - Do not link against uninstalled `nanonext.so` internals.
