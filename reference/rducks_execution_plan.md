@@ -12,7 +12,7 @@ handling, and side effects.
 rducks_execution_plan(
   marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-  future_globals = TRUE,
+  future_globals = "auto",
   future_packages = NULL,
   future_seed = FALSE,
   future_stdout = FALSE,
@@ -46,9 +46,14 @@ rducks_execution_plan(
 
   Options forwarded to
   [`future::future()`](https://future.futureverse.org/reference/future.html)
-  for `arrow_ipc + multiprocess_parallel` registrations. Use
-  `future_packages` for packages that workers should attach and
-  `future_globals` when automatic global capture needs help.
+  for `arrow_ipc + multiprocess_parallel` registrations. By default
+  (`future_globals = "auto"`), Rducks discovers UDF globals once at
+  registration-wrapper creation and then sends explicit worker state per
+  chunk, avoiding per-chunk automatic global discovery. Use
+  `future_packages` for packages that workers should attach,
+  `future_globals = TRUE` for Future's per-task discovery, `FALSE` for
+  only Rducks' required task state, or a character vector/named list for
+  explicit extra globals.
 
 ## Value
 

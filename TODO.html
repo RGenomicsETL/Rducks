@@ -329,6 +329,7 @@
 <li>
 <p><label><input type="checkbox">Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback.</label></p>
 <ul><li>Done: Arrow IPC Future wrappers cache the output schema spec at registration wrapper scope after the first chunk, avoiding repeated schema-to-list conversion on every submission.</li>
+<li>Done: <code>future_globals</code> now defaults to <code>"auto"</code>, so generic Future UDF globals are discovered once at wrapper creation and chunk submissions send explicit worker state instead of running automatic global discovery every time. Users can still opt into per-task discovery with <code>TRUE</code>, required-state only with <code>FALSE</code>, or explicit character/named-list globals.</li>
 <li>Remaining: persistent workers should preload evaluator state and schemas once and submit only task id/UDF id/row count/IPC bytes per chunk.</li>
 </ul></li>
 <li><p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p></li>

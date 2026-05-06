@@ -51,7 +51,7 @@ argument/return types, NULL handling, error handling, and side effects.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rducks_execution_plan</span><span class="op">(</span></span>
 <span>  marshalling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"arrow_c"</span>, <span class="st">"arrow_ipc"</span><span class="op">)</span>,</span>
 <span>  concurrency <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"serial"</span>, <span class="st">"inproc_concurrent"</span>, <span class="st">"multiprocess_parallel"</span><span class="op">)</span>,</span>
-<span>  future_globals <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  future_globals <span class="op">=</span> <span class="st">"auto"</span>,</span>
 <span>  future_packages <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  future_seed <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  future_stdout <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -81,9 +81,13 @@ for process-isolated chunk work and requires <code>marshalling = "arrow_ipc"</co
 
 
 <dt id="arg-future-globals-future-packages-future-seed-future-stdout-future-conditions-future-timeout">future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout<a class="anchor" aria-label="anchor" href="#arg-future-globals-future-packages-future-seed-future-stdout-future-conditions-future-timeout"></a></dt>
-<dd><p>Options forwarded to <code><a href="https://future.futureverse.org/reference/future.html" class="external-link">future::future()</a></code> for <code>arrow_ipc + multiprocess_parallel</code> registrations. Use <code>future_packages</code> for packages
-that workers should attach and <code>future_globals</code> when automatic global
-capture needs help.</p></dd>
+<dd><p>Options forwarded to <code><a href="https://future.futureverse.org/reference/future.html" class="external-link">future::future()</a></code> for <code>arrow_ipc + multiprocess_parallel</code> registrations. By default (<code>future_globals = "auto"</code>),
+Rducks discovers UDF globals once at registration-wrapper creation and then
+sends explicit worker state per chunk, avoiding per-chunk automatic global
+discovery. Use <code>future_packages</code> for packages that workers should attach,
+<code>future_globals = TRUE</code> for Future's per-task discovery, <code>FALSE</code> for only
+Rducks' required task state, or a character vector/named list for explicit
+extra globals.</p></dd>
 
 </dl></div>
     <div class="section level2">
