@@ -51,14 +51,14 @@ rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
   )
 }
 
-rducks_future_options <- function(globals = TRUE,
+rducks_future_options <- function(globals = "auto",
                                   packages = NULL,
                                   seed = FALSE,
                                   stdout = FALSE,
                                   conditions = "condition",
                                   timeout = NULL) {
   if (!(isTRUE(globals) || identical(globals, FALSE) || is.character(globals) || is.list(globals))) {
-    stop("future_globals must be TRUE, FALSE, a character vector, or a named list", call. = FALSE)
+    stop("future_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
   }
   if (!is.null(packages) && !is.character(packages)) {
     stop("future_packages must be NULL or a character vector", call. = FALSE)
@@ -121,14 +121,18 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   for process-isolated chunk work and requires `marshalling = "arrow_ipc"`.
 #' @param future_globals,future_packages,future_seed,future_stdout,future_conditions,future_timeout
 #'   Options forwarded to `future::future()` for `arrow_ipc +
-#'   multiprocess_parallel` registrations. Use `future_packages` for packages
-#'   that workers should attach and `future_globals` when automatic global
-#'   capture needs help.
+#'   multiprocess_parallel` registrations. By default (`future_globals = "auto"`),
+#'   Rducks discovers UDF globals once at registration-wrapper creation and then
+#'   sends explicit worker state per chunk, avoiding per-chunk automatic global
+#'   discovery. Use `future_packages` for packages that workers should attach,
+#'   `future_globals = TRUE` for Future's per-task discovery, `FALSE` for only
+#'   Rducks' required task state, or a character vector/named list for explicit
+#'   extra globals.
 #' @return An object of class `rducks_execution_plan`.
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
                                   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-                                  future_globals = TRUE,
+                                  future_globals = "auto",
                                   future_packages = NULL,
                                   future_seed = FALSE,
                                   future_stdout = FALSE,

@@ -417,6 +417,11 @@ Run with `lobstr` in this session:
   - Done: Arrow IPC Future wrappers cache the output schema spec at registration
     wrapper scope after the first chunk, avoiding repeated schema-to-list
     conversion on every submission.
+  - Done: `future_globals` now defaults to `"auto"`, so generic Future UDF
+    globals are discovered once at wrapper creation and chunk submissions send
+    explicit worker state instead of running automatic global discovery every
+    time. Users can still opt into per-task discovery with `TRUE`, required-state
+    only with `FALSE`, or explicit character/named-list globals.
   - Remaining: persistent workers should preload evaluator state and schemas once
     and submit only task id/UDF id/row count/IPC bytes per chunk.
 

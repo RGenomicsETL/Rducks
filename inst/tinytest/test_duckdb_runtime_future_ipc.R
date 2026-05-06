@@ -39,6 +39,22 @@ local({
   )
   rducks_set_execution_plan(con, plan)
 
+  assign(".rducks_future_ipc_global_offset", 7L, envir = .GlobalEnv)
+  assign(".rducks_future_ipc_global_helper", function(x) x + 1L, envir = .GlobalEnv)
+  on.exit(rm(
+    list = c(".rducks_future_ipc_global_offset", ".rducks_future_ipc_global_helper"),
+    envir = .GlobalEnv
+  ), add = TRUE)
+  invisible(rducks_register(
+    con, "future_ipc_auto_globals",
+    function(x) .rducks_future_ipc_global_helper(x) + .rducks_future_ipc_global_offset,
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  auto_global_out <- DBI::dbGetQuery(con, "SELECT future_ipc_auto_globals(i::INTEGER) AS x FROM range(3) AS t(i)")
+  expect_equal(auto_global_out$x, 8:10)
+
   invisible(rducks_register(
     con, "future_ipc_plus_offset",
     function(x) x + offset + as.integer(stats::median(1L)),

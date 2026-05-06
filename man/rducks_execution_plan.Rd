@@ -7,7 +7,7 @@
 rducks_execution_plan(
   marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-  future_globals = TRUE,
+  future_globals = "auto",
   future_packages = NULL,
   future_seed = FALSE,
   future_stdout = FALSE,
@@ -28,9 +28,13 @@ callback concurrency while keeping R API work serialized on the recorded
 main R thread. \code{"multiprocess_parallel"} uses the current \code{future} backend
 for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.}
 
-\item{future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout}{Options forwarded to \code{future::future()} for \code{arrow_ipc + multiprocess_parallel} registrations. Use \code{future_packages} for packages
-that workers should attach and \code{future_globals} when automatic global
-capture needs help.}
+\item{future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout}{Options forwarded to \code{future::future()} for \code{arrow_ipc + multiprocess_parallel} registrations. By default (\code{future_globals = "auto"}),
+Rducks discovers UDF globals once at registration-wrapper creation and then
+sends explicit worker state per chunk, avoiding per-chunk automatic global
+discovery. Use \code{future_packages} for packages that workers should attach,
+\code{future_globals = TRUE} for Future's per-task discovery, \code{FALSE} for only
+Rducks' required task state, or a character vector/named list for explicit
+extra globals.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.

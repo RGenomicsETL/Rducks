@@ -1567,6 +1567,20 @@ rducks_future_worker_eval_vectorized_chunk <- function(input_payload,
   )
 }
 
+rducks_future_precompute_worker_globals <- function(fun, globals) {
+  if (!identical(globals, "auto")) {
+    return(list(globals = globals, packages = character()))
+  }
+  env <- list2env(list(fun = fun), parent = environment(fun) %||% parent.frame())
+  gp <- future::getGlobalsAndPackages(quote(fun()), envir = env, globals = TRUE)
+  values <- as.list(gp$globals)
+  values$fun <- NULL
+  list(
+    globals = values,
+    packages = as.character(gp$packages %||% character())
+  )
+}
+
 rducks_future_required_globals <- function(env, globals) {
   required <- c(
     "input_payload",
@@ -1584,6 +1598,9 @@ rducks_future_required_globals <- function(env, globals) {
   }
   required_values <- mget(required, envir = env, inherits = FALSE)
   if (identical(globals, FALSE)) {
+    return(required_values)
+  }
+  if (identical(globals, "auto")) {
     return(required_values)
   }
   if (is.character(globals)) {
@@ -1644,7 +1661,8 @@ rducks_future_start_vectorized_chunk <- function(engine, input_payload, output_s
   null_handling <- engine$null_handling
   exception_handling <- engine$exception_handling
   mode <- engine$mode %||% "vectorized"
-  globals <- rducks_future_required_globals(environment(), opts$globals)
+  globals <- rducks_future_required_globals(environment(), engine$future_globals %||% opts$globals)
+  packages <- unique(c(opts$packages, engine$future_packages %||% character()))
   future::future(
     {
       worker_eval <- utils::getFromNamespace("rducks_future_worker_eval_arrow_ipc_chunk", "Rducks")
@@ -1661,7 +1679,7 @@ rducks_future_start_vectorized_chunk <- function(engine, input_payload, output_s
       )
     },
     globals = globals,
-    packages = opts$packages,
+    packages = packages,
     seed = opts$seed,
     stdout = opts$stdout,
     conditions = opts$conditions,
@@ -1828,6 +1846,12 @@ rducks_make_arrow_ipc_future_wrapper <- function(fun, spec, null_handling, excep
     rducks_make_vectorized_engine(fun, spec, null_handling, exception_handling, plan = plan)
   }
   engine$mode <- mode
+  future_state <- rducks_future_precompute_worker_globals(
+    engine$fun,
+    (engine$plan$future_options %||% rducks_future_options())$globals
+  )
+  engine$future_globals <- future_state$globals
+  engine$future_packages <- future_state$packages
   output_schema_spec_cache <- NULL
   cached_output_schema_spec <- function(output_schema) {
     if (is.null(output_schema_spec_cache)) {

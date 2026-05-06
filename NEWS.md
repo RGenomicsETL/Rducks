@@ -12,6 +12,11 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
+- The Arrow IPC Future path now defaults to one-time UDF global discovery
+  (`future_globals = "auto"`) and then submits explicit Future globals per
+  chunk. This avoids per-chunk automatic global discovery while preserving common
+  UDF globals; set `future_globals = TRUE`, `FALSE`, a character vector, or a
+  named list to override the behavior.
 - Execution plans now carry a concrete `engine_id` (for example
   `arrow_c_direct_serial`, `arrow_c_direct_main_queue`, or `ipc_future_pool`),
   and `rducks_as_execution_plan()` accepts those engine-id shortcuts while

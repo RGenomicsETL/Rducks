@@ -28,6 +28,9 @@ expect_equal(ipc$supported_call_shapes, c("scalar", "vectorized"))
 expect_false(ipc$in_process)
 expect_true(ipc$uses_r_thread)
 expect_equal(ipc$future_options$packages, "Rducks")
+expect_equal(ipc$future_options$globals, "auto")
+expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_globals = TRUE)$future_options$globals)
+expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_globals = FALSE)$future_options$globals)
 expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 
 expect_error(
