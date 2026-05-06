@@ -12,6 +12,9 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
+- Direct `arrow_c` scalar/vectorized execution is wrapped in a top-level R error
+  boundary so unexpected marshalling/allocation errors are converted into DuckDB
+  UDF errors instead of long-jumping across the callback boundary.
 - Arrow C Data result import now copies the temporary imported DuckDB vector
   into the callback-owned output vector before destroying the imported chunk,
   avoiding reliance on reference-vector lifetime semantics.

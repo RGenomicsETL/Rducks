@@ -2427,9 +2427,9 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
     return 1;
 }
 
-static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                        duckdb_data_chunk input, duckdb_vector output,
-                                        char *err_msg, size_t err_cap) {
+static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                             duckdb_data_chunk input, duckdb_vector output,
+                                             char *err_msg, size_t err_cap) {
     (void)runtime;
     idx_t n;
     int protect_count = 0;
@@ -2498,9 +2498,9 @@ fail_vectorized:
  * backends must route through a transport boundary and write DuckDB output from
  * owned non-SEXP result memory, or use a pure-native evaluator with no R calls.
  */
-static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                    duckdb_data_chunk input, duckdb_vector output,
-                                    char *err_msg, size_t err_cap) {
+static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                         duckdb_data_chunk input, duckdb_vector output,
+                                         char *err_msg, size_t err_cap) {
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
         return 0;
@@ -2511,4 +2511,75 @@ static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sc
         return 0;
     }
     return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
+}
+
+typedef struct rducks_rc_execute_context {
+    rducks_runtime_entry_t *runtime;
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk input;
+    duckdb_vector output;
+    char *err_msg;
+    size_t err_cap;
+    int ok;
+} rducks_rc_execute_context_t;
+
+static void rducks_rc_scalar_execute_toplevel(void *data) {
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    ctx->ok = rducks_rc_scalar_execute_impl(ctx->runtime, ctx->meta, ctx->input,
+                                            ctx->output, ctx->err_msg, ctx->err_cap);
+}
+
+static void rducks_rc_vectorized_execute_toplevel(void *data) {
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    ctx->ok = rducks_rc_vectorized_execute_impl(ctx->runtime, ctx->meta, ctx->input,
+                                                ctx->output, ctx->err_msg, ctx->err_cap);
+}
+
+/* The direct RC impl bodies use R allocation/protection and borrowed DuckDB
+ * callback vectors but do not acquire malloc/Arrow/DuckDB handles that require
+ * deterministic cleanup after an R allocation error. R_ToplevelExec() is used
+ * only as the callback-boundary error fence; add R_UnwindProtect() around any
+ * future native-resource section inserted into these impl paths.
+ */
+static int rducks_rc_execute_with_toplevel(rducks_rc_execute_context_t *ctx,
+                                           void (*execute)(void *), const char *fallback_error) {
+    ctx->ok = 0;
+    if (ctx->err_msg && ctx->err_cap > 0U) ctx->err_msg[0] = '\0';
+    if (!R_ToplevelExec(execute, ctx)) {
+        if (ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0]) {
+            snprintf(ctx->err_msg, ctx->err_cap, "%s", fallback_error);
+        }
+        return 0;
+    }
+    return ctx->ok;
+}
+
+static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                    duckdb_data_chunk input, duckdb_vector output,
+                                    char *err_msg, size_t err_cap) {
+    rducks_rc_execute_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.input = input;
+    ctx.output = output;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    return rducks_rc_execute_with_toplevel(&ctx, rducks_rc_scalar_execute_toplevel,
+                                           "Rducks RC scalar R function or marshal error");
+}
+
+static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                        duckdb_data_chunk input, duckdb_vector output,
+                                        char *err_msg, size_t err_cap) {
+    rducks_rc_execute_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.input = input;
+    ctx.output = output;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    return rducks_rc_execute_with_toplevel(&ctx, rducks_rc_vectorized_execute_toplevel,
+                                           "Rducks RC vectorized R function or marshal error");
 }
