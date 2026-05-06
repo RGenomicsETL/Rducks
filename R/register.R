@@ -165,6 +165,7 @@ rducks_register <- function(con, name, fun, args, returns,
   } else {
     stop("Rducks execution plan ", plan$plan_id, " is not implemented for local registration", call. = FALSE)
   }
+  rducks_attach_runtime_anchor(con)
   # The SQL registration call below is synchronous. `eval_ref` is held in a
   # temporary R-side registry while the DuckDB extension looks it up by opaque
   # evaluator id + token and then preserves it in per-UDF metadata with

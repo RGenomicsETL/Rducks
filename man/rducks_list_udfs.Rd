@@ -13,9 +13,10 @@ rducks_list_udfs(con)
 A data frame with one row per Rducks UDF registered on \code{con}.
 }
 \description{
-Returns one row per UDF registered through \code{\link[=rducks_register]{rducks_register()}} on a
-connection, including the same registration metadata and native counters as
-\code{\link[=rducks_explain_udf]{rducks_explain_udf()}}. This is an Rducks registry view, not a complete DuckDB
-catalog listing: functions registered by other extensions or raw SQL are not
-included.
+Returns one row per UDF registered through \code{\link[=rducks_register]{rducks_register()}} in the current
+DuckDB database runtime, including the same registration metadata and native
+counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}. This is an Rducks registry view, not a
+complete DuckDB catalog listing: functions registered by other extensions or
+raw SQL are not included. Because DuckDB's function catalog is database
+scoped, sibling DBI connections to the same database runtime share this view.
 }

@@ -7,8 +7,17 @@ rducks_registration_store <- function() {
   store
 }
 
-rducks_connection_registration_store <- function(con, create = TRUE) {
-  key <- rducks_connection_key(con)
+rducks_database_registration_key <- function(con, required = TRUE) {
+  rducks_runtime_token(con, required = required)
+}
+
+rducks_database_registration_store <- function(con, create = TRUE) {
+  key <- if (isTRUE(create)) {
+    rducks_database_registration_key(con, required = TRUE)
+  } else {
+    rducks_attached_runtime_token(con)
+  }
+  if (is.na(key)) return(NULL)
   store <- rducks_registration_store()
   if (!exists(key, envir = store, inherits = FALSE)) {
     if (!create) return(NULL)
@@ -18,7 +27,7 @@ rducks_connection_registration_store <- function(con, create = TRUE) {
 }
 
 rducks_store_registration <- function(registration) {
-  env <- rducks_connection_registration_store(registration$connection, create = TRUE)
+  env <- rducks_database_registration_store(registration$connection, create = TRUE)
   record <- list(
     name = registration$spec$name,
     mode = registration$spec$mode,
@@ -35,7 +44,7 @@ rducks_store_registration <- function(registration) {
 }
 
 rducks_get_registration_record <- function(con, name) {
-  env <- rducks_connection_registration_store(con, create = FALSE)
+  env <- rducks_database_registration_store(con, create = FALSE)
   if (is.null(env) || !exists(name, envir = env, inherits = FALSE)) {
     return(NULL)
   }
@@ -176,18 +185,19 @@ rducks_explain_udf <- function(con, name) {
 
 #' List registered Rducks UDFs
 #'
-#' Returns one row per UDF registered through [rducks_register()] on a
-#' connection, including the same registration metadata and native counters as
-#' [rducks_explain_udf()]. This is an Rducks registry view, not a complete DuckDB
-#' catalog listing: functions registered by other extensions or raw SQL are not
-#' included.
+#' Returns one row per UDF registered through [rducks_register()] in the current
+#' DuckDB database runtime, including the same registration metadata and native
+#' counters as [rducks_explain_udf()]. This is an Rducks registry view, not a
+#' complete DuckDB catalog listing: functions registered by other extensions or
+#' raw SQL are not included. Because DuckDB's function catalog is database
+#' scoped, sibling DBI connections to the same database runtime share this view.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @return A data frame with one row per Rducks UDF registered on `con`.
 #' @export
 rducks_list_udfs <- function(con) {
   rducks_assert_duckdb_connection(con)
-  env <- rducks_connection_registration_store(con, create = FALSE)
+  env <- rducks_database_registration_store(con, create = FALSE)
   if (is.null(env)) {
     return(rducks_explain_udf_empty())
   }

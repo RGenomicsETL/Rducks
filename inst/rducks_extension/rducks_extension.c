@@ -111,6 +111,8 @@ typedef struct rducks_type_desc {
 typedef struct rducks_runtime_entry {
     duckdb_database database;
     duckdb_connection connection;
+    uint64_t runtime_id;
+    uint64_t generation;
     int registration_surface_ready;
     char main_thread_token[128];
     int main_thread_token_set;
@@ -183,6 +185,10 @@ typedef struct rducks_r_scalar_local_state {
 static rducks_runtime_entry_t **g_runtime_entries = NULL;
 static idx_t g_runtime_count = 0;
 static idx_t g_runtime_capacity = 0;
+/* Process-local runtime ids avoid using raw duckdb_database pointer values as
+ * R-side keys. They are intentionally not durable across R sessions.
+ */
+static uint64_t g_runtime_next_process_id = 1;
 
 /* Locking discipline: avoid nesting the global runtime registry lock and a
  * runtime queue lock. Queue operations should release runtime->queue_lock before
@@ -215,6 +221,15 @@ static rducks_runtime_entry_t *rducks_runtime_find_locked(duckdb_database databa
         if (g_runtime_entries[i] && g_runtime_entries[i]->database == database) return g_runtime_entries[i];
     }
     return NULL;
+}
+
+static int rducks_registration_surface_available(duckdb_connection connection) {
+    duckdb_prepared_statement stmt = NULL;
+    duckdb_state rc;
+    if (!connection) return 0;
+    rc = duckdb_prepare(connection, "SELECT rducks_version()", &stmt);
+    if (stmt) duckdb_destroy_prepare(&stmt);
+    return rc == DuckDBSuccess;
 }
 
 static int rducks_runtime_reserve_locked(idx_t wanted) {
@@ -281,11 +296,37 @@ static int rducks_runtime_configure_connection(duckdb_connection connection, cha
     return 1;
 }
 
-static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database database, char *err, size_t err_cap) {
+static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database database, duckdb_connection incoming_connection,
+                                                            char *err, size_t err_cap) {
     rducks_runtime_entry_t *entry;
+    int ready = 0;
     if (!database) {
         snprintf(err, err_cap, "Rducks extension did not receive a DuckDB database handle");
         return NULL;
+    }
+
+    rducks_runtime_lock();
+    entry = rducks_runtime_find_locked(database);
+    ready = entry ? entry->registration_surface_ready : 0;
+    rducks_runtime_unlock();
+    if (entry) {
+        if (!ready || rducks_registration_surface_available(incoming_connection)) {
+            return entry;
+        }
+        /* A retained process-lifetime runtime entry matched the raw database
+         * address, but the incoming connection's catalog does not contain the
+         * Rducks surface that should have been registered for that runtime.
+         * Treat this as a stale database-address alias: keep the old entry
+         * leaked/inert for safety, but detach it from future lookups so the new
+         * database gets a fresh runtime id/token instead of stale R metadata.
+         */
+        rducks_runtime_lock();
+        if (entry->database == database && entry->registration_surface_ready) {
+            entry->database = NULL;
+            entry->registration_surface_ready = 0;
+            entry->generation++;
+        }
+        rducks_runtime_unlock();
     }
 
     rducks_runtime_lock();
@@ -308,6 +349,8 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
     }
     memset(entry, 0, sizeof(*entry));
     entry->database = database;
+    entry->runtime_id = g_runtime_next_process_id++;
+    entry->generation = 1;
     entry->execution_backend = RDUCKS_BACKEND_SINGLE;
     if (!rducks_runtime_queue_init_entry(entry)) {
         duckdb_free(entry);

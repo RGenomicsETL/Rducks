@@ -49,6 +49,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
     rducks_configure_duckdb_threads(con, threads = 1L, external_threads = 1L)
   }
 
+  rducks_attach_runtime_anchor(con)
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   invisible(con)
 }
@@ -103,6 +104,33 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
   plan <- rducks_execution_plan(current$marshalling, "serial")
   rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
   invisible(con)
+}
+
+#' Detach Rducks connection-local state
+#'
+#' Detaches Rducks' connection-local R state for `con`. This clears the current
+#' default execution plan and releases this connection's R-side runtime anchor.
+#' It does not drop DuckDB catalog functions, unregister UDFs, or release
+#' native-owned R closures that are still referenced by database-scoped catalog
+#' metadata. If sibling DBI connections are attached to the same DuckDB database
+#' runtime, their database-scoped Rducks registration metadata remains visible.
+#'
+#' Call [rducks_enable()] again before using `con` for further Rducks
+#' registrations or connection-local plan changes.
+#'
+#' @param con A `duckdb_connection`.
+#' @return `con`, invisibly.
+#' @export
+rducks_release <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  rducks_detach_connection_token(con)
+  invisible(con)
+}
+
+#' @rdname rducks_release
+#' @export
+rducks_detach <- function(con) {
+  rducks_release(con)
 }
 
 #' Inspect in-process queue counters
@@ -276,6 +304,18 @@ rducks_connection_threads <- function(con) {
 
 rducks_connection_external_threads <- function(con) {
   rducks_connection_integer_setting(con, "external_threads")
+}
+
+rducks_runtime_token <- function(con, required = TRUE) {
+  rducks_assert_duckdb_connection(con)
+  token <- tryCatch(
+    DBI::dbGetQuery(con, "SELECT rducks_runtime_token() AS token")$token[[1L]],
+    error = function(e) NA_character_
+  )
+  if (is.na(token) && isTRUE(required)) {
+    stop("Rducks is not enabled on this DuckDB connection", call. = FALSE)
+  }
+  token
 }
 
 rducks_assert_single_thread <- function(con) {

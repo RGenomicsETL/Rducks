@@ -293,17 +293,31 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                                        DUCKDB_TYPE_BOOLEAN, rducks_thread_is_main_scalar);
 }
 
-static bool rducks_register_version(duckdb_connection con) {
-    return rducks_register_noarg_scalar(con, "rducks_version", DUCKDB_TYPE_VARCHAR, rducks_version_scalar, false);
+static void rducks_runtime_token_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    char token[96];
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+    rducks_runtime_lock();
+    snprintf(token, sizeof(token), "rducks-runtime-%llu-%llu",
+             (unsigned long long)runtime->runtime_id,
+             (unsigned long long)runtime->generation);
+    rducks_runtime_unlock();
+    for (idx_t i = 0; i < n; i++) {
+        duckdb_vector_assign_string_element(output, i, token);
+    }
 }
 
-static int rducks_registration_surface_available(duckdb_connection connection) {
-    duckdb_prepared_statement stmt = NULL;
-    duckdb_state rc;
-    if (!connection) return 0;
-    rc = duckdb_prepare(connection, "SELECT rducks_version()", &stmt);
-    if (stmt) duckdb_destroy_prepare(&stmt);
-    return rc == DuckDBSuccess;
+static bool rducks_register_runtime_token(duckdb_connection con, rducks_runtime_entry_t *runtime) {
+    return rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_token", DUCKDB_TYPE_VARCHAR,
+                                           rducks_runtime_token_scalar, false);
+}
+
+static bool rducks_register_version(duckdb_connection con) {
+    return rducks_register_noarg_scalar(con, "rducks_version", DUCKDB_TYPE_VARCHAR, rducks_version_scalar, false);
 }
 
 static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, duckdb_database database,
@@ -349,7 +363,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             database = *db_ptr;
         }
     }
-    runtime = rducks_runtime_get_or_create(database, err, sizeof(err));
+    runtime = rducks_runtime_get_or_create(database, connection, err, sizeof(err));
     if (!runtime) {
         if (access) {
             access->set_error(info, err[0] ? err : "failed to initialize Rducks runtime");
@@ -367,7 +381,8 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             }
             return false;
         }
-        if (!rducks_register_version(connection) || !rducks_register_queue_stats(connection, runtime) ||
+        if (!rducks_register_version(connection) || !rducks_register_runtime_token(connection, runtime) ||
+            !rducks_register_queue_stats(connection, runtime) ||
             !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
             !rducks_register_main_thread_token_surface(connection, runtime) ||
             !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_udf_stat_surface(connection, runtime) ||

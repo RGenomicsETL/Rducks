@@ -1,6 +1,7 @@
 if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  expect_equal(NROW(rducks_list_udfs(con)), 0L)
   rducks_enable(con, threads = "single")
 
   empty <- rducks_list_udfs(con)

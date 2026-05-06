@@ -186,12 +186,27 @@ Run with `lobstr` in this session:
 ## P0: connection identity and lifecycle
 
 - [x] Replace SEXP-address keying for R-side connection state.
-  - Current implementation: Rducks-generated connection tokens are assigned per
-    duckdb-r `conn_ref` external pointer and used for
-    `.rducks_state$connection_plans` and `.rducks_state$registrations`.
-  - Current lifecycle anchor: `reg.finalizer(conn_ref, ...)` removes token-keyed
-    R-side stores when the DuckDB connection external pointer is collected.
+  - Current implementation: Rducks-generated connection attachment tokens are
+    assigned per duckdb-r `conn_ref` external pointer and used for
+    `.rducks_state$connection_plans` only.
+  - Current lifecycle anchor: `reg.finalizer(conn_ref, ...)` removes the
+    connection-local plan store when the DuckDB connection external pointer is
+    collected.
   - Covered by `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
+
+- [x] Make R-side registration metadata database-runtime scoped.
+  - The native extension exposes an Rducks-owned process-local runtime token via
+    `rducks_runtime_token()`; it is based on an internal runtime id/generation,
+    not a raw `duckdb_database` pointer, DuckDB connection id, or R object
+    address.
+  - `.rducks_state$registrations` is keyed by that database runtime token, so
+    sibling DBI connections to the same DuckDB catalog share the same Rducks UDF
+    registry view.
+  - R-side runtime anchors keep database-scoped registration metadata while at
+    least one Rducks-enabled connection attachment is live; when the last
+    attachment external pointer is collected, the R-side registry cache is
+    removed without dropping DuckDB catalog functions or releasing native-owned
+    closures.
 
 - [x] Remove raw SEXP pointer-through-SQL evaluator registration.
   - `rducks_register()` now stores the evaluator in a temporary R-side registry
@@ -199,26 +214,26 @@ Run with `lobstr` in this session:
   - Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
     error instead of letting native code cast arbitrary integers to `SEXP`.
 
-- [ ] Add native runtime token/anchor accounting.
-  - Target: a stable Rducks runtime token from the native extension, for example
-    `SELECT rducks_connection_token()` or a `.Call` equivalent.
-  - Token should be Rducks-owned and generation-safe, e.g. `(runtime_id,
-    generation)`, not just a raw R object address, raw `duckdb_database` wrapper
-    pointer, or DuckDB connection id.
-  - Add native anchor accounting separately from the R-side cleanup now in place.
-  - Acceptance: repeated connect/register/disconnect/reconnect loops cannot make
-    a new connection see stale native runtime state.
+- [ ] Add native runtime release accounting.
+  - The runtime token and R-side anchors exist, but native runtime entries and
+    extension-owned connections are still retained for the process lifetime.
+  - Add native release accounting separately from the R-side cleanup now in
+    place.
+  - Acceptance: repeated connect/register/disconnect/reconnect loops cannot leak
+    unbounded native runtime entries or retain stale native backend state.
 
-- [ ] Implement idempotent runtime release.
-  - Target API: `rducks_release(con)` plus weakref-driven runtime-anchor release.
-  - Native cleanup: invalidate/remove runtime entry only when safe, drain/reset
-    queue state, disconnect extension-owned DuckDB connection, detach UDF
-    registry bookkeeping.
-  - R cleanup: remove token-keyed plan and registration stores.
-  - R-function cleanup: either keep the current leak-until-session-end policy, or
-    mark UDF metadata released/inert and call `R_ReleaseObject()` from the R
-    weakref finalizer on the recorded main R thread. Do not release preserved R
-    functions while catalog metadata can still call them.
+- [x] Implement non-destructive R-side connection release/detach.
+  - `rducks_release(con)` / `rducks_detach(con)` now remove this connection's
+    R-side attachment token, current/default plan, and runtime anchor.
+  - Release is idempotent and non-destructive: it does not `DROP FUNCTION`, does
+    not unregister database-catalog UDFs, and does not release native-owned R
+    closures referenced by DuckDB catalog metadata.
+  - If sibling DBI connections are still attached to the same database runtime,
+    the shared database-scoped registration cache remains visible. When the last
+    R-side anchor is released or finalized, only the R registration cache is
+    removed.
+  - Native runtime entries and extension-owned connections still need separate
+    release accounting; see the native runtime release item above.
   - Must not call DBI/SQL from finalizers.
   - Must not call R API from off-main native destructors.
 
@@ -226,8 +241,9 @@ Run with `lobstr` in this session:
   permits it.
   - If subclass/wrapper is chosen, implement a `dbDisconnect()` method that calls
     `rducks_release()` before delegating to duckdb-r.
-  - If plain `duckdb_connection` is retained, document explicit release and add
-    tests showing idempotency.
+  - If plain `duckdb_connection` is retained, document explicit release. Basic
+    idempotent/non-destructive release behavior is covered in
+    `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
 - [ ] Add repeated lifecycle tests.
   - Include repeated `:memory:` databases, extension reloads, UDF registration,

@@ -223,9 +223,120 @@ rducks_next_connection_token <- function() {
   paste0("rducks-connection-", counter)
 }
 
+rducks_existing_connection_token <- function(con) {
+  conn_ref <- rducks_connection_ref(con)
+  ref_key <- rducks_connection_ref_key(conn_ref)
+  token_store <- .rducks_state$connection_ref_tokens
+  if (is.null(token_store) || !exists(ref_key, envir = token_store, inherits = FALSE)) {
+    return(NA_character_)
+  }
+  get(ref_key, envir = token_store, inherits = FALSE)
+}
+
+rducks_attached_runtime_token <- function(con) {
+  token <- rducks_existing_connection_token(con)
+  if (is.na(token)) return(NA_character_)
+  runtime_store <- .rducks_state$connection_runtime_tokens
+  if (is.null(runtime_store) || !exists(token, envir = runtime_store, inherits = FALSE)) {
+    return(NA_character_)
+  }
+  get(token, envir = runtime_store, inherits = FALSE)
+}
+
+rducks_runtime_anchor_store <- function() {
+  store <- .rducks_state$runtime_anchors
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv())
+    .rducks_state$runtime_anchors <- store
+  }
+  store
+}
+
+rducks_connection_runtime_token_store <- function() {
+  store <- .rducks_state$connection_runtime_tokens
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv())
+    .rducks_state$connection_runtime_tokens <- store
+  }
+  store
+}
+
 rducks_remove_store_entry <- function(store, key) {
   if (!is.null(store) && exists(key, envir = store, inherits = FALSE)) {
     rm(list = key, envir = store)
+  }
+  invisible(NULL)
+}
+
+rducks_runtime_anchor_empty <- function(anchor_env) {
+  is.null(anchor_env) || !length(ls(envir = anchor_env, all.names = TRUE))
+}
+
+rducks_cleanup_runtime_anchor <- function(db_token, token) {
+  rducks_remove_store_entry(.rducks_state$connection_runtime_tokens, token)
+  store <- .rducks_state$runtime_anchors
+  if (is.null(store) || !exists(db_token, envir = store, inherits = FALSE)) {
+    return(invisible(NULL))
+  }
+  anchor_env <- get(db_token, envir = store, inherits = FALSE)
+  rducks_remove_store_entry(anchor_env, token)
+  if (rducks_runtime_anchor_empty(anchor_env)) {
+    rducks_remove_store_entry(store, db_token)
+    rducks_remove_store_entry(.rducks_state$registrations, db_token)
+  }
+  invisible(NULL)
+}
+
+rducks_runtime_anchor_finalizer <- function(db_token, token) {
+  env <- new.env(parent = environment(rducks_runtime_anchor_finalizer))
+  env$db_token <- db_token
+  env$token <- token
+  finalizer <- function(e) {
+    finalizer_env <- parent.env(environment())
+    rducks_cleanup_runtime_anchor(finalizer_env$db_token, finalizer_env$token)
+    invisible(NULL)
+  }
+  environment(finalizer) <- env
+  finalizer
+}
+
+rducks_register_runtime_anchor <- function(conn_ref, db_token, token) {
+  store <- rducks_runtime_anchor_store()
+  if (!exists(db_token, envir = store, inherits = FALSE)) {
+    assign(db_token, new.env(parent = emptyenv()), envir = store)
+  }
+  anchor_env <- get(db_token, envir = store, inherits = FALSE)
+  assign(token, db_token, envir = rducks_connection_runtime_token_store())
+  if (!exists(token, envir = anchor_env, inherits = FALSE)) {
+    assign(token, TRUE, envir = anchor_env)
+    reg.finalizer(conn_ref, rducks_runtime_anchor_finalizer(db_token, token), onexit = TRUE)
+  }
+  invisible(db_token)
+}
+
+rducks_attach_runtime_anchor <- function(con) {
+  conn_ref <- rducks_connection_ref(con)
+  token <- rducks_connection_key(con)
+  db_token <- rducks_runtime_token(con)
+  rducks_register_runtime_anchor(conn_ref, db_token, token)
+}
+
+rducks_detach_connection_token <- function(con) {
+  conn_ref <- rducks_connection_ref(con)
+  ref_key <- rducks_connection_ref_key(conn_ref)
+  token_store <- .rducks_state$connection_ref_tokens
+  if (is.null(token_store) || !exists(ref_key, envir = token_store, inherits = FALSE)) {
+    return(invisible(NULL))
+  }
+  token <- get(ref_key, envir = token_store, inherits = FALSE)
+  db_token <- NULL
+  runtime_store <- .rducks_state$connection_runtime_tokens
+  if (!is.null(runtime_store) && exists(token, envir = runtime_store, inherits = FALSE)) {
+    db_token <- get(token, envir = runtime_store, inherits = FALSE)
+  }
+  rducks_cleanup_connection_token(ref_key, token)
+  if (!is.null(db_token)) {
+    rducks_cleanup_runtime_anchor(db_token, token)
   }
   invisible(NULL)
 }
@@ -239,7 +350,6 @@ rducks_cleanup_connection_token <- function(ref_key, token) {
     }
   }
   rducks_remove_store_entry(.rducks_state$connection_plans, token)
-  rducks_remove_store_entry(.rducks_state$registrations, token)
   invisible(NULL)
 }
 
