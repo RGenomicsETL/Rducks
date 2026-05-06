@@ -336,6 +336,9 @@ Run with `lobstr` in this session:
   - `rducks_parallel_range`, `rducks_parallel_thread_probe`,
     `rducks_queue_self_test`, and `rducks_thread_is_main` no longer register as
     production SQL functions by default.
+  - The production backend setter remains for R-side plan control but now
+    requires the recorded main-thread capability payload; bare manual SQL calls
+    cannot mutate runtime backend state.
 
 - [ ] Add counter reset support.
   - Reset one UDF or all UDF counters without unregistering the UDF.

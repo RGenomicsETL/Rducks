@@ -1,5 +1,7 @@
 /* Included by ../rducks_extension.c. */
 
+static int rducks_is_recorded_main_thread(rducks_runtime_entry_t *runtime);
+
 static void rducks_current_thread_token(char *buf, size_t cap) {
     if (!buf || cap == 0U) return;
 #ifdef _WIN32
@@ -26,6 +28,10 @@ static int rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const c
     value = strtoul(token + strlen(prefix), &end, 10);
     if (errno != 0 || !end || *end != '\0') return 0;
     rducks_runtime_lock();
+    if (runtime->main_thread_token_set && strcmp(runtime->main_thread_token, token) != 0) {
+        rducks_runtime_unlock();
+        return 0;
+    }
     snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token);
     runtime->main_thread_id = (DWORD)value;
     runtime->main_thread_token_set = 1;
@@ -42,12 +48,33 @@ static int rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const c
     if (errno != 0 || !end || *end != '\0' || value == 0ULL) return 0;
     thread_id = (const pthread_t *)(uintptr_t)value;
     rducks_runtime_lock();
+    if (runtime->main_thread_token_set && strcmp(runtime->main_thread_token, token) != 0) {
+        rducks_runtime_unlock();
+        return 0;
+    }
     snprintf(runtime->main_thread_token, sizeof(runtime->main_thread_token), "%s", token);
     runtime->main_thread_id = thread_id;
     runtime->main_thread_token_set = 1;
     rducks_runtime_unlock();
     return 1;
 #endif
+}
+
+static int rducks_authorize_main_thread_payload(rducks_runtime_entry_t *runtime,
+                                                char *payload, const char **value_out) {
+    char *sep;
+    int ok = 0;
+    if (value_out) *value_out = NULL;
+    if (!runtime || !payload || !value_out) return 0;
+    sep = strchr(payload, '\n');
+    if (!sep || sep == payload || !sep[1]) return 0;
+    *sep = '\0';
+    rducks_runtime_lock();
+    ok = runtime->main_thread_token_set && strcmp(runtime->main_thread_token, payload) == 0;
+    rducks_runtime_unlock();
+    if (!ok || !rducks_is_recorded_main_thread(runtime)) return 0;
+    *value_out = sep + 1;
+    return 1;
 }
 
 static int rducks_is_recorded_main_thread(rducks_runtime_entry_t *runtime) {

@@ -11,6 +11,8 @@ local({
   rducks_enable(con, threads = "single")
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_thread_is_main(1::UBIGINT) AS ok"), "does not exist|not exist|Catalog Error")
   expect_error(DBI::dbGetQuery(con, "SELECT * FROM rducks_parallel_range(1::UBIGINT)"), "does not exist|not exist|Catalog Error")
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_set_execution_backend('single') AS ok"), "main-thread capability")
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_set_main_thread_token('posix-pthread-ptr:1') AS ok"), "invalid Rducks main thread token")
 })
 Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 

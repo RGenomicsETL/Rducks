@@ -322,15 +322,22 @@ static void rducks_set_execution_backend_scalar(duckdb_function_info info, duckd
     }
 
     for (idx_t i = 0; i < n; i++) {
-        char *backend = rducks_copy_duckdb_string(&backends[i]);
+        char *payload = rducks_copy_duckdb_string(&backends[i]);
+        const char *backend = NULL;
         char err[256];
         err[0] = '\0';
-        if (!backend) {
+        if (!payload) {
             duckdb_scalar_function_set_error(info, "out of memory setting Rducks execution backend");
             return;
         }
+        if (!rducks_authorize_main_thread_payload(runtime, payload, &backend)) {
+            free(payload);
+            duckdb_scalar_function_set_error(info,
+                                            "Rducks execution backend updates require the recorded main-thread capability");
+            return;
+        }
         out[i] = rducks_set_execution_backend(runtime, backend, err, sizeof(err)) ? true : false;
-        free(backend);
+        free(payload);
         if (!out[i]) {
             duckdb_scalar_function_set_error(info, err[0] ? err : "failed to set Rducks execution backend");
             return;

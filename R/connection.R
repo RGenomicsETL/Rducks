@@ -359,9 +359,10 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
 }
 
 rducks_set_execution_backend <- function(con, backend) {
+  payload <- paste(rducks_main_thread_token(), backend, sep = "\n")
   ok <- DBI::dbGetQuery(
     con,
-    sprintf("SELECT rducks_set_execution_backend(%s) AS ok", rducks_sql_string(backend))
+    sprintf("SELECT rducks_set_execution_backend(%s) AS ok", rducks_sql_string(payload))
   )$ok[[1L]]
   if (!isTRUE(ok)) {
     stop("failed to set Rducks execution backend to ", backend, call. = FALSE)

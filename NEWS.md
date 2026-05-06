@@ -12,6 +12,10 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
+- The SQL execution-backend setter now requires the recorded main-thread
+  capability carried by Rducks' R wrapper, and the main-thread token can no
+  longer be rebound to a different token after initialization. Manual SQL calls
+  with a bare backend string fail instead of mutating runtime execution state.
 - Dev/test-only SQL probes (`rducks_parallel_range`,
   `rducks_parallel_thread_probe`, `rducks_queue_self_test`, and
   `rducks_thread_is_main`) are now registered only when
