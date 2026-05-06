@@ -101,6 +101,7 @@ rducks_explain_udf_empty <- function() {
     evaluator = character(),
     args = character(),
     returns = character(),
+    r_side_record = logical(),
     null_handling = character(),
     exception_handling = character(),
     side_effects = logical(),
@@ -139,6 +140,7 @@ rducks_explain_udf_row <- function(con, name) {
     evaluator = unname(stats[["eval_mode"]]),
     args = if (!is.null(record)) paste(record$args, collapse = ",") else NA_character_,
     returns = if (!is.null(record)) record$returns else NA_character_,
+    r_side_record = !is.null(record),
     null_handling = if (!is.null(record)) record$null_handling else NA_character_,
     exception_handling = if (!is.null(record)) record$exception_handling else NA_character_,
     side_effects = if (!is.null(record)) isTRUE(record$side_effects) else NA,
@@ -165,7 +167,10 @@ rducks_explain_udf_row <- function(con, name) {
 #' Explain a registered Rducks UDF
 #'
 #' Returns the R-side registration metadata together with native execution
-#' counters for a UDF registered by [rducks_register()]. The native counters are
+#' counters for a UDF registered by [rducks_register()]. The `r_side_record`
+#' column is `FALSE` when native catalog metadata is still present but the
+#' connection-local R registry view was detached or is otherwise unavailable.
+#' The native counters are
 #' useful for checking that a plan executed through its requested evaluator
 #' instead of silently falling back: for example, an `arrow_c` scalar UDF should
 #' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.

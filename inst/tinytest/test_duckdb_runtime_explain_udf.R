@@ -7,9 +7,11 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   empty <- rducks_list_udfs(con)
   expect_equal(NROW(empty), 0L)
   expect_true("name" %in% names(empty))
+  expect_true("r_side_record" %in% names(empty))
 
   invisible(rducks_register(con, "explain_plus_one", function(x) x + 1L, INTEGER, INTEGER))
   before <- rducks_explain_udf(con, "explain_plus_one")
+  expect_true(before$r_side_record[[1L]])
   expect_equal(before$mode, "scalar")
   expect_equal(before$plan_id, "arrow_r+serial")
   expect_equal(before$native_marshalling, "arrow_r")
@@ -44,6 +46,7 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_equal(listed$name, c("explain_plus_one", "explain_plus_two_c"))
   expect_equal(listed$native_marshalling, c("arrow_r", "arrow_c"))
   expect_equal(listed$plan_id, c("arrow_r+serial", "arrow_c+serial"))
+  expect_true(all(listed$r_side_record))
   expect_true(listed$dispatch_chunks[[1L]] >= 1)
   expect_true(listed$dispatch_chunks[[2L]] >= 1)
 

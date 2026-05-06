@@ -16,7 +16,10 @@ A one-row data frame with registration metadata and native counters.
 }
 \description{
 Returns the R-side registration metadata together with native execution
-counters for a UDF registered by \code{\link[=rducks_register]{rducks_register()}}. The native counters are
+counters for a UDF registered by \code{\link[=rducks_register]{rducks_register()}}. The \code{r_side_record}
+column is \code{FALSE} when native catalog metadata is still present but the
+connection-local R registry view was detached or is otherwise unavailable.
+The native counters are
 useful for checking that a plan executed through its requested evaluator
 instead of silently falling back: for example, an \code{arrow_c} scalar UDF should
 increment \code{arrow_c_chunks} and leave \code{arrow_r_chunks} unchanged.

@@ -393,11 +393,10 @@ Run with `lobstr` in this session:
     backend so `rducks_current_execution_plan()` can be cross-checked against
     native backend state.
 
-- [ ] Mark or skip missing R-side registration records.
-  - Current `rducks_explain_udf_row()` can return rows with `NA` metadata when
-    the R-side record is absent.
-  - Options: add `rducks_managed = TRUE/FALSE`, or make `rducks_list_udfs()` omit
-    rows without current-session Rducks metadata.
+- [x] Mark or skip missing R-side registration records.
+  - `rducks_explain_udf()`/`rducks_list_udfs()` include `r_side_record` so rows
+    whose native catalog metadata outlives the detached R-side registry are
+    explicit instead of silently appearing as ordinary managed records.
 
 - [ ] Generate/discover native UDF stat fields instead of mirroring names by
   hand in R and C.

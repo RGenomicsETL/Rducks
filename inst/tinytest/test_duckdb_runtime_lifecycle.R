@@ -114,6 +114,9 @@ local({
   rducks_release(con2)
   expect_false(exists(db_token2, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
   expect_equal(DBI::dbGetQuery(con2, "SELECT rducks_lifecycle_con2(21::INTEGER) AS x")$x, 42L)
+  detached_explain <- rducks_explain_udf(con2, "rducks_lifecycle_con2")
+  expect_false(detached_explain$r_side_record[[1L]])
+  expect_equal(detached_explain$name[[1L]], "rducks_lifecycle_con2")
 
   DBI::dbDisconnect(con2, shutdown = TRUE)
 })
