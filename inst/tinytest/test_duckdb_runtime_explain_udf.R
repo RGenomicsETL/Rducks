@@ -3,6 +3,10 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   expect_equal(NROW(rducks_list_udfs(con)), 0L)
   rducks_enable(con, threads = "single")
+  native_fields <- Rducks:::rducks_native_udf_stat_fields(con)
+  sql_fields <- strsplit(DBI::dbGetQuery(con, "SELECT rducks_udf_stat_fields() AS fields")$fields[[1L]], "\n", fixed = TRUE)[[1L]]
+  expect_true("dispatch_chunks" %in% native_fields)
+  expect_equal(native_fields, sql_fields)
 
   empty <- rducks_list_udfs(con)
   expect_equal(NROW(empty), 0L)

@@ -51,7 +51,7 @@ rducks_get_registration_record <- function(con, name) {
   get(name, envir = env, inherits = FALSE)
 }
 
-rducks_native_udf_stat_fields <- c(
+rducks_native_udf_stat_fields_fallback <- c(
   "name",
   "eval_mode",
   "marshalling",
@@ -73,8 +73,18 @@ rducks_native_udf_stat_fields <- c(
   "ripc_inflight_max"
 )
 
+rducks_native_udf_stat_fields <- function(con) {
+  fields <- tryCatch({
+    raw <- DBI::dbGetQuery(con, "SELECT rducks_udf_stat_fields() AS fields")$fields[[1L]]
+    strsplit(raw, "\n", fixed = TRUE)[[1L]]
+  }, error = function(e) rducks_native_udf_stat_fields_fallback)
+  fields <- fields[nzchar(fields)]
+  if (identical(fields, rducks_native_udf_stat_fields_fallback)) fields else rducks_native_udf_stat_fields_fallback
+}
+
 rducks_native_udf_stats <- function(con, name) {
-  values_sql <- paste(sprintf("(%s)", vapply(rducks_native_udf_stat_fields, rducks_sql_string, character(1))), collapse = ", ")
+  fields <- rducks_native_udf_stat_fields(con)
+  values_sql <- paste(sprintf("(%s)", vapply(fields, rducks_sql_string, character(1))), collapse = ", ")
   sql <- sprintf(
     "SELECT field, rducks_udf_stat(%s, field) AS value FROM (VALUES %s) AS t(field)",
     rducks_sql_string(name),
@@ -82,7 +92,7 @@ rducks_native_udf_stats <- function(con, name) {
   )
   res <- DBI::dbGetQuery(con, sql)
   stats <- stats::setNames(as.character(res$value), as.character(res$field))
-  stats[rducks_native_udf_stat_fields]
+  stats[fields]
 }
 
 rducks_counter_value <- function(stats, name) {

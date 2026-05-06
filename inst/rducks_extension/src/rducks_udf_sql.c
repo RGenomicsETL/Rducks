@@ -310,6 +310,16 @@ static void rducks_udf_stat_scalar(duckdb_function_info info, duckdb_data_chunk 
     }
 }
 
+static void rducks_udf_stat_fields_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                           duckdb_vector output) {
+    (void)info;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    const char *fields = rducks_udf_stat_fields_text();
+    for (idx_t i = 0; i < n; i++) {
+        duckdb_vector_assign_string_element(output, i, fields);
+    }
+}
+
 static void rducks_set_execution_backend_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                                 duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);

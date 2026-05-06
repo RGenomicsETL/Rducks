@@ -299,6 +299,28 @@ static void rducks_udf_record_ripc_collect_ready(rducks_r_scalar_meta_t *meta, s
     rducks_runtime_unlock();
 }
 
+static const char *rducks_udf_stat_fields_text(void) {
+    return "name\n"
+           "eval_mode\n"
+           "marshalling\n"
+           "dispatch_chunks\n"
+           "dispatch_rows\n"
+           "direct_chunks\n"
+           "queued_chunks\n"
+           "queue_pending_current\n"
+           "queue_pending_max\n"
+           "arrow_r_chunks\n"
+           "arrow_c_chunks\n"
+           "arrow_ipc_chunks\n"
+           "ripc_collect_batches\n"
+           "ripc_collect_requests\n"
+           "ripc_collect_max_batch\n"
+           "ripc_submit_wave_max\n"
+           "ripc_collect_ready_max\n"
+           "ripc_inflight_current\n"
+           "ripc_inflight_max";
+}
+
 static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *name, const char *field,
                                    char *out, size_t out_cap, char *err, size_t err_cap) {
     rducks_r_scalar_meta_t *meta;

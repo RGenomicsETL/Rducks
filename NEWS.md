@@ -12,6 +12,8 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
+- UDF stat field discovery now comes from native `rducks_udf_stat_fields()`;
+  the R-side field vector is only a fallback.
 - `rducks_explain_udf()` and `rducks_list_udfs()` now include `r_side_record`
   to make detached/missing R-side registry metadata explicit.
 - Added `rducks_native_execution_backend()` to cross-check the native
