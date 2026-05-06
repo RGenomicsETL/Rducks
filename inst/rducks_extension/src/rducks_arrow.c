@@ -459,7 +459,7 @@ static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rdu
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks RIPC Future submission reached a non-main execution lane");
+        snprintf(err_msg, err_cap, "Rducks RIPC Future submission reached a non-main thread");
         return 0;
     }
     if (!rducks_ripc_bundle_valid(meta->fun)) {
@@ -507,7 +507,7 @@ static int rducks_ripc_collect_chunk_on_main(rducks_runtime_entry_t *runtime, rd
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks RIPC Future collection reached a non-main execution lane");
+        snprintf(err_msg, err_cap, "Rducks RIPC Future collection reached a non-main thread");
         return 0;
     }
     result = rducks_ripc_call_collect_on_r_thread(meta, future, output_schema_xptr, n, &protect_count, &r_err);
@@ -622,9 +622,9 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 
     if (rducks_concurrent_inproc_enabled(runtime)) {
-        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
-        if (!rducks_queue_submit_scalar_via_worker_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
-            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
+        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
+        if (!rducks_queue_execute_scalar_inline_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks main-thread scalar R function failed");
         }
         return;
     }

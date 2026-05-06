@@ -212,7 +212,7 @@ static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, s
         return 0;
     }
     if (!rducks_is_main_thread(head->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group reached a non-main execution lane");
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group reached a non-main thread");
         return 0;
     }
     meta = head->meta;
@@ -282,7 +282,7 @@ static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err
         return 0;
     }
     if (!rducks_is_main_thread(request->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued request reached a non-main execution lane");
+        snprintf(err_msg, err_cap, "Rducks queued request reached a non-main thread");
         return 0;
     }
     return request->execute(request, err_msg, err_cap);
@@ -374,7 +374,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                 rducks_queue_unlock(runtime);
                 rducks_udf_record_queue_pending_done(request->meta);
                 snprintf(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
-                         "Rducks timed out waiting for the main R execution lane to drain a queued request");
+                         "Rducks timed out waiting for the recorded main R thread to drain a queued request");
                 return 0;
             }
         }
@@ -404,34 +404,8 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     request.output = output;
 
     return rducks_queue_submit_request(runtime, &request,
-        "Rducks timed out waiting for the main R execution lane to drain a queued scalar UDF request",
+        "Rducks timed out waiting for the recorded main R thread to drain a queued scalar UDF request",
         err_msg, err_cap);
-}
-
-typedef struct rducks_queue_scalar_worker_state {
-    rducks_runtime_entry_t *runtime;
-    rducks_r_scalar_meta_t *meta;
-    duckdb_data_chunk input;
-    duckdb_vector output;
-    volatile int done;
-    int ok;
-    char error[RDUCKS_QUEUE_ERROR_SIZE];
-} rducks_queue_scalar_worker_state_t;
-
-#ifdef _WIN32
-static DWORD WINAPI rducks_queue_scalar_worker(LPVOID arg) {
-#else
-static void *rducks_queue_scalar_worker(void *arg) {
-#endif
-    rducks_queue_scalar_worker_state_t *state = (rducks_queue_scalar_worker_state_t *)arg;
-    state->ok = rducks_queue_submit_scalar(state->runtime, state->meta, state->input, state->output,
-                                           state->error, sizeof(state->error));
-    state->done = 1;
-#ifdef _WIN32
-    return 0;
-#else
-    return NULL;
-#endif
 }
 
 static int rducks_queue_sleep_ms(unsigned int ms) {
@@ -446,54 +420,40 @@ static int rducks_queue_sleep_ms(unsigned int ms) {
 #endif
 }
 
-static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t *runtime,
-                                                        rducks_r_scalar_meta_t *meta,
-                                                        duckdb_data_chunk input, duckdb_vector output,
-                                                        char *err_msg, size_t err_cap) {
-    rducks_queue_scalar_worker_state_t state;
-    unsigned int spins = 0;
+static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *runtime,
+                                                      rducks_r_scalar_meta_t *meta,
+                                                      duckdb_data_chunk input, duckdb_vector output,
+                                                      char *err_msg, size_t err_cap) {
+    rducks_udf_request_t request;
+    int ok;
     if (!runtime || !rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks forced queue path must start on the main R execution lane");
+        snprintf(err_msg, err_cap, "Rducks inline queue-drain path must start on the recorded main R thread");
         return 0;
     }
-    memset(&state, 0, sizeof(state));
-    state.runtime = runtime;
-    state.meta = meta;
-    state.input = input;
-    state.output = output;
-#ifdef _WIN32
-    HANDLE worker = CreateThread(NULL, 0, rducks_queue_scalar_worker, &state, 0, NULL);
-    if (!worker) {
-        snprintf(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
+    if (!meta) {
+        snprintf(err_msg, err_cap, "Rducks inline scalar metadata is missing");
         return 0;
     }
-#else
-    pthread_t worker;
-    if (pthread_create(&worker, NULL, rducks_queue_scalar_worker, &state) != 0) {
-        snprintf(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
-        return 0;
-    }
-#endif
-    while (!state.done && spins < 5000U) {
-        (void)rducks_queue_drain_on_main(runtime, 1000);
-        if (!state.done) rducks_queue_sleep_ms(1);
-        spins++;
-    }
-#ifdef _WIN32
-    WaitForSingleObject(worker, INFINITE);
-    CloseHandle(worker);
-#else
-    pthread_join(worker, NULL);
-#endif
-    if (!state.done) {
-        snprintf(err_msg, err_cap, "Rducks scalar queue worker did not finish");
-        return 0;
-    }
-    if (!state.ok) {
-        rducks_queue_error_copy(err_msg, err_cap, state.error, "Rducks scalar queue worker failed");
-        return 0;
-    }
-    return 1;
+
+    /* Drain until the queue is empty at this point. The removed self-shim used
+     * a synthetic request as a barrier, which forced the main thread to execute
+     * all pending requests ahead of that marker. A single bounded wave here can
+     * leave earlier worker callbacks blocked with no later main-thread callback
+     * guaranteed to drain them.
+     */
+    (void)rducks_queue_drain_on_main(runtime, 0);
+
+    memset(&request, 0, sizeof(request));
+    request.runtime = runtime;
+    request.execute = rducks_queue_execute_scalar_on_main;
+    request.meta = meta;
+    request.input = input;
+    request.output = output;
+    request.state = RDUCKS_REQUEST_RUNNING;
+    ok = rducks_queue_execute_on_main(&request, err_msg, err_cap);
+
+    (void)rducks_queue_drain_on_main(runtime, 0);
+    return ok;
 }
 
 static int rducks_queue_collect_ripc_groups_on_main(rducks_runtime_entry_t *runtime,
@@ -564,7 +524,7 @@ static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler must run on the main R execution lane");
+        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler must run on the recorded main R thread");
         return 0;
     }
 
@@ -707,7 +667,7 @@ static void *rducks_queue_self_test_worker(void *arg) {
     request.execute = rducks_queue_self_test_execute;
     request.data = state;
     state->worker_ok = rducks_queue_submit_request(state->runtime, &request,
-        "Rducks queue self-test timed out waiting for the main execution lane",
+        "Rducks queue self-test timed out waiting for the recorded main R thread",
         state->error, sizeof(state->error));
     state->worker_done = 1;
 #ifdef _WIN32
@@ -725,7 +685,7 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queue self-test must run on the main R execution lane");
+        snprintf(err_msg, err_cap, "Rducks queue self-test must run on the recorded main R thread");
         return 0;
     }
     *out_value = 0;

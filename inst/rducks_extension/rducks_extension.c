@@ -341,10 +341,10 @@ static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_
 static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap);
-static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t *runtime,
-                                                        rducks_r_scalar_meta_t *meta,
-                                                        duckdb_data_chunk input, duckdb_vector output,
-                                                        char *err_msg, size_t err_cap);
+static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *runtime,
+                                                      rducks_r_scalar_meta_t *meta,
+                                                      duckdb_data_chunk input, duckdb_vector output,
+                                                      char *err_msg, size_t err_cap);
 static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *runtime,
                                                         rducks_r_scalar_meta_t *meta,
                                                         duckdb_data_chunk input, duckdb_vector output,

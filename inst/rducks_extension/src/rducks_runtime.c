@@ -101,7 +101,8 @@ static void rducks_runtime_unregister_udf(rducks_runtime_entry_t *runtime, rduck
 static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) {
     /* Used when a DuckDB extension reload invalidates catalog-owned function
      * metadata. Detach registry bookkeeping without calling R API; preserved R
-     * evaluators may leak until a future explicit main-lane release path.
+     * evaluators may leak until a future explicit recorded-main-thread release
+     * path.
      */
     rducks_r_scalar_meta_t *cur;
     if (!runtime) return;

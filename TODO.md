@@ -230,10 +230,13 @@ Run with `lobstr` in this session:
 
 ## P1: correctness hardening
 
-- [ ] Fix queued request waits once a request is `RUNNING`.
-  - Current timeout only applies while a request is `PENDING`.
-  - `rducks_queue_submit_scalar_via_worker_on_main()` can still end in an
-    unbounded `pthread_join()` / Windows wait.
+- [x] Remove the main-thread self-shim and its unbounded join.
+  - Main-thread in-process callbacks now drain queued worker requests before and
+    after inline execution instead of spawning a synthetic worker thread.
+
+- [ ] Fix or document queued request waits once a request is `RUNNING`.
+  - Current timeout only applies while a request is `PENDING` because queued
+    scalar UDF requests borrow DuckDB callback-frame input/output storage.
 
 - [ ] Add stress tests for no-deadlock behavior.
   - Repeated queued UDF calls with multiple DuckDB threads should complete or
