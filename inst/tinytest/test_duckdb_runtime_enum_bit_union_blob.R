@@ -25,4 +25,13 @@ local({
   expect_equal(enum_explain$evaluator, "RC")
   expect_true(enum_explain$arrow_c_chunks >= 1)
   expect_equal(enum_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_union_arrow_c", function(x) {
+    if (identical(x$tag, "code")) rducks_union("label", paste0("c", x$value)) else rducks_union("code", 1L)
+  }, UNION(code = INTEGER, label = VARCHAR), UNION(code = INTEGER, label = VARCHAR)))
+  expect_equal(DBI::dbGetQuery(con, "SELECT union_extract(rducks_union_arrow_c(union_value(code := 42)::UNION(code INTEGER, label VARCHAR)), 'label') AS x")$x, "c42")
+  union_explain <- rducks_explain_udf(con, "rducks_union_arrow_c")
+  expect_equal(union_explain$evaluator, "RC")
+  expect_true(union_explain$arrow_c_chunks >= 1)
+  expect_equal(union_explain$arrow_r_chunks, 0)
 })

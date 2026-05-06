@@ -192,7 +192,8 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc);
 static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *desc) {
     if (!desc) return 0;
     if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY ||
-        desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_MAP) {
+        desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_MAP ||
+        desc->kind == RDUCKS_KIND_UNION) {
         return rducks_rc_direct_type_supported(desc);
     }
     if (rducks_rc_direct_enum_supported(desc)) return 1;
@@ -234,6 +235,13 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     if (desc->kind == RDUCKS_KIND_MAP) {
         return rducks_rc_direct_sequence_child_supported(desc->key) &&
                rducks_rc_direct_sequence_child_supported(desc->value);
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        if (desc->field_count == 0 || desc->field_count > 255U) return 0;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (!rducks_rc_direct_type_supported(desc->field_types[i])) return 0;
+        }
+        return 1;
     }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
@@ -1013,6 +1021,21 @@ static int rducks_rc_any_duplicated(SEXP x, int *duplicated) {
     return 1;
 }
 
+static SEXP rducks_rc_make_union_value(const char *tag, SEXP payload) {
+    PROTECT(payload);
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+    SEXP cls = PROTECT(Rf_mkString("rducks_union"));
+    SET_VECTOR_ELT(out, 0, Rf_mkString(tag ? tag : ""));
+    SET_VECTOR_ELT(out, 1, payload);
+    SET_STRING_ELT(names, 0, Rf_mkChar("tag"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("value"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(4);
+    return out;
+}
+
 static SEXP rducks_rc_struct_field(SEXP value, const char *name, size_t index, int *ok) {
     SEXP names;
     int has_names = 0;
@@ -1238,6 +1261,26 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         SET_STRING_ELT(names, 1, Rf_mkChar("values"));
         Rf_setAttrib(out, R_NamesSymbol, names);
         UNPROTECT(4);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        /* DuckDB's pinned vector layout stores UNION as a STRUCT: child 0 is a
+         * uint8 tag vector and children 1..n are member vectors. The C API has
+         * no union-vector accessors, so this direct path deliberately uses the
+         * struct child accessor against that tested DuckDB layout.
+         */
+        duckdb_vector tag_vector = duckdb_struct_vector_get_child(input->vector, 0);
+        rducks_rc_direct_vector_view_t tag_view;
+        rducks_rc_direct_input_view_init(&tag_view, tag_vector);
+        if (!rducks_rc_direct_view_valid_at(&tag_view, row)) return R_NilValue;
+        uint8_t tag = ((uint8_t *)tag_view.data)[row];
+        if ((size_t)tag >= desc->field_count) return R_NilValue;
+        duckdb_vector member_vector = duckdb_struct_vector_get_child(input->vector, (idx_t)tag + 1U);
+        rducks_rc_direct_vector_view_t member_view;
+        rducks_rc_direct_input_view_init(&member_view, member_vector);
+        SEXP payload = PROTECT(rducks_rc_direct_arg(desc->field_types[tag], &member_view, row));
+        out = PROTECT(rducks_rc_make_union_value(desc->field_names[tag], payload));
+        UNPROTECT(2);
         return out;
     }
     if (desc->kind == RDUCKS_KIND_ENUM) {
@@ -1466,6 +1509,21 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
                                          idx_t row, SEXP value, char *err_msg, size_t err_cap) {
     if (rducks_rc_value_is_null_for_output(desc, value)) {
         rducks_rc_output_set_null(output, row);
+        if (desc->kind == RDUCKS_KIND_UNION) {
+            /* See the UNION input path: DuckDB stores UNION vectors as STRUCT
+             * vectors with a tag child followed by one child per member.
+             */
+            duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
+            rducks_rc_direct_vector_view_t tag_view;
+            rducks_rc_direct_output_view_init(&tag_view, tag_vector);
+            rducks_rc_output_set_null(&tag_view, row);
+            for (size_t i = 0; i < desc->field_count; i++) {
+                duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
+                rducks_rc_direct_vector_view_t member_view;
+                rducks_rc_direct_output_view_init(&member_view, member_vector);
+                rducks_rc_output_set_null(&member_view, row);
+            }
+        }
         return 1;
     }
     rducks_rc_output_set_valid_if_needed(output, row);
@@ -1632,6 +1690,55 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         }
         entries[row].offset = offset;
         entries[row].length = (uint64_t)len;
+        UNPROTECT(2);
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        int tag_ok = 1;
+        int value_ok = 1;
+        SEXP tag_value = PROTECT(rducks_rc_named_field(value, "tag", &tag_ok));
+        SEXP payload = PROTECT(rducks_rc_named_field(value, "value", &value_ok));
+        if (!tag_ok || !value_ok || TYPEOF(tag_value) != STRSXP || XLENGTH(tag_value) < 1 || STRING_ELT(tag_value, 0) == NA_STRING) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "Rducks UNION return value must have tag and value fields");
+            return 0;
+        }
+        const char *tag_text = CHAR(STRING_ELT(tag_value, 0));
+        size_t tag_index = desc->field_count;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (desc->field_names[i] && strcmp(tag_text, desc->field_names[i]) == 0) {
+                tag_index = i;
+                break;
+            }
+        }
+        if (tag_index >= desc->field_count || tag_index > 255U) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "Rducks UNION tag is outside declared members");
+            return 0;
+        }
+        /* See the UNION input path: DuckDB stores UNION vectors as STRUCT
+         * vectors with a tag child followed by one child per member.
+         */
+        duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
+        rducks_rc_direct_vector_view_t tag_view;
+        rducks_rc_direct_output_view_init(&tag_view, tag_vector);
+        duckdb_vector selected_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)tag_index + 1U);
+        rducks_rc_direct_vector_view_t selected_view;
+        rducks_rc_direct_output_view_init(&selected_view, selected_vector);
+        if (!rducks_rc_write_direct_output(desc->field_types[tag_index], &selected_view, row, payload, err_msg, err_cap)) {
+            UNPROTECT(2);
+            if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION member");
+            return 0;
+        }
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (i == tag_index) continue;
+            duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
+            rducks_rc_direct_vector_view_t member_view;
+            rducks_rc_direct_output_view_init(&member_view, member_vector);
+            rducks_rc_output_set_null(&member_view, row);
+        }
+        rducks_rc_output_set_valid_if_needed(&tag_view, row);
+        ((uint8_t *)tag_view.data)[row] = (uint8_t)tag_index;
         UNPROTECT(2);
         return 1;
     }

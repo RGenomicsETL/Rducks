@@ -582,7 +582,7 @@ rducks_arrow_c_direct_sequence_child_supported <- function(type) {
   if (identical(kind, "enum")) {
     return(TRUE)
   }
-  if (kind %in% c("list", "array", "struct", "map")) {
+  if (kind %in% c("list", "array", "struct", "map", "union")) {
     return(rducks_arrow_c_direct_mapping_supported(type))
   }
   identical(kind, "scalar") && rducks_type_token(type) %in% c(
@@ -611,6 +611,11 @@ rducks_arrow_c_direct_mapping_supported <- function(type) {
     children <- rducks_type_children(type)
     return(rducks_arrow_c_direct_sequence_child_supported(children[[1L]]) &&
       rducks_arrow_c_direct_sequence_child_supported(children[[2L]]))
+  }
+  if (identical(kind, "union")) {
+    children <- rducks_type_children(type)
+    return(length(children) > 0L && length(children) <= 255L &&
+      all(vapply(children, rducks_arrow_c_direct_mapping_supported, logical(1))))
   }
   FALSE
 }
