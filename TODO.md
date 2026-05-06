@@ -600,10 +600,11 @@ README uses explicit main-thread / worker-thread wording.
 
 Update `docs/EXECUTION_PLANS.md`.
 
-- Include implemented matrix, no-fallback principle, registration-time
-  marshalling behavior, `arrow_lossless_conversion=true`, and
-  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  counters.
+- Includes the concrete implemented engine matrix, no-fallback
+  principle, registration-time/frozen engine behavior, direct-only
+  `arrow_c`, database-catalog versus connection-detach scope, and
+  current diagnostic hooks including
+  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)/[`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md).
 - Note: `docs/` is ignored; use `git add -f docs/...` for files that
   should be committed.
 

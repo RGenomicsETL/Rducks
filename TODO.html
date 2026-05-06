@@ -374,8 +374,8 @@
 <li><p><label><input type="checkbox" checked>README in-process queue example uses a DuckDB table scan with <code>threads = 4, external_threads = 1</code>, reports main-thread vs worker-thread probe rows, and states that speedup should not be inferred.</label></p></li>
 <li><p><label><input type="checkbox" checked>README uses explicit main-thread / worker-thread wording.</label></p></li>
 <li>
-<p><label><input type="checkbox">Update <code>docs/EXECUTION_PLANS.md</code>.</label></p>
-<ul><li>Include implemented matrix, no-fallback principle, registration-time marshalling behavior, <code>arrow_lossless_conversion=true</code>, and <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> counters.</li>
+<p><label><input type="checkbox" checked>Update <code>docs/EXECUTION_PLANS.md</code>.</label></p>
+<ul><li>Includes the concrete implemented engine matrix, no-fallback principle, registration-time/frozen engine behavior, direct-only <code>arrow_c</code>, database-catalog versus connection-detach scope, and current diagnostic hooks including <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code>/<code><a href="reference/rducks_native_execution_backend.html">rducks_native_execution_backend()</a></code>.</li>
 <li>Note: <code>docs/</code> is ignored; use <code>git add -f docs/...</code> for files that should be committed.</li>
 </ul></li>
 <li>
