@@ -212,10 +212,12 @@
 <div class="section level2">
 <h2 id="p1-correctness-hardening">P1: correctness hardening<a class="anchor" aria-label="anchor" href="#p1-correctness-hardening"></a></h2>
 <ul class="task-list"><li>
-<p><label><input type="checkbox">Fix queued request waits once a request is <code>RUNNING</code>.</label></p>
-<ul><li>Current timeout only applies while a request is <code>PENDING</code>.</li>
+<p><label><input type="checkbox" checked>Remove the main-thread self-shim and its unbounded join.</label></p>
+<ul><li>Main-thread in-process callbacks now drain queued worker requests before and after inline execution instead of spawning a synthetic worker thread.</li>
+</ul></li>
 <li>
-<code>rducks_queue_submit_scalar_via_worker_on_main()</code> can still end in an unbounded <code>pthread_join()</code> / Windows wait.</li>
+<p><label><input type="checkbox">Fix or document queued request waits once a request is <code>RUNNING</code>.</label></p>
+<ul><li>Current timeout only applies while a request is <code>PENDING</code> because queued scalar UDF requests borrow DuckDB callback-frame input/output storage.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox">Add stress tests for no-deadlock behavior.</label></p>
