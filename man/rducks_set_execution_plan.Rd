@@ -19,17 +19,21 @@ rducks_set_execution_plan(
 \item{threads}{Optional positive integer to set with \verb{PRAGMA threads}.}
 
 \item{external_threads}{Optional positive integer to set with
-\verb{SET external_threads}. Use \code{NULL} to leave unchanged. For actual DuckDB
-worker concurrency, keep this smaller than \code{threads}.}
+\verb{SET external_threads}. Use \code{NULL} to restore/keep the previous setting
+after Rducks briefly forces single-thread SQL execution to update its native
+backend on the recorded main R thread. For actual DuckDB worker
+concurrency, keep this smaller than \code{threads}.}
 }
 \value{
 \code{con}, invisibly.
 }
 \description{
-Sets connection/session policy for Rducks chunk execution. Registration still
-defines UDF semantics such as scalar versus vectorized call shape, declared
-types, NULL handling, error handling, and side effects. The execution plan
-chooses the marshalling implementation and concurrency contract.
+Stores the R-side default execution plan used by subsequent
+\code{\link[=rducks_register]{rducks_register()}} calls through this connection and updates the native
+runtime backend needed by that plan. Registration still defines UDF semantics
+such as scalar versus vectorized call shape, declared types, NULL handling,
+error handling, and side effects. The selected evaluator/marshalling for an
+already-registered UDF remains frozen in its database-catalog metadata.
 }
 \details{
 Compatibility note: the older \code{rducks_enable_inproc()} and

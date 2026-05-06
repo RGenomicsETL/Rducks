@@ -59,7 +59,13 @@ local({
   on.exit(future::plan(old_future_plan), add = TRUE)
   future::plan(future::multisession, workers = 1)
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
+  ipc_plan <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
+  rducks_set_execution_plan(con, ipc_plan, threads = 2L, external_threads = 1L)
+  expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
+  expect_equal(Rducks:::rducks_connection_threads(con), 2L)
+  rducks_set_execution_plan(con, ipc_plan, threads = 1L, external_threads = 1L)
+  expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
+
   reg_ipc <- rducks_register(
     con, "plan_ipc_vec", function(x) x + 1L,
     INTEGER, INTEGER,

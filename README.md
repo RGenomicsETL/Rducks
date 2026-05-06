@@ -14,10 +14,10 @@ that runtime. UDF inputs and outputs move through explicit execution
 plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
-- `arrow_c`: native extension path for supported scalar and vectorized calls
-  with direct DuckDB-vector materialization. The vectorized `RCV` evaluator uses
-  direct native chunk materialization/writeback, not the old Arrow/R helper
-  bridge.
+- `arrow_c`: native extension path for supported scalar and vectorized
+  calls with direct DuckDB-vector materialization. The vectorized `RCV`
+  evaluator uses direct native chunk materialization/writeback, not the
+  old Arrow/R helper bridge.
 - `arrow_ipc`: process-isolated R execution using Arrow IPC
   request/result payloads and a generic Future backend.
 
@@ -68,6 +68,23 @@ affects SQL NULL inputs, so the default is appropriate for `r_hello()`.
 `rducks_register()` returns an `rducks_registration` object that records
 the connection, normalized signature, and registration options. You do
 not need to keep this object for the UDF to keep working in DuckDB.
+Registering the same SQL name/signature again replaces the callable
+implementation in the shared DuckDB database catalog.
+
+### Release and disconnect
+
+`rducks_release(con)` detaches connection-local Rducks state such as the
+current default plan and R-side runtime anchor. It is non-destructive:
+it does not drop DuckDB catalog functions and does not release closures
+still owned by native catalog metadata. Call it before
+`DBI::dbDisconnect(con)` when you want deterministic R-side cleanup.
+
+``` r
+release_con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(release_con, threads = "single")
+rducks_release(release_con)
+dbDisconnect(release_con, shutdown = TRUE)
+```
 
 ### Arrow conversion setting
 
@@ -133,23 +150,25 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        296ms      3.42    1.97MB
-#> 2 vectorized    237ms      4.20    2.34MB
+#> 1 scalar        288ms      3.44    1.97MB
+#> 2 vectorized    232ms      4.29    2.34MB
 ```
 
 ## Execution plans
 
-Execution plans choose the marshalling implementation and concurrency
-contract for a connection. Registration remains semantic: name,
-function, mode, types, NULL handling, exception handling, and
-side-effect flag.
+Execution plans choose the default marshalling implementation and
+concurrency contract for future registrations through a connection.
+Registration remains semantic: name, function, mode, types, NULL
+handling, exception handling, and side-effect flag. The plan active at
+`rducks_register()` freezes the UDF’s native evaluator/marshalling
+metadata; later plan changes do not retarget already-registered UDFs.
 
 | Plan                                | Scalar      | Vectorized  | Notes                                                                                       |
 |-------------------------------------|-------------|-------------|---------------------------------------------------------------------------------------------|
 | `arrow_r + serial`                  | implemented | implemented | reference implementation                                                                    |
 | `arrow_r + inproc_concurrent`       | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread               |
 | `arrow_c + serial`                  | implemented | implemented | direct native evaluator tokens `RC`/`RCV`                                                   |
-| `arrow_c + inproc_concurrent`       | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling                              |
+| `arrow_c + inproc_concurrent`       | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling                             |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through the active Future backend; evaluator token `RIPC` |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans
@@ -185,14 +204,14 @@ DuckDB-created worker pool.
 The example below uses a DuckDB table scan, not an Rducks table source.
 It is a diagnostic, not a speed benchmark. The `rducks_thread_is_main()`
 probe is a `RDUCKS_DEV_SURFACES=true` development diagnostic and shows
-whether DuckDB evaluated a scan on the recorded main R
-thread or on DuckDB worker threads. To run this probe yourself, set
+whether DuckDB evaluated a scan on the recorded main R thread or on
+DuckDB worker threads. To run this probe yourself, set
 `RDUCKS_DEV_SURFACES=true` before the first `rducks_enable()`/extension
 load in the session. The UDF query then runs over the same table and the
-queue counters show how many DuckDB chunks were
-routed through the in-process queue. Do not infer an expected speed gain
-from this mode: R API work is still serialized on the recorded main R
-thread, and the queue plus Arrow marshalling add overhead.
+queue counters show how many DuckDB chunks were routed through the
+in-process queue. Do not infer an expected speed gain from this mode: R
+API work is still serialized on the recorded main R thread, and the
+queue plus Arrow marshalling add overhead.
 
 ``` r
 reg_inproc_plus_one <- rducks_register(
@@ -241,8 +260,12 @@ dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
 #> 1 20000100000
 stats1 <- rducks_inproc_stats(con)
 stats1 - stats0
-#>   submitted executed timeouts
-#> 1        98       98        0
+#>   submitted executed timeouts pending_current pending_max running_current
+#> 1        38       38        0               0           1               0
+#>   running_max main_drains main_drain_batches main_drain_max_batch
+#> 1           1         120                 38                    1
+#>   pending_timeout_ms running_timeout_supported
+#> 1                  0                         0
 
 rducks_disable_inproc(con, threads = 1)
 ```
@@ -255,7 +278,7 @@ vectorized mode calls the R function once per chunk inside the worker
 process. Configure the Future backend before executing queries.
 
 ``` r
-future::plan(future.mirai::mirai_multisession, workers = 2)
+future::plan(future::multisession, workers = 2)
 
 plan <- rducks_execution_plan(
   "arrow_ipc", "multiprocess_parallel",
@@ -308,13 +331,16 @@ table scan before timing the no-op UDF.
 
 ``` r
 arrow_ipc_noop_benchmark <- local({
-  future::plan(future.mirai::mirai_multisession, workers = 4)
+  future::plan(future::multisession, workers = 4)
 
   bench_con <- DBI::dbConnect(
     duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
     dbdir = ":memory:"
   )
-  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+  on.exit({
+    rducks_release(bench_con)
+    DBI::dbDisconnect(bench_con, shutdown = TRUE)
+  }, add = TRUE)
 
   rducks_enable(bench_con, threads = "single")
   bench_plan <- rducks_execution_plan(
@@ -388,11 +414,11 @@ arrow_ipc_noop_benchmark <- local({
 
 arrow_ipc_noop_benchmark$parallel_probe
 #>    rows main_thread_rows
-#> 1 2e+05                0
+#> 1 2e+05           122880
 arrow_ipc_noop_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           8.960             1.000000
-#> 2 threads=5           6.321             1.417497
+#> 1 threads=1          10.453             1.000000
+#> 2 threads=5           6.549             1.596122
 arrow_ipc_noop_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 1                 2                    2
@@ -409,13 +435,16 @@ runs on a non-main worker thread before timing the UDF query.
 
 ``` r
 arrow_ipc_sleep_benchmark <- local({
-  future::plan(future.mirai::mirai_multisession, workers = 4)
+  future::plan(future::multisession, workers = 4)
 
   bench_con <- DBI::dbConnect(
     duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
     dbdir = ":memory:"
   )
-  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+  on.exit({
+    rducks_release(bench_con)
+    DBI::dbDisconnect(bench_con, shutdown = TRUE)
+  }, add = TRUE)
 
   rducks_enable(bench_con, threads = "single")
   bench_plan <- rducks_execution_plan(
@@ -505,8 +534,8 @@ arrow_ipc_sleep_benchmark$parallel_probe
 #> 1 4096             1024
 arrow_ipc_sleep_benchmark$elapsed
 #>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.299             1.000000
-#> 2 threads=5           0.705             3.260993
+#> 1 threads=1           2.351             1.000000
+#> 2 threads=5           0.667             3.524738
 arrow_ipc_sleep_benchmark$diagnostics
 #>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
 #> 1                 3                 4                    4
@@ -556,9 +585,9 @@ are formal S7-backed descriptors with structural validation via
 
 The table below is produced by `rducks_mode_semantics()`.
 
-| mode         | status      | call_granularity            | input_shape                                        | return_shape                                                          | length_semantics                                                   | threading                                                                                                                                                                   | copy_semantics                                                                                                                                                            |
-|:-------------|:------------|:----------------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `scalar`     | implemented | one R call per row          | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call                               | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside Future workers after Arrow IPC encoding   | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport |
+| mode         | status      | call_granularity            | input_shape                                        | return_shape                                                          | length_semantics                                                   | threading                                                                                                                                                                   | copy_semantics                                                                                                                                                                                                                                  |
+|:-------------|:------------|:----------------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `scalar`     | implemented | one R call per row          | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call                               | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside Future workers after Arrow IPC encoding   | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport                                                                       |
 | `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | return length must equal the number of evaluated rows in the chunk | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport |
 
 ## Type descriptors
@@ -762,9 +791,9 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 
 ## Exceptions and side effects
 
-Set `exception_handling = "return_null"` to turn errors thrown by the user R
-function into SQL `NULL`. Return type-checking and marshalling errors still
-abort the query so type bugs are not hidden as NULLs.
+Set `exception_handling = "return_null"` to turn errors thrown by the
+user R function into SQL `NULL`. Return type-checking and marshalling
+errors still abort the query so type bugs are not hidden as NULLs.
 
 ``` r
 reg_error_null <- rducks_register(
@@ -822,9 +851,9 @@ reg_rng <- rducks_register(
 
 dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 #>           x
-#> 1 0.6775328
-#> 2 0.4273457
-#> 3 0.9103805
+#> 1 0.2655087
+#> 2 0.3721239
+#> 3 0.5728534
 ```
 
 ## Build notes
@@ -864,4 +893,4 @@ against the versioned sections of the bundled `duckdb_extension.h`:
 | `unstable_new_open_connect_functions`          | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_arrow_options`, `duckdb_destroy_arrow_options`, `duckdb_destroy_client_context`                                                                                                                                                    |     4 |
 | `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy`                                           |     6 |
 | `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_client_context`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init` |     7 |
-| `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`, `duckdb_vector_reference_vector`                                                                                                                              |     5 |
+| `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`                                                                                                                                                                |     4 |

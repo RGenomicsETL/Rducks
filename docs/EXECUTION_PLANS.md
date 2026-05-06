@@ -225,34 +225,39 @@ Additional multiprocess cases:
 - [x] Add an internal execution-plan object or struct with fields:
       `marshaller`, `concurrency`, `call_shape`, `null_handling`,
       `exception_handling`, and plan id.
-- [ ] Store the resolved plan id in native UDF metadata.
+- [x] Store the resolved plan/evaluator identity with the database-scoped UDF
+      registration record and expose it through `rducks_explain_udf()`.
 - [x] Add a plan validator that checks the full UDF signature before native
       registration succeeds.
-- [x] Add R-side plan introspection for tests via `rducks_current_execution_plan()`;
-      native per-UDF introspection such as `rducks_explain_udf()` remains open.
-- [ ] Add counters per plan id so tests can prove no fallback path executed.
+- [x] Add R-side plan introspection for tests via
+      `rducks_current_execution_plan()` and per-UDF introspection via
+      `rducks_explain_udf()` / `rducks_list_udfs()`.
+- [x] Add per-marshalling/per-evaluator counters so tests can prove no fallback
+      path executed.
 
 ### Iteration 2: harden the reference
 
-- [ ] Treat `arrow_r + serial + scalar` as the scalar reference in generated
+- [x] Treat `arrow_r + serial + scalar` as the scalar reference in generated
       tests.
-- [ ] Treat `arrow_r + serial + vectorized` as the vectorized reference in
+- [x] Treat `arrow_r + serial + vectorized` as the vectorized reference in
       generated tests.
 - [ ] Expand the generated matrix until it covers every claimed public type and
       every NULL/error semantic option.
 - [ ] Add negative generated cases for unsupported plan/type combinations.
-- [ ] Run the generated matrix in CI, not only manually.
+- [x] Run the generated matrix in CI, not only manually.
 
 ### Iteration 3: reframe current native scalar path as `arrow_c + scalar`
 
 - [ ] Rename internal comments/docs from generic `RC` to `arrow_c scalar` where
       possible.
-- [ ] Ensure current direct-buffer and Arrow-helper native paths are one named
-      plan, not an implicit fallback from one plan to another.
-- [ ] Document exactly which helpers are part of that plan.
+- [x] Ensure current direct-buffer and Arrow-helper native paths are one named
+      plan, not an implicit fallback from one plan to another. `arrow_c` is now
+      direct-only; the old helper bridge is not a hidden fallback.
+- [x] Document exactly which helpers are part of that plan through
+      `docs/SUPPORT_MATRIX.md` and native direct-support predicates.
 - [x] Add tests proving `arrow_c + scalar` matches `arrow_r + serial + scalar`
       for all supported signatures.
-- [ ] Add tests proving unsupported scalar signatures fail plan validation rather
+- [x] Add tests proving unsupported scalar signatures fail plan validation rather
       than switching to `arrow_r`.
 
 ### Iteration 4: implement `arrow_c + vectorized`
@@ -266,8 +271,9 @@ Additional multiprocess cases:
       catches the error before returning to DuckDB.
 - [x] Scatter returned values and SQL NULLs to DuckDB output vectors through the
       direct native writer.
-- [ ] Add broader conformance tests against `arrow_r + serial + vectorized` for
-      every direct-supported signature.
+- [x] Add broader conformance tests against `arrow_r + serial + vectorized` for
+      every direct-supported signature through
+      `tools/run_generated_marshalling_matrix.R`.
 - [x] Add tests proving `RCV` registration and dispatch use the direct evaluator.
 
 Current implementation note: `arrow_c + vectorized` is available for direct-
@@ -275,17 +281,20 @@ supported signatures. The `RCV` evaluator token is accepted by native
 registration and dispatches to direct DuckDB-vector materialization/writeback,
 not the old Arrow/R helper bridge.
 
-### Iteration 5: make concurrency a connection/session execution plan
+### Iteration 5: make concurrency a registration-time execution plan default
 
-- [x] Introduce a connection/session-level execution-plan API.
+- [x] Introduce a connection-level execution-plan API whose active value is the
+      default for future registrations.
 - [x] Keep `rducks_enable()` and `rducks_enable_inproc()` as compatibility
       shims that set execution plans.
 - [x] Remove evaluator/concurrency selection from the conceptual UDF semantic
       contract.
-- [ ] Validate all registered UDFs when the connection/session plan changes.
+- [x] Freeze evaluator/marshalling metadata at registration time. Later plan
+      changes do not retarget already-registered UDFs, so there is no
+      registered-UDF revalidation step on plan changes.
 - [x] Validate a UDF against the active plan when registering after a plan has
       been set.
-- [ ] Preserve no-fallback behavior at query execution.
+- [x] Preserve no-fallback behavior at query execution.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
@@ -313,10 +322,12 @@ not the old Arrow/R helper bridge.
 
 ### Iteration 7: release gates
 
-- [ ] Every public plan has a documented support matrix.
-- [ ] Every unsupported combination has a deterministic error message.
-- [ ] Every non-reference plan has generated conformance against the reference.
-- [ ] CI runs tinytests, generated matrix, and at least one concurrency stress
+- [x] Every public plan has a documented support matrix.
+- [x] Every unsupported combination has a deterministic error message.
+- [~] Every non-reference plan has generated conformance against the reference;
+      broad scalar/vectorized coverage exists, but expanded negative and
+      semantic-option cases remain useful.
+- [x] CI runs tinytests, generated matrix, and at least one concurrency stress
       job.
-- [ ] User docs distinguish semantic call shape from execution plan.
-- [ ] Changelog describes user-facing capabilities without internal-agent notes.
+- [x] User docs distinguish semantic call shape from execution plan.
+- [x] Changelog describes user-facing capabilities without internal-agent notes.

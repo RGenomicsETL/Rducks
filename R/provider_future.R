@@ -1,3 +1,7 @@
+rducks_nanoarrow_pointer_is_valid <- function(ptr) {
+  isTRUE(tryCatch(nanoarrow::nanoarrow_pointer_is_valid(ptr), error = function(e) FALSE))
+}
+
 rducks_future_worker_eval_arrow_ipc_chunk <- function(input_payload,
                                                       output_schema_spec,
                                                       n,
@@ -109,11 +113,16 @@ rducks_future_values <- function(futs, timeout, stdout) {
   batch <- is.list(futs) && !inherits(futs, "Future")
   relay_conditions <- !batch
   wait_for_values <- function() future::value(futs, stdout = stdout, signal = relay_conditions)
+  cancel_futs <- function() {
+    fut_list <- if (batch) futs else list(futs)
+    lapply(fut_list, function(fut) try(future::cancel(fut), silent = TRUE))
+    invisible(NULL)
+  }
   values <- if (is.null(timeout)) {
     tryCatch(
       wait_for_values(),
       error = function(e) {
-        lapply(as.list(futs), function(fut) try(future::cancel(fut), silent = TRUE))
+        cancel_futs()
         stop("Rducks Future worker failed: ", conditionMessage(e), call. = FALSE)
       }
     )
@@ -123,7 +132,7 @@ rducks_future_values <- function(futs, timeout, stdout) {
     tryCatch(
       wait_for_values(),
       error = function(e) {
-        lapply(as.list(futs), function(fut) try(future::cancel(fut), silent = TRUE))
+        cancel_futs()
         stop("Rducks Future worker failed while waiting up to ", timeout, " seconds: ", conditionMessage(e), call. = FALSE)
       }
     )
@@ -194,10 +203,10 @@ rducks_future_submit_vectorized_chunk <- function(engine, input_payload, output_
 rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,
                                                        output_schema_spec = NULL) {
   n <- as.integer(n)
-  if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
+  if (!rducks_nanoarrow_pointer_is_valid(input_array)) {
     stop("input nanoarrow array pointer is not valid", call. = FALSE)
   }
-  if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
+  if (!rducks_nanoarrow_pointer_is_valid(output_schema)) {
     stop("output nanoarrow schema pointer is not valid", call. = FALSE)
   }
   storage_input <- rducks_arrow_ipc_storage_input(engine$arg_types, input_array, input_schema)
@@ -208,7 +217,7 @@ rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, inpu
 
 rducks_arrow_ipc_future_collect_arrow_chunk <- function(engine, fut, output_schema, n) {
   n <- as.integer(n)
-  if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
+  if (!rducks_nanoarrow_pointer_is_valid(output_schema)) {
     stop("output nanoarrow schema pointer is not valid", call. = FALSE)
   }
   result_payload <- rducks_future_collect_vectorized_chunk(engine, fut)
@@ -227,7 +236,7 @@ rducks_arrow_ipc_future_collect_many_arrow_chunks <- function(engine, futs, outp
     stop("ns must have one row count per Future", call. = FALSE)
   }
   for (schema in output_schemas) {
-    if (!nanoarrow::nanoarrow_pointer_is_valid(schema)) {
+    if (!rducks_nanoarrow_pointer_is_valid(schema)) {
       stop("output nanoarrow schema pointer is not valid", call. = FALSE)
     }
   }

@@ -26,6 +26,11 @@ local({
   expect_equal(reg1$spec$mode, "scalar")
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_plus_one(41.0) AS x")$x, 42)
 
+  reg1b <- rducks_register(con, "rducks_plus_one", function(x) x + 2, DOUBLE, DOUBLE)
+  expect_inherits(reg1b, "rducks_registration")
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_plus_one(40.0) AS x")$x, 42)
+  expect_equal(rducks_explain_udf(con, "rducks_plus_one")$returns, "f64")
+
   reg0 <- rducks_register(con, "rducks_hello", function() "hello from R", NULL, VARCHAR)
   expect_equal(reg0$spec$args, character())
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_hello() AS x")$x, "hello from R")

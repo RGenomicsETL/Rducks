@@ -321,6 +321,17 @@ rducks_configure_duckdb_threads <- function(con, threads = NULL, external_thread
   invisible(con)
 }
 
+rducks_force_single_thread_sql <- function(con) {
+  DBI::dbExecute(con, "SET external_threads=1")
+  DBI::dbExecute(con, "PRAGMA threads=1")
+  invisible(con)
+}
+
+rducks_thread_setting_or_null <- function(x) {
+  x <- suppressWarnings(as.integer(x))
+  if (length(x) != 1L || is.na(x) || x < 1L) NULL else x
+}
+
 rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
   threads <- suppressWarnings(as.integer(threads))
   external_threads <- suppressWarnings(as.integer(external_threads))
@@ -343,10 +354,12 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 
 #' Set the Rducks execution plan for a connection
 #'
-#' Sets connection/session policy for Rducks chunk execution. Registration still
-#' defines UDF semantics such as scalar versus vectorized call shape, declared
-#' types, NULL handling, error handling, and side effects. The execution plan
-#' chooses the marshalling implementation and concurrency contract.
+#' Stores the R-side default execution plan used by subsequent
+#' [rducks_register()] calls through this connection and updates the native
+#' runtime backend needed by that plan. Registration still defines UDF semantics
+#' such as scalar versus vectorized call shape, declared types, NULL handling,
+#' error handling, and side effects. The selected evaluator/marshalling for an
+#' already-registered UDF remains frozen in its database-catalog metadata.
 #'
 #' Compatibility note: the older `rducks_enable_inproc()` and
 #' `rducks_disable_inproc()` helpers now set the `inproc_concurrent` and
@@ -357,8 +370,10 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' @param plan An `rducks_execution_plan()` object.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.
 #' @param external_threads Optional positive integer to set with
-#'   `SET external_threads`. Use `NULL` to leave unchanged. For actual DuckDB
-#'   worker concurrency, keep this smaller than `threads`.
+#'   `SET external_threads`. Use `NULL` to restore/keep the previous setting
+#'   after Rducks briefly forces single-thread SQL execution to update its native
+#'   backend on the recorded main R thread. For actual DuckDB worker
+#'   concurrency, keep this smaller than `threads`.
 #' @return `con`, invisibly.
 #' @export
 rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
@@ -366,14 +381,31 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
   rducks_assert_duckdb_connection(con)
   plan <- rducks_as_execution_plan(plan)
   rducks_assert_execution_plan_implemented(plan)
+  threads <- rducks_validate_thread_count(threads, "threads")
+  external_threads <- rducks_validate_thread_count(external_threads, "external_threads")
   old_threads <- rducks_connection_threads(con)
   old_external_threads <- rducks_connection_external_threads(con)
+  old_backend <- tryCatch(rducks_native_execution_backend(con), error = function(e) NULL)
+  target_threads <- threads %||% rducks_thread_setting_or_null(old_threads)
+  target_external_threads <- external_threads %||% rducks_thread_setting_or_null(old_external_threads)
+  if (!is.null(target_threads) && !is.null(target_external_threads) && target_external_threads > target_threads) {
+    stop("external_threads must be less than or equal to threads", call. = FALSE)
+  }
   tryCatch(
     {
-      rducks_configure_duckdb_threads(con, threads = threads, external_threads = external_threads)
+      rducks_force_single_thread_sql(con)
       rducks_set_execution_backend(con, plan$backend)
+      rducks_configure_duckdb_threads(
+        con,
+        threads = target_threads,
+        external_threads = target_external_threads
+      )
     },
     error = function(e) {
+      try(rducks_force_single_thread_sql(con), silent = TRUE)
+      if (!is.null(old_backend)) {
+        try(rducks_set_execution_backend(con, old_backend), silent = TRUE)
+      }
       rducks_restore_duckdb_threads(con, old_threads, old_external_threads)
       stop(e)
     }

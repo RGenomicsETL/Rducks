@@ -15,7 +15,6 @@ knitr::opts_chunk$set(
 Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 library(Rducks)
 library(future)
-library(future.mirai)
 library(nanoarrow)
 ```
 
@@ -80,7 +79,24 @@ SQL NULL inputs, so the default is appropriate for `r_hello()`.
 
 `rducks_register()` returns an `rducks_registration` object that records the
 connection, normalized signature, and registration options. You do not need to
-keep this object for the UDF to keep working in DuckDB.
+keep this object for the UDF to keep working in DuckDB. Registering the same SQL
+name/signature again replaces the callable implementation in the shared DuckDB
+database catalog.
+
+### Release and disconnect
+
+`rducks_release(con)` detaches connection-local Rducks state such as the current
+default plan and R-side runtime anchor. It is non-destructive: it does not drop
+DuckDB catalog functions and does not release closures still owned by native
+catalog metadata. Call it before `DBI::dbDisconnect(con)` when you want
+deterministic R-side cleanup.
+
+```{r release-example}
+release_con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(release_con, threads = "single")
+rducks_release(release_con)
+dbDisconnect(release_con, shutdown = TRUE)
+```
 
 ### Arrow conversion setting
 
@@ -142,9 +158,12 @@ bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
 
 ## Execution plans
 
-Execution plans choose the marshalling implementation and concurrency contract
-for a connection. Registration remains semantic: name, function, mode, types,
-NULL handling, exception handling, and side-effect flag.
+Execution plans choose the default marshalling implementation and concurrency
+contract for future registrations through a connection. Registration remains
+semantic: name, function, mode, types, NULL handling, exception handling, and
+side-effect flag. The plan active at `rducks_register()` freezes the UDF's
+native evaluator/marshalling metadata; later plan changes do not retarget
+already-registered UDFs.
 
 | Plan | Scalar | Vectorized | Notes |
 | --- | --- | --- | --- |
@@ -242,7 +261,7 @@ calls the R function once per chunk inside the worker process. Configure the
 Future backend before executing queries.
 
 ```{r arrow-ipc-plan}
-future::plan(future.mirai::mirai_multisession, workers = 2)
+future::plan(future::multisession, workers = 2)
 
 plan <- rducks_execution_plan(
   "arrow_ipc", "multiprocess_parallel",
@@ -285,13 +304,16 @@ uses a non-main worker thread for this table scan before timing the no-op UDF.
 
 ```{r arrow-ipc-table-noop-benchmark}
 arrow_ipc_noop_benchmark <- local({
-  future::plan(future.mirai::mirai_multisession, workers = 4)
+  future::plan(future::multisession, workers = 4)
 
   bench_con <- DBI::dbConnect(
     duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
     dbdir = ":memory:"
   )
-  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+  on.exit({
+    rducks_release(bench_con)
+    DBI::dbDisconnect(bench_con, shutdown = TRUE)
+  }, add = TRUE)
 
   rducks_enable(bench_con, threads = "single")
   bench_plan <- rducks_execution_plan(
@@ -377,13 +399,16 @@ thread before timing the UDF query.
 
 ```{r arrow-ipc-csv-sleep-benchmark}
 arrow_ipc_sleep_benchmark <- local({
-  future::plan(future.mirai::mirai_multisession, workers = 4)
+  future::plan(future::multisession, workers = 4)
 
   bench_con <- DBI::dbConnect(
     duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
     dbdir = ":memory:"
   )
-  on.exit(DBI::dbDisconnect(bench_con, shutdown = TRUE), add = TRUE)
+  on.exit({
+    rducks_release(bench_con)
+    DBI::dbDisconnect(bench_con, shutdown = TRUE)
+  }, add = TRUE)
 
   rducks_enable(bench_con, threads = "single")
   bench_plan <- rducks_execution_plan(
@@ -822,5 +847,6 @@ cat(rducks_used_duckdb_unstable_api_markdown())
 ```
 
 ```{r cleanup, include=FALSE}
+rducks_release(con)
 dbDisconnect(con, shutdown = TRUE)
 ```
