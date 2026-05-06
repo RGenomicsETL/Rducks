@@ -287,10 +287,12 @@ Run with `lobstr` in this session:
     idempotent/non-destructive release behavior is covered in
     `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
-- [ ] Add repeated lifecycle tests.
-  - Include repeated `:memory:` databases, extension reloads, UDF registration,
-    explicit release, and DBI disconnect.
-  - Assert R-side stores do not expose stale plans or UDF metadata.
+- [x] Add repeated lifecycle tests.
+  - Repeated `:memory:` connections now enable Rducks, register UDFs, query,
+    explicitly release, disconnect, force GC, and assert R-side plan/runtime and
+    registration stores do not expose stale entries.
+  - Native runtime entries and extension-owned connections still need separate
+    release accounting; see the native runtime release item above.
 
 ## P1: correctness hardening
 
@@ -362,10 +364,10 @@ Run with `lobstr` in this session:
     `R_tryCatchError()` + `R_UnwindProtect()`; RIPC abnormal-unwind cleanup
     releases preserved Future/schema objects and marks in-flight tasks done.
 
-- [ ] Add GC/lifetime tests.
-  - Drop R registration objects, run `gc()`, then call DuckDB UDFs.
-  - Close/release connections after registrations and confirm no crashes or
-    stale R-side metadata.
+- [x] Add GC/lifetime tests.
+  - Tests drop R registration objects, run `gc()`, then call DuckDB UDFs.
+  - Lifecycle tests close/release connections after registrations and confirm no
+    crashes or stale R-side metadata in plan/runtime/registration stores.
 
 ## P2: observability and diagnostics
 

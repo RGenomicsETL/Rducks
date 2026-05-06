@@ -117,3 +117,40 @@ local({
 
   DBI::dbDisconnect(con2, shutdown = TRUE)
 })
+
+local({
+  seen_tokens <- character()
+  seen_db_tokens <- character()
+  for (i in seq_len(3L)) {
+    con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+    rducks_enable(con, threads = "single")
+    rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+    name <- paste0("rducks_lifecycle_loop_", i)
+    invisible(rducks_register(con, name, rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
+    expect_equal(DBI::dbGetQuery(con, sprintf("SELECT %s(41::INTEGER) AS x", name))$x, 42L)
+
+    token <- Rducks:::rducks_connection_key(con)
+    db_token <- Rducks:::rducks_database_registration_key(con)
+    expect_true(exists(token, envir = Rducks:::rducks_connection_plan_store(), inherits = FALSE))
+    expect_true(exists(db_token, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
+    seen_tokens <- c(seen_tokens, token)
+    seen_db_tokens <- c(seen_db_tokens, db_token)
+
+    rducks_release(con)
+    expect_false(exists(token, envir = Rducks:::rducks_connection_plan_store(), inherits = FALSE))
+    expect_false(exists(db_token, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
+    expect_equal(DBI::dbGetQuery(con, sprintf("SELECT %s(1::INTEGER) AS x", name))$x, 2L)
+    DBI::dbDisconnect(con, shutdown = TRUE)
+    rm(con)
+    rducks_test_force_gc()
+  }
+  expect_equal(length(unique(seen_tokens)), length(seen_tokens))
+  expect_equal(length(unique(seen_db_tokens)), length(seen_db_tokens))
+  for (token in seen_tokens) {
+    expect_false(exists(token, envir = Rducks:::rducks_connection_plan_store(), inherits = FALSE))
+    expect_false(exists(token, envir = Rducks:::rducks_connection_runtime_token_store(), inherits = FALSE))
+  }
+  for (db_token in seen_db_tokens) {
+    expect_false(exists(db_token, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
+  }
+})
