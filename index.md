@@ -188,12 +188,16 @@ DuckDB-created worker pool.
 
 The example below uses a DuckDB table scan, not an Rducks table source.
 It is a diagnostic, not a speed benchmark. The `rducks_thread_is_main()`
-probe shows whether DuckDB evaluated a scan on the recorded main R
-thread or on DuckDB worker threads. The UDF query then runs over the
-same table and the queue counters show how many DuckDB chunks were
-routed through the in-process queue. Do not infer an expected speed gain
-from this mode: R API work is still serialized on the recorded main R
-thread, and the queue plus Arrow marshalling add overhead.
+probe is a `RDUCKS_DEV_SURFACES=true` development diagnostic and shows
+whether DuckDB evaluated a scan on the recorded main R thread or on
+DuckDB worker threads. To run this probe yourself, set
+`RDUCKS_DEV_SURFACES=true` before the first
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)/extension
+load in the session. The UDF query then runs over the same table and the
+queue counters show how many DuckDB chunks were routed through the
+in-process queue. Do not infer an expected speed gain from this mode: R
+API work is still serialized on the recorded main R thread, and the
+queue plus Arrow marshalling add overhead.
 
 ``` r
 

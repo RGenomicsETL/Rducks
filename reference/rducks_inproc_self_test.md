@@ -3,7 +3,10 @@
 Runs a native self-test that submits `n` requests from worker threads to
 the extension-owned main-thread queue and drains them on the recorded
 main R thread. This validates the queue/condition-variable path without
-calling an R UDF.
+calling an R UDF. This diagnostic SQL surface is dev/test-only; set
+`RDUCKS_DEV_SURFACES=true` before
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+if you need it.
 
 ## Usage
 
