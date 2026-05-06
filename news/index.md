@@ -18,6 +18,10 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- Added
+  [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
+  to reset one UDF’s diagnostic counters or all native UDF counters in
+  the current database runtime without unregistering catalog functions.
 - UDF stat field discovery now comes from native
   `rducks_udf_stat_fields()`; the R-side field vector is only a
   fallback.

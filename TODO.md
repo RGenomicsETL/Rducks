@@ -69,8 +69,9 @@ Execution-plan simplification: valid plan pairs expose concrete
 `engine_id`s while preserving the readable marshalling/concurrency API.
 
 Persistent worker/provider architecture: generic Future remains the
-portable reference provider; persistent mirai/nanonext-style workers
-with preloaded evaluator/schema state are still future work.
+portable reference provider; `docs/PERSISTENT_PROVIDER.md` now specifies
+the provider contract/envelopes, but persistent mirai/nanonext-style
+workers with preloaded evaluator/schema state are still future work.
 
 `rducks_unregister()`: not implemented; DuckDB reports extension-created
 functions as internal catalog entries that cannot be dropped through the
@@ -78,9 +79,12 @@ ordinary `DROP FUNCTION` path, so destructive database-scoped
 unregistering needs a separate design.
 
 `R/arrow_bridge.R` split: partially done. IPC codec helpers live in
-`R/ipc_codec.R` and the generic Future provider lives in
-`R/provider_future.R`; schema/materialization/eval helpers still need a
-later split when the provider abstraction is reworked.
+`R/ipc_codec.R`, scalar/vectorized evaluation helpers live in
+`R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` so they are
+available before `R/arrow_bridge.R` top-level aliases, and the generic
+Future provider lives in `R/provider_future.R`; schema/materialization
+helpers still need a later split when the provider abstraction is
+reworked.
 
 ## Non-negotiable constraints
 
@@ -483,7 +487,9 @@ Gate dev/test SQL probes behind `RDUCKS_DEV_SURFACES=true`.
 
 Add counter reset support.
 
-- Reset one UDF or all UDF counters without unregistering the UDF.
+- `rducks_reset_udf_counters(con, name)` resets one UDF; `name = NULL`
+  resets all native UDF counters in the database runtime without
+  unregistering catalog functions.
 
 Expose native current-backend diagnostics.
 
@@ -548,9 +554,10 @@ Improve batching beyond small waves for typical DuckDB physical scans.
 Specify a persistent worker/request envelope if generic `future` is not
 enough.
 
-- Include UDF id/name, signature, mode, null/error semantics, chunk
-  sequence, timeout, cancellation token, and schema metadata.
-- Hot data path remains Arrow IPC bytes; no R
+- `docs/PERSISTENT_PROVIDER.md` defines provider operations,
+  registration/task/result envelopes,
+  collect-any/backpressure/cancellation expectations, and keeps the hot
+  data path as Arrow IPC bytes with no R
   [`serialize()`](https://rdrr.io/r/base/serialize.html) /
   [`unserialize()`](https://rdrr.io/r/base/serialize.html) fallback for
   chunk payloads.

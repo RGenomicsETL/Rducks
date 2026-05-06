@@ -65,6 +65,8 @@
   : Detach Rducks connection-local state
 - [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
   : Inspect preserved-object release counters
+- [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
+  : Reset Rducks UDF counters
 - [`rducks_runtime_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_runtime_stats.md)
   : Inspect native runtime registry counters
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
