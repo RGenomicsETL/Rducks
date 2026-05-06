@@ -364,6 +364,22 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
   invisible(con)
 }
 
+#' Inspect the native Rducks execution backend
+#'
+#' Returns the backend currently recorded in the native database-scoped runtime.
+#' This is a diagnostic cross-check for [rducks_current_execution_plan()], whose
+#' value is the R-side default plan for future registrations through this
+#' connection.
+#'
+#' @param con A `duckdb_connection` already enabled with [rducks_enable()].
+#' @return Character scalar backend name: `"single"`, `"concurrent_inproc"`,
+#'   or `"multiprocess_parallel"`.
+#' @export
+rducks_native_execution_backend <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  DBI::dbGetQuery(con, "SELECT rducks_execution_backend() AS backend")$backend[[1L]]
+}
+
 rducks_set_execution_backend <- function(con, backend) {
   payload <- paste(rducks_main_thread_token(), backend, sep = "\n")
   ok <- DBI::dbGetQuery(

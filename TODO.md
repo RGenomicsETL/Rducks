@@ -386,8 +386,9 @@ Run with `lobstr` in this session:
 - [ ] Add counter reset support.
   - Reset one UDF or all UDF counters without unregistering the UDF.
 
-- [ ] Expose native current-backend diagnostics.
-  - R-side `rducks_current_execution_plan()` should be cross-checkable against
+- [x] Expose native current-backend diagnostics.
+  - `rducks_native_execution_backend()` returns the database-scoped native
+    backend so `rducks_current_execution_plan()` can be cross-checked against
     native backend state.
 
 - [ ] Mark or skip missing R-side registration records.

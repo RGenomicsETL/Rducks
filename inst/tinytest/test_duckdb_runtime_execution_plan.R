@@ -8,6 +8,7 @@ local({
   current <- rducks_current_execution_plan(con)
   expect_equal(current$plan_id, "arrow_r+serial")
   expect_equal(current$engine_id, "arrow_r_serial")
+  expect_equal(rducks_native_execution_backend(con), "single")
   expect_equal(Rducks:::rducks_as_execution_plan("arrow_c_direct_serial")$plan_id, "arrow_c+serial")
   expect_equal(Rducks:::rducks_as_execution_plan("ipc_future_pool")$plan_id, "arrow_ipc+multiprocess_parallel")
 
@@ -35,8 +36,10 @@ local({
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+inproc_concurrent")
+  expect_equal(rducks_native_execution_backend(con), "concurrent_inproc")
   rducks_disable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
+  expect_equal(rducks_native_execution_backend(con), "single")
 
   before_threads <- Rducks:::rducks_connection_threads(con)
   before_external_threads <- Rducks:::rducks_connection_external_threads(con)

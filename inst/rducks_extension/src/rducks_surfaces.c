@@ -116,8 +116,35 @@ static bool rducks_register_main_thread_token_surface(duckdb_connection con, rdu
                                                       rducks_set_main_thread_token_scalar);
 }
 
+static bool rducks_register_noarg_scalar_ex(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                            const char *name, duckdb_type return_type,
+                                            duckdb_scalar_function_t callback, bool is_volatile);
+
+static const char *rducks_execution_backend_name(rducks_runtime_entry_t *runtime) {
+    switch (rducks_get_execution_backend(runtime)) {
+    case RDUCKS_BACKEND_SINGLE:
+        return "single";
+    case RDUCKS_BACKEND_CONCURRENT_INPROC:
+        return "concurrent_inproc";
+    case RDUCKS_BACKEND_MULTIPROCESS_PARALLEL:
+        return "multiprocess_parallel";
+    default:
+        return "unknown";
+    }
+}
+
+static void rducks_execution_backend_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                 duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    const char *name = runtime ? rducks_execution_backend_name(runtime) : "unknown";
+    for (idx_t i = 0; i < n; i++) duckdb_vector_assign_string_element(output, i, name);
+}
+
 static bool rducks_register_execution_backend_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
-    return rducks_register_unary_varchar_bool_surface(con, runtime, "rducks_set_execution_backend",
+    return rducks_register_noarg_scalar_ex(con, runtime, "rducks_execution_backend", DUCKDB_TYPE_VARCHAR,
+                                           rducks_execution_backend_stat_scalar, true) &&
+           rducks_register_unary_varchar_bool_surface(con, runtime, "rducks_set_execution_backend",
                                                       rducks_set_execution_backend_scalar);
 }
 
