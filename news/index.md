@@ -24,11 +24,13 @@
   `RDUCKS_DEV_SURFACES=true` is set before extension load. Production
   SQL surfaces keep only the registration, execution, and documented
   statistics helpers.
-- Direct `arrow_c` scalar/vectorized execution is fenced with
-  `R_tryCatchError()` plus `R_UnwindProtect()` so unexpected
-  marshalling/allocation errors are converted into DuckDB UDF errors
-  without installing a fresh R top-level context inside DuckDB
-  callbacks.
+- Direct `arrow_c` scalar/vectorized execution and the Arrow/R + Arrow
+  IPC callback paths are fenced with `R_tryCatchError()` plus
+  `R_UnwindProtect()` so unexpected marshalling/allocation errors are
+  converted into DuckDB UDF errors without installing a fresh R
+  top-level context inside DuckDB callbacks. RIPC cleanup now releases
+  preserved Future/schema objects and decrements in-flight counters on
+  abnormal unwind.
 - Arrow C Data result import now copies the temporary imported DuckDB
   vector into the callback-owned output vector before destroying the
   imported chunk, avoiding reliance on reference-vector lifetime

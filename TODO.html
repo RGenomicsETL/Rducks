@@ -272,6 +272,7 @@
 <p><label><input type="checkbox">Audit remaining <code>Rf_*</code> longjmp paths.</label></p>
 <ul><li>Use <code>R_alloc()</code> or <code>R_UnwindProtect()</code> where heap state would otherwise leak across <code>Rf_error()</code>.</li>
 <li>IPC native encoding now uses <code>R_UnwindProtect()</code> around raw-vector allocation/copy so Arrow writer, stream, preserved nanoarrow external pointers, and native buffers are released if <code>Rf_allocVector()</code> longjmps.</li>
+<li>Direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect callbacks are fenced with <code>R_tryCatchError()</code> + <code>R_UnwindProtect()</code>; RIPC abnormal-unwind cleanup releases preserved Future/schema objects and marks in-flight tasks done.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox">Add GC/lifetime tests.</label></p>
