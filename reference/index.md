@@ -58,6 +58,9 @@
   : Describe Rducks execution mode semantics
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
+- [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+  [`rducks_detach()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+  : Detach Rducks connection-local state
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
   : Set the Rducks execution plan for a connection
 - [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md)

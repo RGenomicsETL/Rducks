@@ -2,11 +2,13 @@
 
 Returns one row per UDF registered through
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
-on a connection, including the same registration metadata and native
-counters as
+in the current DuckDB database runtime, including the same registration
+metadata and native counters as
 [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
 This is an Rducks registry view, not a complete DuckDB catalog listing:
 functions registered by other extensions or raw SQL are not included.
+Because DuckDB's function catalog is database scoped, sibling DBI
+connections to the same database runtime share this view.
 
 ## Usage
 

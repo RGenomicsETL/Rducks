@@ -178,9 +178,16 @@
 <h2 id="p0-connection-identity-and-lifecycle">P0: connection identity and lifecycle<a class="anchor" aria-label="anchor" href="#p0-connection-identity-and-lifecycle"></a></h2>
 <ul class="task-list"><li>
 <label><input type="checkbox" checked>Replace SEXP-address keying for R-side connection state.</label>
-<ul><li>Current implementation: Rducks-generated connection tokens are assigned per duckdb-r <code>conn_ref</code> external pointer and used for <code>.rducks_state$connection_plans</code> and <code>.rducks_state$registrations</code>.</li>
-<li>Current lifecycle anchor: <code>reg.finalizer(conn_ref, ...)</code> removes token-keyed R-side stores when the DuckDB connection external pointer is collected.</li>
+<ul><li>Current implementation: Rducks-generated connection attachment tokens are assigned per duckdb-r <code>conn_ref</code> external pointer and used for <code>.rducks_state$connection_plans</code> only.</li>
+<li>Current lifecycle anchor: <code>reg.finalizer(conn_ref, ...)</code> removes the connection-local plan store when the DuckDB connection external pointer is collected.</li>
 <li>Covered by <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
+</ul></li>
+<li>
+<label><input type="checkbox" checked>Make R-side registration metadata database-runtime scoped.</label>
+<ul><li>The native extension exposes an Rducks-owned process-local runtime token via <code>rducks_runtime_token()</code>; it is based on an internal runtime id/generation, not a raw <code>duckdb_database</code> pointer, DuckDB connection id, or R object address.</li>
+<li>
+<code>.rducks_state$registrations</code> is keyed by that database runtime token, so sibling DBI connections to the same DuckDB catalog share the same Rducks UDF registry view.</li>
+<li>R-side runtime anchors keep database-scoped registration metadata while at least one Rducks-enabled connection attachment is live; when the last attachment external pointer is collected, the R-side registry cache is removed without dropping DuckDB catalog functions or releasing native-owned closures.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Remove raw SEXP pointer-through-SQL evaluator registration.</label>
@@ -189,25 +196,25 @@
 <li>Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB error instead of letting native code cast arbitrary integers to <code>SEXP</code>.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Add native runtime token/anchor accounting.</label>
-<ul><li>Target: a stable Rducks runtime token from the native extension, for example <code>SELECT rducks_connection_token()</code> or a <code>.Call</code> equivalent.</li>
-<li>Token should be Rducks-owned and generation-safe, e.g. <code>(runtime_id, generation)</code>, not just a raw R object address, raw <code>duckdb_database</code> wrapper pointer, or DuckDB connection id.</li>
-<li>Add native anchor accounting separately from the R-side cleanup now in place.</li>
-<li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot make a new connection see stale native runtime state.</li>
+<label><input type="checkbox">Add native runtime release accounting.</label>
+<ul><li>The runtime token and R-side anchors exist, but native runtime entries and extension-owned connections are still retained for the process lifetime.</li>
+<li>Add native release accounting separately from the R-side cleanup now in place.</li>
+<li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot leak unbounded native runtime entries or retain stale native backend state.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Implement idempotent runtime release.</label>
-<ul><li>Target API: <code>rducks_release(con)</code> plus weakref-driven runtime-anchor release.</li>
-<li>Native cleanup: invalidate/remove runtime entry only when safe, drain/reset queue state, disconnect extension-owned DuckDB connection, detach UDF registry bookkeeping.</li>
-<li>R cleanup: remove token-keyed plan and registration stores.</li>
-<li>R-function cleanup: either keep the current leak-until-session-end policy, or mark UDF metadata released/inert and call <code>R_ReleaseObject()</code> from the R weakref finalizer on the recorded main R thread. Do not release preserved R functions while catalog metadata can still call them.</li>
+<label><input type="checkbox" checked>Implement non-destructive R-side connection release/detach.</label>
+<ul><li>
+<code>rducks_release(con)</code> / <code>rducks_detach(con)</code> now remove this connection’s R-side attachment token, current/default plan, and runtime anchor.</li>
+<li>Release is idempotent and non-destructive: it does not <code>DROP FUNCTION</code>, does not unregister database-catalog UDFs, and does not release native-owned R closures referenced by DuckDB catalog metadata.</li>
+<li>If sibling DBI connections are still attached to the same database runtime, the shared database-scoped registration cache remains visible. When the last R-side anchor is released or finalized, only the R registration cache is removed.</li>
+<li>Native runtime entries and extension-owned connections still need separate release accounting; see the native runtime release item above.</li>
 <li>Must not call DBI/SQL from finalizers.</li>
 <li>Must not call R API from off-main native destructors.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Integrate release with <code>dbDisconnect()</code> if the connection object model permits it.</label>
-<ul><li>If subclass/wrapper is chosen, implement a <code>dbDisconnect()</code> method that calls <code>rducks_release()</code> before delegating to duckdb-r.</li>
-<li>If plain <code>duckdb_connection</code> is retained, document explicit release and add tests showing idempotency.</li>
+<ul><li>If subclass/wrapper is chosen, implement a <code>dbDisconnect()</code> method that calls <code><a href="reference/rducks_release.html">rducks_release()</a></code> before delegating to duckdb-r.</li>
+<li>If plain <code>duckdb_connection</code> is retained, document explicit release. Basic idempotent/non-destructive release behavior is covered in <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Add repeated lifecycle tests.</label>
