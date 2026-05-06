@@ -98,11 +98,98 @@ static void rducks_runtime_unregister_udf(rducks_runtime_entry_t *runtime, rduck
     rducks_runtime_unlock();
 }
 
+typedef struct rducks_preserved_release_node {
+    SEXP object;
+    struct rducks_preserved_release_node *next;
+} rducks_preserved_release_node_t;
+
+static rducks_preserved_release_node_t *g_preserved_release_head = NULL;
+static rducks_preserved_release_node_t *g_preserved_release_tail = NULL;
+static uint64_t g_preserved_release_queued = 0;
+static uint64_t g_preserved_release_released = 0;
+static uint64_t g_preserved_release_failed = 0;
+
+static void rducks_preserved_release_record_released(uint64_t count) {
+    if (count == 0U) return;
+    rducks_runtime_lock();
+    g_preserved_release_released += count;
+    rducks_runtime_unlock();
+}
+
+static void rducks_preserved_release_now(SEXP object) {
+    if (!object || object == R_NilValue) return;
+    R_ReleaseObject(object);
+    rducks_preserved_release_record_released(1U);
+}
+
+static void rducks_preserved_release_enqueue(SEXP object) {
+    rducks_preserved_release_node_t *node;
+    if (!object || object == R_NilValue) return;
+    node = (rducks_preserved_release_node_t *)malloc(sizeof(*node));
+    if (!node) {
+        /* Leaking a preserved object is safer than calling R_ReleaseObject()
+         * from an arbitrary DuckDB destructor thread.
+         */
+        rducks_runtime_lock();
+        g_preserved_release_failed++;
+        rducks_runtime_unlock();
+        return;
+    }
+    node->object = object;
+    node->next = NULL;
+    rducks_runtime_lock();
+    if (g_preserved_release_tail) {
+        g_preserved_release_tail->next = node;
+    } else {
+        g_preserved_release_head = node;
+    }
+    g_preserved_release_tail = node;
+    g_preserved_release_queued++;
+    rducks_runtime_unlock();
+}
+
+static uint64_t rducks_preserved_release_drain_on_main(rducks_runtime_entry_t *runtime) {
+    rducks_preserved_release_node_t *node;
+    uint64_t released = 0;
+    if (!runtime || !rducks_is_main_thread(runtime)) return 0;
+    rducks_runtime_lock();
+    node = g_preserved_release_head;
+    g_preserved_release_head = NULL;
+    g_preserved_release_tail = NULL;
+    rducks_runtime_unlock();
+    while (node) {
+        rducks_preserved_release_node_t *next = node->next;
+        if (node->object && node->object != R_NilValue) {
+            R_ReleaseObject(node->object);
+            released++;
+        }
+        free(node);
+        node = next;
+    }
+    rducks_preserved_release_record_released(released);
+    return released;
+}
+
+static void rducks_preserved_release_snapshot(uint64_t *queued, uint64_t *released,
+                                              uint64_t *failed, uint64_t *pending) {
+    uint64_t pending_count = 0;
+    rducks_preserved_release_node_t *node;
+    rducks_runtime_lock();
+    for (node = g_preserved_release_head; node; node = node->next) {
+        pending_count++;
+    }
+    if (queued) *queued = g_preserved_release_queued;
+    if (released) *released = g_preserved_release_released;
+    if (failed) *failed = g_preserved_release_failed;
+    if (pending) *pending = pending_count;
+    rducks_runtime_unlock();
+}
+
 static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) {
     /* Used when a DuckDB extension reload invalidates catalog-owned function
-     * metadata. Detach registry bookkeeping without calling R API; preserved R
-     * evaluators may leak until a future explicit recorded-main-thread release
-     * path.
+     * metadata. Detach registry bookkeeping without calling R API. If DuckDB
+     * later destroys those metadata objects off-main, their preserved R
+     * evaluators are queued for a safe recorded-main-thread release.
      */
     rducks_r_scalar_meta_t *cur;
     if (!runtime) return;
@@ -218,6 +305,7 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     int ok = 1;
     if (!out || out_cap == 0U) return 0;
     out[0] = '\0';
+    rducks_preserved_release_drain_on_main(runtime);
     if (!runtime || !name || !name[0] || !field || !field[0]) {
         snprintf(err, err_cap, "invalid Rducks UDF stat request");
         return 0;
@@ -384,13 +472,14 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
         return;
     }
     rducks_runtime_unregister_udf(meta->runtime, meta);
-    if (meta->fun && meta->fun != R_NilValue && rducks_is_main_thread(meta->runtime)) {
-        R_ReleaseObject(meta->fun);
+    if (meta->fun && meta->fun != R_NilValue) {
+        if (rducks_is_main_thread(meta->runtime)) {
+            rducks_preserved_release_now(meta->fun);
+        } else {
+            rducks_preserved_release_enqueue(meta->fun);
+        }
+        meta->fun = R_NilValue;
     }
-    /* If DuckDB destroys function metadata on a worker thread, do not call into
-     * R. A later main-thread release queue can make this deterministic; until
-     * then a preserved-function leak is safer than off-thread R API use.
-     */
     free(meta->name);
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);

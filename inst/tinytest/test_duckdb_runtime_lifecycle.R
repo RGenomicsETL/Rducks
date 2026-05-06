@@ -58,6 +58,9 @@ local({
 
   rducks_enable(con1, threads = "single")
   rducks_enable(con2, threads = "single")
+  release_stats <- rducks_release_stats(con1)
+  expect_equal(names(release_stats), c("queued", "released", "failed", "pending"))
+  expect_true(all(unlist(release_stats[1, ], use.names = FALSE) >= 0))
   token1 <- Rducks:::rducks_connection_key(con1)
   token2 <- Rducks:::rducks_connection_key(con2)
   db_token1 <- Rducks:::rducks_database_registration_key(con1)

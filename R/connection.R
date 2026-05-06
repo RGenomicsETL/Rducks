@@ -123,6 +123,11 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' @export
 rducks_release <- function(con) {
   rducks_assert_duckdb_connection(con)
+  # If the extension is still reachable, give native code a safe recorded-main-
+  # thread drain point for preserved R objects queued by off-main DuckDB catalog
+  # destructors. This is non-destructive: it does not drop functions or release
+  # closures still owned by live catalog metadata.
+  try(rducks_runtime_token(con, required = FALSE), silent = TRUE)
   rducks_detach_connection_token(con)
   invisible(con)
 }
@@ -158,6 +163,31 @@ rducks_inproc_stats <- function(con) {
       "rducks_queue_pending_max() AS pending_max,",
       "rducks_queue_running_current() AS running_current,",
       "rducks_queue_running_max() AS running_max"
+    )
+  )
+}
+
+#' Inspect preserved-object release counters
+#'
+#' Returns process-local diagnostics for preserved R objects that native DuckDB
+#' catalog metadata could not release immediately because destruction happened
+#' off the recorded main R thread. Safe main-thread drain points include
+#' [rducks_enable()], [rducks_release()], [rducks_register()], UDF execution, and
+#' metadata/stat queries.
+#'
+#' @param con A `duckdb_connection`.
+#' @return A one-row data frame with queued, released, failed, and pending
+#'   counters.
+#' @export
+rducks_release_stats <- function(con) {
+  rducks_assert_duckdb_connection(con)
+  DBI::dbGetQuery(
+    con,
+    paste(
+      "SELECT rducks_release_queue_queued() AS queued,",
+      "rducks_release_queue_released() AS released,",
+      "rducks_release_queue_failed() AS failed,",
+      "rducks_release_queue_pending() AS pending"
     )
   )
 }

@@ -264,9 +264,14 @@ Run with `lobstr` in this session:
   - Repeated queued UDF calls with multiple DuckDB threads should complete or
     fail with documented timeout text, never hang.
 
-- [ ] Add a main-thread release queue for preserved R objects, or explicitly
+- [x] Add a main-thread release queue for preserved R objects, or explicitly
   document the leak-until-session-end policy.
-  - Current native destructors avoid unsafe `R_ReleaseObject()` off-main.
+  - Native UDF metadata destructors now release preserved evaluator objects
+    immediately only on the recorded main R thread; off-main destructors enqueue
+    them for later safe release.
+  - Safe drain points include `rducks_enable()`, `rducks_release()`,
+    `rducks_register()`, UDF execution, and metadata/stat queries.
+  - `rducks_release_stats()` exposes queued/released/failed/pending counters.
 
 - [x] Extend no-fallback assertions for `arrow_c` direct registration.
   - `arrow_c` registration now fails for signatures that cannot yet use the

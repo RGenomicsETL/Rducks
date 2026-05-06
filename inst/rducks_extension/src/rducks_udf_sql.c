@@ -17,6 +17,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) {
         return false;
     }
+    rducks_preserved_release_drain_on_main(runtime);
     if (!runtime || !runtime->connection || !name || !name[0]) {
         snprintf(err, err_cap, "invalid Rducks scalar registration request");
         return false;

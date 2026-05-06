@@ -216,6 +216,66 @@ static void rducks_queue_running_max_stat_scalar(duckdb_function_info info, duck
     rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_RUNNING_MAX);
 }
 
+typedef enum rducks_preserved_release_stat_field {
+    RDUCKS_RELEASE_STAT_QUEUED = 0,
+    RDUCKS_RELEASE_STAT_RELEASED,
+    RDUCKS_RELEASE_STAT_FAILED,
+    RDUCKS_RELEASE_STAT_PENDING
+} rducks_preserved_release_stat_field_t;
+
+static void rducks_preserved_release_stat_scalar_impl(duckdb_function_info info, duckdb_data_chunk input,
+                                                      duckdb_vector output,
+                                                      rducks_preserved_release_stat_field_t field) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    uint64_t queued = 0;
+    uint64_t released = 0;
+    uint64_t failed = 0;
+    uint64_t pending = 0;
+    uint64_t value = 0;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    if (runtime) rducks_preserved_release_drain_on_main(runtime);
+    rducks_preserved_release_snapshot(&queued, &released, &failed, &pending);
+    switch (field) {
+    case RDUCKS_RELEASE_STAT_QUEUED:
+        value = queued;
+        break;
+    case RDUCKS_RELEASE_STAT_RELEASED:
+        value = released;
+        break;
+    case RDUCKS_RELEASE_STAT_FAILED:
+        value = failed;
+        break;
+    case RDUCKS_RELEASE_STAT_PENDING:
+        value = pending;
+        break;
+    default:
+        value = 0;
+        break;
+    }
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_release_queued_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                              duckdb_vector output) {
+    rducks_preserved_release_stat_scalar_impl(info, input, output, RDUCKS_RELEASE_STAT_QUEUED);
+}
+
+static void rducks_release_released_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                duckdb_vector output) {
+    rducks_preserved_release_stat_scalar_impl(info, input, output, RDUCKS_RELEASE_STAT_RELEASED);
+}
+
+static void rducks_release_failed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                              duckdb_vector output) {
+    rducks_preserved_release_stat_scalar_impl(info, input, output, RDUCKS_RELEASE_STAT_FAILED);
+}
+
+static void rducks_release_pending_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                               duckdb_vector output) {
+    rducks_preserved_release_stat_scalar_impl(info, input, output, RDUCKS_RELEASE_STAT_PENDING);
+}
+
 static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -287,6 +347,14 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                            rducks_queue_running_current_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_max", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_running_max_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_queued", DUCKDB_TYPE_UBIGINT,
+                                           rducks_release_queued_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_released", DUCKDB_TYPE_UBIGINT,
+                                           rducks_release_released_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_failed", DUCKDB_TYPE_UBIGINT,
+                                           rducks_release_failed_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_pending", DUCKDB_TYPE_UBIGINT,
+                                           rducks_release_pending_stat_scalar, true) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
@@ -301,6 +369,7 @@ static void rducks_runtime_token_scalar(duckdb_function_info info, duckdb_data_c
         duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
         return;
     }
+    rducks_preserved_release_drain_on_main(runtime);
     rducks_runtime_lock();
     snprintf(token, sizeof(token), "rducks-runtime-%llu-%llu",
              (unsigned long long)runtime->runtime_id,

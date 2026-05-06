@@ -613,6 +613,8 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 
+    rducks_preserved_release_drain_on_main(runtime);
+
     if (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
         rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
         if (!rducks_queue_submit_ripc_cooperative_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
