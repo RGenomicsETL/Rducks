@@ -229,6 +229,42 @@ static void rducks_single_array_stream_init(struct ArrowArrayStream *stream,
     stream->private_data = data;
 }
 
+typedef struct rducks_ipc_encode_cleanup {
+    struct ArrowBuffer *buffer;
+    struct ArrowArrayStream *array_stream;
+    struct ArrowIpcWriter *writer;
+    rducks_arrow_ipc_writer_reset_fn writer_reset;
+    int writer_initialized;
+    int cleaned;
+} rducks_ipc_encode_cleanup_t;
+
+static void rducks_ipc_encode_cleanup(void *data, Rboolean jump) {
+    (void)jump;
+    rducks_ipc_encode_cleanup_t *cleanup = (rducks_ipc_encode_cleanup_t *)data;
+    if (!cleanup || cleanup->cleaned) return;
+    if (cleanup->writer_initialized && cleanup->writer_reset && cleanup->writer) {
+        cleanup->writer_reset(cleanup->writer);
+        cleanup->writer_initialized = 0;
+    }
+    if (cleanup->array_stream && cleanup->array_stream->release) {
+        cleanup->array_stream->release(cleanup->array_stream);
+    }
+    if (cleanup->buffer) {
+        rducks_arrow_buffer_reset(cleanup->buffer);
+    }
+    cleanup->cleaned = 1;
+}
+
+static SEXP rducks_ipc_encode_alloc_raw(void *data) {
+    rducks_ipc_encode_cleanup_t *cleanup = (rducks_ipc_encode_cleanup_t *)data;
+    struct ArrowBuffer *buffer = cleanup->buffer;
+    SEXP out = Rf_allocVector(RAWSXP, (R_xlen_t)buffer->size_bytes);
+    if (buffer->size_bytes > 0) {
+        memcpy(RAW(out), buffer->data, (size_t)buffer->size_bytes);
+    }
+    return out;
+}
+
 SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr, SEXP nanoarrow_dll_path_sexp) {
     SEXP schema_xptr = R_NilValue;
     struct ArrowBuffer buffer;
@@ -236,9 +272,8 @@ SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr, SEXP nanoarrow_dll_path_sexp
     struct ArrowIpcWriter writer;
     struct ArrowArrayStream array_stream;
     struct ArrowError error;
-    SEXP out = R_NilValue;
+    rducks_ipc_encode_cleanup_t cleanup;
     rducks_nanoarrow_ipc_symbols_t symbols;
-    int writer_initialized = 0;
 
     memset(&symbols, 0, sizeof(symbols));
     rducks_load_nanoarrow_ipc_symbols(nanoarrow_dll_path_sexp, &symbols);
@@ -256,35 +291,32 @@ SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr, SEXP nanoarrow_dll_path_sexp
     rducks_arrow_buffer_init(&buffer);
     memset(&output_stream, 0, sizeof(output_stream));
     memset(&writer, 0, sizeof(writer));
+    memset(&array_stream, 0, sizeof(array_stream));
     rducks_arrow_error_init(&error);
+    memset(&cleanup, 0, sizeof(cleanup));
+    cleanup.buffer = &buffer;
+    cleanup.array_stream = &array_stream;
+    cleanup.writer = &writer;
+    cleanup.writer_reset = symbols.writer_reset;
+
     rducks_single_array_stream_init(&array_stream, array_xptr, schema_xptr);
 
     if (symbols.output_stream_init_buffer(&output_stream, &buffer) != RDUCKS_NANOARROW_OK) {
-        rducks_single_array_stream_release(&array_stream);
-        rducks_arrow_buffer_reset(&buffer);
+        rducks_ipc_encode_cleanup(&cleanup, FALSE);
         Rf_error("ArrowIpcOutputStreamInitBuffer() failed");
     }
     if (symbols.writer_init(&writer, &output_stream) != RDUCKS_NANOARROW_OK) {
-        rducks_single_array_stream_release(&array_stream);
-        rducks_arrow_buffer_reset(&buffer);
+        rducks_ipc_encode_cleanup(&cleanup, FALSE);
         Rf_error("ArrowIpcWriterInit() failed");
     }
-    writer_initialized = 1;
+    cleanup.writer_initialized = 1;
 
     if (symbols.writer_write_array_stream(&writer, &array_stream, &error) != RDUCKS_NANOARROW_OK) {
-        if (writer_initialized) symbols.writer_reset(&writer);
-        if (array_stream.release) array_stream.release(&array_stream);
-        rducks_arrow_buffer_reset(&buffer);
+        rducks_ipc_encode_cleanup(&cleanup, FALSE);
         Rf_error("ArrowIpcWriterWriteArrayStream() failed: %s", error.message[0] ? error.message : "unknown error");
     }
 
-    out = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)buffer.size_bytes));
-    if (buffer.size_bytes > 0) {
-        memcpy(RAW(out), buffer.data, (size_t)buffer.size_bytes);
-    }
-    symbols.writer_reset(&writer);
-    if (array_stream.release) array_stream.release(&array_stream);
-    rducks_arrow_buffer_reset(&buffer);
-    UNPROTECT(1);
-    return out;
+    return R_UnwindProtect(rducks_ipc_encode_alloc_raw, &cleanup,
+                           rducks_ipc_encode_cleanup, &cleanup,
+                           NULL);
 }

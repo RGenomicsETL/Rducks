@@ -269,6 +269,9 @@ Run with `lobstr` in this session:
 - [ ] Audit remaining `Rf_*` longjmp paths.
   - Use `R_alloc()` or `R_UnwindProtect()` where heap state would otherwise leak
     across `Rf_error()`.
+  - IPC native encoding now uses `R_UnwindProtect()` around raw-vector
+    allocation/copy so Arrow writer, stream, preserved nanoarrow external
+    pointers, and native buffers are released if `Rf_allocVector()` longjmps.
 
 - [ ] Add GC/lifetime tests.
   - Drop R registration objects, run `gc()`, then call DuckDB UDFs.
