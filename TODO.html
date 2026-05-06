@@ -290,6 +290,7 @@
 <label><input type="checkbox" checked>Gate dev/test SQL probes behind <code>RDUCKS_DEV_SURFACES=true</code>.</label>
 <ul><li>
 <code>rducks_parallel_range</code>, <code>rducks_parallel_thread_probe</code>, <code>rducks_queue_self_test</code>, and <code>rducks_thread_is_main</code> no longer register as production SQL functions by default.</li>
+<li>The production backend setter remains for R-side plan control but now requires the recorded main-thread capability payload; bare manual SQL calls cannot mutate runtime backend state.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Add counter reset support.</label>
