@@ -110,11 +110,13 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' Returns diagnostic counters for the extension-owned in-process queue.
 #' `submitted` counts requests submitted to the recorded main R thread,
 #' `executed` counts requests drained by that thread, and `timeouts` counts
-#' requests that were abandoned rather than waiting indefinitely.
+#' requests that were abandoned rather than waiting indefinitely. The
+#' `pending_*` and `running_*` columns expose current and maximum queue pressure:
+#' pending requests are waiting to be drained by the main R thread, while running
+#' requests have been popped by that thread and are executing or collecting.
 #'
 #' @param con A `duckdb_connection`.
-#' @return A one-row data frame with columns `submitted`, `executed`, and
-#'   `timeouts`.
+#' @return A one-row data frame with queue diagnostic columns.
 #' @export
 rducks_inproc_stats <- function(con) {
   rducks_assert_duckdb_connection(con)
@@ -123,7 +125,11 @@ rducks_inproc_stats <- function(con) {
     paste(
       "SELECT rducks_queue_submitted() AS submitted,",
       "rducks_queue_executed() AS executed,",
-      "rducks_queue_timeouts() AS timeouts"
+      "rducks_queue_timeouts() AS timeouts,",
+      "rducks_queue_pending_current() AS pending_current,",
+      "rducks_queue_pending_max() AS pending_max,",
+      "rducks_queue_running_current() AS running_current,",
+      "rducks_queue_running_max() AS running_max"
     )
   )
 }

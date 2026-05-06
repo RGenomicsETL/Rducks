@@ -125,6 +125,10 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_submitted;
     uint64_t queue_executed;
     uint64_t queue_timeouts;
+    uint64_t queue_pending_current;
+    uint64_t queue_pending_max;
+    uint64_t queue_running_current;
+    uint64_t queue_running_max;
     rducks_r_scalar_meta_t *udf_registry_head;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;

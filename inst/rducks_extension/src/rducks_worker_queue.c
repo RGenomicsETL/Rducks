@@ -116,6 +116,7 @@ static int rducks_queue_remove_pending_locked(rducks_runtime_entry_t *runtime, r
             }
             cur->next = NULL;
             cur->state = RDUCKS_REQUEST_CANCELLED;
+            if (runtime->queue_pending_current > 0) runtime->queue_pending_current--;
             return 1;
         }
         prev = cur;
@@ -137,6 +138,11 @@ static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *run
     if (!runtime->queue_head) runtime->queue_tail = NULL;
     request->next = NULL;
     request->state = RDUCKS_REQUEST_RUNNING;
+    if (runtime->queue_pending_current > 0) runtime->queue_pending_current--;
+    runtime->queue_running_current++;
+    if (runtime->queue_running_current > runtime->queue_running_max) {
+        runtime->queue_running_max = runtime->queue_running_current;
+    }
     return request;
 }
 
@@ -304,6 +310,7 @@ static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_
     }
     request->state = RDUCKS_REQUEST_DONE;
     runtime->queue_executed++;
+    if (runtime->queue_running_current > 0) runtime->queue_running_current--;
     rducks_queue_signal_all(runtime);
     rducks_queue_unlock(runtime);
 }
@@ -363,6 +370,10 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     rducks_queue_lock(runtime);
     rducks_queue_push_locked(runtime, request);
     runtime->queue_submitted++;
+    runtime->queue_pending_current++;
+    if (runtime->queue_pending_current > runtime->queue_pending_max) {
+        runtime->queue_pending_max = runtime->queue_pending_current;
+    }
     rducks_queue_signal_all(runtime);
 
     while (request->state != RDUCKS_REQUEST_DONE) {

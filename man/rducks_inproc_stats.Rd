@@ -10,12 +10,14 @@ rducks_inproc_stats(con)
 \item{con}{A \code{duckdb_connection}.}
 }
 \value{
-A one-row data frame with columns \code{submitted}, \code{executed}, and
-\code{timeouts}.
+A one-row data frame with queue diagnostic columns.
 }
 \description{
 Returns diagnostic counters for the extension-owned in-process queue.
 \code{submitted} counts requests submitted to the recorded main R thread,
 \code{executed} counts requests drained by that thread, and \code{timeouts} counts
-requests that were abandoned rather than waiting indefinitely.
+requests that were abandoned rather than waiting indefinitely. The
+\verb{pending_*} and \verb{running_*} columns expose current and maximum queue pressure:
+pending requests are waiting to be drained by the main R thread, while running
+requests have been popped by that thread and are executing or collecting.
 }

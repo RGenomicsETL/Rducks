@@ -139,43 +139,85 @@ static bool rducks_register_noarg_scalar(duckdb_connection con, const char *name
     return rducks_register_noarg_scalar_ex(con, NULL, name, return_type, callback, is_volatile);
 }
 
-static void rducks_queue_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+typedef enum rducks_queue_stat_field {
+    RDUCKS_QUEUE_STAT_SUBMITTED = 0,
+    RDUCKS_QUEUE_STAT_EXECUTED,
+    RDUCKS_QUEUE_STAT_TIMEOUTS,
+    RDUCKS_QUEUE_STAT_PENDING_CURRENT,
+    RDUCKS_QUEUE_STAT_PENDING_MAX,
+    RDUCKS_QUEUE_STAT_RUNNING_CURRENT,
+    RDUCKS_QUEUE_STAT_RUNNING_MAX
+} rducks_queue_stat_field_t;
+
+static uint64_t rducks_queue_stat_value_locked(rducks_runtime_entry_t *runtime,
+                                               rducks_queue_stat_field_t field) {
+    switch (field) {
+    case RDUCKS_QUEUE_STAT_SUBMITTED:
+        return runtime->queue_submitted;
+    case RDUCKS_QUEUE_STAT_EXECUTED:
+        return runtime->queue_executed;
+    case RDUCKS_QUEUE_STAT_TIMEOUTS:
+        return runtime->queue_timeouts;
+    case RDUCKS_QUEUE_STAT_PENDING_CURRENT:
+        return runtime->queue_pending_current;
+    case RDUCKS_QUEUE_STAT_PENDING_MAX:
+        return runtime->queue_pending_max;
+    case RDUCKS_QUEUE_STAT_RUNNING_CURRENT:
+        return runtime->queue_running_current;
+    case RDUCKS_QUEUE_STAT_RUNNING_MAX:
+        return runtime->queue_running_max;
+    default:
+        return 0;
+    }
+}
+
+static void rducks_queue_stat_scalar_impl(duckdb_function_info info, duckdb_data_chunk input,
+                                          duckdb_vector output, rducks_queue_stat_field_t field) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     uint64_t value = 0;
     idx_t n = duckdb_data_chunk_get_size(input);
     uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
     if (runtime) {
         rducks_queue_lock(runtime);
-        value = runtime->queue_submitted;
+        value = rducks_queue_stat_value_locked(runtime, field);
         rducks_queue_unlock(runtime);
     }
     for (idx_t i = 0; i < n; i++) out[i] = value;
 }
 
-static void rducks_queue_executed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
-    uint64_t value = 0;
-    idx_t n = duckdb_data_chunk_get_size(input);
-    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
-    if (runtime) {
-        rducks_queue_lock(runtime);
-        value = runtime->queue_executed;
-        rducks_queue_unlock(runtime);
-    }
-    for (idx_t i = 0; i < n; i++) out[i] = value;
+static void rducks_queue_submitted_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                               duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_SUBMITTED);
 }
 
-static void rducks_queue_timeouts_stat_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
-    uint64_t value = 0;
-    idx_t n = duckdb_data_chunk_get_size(input);
-    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
-    if (runtime) {
-        rducks_queue_lock(runtime);
-        value = runtime->queue_timeouts;
-        rducks_queue_unlock(runtime);
-    }
-    for (idx_t i = 0; i < n; i++) out[i] = value;
+static void rducks_queue_executed_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                              duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_EXECUTED);
+}
+
+static void rducks_queue_timeouts_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                              duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_TIMEOUTS);
+}
+
+static void rducks_queue_pending_current_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                     duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_PENDING_CURRENT);
+}
+
+static void rducks_queue_pending_max_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                 duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_PENDING_MAX);
+}
+
+static void rducks_queue_running_current_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                     duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_RUNNING_CURRENT);
+}
+
+static void rducks_queue_running_max_stat_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                 duckdb_vector output) {
+    rducks_queue_stat_scalar_impl(info, input, output, RDUCKS_QUEUE_STAT_RUNNING_MAX);
 }
 
 static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
@@ -236,11 +278,19 @@ static void rducks_thread_is_main_scalar(duckdb_function_info info, duckdb_data_
 
 static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_entry_t *runtime) {
     return rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_submitted", DUCKDB_TYPE_UBIGINT,
-                                           rducks_queue_stat_scalar, true) &&
+                                           rducks_queue_submitted_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_executed", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_executed_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_timeouts", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_timeouts_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_pending_current", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_pending_current_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_pending_max", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_pending_max_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_current", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_running_current_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_max", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_running_max_stat_scalar, true) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",

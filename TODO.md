@@ -280,10 +280,9 @@ Run with `lobstr` in this session:
 
 ## P2: observability and diagnostics
 
-- [ ] Decide and implement the `rducks_inproc_stats()` scope decision.
-  - If expanded, include runtime-wide pending current/max counters.
-  - If kept minimal, docs should explicitly point users to per-UDF counters in
-    `rducks_explain_udf()`.
+- [x] Expand `rducks_inproc_stats()` beyond submitted/executed/timeouts.
+  - Runtime-wide pending/running current and max counters are exposed alongside
+    submitted, executed, and timeouts.
 
 - [ ] Add counter reset support.
   - Reset one UDF or all UDF counters without unregistering the UDF.

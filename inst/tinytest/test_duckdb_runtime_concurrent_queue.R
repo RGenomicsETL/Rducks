@@ -19,6 +19,10 @@ local({
   expect_equal(before$submitted, 0)
   expect_equal(before$executed, 0)
   expect_equal(before$timeouts, 0)
+  expect_equal(before$pending_current, 0)
+  expect_equal(before$pending_max, 0)
+  expect_equal(before$running_current, 0)
+  expect_equal(before$running_max, 0)
 
   self_test <- rducks_inproc_self_test(con, 3)
   expect_equal(self_test, 3)
@@ -27,6 +31,10 @@ local({
   expect_equal(after$submitted, 3)
   expect_equal(after$executed, 3)
   expect_equal(after$timeouts, 0)
+  expect_equal(after$pending_current, 0)
+  expect_true(after$pending_max >= 1)
+  expect_equal(after$running_current, 0)
+  expect_true(after$running_max >= 1)
 
   invisible(rducks_register(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
   invisible(rducks_register(con, "rducks_queue_plus_one_vec", function(x) x + 1, DOUBLE, DOUBLE,
