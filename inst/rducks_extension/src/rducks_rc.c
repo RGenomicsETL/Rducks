@@ -944,8 +944,12 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
 
 static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     SEXP out;
-    if (desc && desc->kind == RDUCKS_KIND_ENUM) {
+    if (!desc) return R_NilValue;
+    if (desc->kind == RDUCKS_KIND_ENUM) {
         return rducks_rc_make_enum(desc, -1);
+    }
+    if (desc->kind != RDUCKS_KIND_SCALAR) {
+        return R_NilValue;
     }
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
@@ -1467,6 +1471,473 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
     }
 }
 
+static SEXP rducks_rc_make_classed_character_vector(R_xlen_t n, const char *class_name) {
+    SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    SET_STRING_ELT(cls, 0, Rf_mkChar(class_name));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("character"));
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(2);
+    return out;
+}
+
+static SEXP rducks_rc_make_decimal_vector(R_xlen_t n, int width, int scale) {
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+    SEXP values = PROTECT(Rf_allocVector(STRSXP, n));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
+    SEXP cls = PROTECT(Rf_mkString("rducks_decimal"));
+    SEXP width_sexp = PROTECT(Rf_ScalarInteger(width));
+    SEXP scale_sexp = PROTECT(Rf_ScalarInteger(scale));
+    SET_VECTOR_ELT(out, 0, values);
+    SET_VECTOR_ELT(out, 1, width_sexp);
+    SET_VECTOR_ELT(out, 2, scale_sexp);
+    SET_STRING_ELT(names, 0, Rf_mkChar("value"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("width"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("scale"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(6);
+    return out;
+}
+
+static SEXP rducks_rc_make_interval_vector(R_xlen_t n) {
+    SEXP out = PROTECT(Rf_allocVector(VECSXP, 3));
+    SEXP months = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP days = PROTECT(Rf_allocVector(INTSXP, n));
+    SEXP micros = PROTECT(rducks_rc_make_classed_character_vector(n, "rducks_bigint"));
+    SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
+    SEXP cls = PROTECT(Rf_mkString("rducks_interval"));
+    SET_VECTOR_ELT(out, 0, months);
+    SET_VECTOR_ELT(out, 1, days);
+    SET_VECTOR_ELT(out, 2, micros);
+    SET_STRING_ELT(names, 0, Rf_mkChar("months"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("days"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("micros"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(6);
+    return out;
+}
+
+static void rducks_rc_set_string_from_signed_bytes(SEXP out, R_xlen_t i, const uint8_t *bytes,
+                                                   size_t width, int signed_value) {
+    char buf[160];
+    size_t len = rducks_rc_int_le_bytes_to_decimal_buf(bytes, width, signed_value, buf, sizeof(buf));
+    SET_STRING_ELT(out, i, Rf_mkCharLenCE(buf, (int)len, CE_UTF8));
+}
+
+static void rducks_rc_decimal_string_from_storage(SEXP values, R_xlen_t i, const uint8_t *bytes,
+                                                  size_t storage_width, int width, int scale) {
+    char integer_buf[160];
+    size_t integer_len = rducks_rc_int_le_bytes_to_decimal_buf(bytes, storage_width, 1, integer_buf, sizeof(integer_buf));
+    int neg = integer_len > 0 && integer_buf[0] == '-';
+    const char *digits = integer_buf + (neg ? 1 : 0);
+    size_t digit_len = integer_len - (neg ? 1U : 0U);
+    digits = rducks_rc_skip_zeros(digits, &digit_len);
+    if (digit_len == 0) {
+        digits = "0";
+        digit_len = 1;
+        neg = 0;
+    }
+    size_t padded_len = scale > 0 && digit_len <= (size_t)scale ? (size_t)scale + 1U : digit_len;
+    char *padded = (char *)R_alloc(padded_len + 1U, sizeof(char));
+    size_t pad = padded_len - digit_len;
+    memset(padded, '0', pad);
+    memcpy(padded + pad, digits, digit_len);
+    padded[padded_len] = '\0';
+    size_t whole_len = scale > 0 ? padded_len - (size_t)scale : padded_len;
+    const char *whole = rducks_rc_skip_zeros(padded, &whole_len);
+    if (whole_len == 0) {
+        whole = "0";
+        whole_len = 1;
+    }
+    size_t out_len = (neg ? 1U : 0U) + whole_len + (scale > 0 ? 1U + (size_t)scale : 0U);
+    char *buf = (char *)R_alloc(out_len + 1U, sizeof(char));
+    size_t pos = 0;
+    if (neg) buf[pos++] = '-';
+    memcpy(buf + pos, whole, whole_len);
+    pos += whole_len;
+    if (scale > 0) {
+        buf[pos++] = '.';
+        memcpy(buf + pos, padded + padded_len - (size_t)scale, (size_t)scale);
+        pos += (size_t)scale;
+    }
+    buf[pos] = '\0';
+    SET_STRING_ELT(values, i, Rf_mkCharLenCE(buf, (int)out_len, CE_UTF8));
+    (void)width;
+}
+
+static SEXP rducks_rc_direct_column_nulls(const rducks_rc_direct_vector_view_t *view, idx_t n) {
+    SEXP out = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)n));
+    for (idx_t row = 0; row < n; row++) {
+        LOGICAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(view, row) ? FALSE : TRUE;
+    }
+    UNPROTECT(1);
+    return out;
+}
+
+static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckdb_vector vector, idx_t n,
+                                           char *err_msg, size_t err_cap) {
+    rducks_rc_direct_vector_view_t view;
+    SEXP out;
+    rducks_rc_direct_input_view_init(&view, vector);
+
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        out = PROTECT(rducks_rc_make_enum_vector(desc, (R_xlen_t)n));
+        for (idx_t row = 0; row < n; row++) {
+            if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                INTEGER(out)[(R_xlen_t)row] = NA_INTEGER;
+            } else {
+                uint32_t index = rducks_rc_enum_index_from_data(desc, view.data, row);
+                INTEGER(out)[(R_xlen_t)row] = index < desc->field_count ? (int)index + 1 : NA_INTEGER;
+            }
+        }
+        UNPROTECT(1);
+        return out;
+    }
+
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        int storage_width = rducks_rc_decimal_storage_width(desc);
+        out = PROTECT(rducks_rc_make_decimal_vector((R_xlen_t)n, desc->decimal_width, desc->decimal_scale));
+        SEXP values = VECTOR_ELT(out, 0);
+        for (idx_t row = 0; row < n; row++) {
+            uint8_t bytes[16];
+            memset(bytes, 0, sizeof(bytes));
+            if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                SET_STRING_ELT(values, (R_xlen_t)row, NA_STRING);
+                continue;
+            }
+            if (storage_width == 2) {
+                int16_t *data = (int16_t *)view.data;
+                uint16_t u;
+                memcpy(&u, &data[row], sizeof(u));
+                bytes[0] = (uint8_t)(u & 0xffU);
+                bytes[1] = (uint8_t)((u >> 8) & 0xffU);
+            } else if (storage_width == 4) {
+                int32_t *data = (int32_t *)view.data;
+                uint32_t u;
+                memcpy(&u, &data[row], sizeof(u));
+                for (int i = 0; i < 4; i++) bytes[i] = (uint8_t)((u >> (8 * i)) & 0xffU);
+            } else if (storage_width == 8) {
+                int64_t *data = (int64_t *)view.data;
+                uint64_t u;
+                memcpy(&u, &data[row], sizeof(u));
+                rducks_rc_u64_to_le_bytes(u, bytes);
+            } else {
+                duckdb_hugeint *data = (duckdb_hugeint *)view.data;
+                rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+                uint64_t upper;
+                memcpy(&upper, &data[row].upper, sizeof(upper));
+                rducks_rc_u64_to_le_bytes(upper, bytes + 8);
+            }
+            rducks_rc_decimal_string_from_storage(values, (R_xlen_t)row, bytes, (size_t)storage_width,
+                                                  desc->decimal_width, desc->decimal_scale);
+        }
+        UNPROTECT(1);
+        return out;
+    }
+
+    if (desc->kind == RDUCKS_KIND_SCALAR) {
+        switch (desc->scalar) {
+        case RDUCKS_TYPE_BOOL:
+            out = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) LOGICAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (((bool *)view.data)[row] ? TRUE : FALSE) : NA_LOGICAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I8:
+            out = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) INTEGER(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (int)((int8_t *)view.data)[row] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U8:
+            out = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) INTEGER(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (int)((uint8_t *)view.data)[row] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I16:
+            out = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) INTEGER(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (int)((int16_t *)view.data)[row] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U16:
+            out = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) INTEGER(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (int)((uint16_t *)view.data)[row] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I32:
+            out = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) INTEGER(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (int)((int32_t *)view.data)[row] : NA_INTEGER;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_U32:
+            out = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (double)((uint32_t *)view.data)[row] : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_I64:
+        case RDUCKS_TYPE_U64: {
+            int signed_value = desc->scalar == RDUCKS_TYPE_I64;
+            out = PROTECT(rducks_rc_make_classed_character_vector((R_xlen_t)n, signed_value ? "rducks_bigint" : "rducks_ubigint"));
+            for (idx_t row = 0; row < n; row++) {
+                uint8_t bytes[8];
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_STRING_ELT(out, (R_xlen_t)row, NA_STRING);
+                } else if (signed_value) {
+                    int64_t *data = (int64_t *)view.data;
+                    uint64_t u;
+                    memcpy(&u, &data[row], sizeof(u));
+                    rducks_rc_u64_to_le_bytes(u, bytes);
+                    rducks_rc_set_string_from_signed_bytes(out, (R_xlen_t)row, bytes, 8, 1);
+                } else {
+                    rducks_rc_u64_to_le_bytes(((uint64_t *)view.data)[row], bytes);
+                    rducks_rc_set_string_from_signed_bytes(out, (R_xlen_t)row, bytes, 8, 0);
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        }
+        case RDUCKS_TYPE_F32:
+            out = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (double)((float *)view.data)[row] : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_F64:
+            out = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? ((double *)view.data)[row] : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_VARCHAR:
+            out = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) {
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_STRING_ELT(out, (R_xlen_t)row, NA_STRING);
+                } else {
+                    duckdb_string_t *data = (duckdb_string_t *)view.data;
+                    uint32_t len = duckdb_string_t_length(data[row]);
+                    const char *ptr = duckdb_string_t_data(&data[row]);
+                    if (len > (uint32_t)INT_MAX) {
+                        snprintf(err_msg, err_cap, "Rducks VARCHAR value is too large to materialize in R");
+                        UNPROTECT(1);
+                        return R_NilValue;
+                    }
+                    SET_STRING_ELT(out, (R_xlen_t)row, Rf_mkCharLenCE(ptr, (int)len, CE_UTF8));
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_BLOB:
+            out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) {
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_VECTOR_ELT(out, (R_xlen_t)row, R_NilValue);
+                } else {
+                    duckdb_string_t *data = (duckdb_string_t *)view.data;
+                    uint32_t len = duckdb_string_t_length(data[row]);
+                    const char *ptr = duckdb_string_t_data(&data[row]);
+                    SEXP raw = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)len));
+                    if (len) memcpy(RAW(raw), ptr, len);
+                    SET_VECTOR_ELT(out, (R_xlen_t)row, raw);
+                    UNPROTECT(1);
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_DATE:
+            out = PROTECT(rducks_rc_make_date_vector((R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (double)((duckdb_date *)view.data)[row].days : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_TIME:
+            out = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (double)((duckdb_time *)view.data)[row].micros / 1000000.0 : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_TIMESTAMP:
+            out = PROTECT(rducks_rc_make_posixct_vector((R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) REAL(out)[(R_xlen_t)row] = rducks_rc_direct_view_valid_at(&view, row) ? (double)((duckdb_timestamp *)view.data)[row].micros / 1000000.0 : NA_REAL;
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_HUGEINT:
+        case RDUCKS_TYPE_UHUGEINT: {
+            int signed_value = desc->scalar == RDUCKS_TYPE_HUGEINT;
+            out = PROTECT(rducks_rc_make_classed_character_vector((R_xlen_t)n, signed_value ? "rducks_hugeint" : "rducks_uhugeint"));
+            for (idx_t row = 0; row < n; row++) {
+                uint8_t bytes[16];
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_STRING_ELT(out, (R_xlen_t)row, NA_STRING);
+                } else if (signed_value) {
+                    duckdb_hugeint *data = (duckdb_hugeint *)view.data;
+                    rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+                    uint64_t upper;
+                    memcpy(&upper, &data[row].upper, sizeof(upper));
+                    rducks_rc_u64_to_le_bytes(upper, bytes + 8);
+                    rducks_rc_set_string_from_signed_bytes(out, (R_xlen_t)row, bytes, 16, 1);
+                } else {
+                    duckdb_uhugeint *data = (duckdb_uhugeint *)view.data;
+                    rducks_rc_u64_to_le_bytes(data[row].lower, bytes);
+                    rducks_rc_u64_to_le_bytes(data[row].upper, bytes + 8);
+                    rducks_rc_set_string_from_signed_bytes(out, (R_xlen_t)row, bytes, 16, 0);
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        }
+        case RDUCKS_TYPE_UUID:
+            out = PROTECT(rducks_rc_make_classed_character_vector((R_xlen_t)n, "rducks_uuid"));
+            for (idx_t row = 0; row < n; row++) {
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_STRING_ELT(out, (R_xlen_t)row, NA_STRING);
+                } else {
+                    SEXP uuid = PROTECT(rducks_rc_make_uuid_from_hugeint(((duckdb_hugeint *)view.data)[row]));
+                    SET_STRING_ELT(out, (R_xlen_t)row, STRING_ELT(uuid, 0));
+                    UNPROTECT(1);
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_INTERVAL:
+            out = PROTECT(rducks_rc_make_interval_vector((R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) {
+                SEXP months = VECTOR_ELT(out, 0);
+                SEXP days = VECTOR_ELT(out, 1);
+                SEXP micros = VECTOR_ELT(out, 2);
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    INTEGER(months)[(R_xlen_t)row] = NA_INTEGER;
+                    INTEGER(days)[(R_xlen_t)row] = NA_INTEGER;
+                    SET_STRING_ELT(micros, (R_xlen_t)row, NA_STRING);
+                } else {
+                    duckdb_interval value = ((duckdb_interval *)view.data)[row];
+                    uint8_t bytes[8];
+                    uint64_t u;
+                    INTEGER(months)[(R_xlen_t)row] = value.months;
+                    INTEGER(days)[(R_xlen_t)row] = value.days;
+                    memcpy(&u, &value.micros, sizeof(u));
+                    rducks_rc_u64_to_le_bytes(u, bytes);
+                    rducks_rc_set_string_from_signed_bytes(micros, (R_xlen_t)row, bytes, 8, 1);
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        case RDUCKS_TYPE_BIT:
+            out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
+            for (idx_t row = 0; row < n; row++) {
+                if (!rducks_rc_direct_view_valid_at(&view, row)) {
+                    SET_VECTOR_ELT(out, (R_xlen_t)row, R_NilValue);
+                } else {
+                    duckdb_string_t *data = (duckdb_string_t *)view.data;
+                    uint32_t len = duckdb_string_t_length(data[row]);
+                    const char *ptr = duckdb_string_t_data(&data[row]);
+                    SET_VECTOR_ELT(out, (R_xlen_t)row, rducks_rc_make_bits_from_payload(ptr, len));
+                }
+            }
+            UNPROTECT(1);
+            return out;
+        default:
+            break;
+        }
+    }
+
+    out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
+    for (idx_t row = 0; row < n; row++) {
+        if (!rducks_rc_direct_view_valid_at(&view, row)) {
+            SET_VECTOR_ELT(out, (R_xlen_t)row, R_NilValue);
+        } else {
+            SET_VECTOR_ELT(out, (R_xlen_t)row, rducks_rc_direct_arg(desc, &view, row));
+        }
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        SEXP cls = PROTECT(Rf_mkString("rducks_union_list"));
+        Rf_setAttrib(out, R_ClassSymbol, cls);
+        UNPROTECT(1);
+    }
+    if (!rducks_rc_direct_type_supported(desc)) {
+        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+    }
+    UNPROTECT(1);
+    return out;
+}
+
+static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input,
+                                            idx_t n, int *protect_count,
+                                            char *err_msg, size_t err_cap) {
+    SEXP prepared;
+    SEXP columns;
+    SEXP nulls;
+    SEXP top_level_null;
+    SEXP n_sexp;
+    SEXP names;
+
+    if (n > (idx_t)R_XLEN_T_MAX) {
+        snprintf(err_msg, err_cap, "Rducks chunk is too large to materialize in R");
+        return R_NilValue;
+    }
+
+    prepared = PROTECT(Rf_allocVector(VECSXP, 4));
+    (*protect_count)++;
+    columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
+    (*protect_count)++;
+    nulls = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
+    (*protect_count)++;
+    top_level_null = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)n));
+    (*protect_count)++;
+    n_sexp = PROTECT(Rf_ScalarReal((double)n));
+    (*protect_count)++;
+    names = PROTECT(Rf_allocVector(STRSXP, 4));
+    (*protect_count)++;
+
+    for (idx_t row = 0; row < n; row++) LOGICAL(top_level_null)[(R_xlen_t)row] = FALSE;
+
+    for (size_t col = 0; col < meta->arity; col++) {
+        duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
+        rducks_rc_direct_vector_view_t view;
+        rducks_rc_direct_input_view_init(&view, vector);
+        SEXP col_nulls = PROTECT(rducks_rc_direct_column_nulls(&view, n));
+        SEXP values = PROTECT(rducks_rc_direct_column_values(meta->args[col], vector, n, err_msg, err_cap));
+        if (err_msg[0]) {
+            UNPROTECT(2);
+            return R_NilValue;
+        }
+        for (idx_t row = 0; row < n; row++) {
+            if (LOGICAL(col_nulls)[(R_xlen_t)row] == TRUE) LOGICAL(top_level_null)[(R_xlen_t)row] = TRUE;
+        }
+        SET_VECTOR_ELT(columns, (R_xlen_t)col, values);
+        SET_VECTOR_ELT(nulls, (R_xlen_t)col, col_nulls);
+        UNPROTECT(2);
+    }
+
+    SET_VECTOR_ELT(prepared, 0, columns);
+    SET_VECTOR_ELT(prepared, 1, nulls);
+    SET_VECTOR_ELT(prepared, 2, top_level_null);
+    SET_VECTOR_ELT(prepared, 3, n_sexp);
+    SET_STRING_ELT(names, 0, Rf_mkChar("columns"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("nulls"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("top_level_null"));
+    SET_STRING_ELT(names, 3, Rf_mkChar("n"));
+    Rf_setAttrib(prepared, R_NamesSymbol, names);
+    return prepared;
+}
+
+static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
+                                         idx_t row, SEXP value, char *err_msg, size_t err_cap);
+
+static int rducks_rc_write_direct_results(rducks_r_scalar_meta_t *meta, SEXP results,
+                                          duckdb_vector output, idx_t n,
+                                          char *err_msg, size_t err_cap) {
+    if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return 0;
+    }
+    rducks_rc_direct_vector_view_t output_view;
+    rducks_rc_direct_output_view_init(&output_view, output);
+    for (idx_t row = 0; row < n; row++) {
+        SEXP value = VECTOR_ELT(results, (R_xlen_t)row);
+        if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, value, err_msg, err_cap)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SEXP value) {
     if (value == R_NilValue) return 1;
     if (desc->kind == RDUCKS_KIND_DECIMAL) {
@@ -1956,281 +2427,62 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
     return 1;
 }
 
-/* RC fallback phases use the R-side Arrow prepare/result helpers while keeping
- * row evaluation in C for eval_mode = "RC" semantics. This path remains
- * R-thread-only because it creates nanoarrow external pointers and calls R
- * helpers. It is intentionally isolated from the direct DuckDB vector path so a
- * future concurrent backend can reuse the prepared row engine with an owned
- * transport such as Arrow IPC instead of borrowed DuckDB vectors.
- */
-static SEXP rducks_rc_eval_arrow_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
-                                                  SEXP input_array_xptr, SEXP input_schema_xptr,
-                                                  SEXP output_schema_xptr, idx_t n,
-                                                  int *protect_count, char *err_msg, size_t err_cap) {
-    int r_err = 0;
-    SEXP bundle;
-    SEXP fun;
-    SEXP arg_types;
-    SEXP return_type;
-    SEXP prepare_inputs_fun;
-    SEXP check_return_fun;
-    SEXP result_array_fun;
-    SEXP n_sexp;
-    SEXP prep_call;
-    SEXP prepared;
-    SEXP columns;
-    SEXP nulls;
-    SEXP top_level_null;
-    SEXP results;
-    SEXP result_call;
-    SEXP result_array;
-
-    if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
-        return R_NilValue;
-    }
-    bundle = meta->fun;
-    if (!rducks_rc_bundle_valid(bundle)) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar metadata bundle is invalid");
-        return R_NilValue;
-    }
-
-    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
-    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
-    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
-    prepare_inputs_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_PREPARE_INPUTS);
-    check_return_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN);
-    result_array_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY);
-
-    n_sexp = PROTECT(Rf_ScalarReal((double)n));
-    (*protect_count)++;
-    prep_call = PROTECT(Rf_lang5(prepare_inputs_fun, arg_types, input_array_xptr, input_schema_xptr, n_sexp));
-    (*protect_count)++;
-    prepared = PROTECT(R_tryEvalSilent(prep_call, R_GlobalEnv, &r_err));
-    (*protect_count)++;
-    if (r_err || TYPEOF(prepared) != VECSXP || XLENGTH(prepared) < 3) {
-        snprintf(err_msg, err_cap, "Rducks RC input preparation failed");
-        return R_NilValue;
-    }
-    columns = VECTOR_ELT(prepared, 0);
-    nulls = VECTOR_ELT(prepared, 1);
-    top_level_null = VECTOR_ELT(prepared, 2);
-    if (TYPEOF(columns) != VECSXP || TYPEOF(nulls) != VECSXP || TYPEOF(top_level_null) != LGLSXP) {
-        snprintf(err_msg, err_cap, "Rducks RC input preparation returned invalid metadata");
-        return R_NilValue;
-    }
-
-    results = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
-    (*protect_count)++;
-    for (idx_t row = 0; row < n; row++) {
-        if (meta->null_handling == RDUCKS_NULL_DEFAULT && rducks_rc_logical_at(top_level_null, row)) {
-            SET_VECTOR_ELT(results, (R_xlen_t)row, R_NilValue);
-            continue;
-        }
-
-        SEXP args = PROTECT(Rf_allocList((int)meta->arity));
-        SEXP node = args;
-        for (size_t col = 0; col < meta->arity; col++) {
-            int ok = 1;
-            SEXP arg = rducks_rc_arg_at(meta->args[col], VECTOR_ELT(columns, (R_xlen_t)col),
-                                        VECTOR_ELT(nulls, (R_xlen_t)col), row, &ok);
-            if (!ok) {
-                UNPROTECT(1);
-                snprintf(err_msg, err_cap, "Rducks RC argument extraction failed");
-                return R_NilValue;
-            }
-            PROTECT(arg);
-            SETCAR(node, arg);
-            UNPROTECT(1);
-            node = CDR(node);
-        }
-
-        r_err = 0;
-        SEXP value = PROTECT(rducks_rc_call_user(fun, args, &r_err));
-        if (r_err) {
-            UNPROTECT(2); /* value, args */
-            if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
-                SET_VECTOR_ELT(results, (R_xlen_t)row, R_NilValue);
-                continue;
-            }
-            snprintf(err_msg, err_cap, "Rducks RC R function error");
-            return R_NilValue;
-        }
-
-        r_err = 0;
-        SEXP checked = PROTECT(rducks_rc_check_return(check_return_fun, return_type, value, &r_err));
-        if (r_err) {
-            UNPROTECT(3); /* checked, value, args */
-            snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
-            return R_NilValue;
-        }
-        SET_VECTOR_ELT(results, (R_xlen_t)row, checked);
-        UNPROTECT(3); /* checked, value, args */
-    }
-
-    result_call = PROTECT(Rf_lang5(result_array_fun, return_type, results, output_schema_xptr, n_sexp));
-    (*protect_count)++;
-    r_err = 0;
-    result_array = PROTECT(R_tryEvalSilent(result_call, R_GlobalEnv, &r_err));
-    (*protect_count)++;
-    if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks RC Arrow result construction failed");
-        return R_NilValue;
-    }
-    return result_array;
-}
-
-static int rducks_rc_arrow_scalar_execute_on_r_thread(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                                      duckdb_data_chunk input,
-                                                      duckdb_vector output, char *err_msg, size_t err_cap) {
+static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                        duckdb_data_chunk input, duckdb_vector output,
+                                        char *err_msg, size_t err_cap) {
+    (void)runtime;
     idx_t n;
     int protect_count = 0;
-    SEXP input_schema_xptr;
-    SEXP input_array_xptr;
-    SEXP output_schema_xptr;
-    SEXP result_array;
-
-    if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
-        return 0;
-    }
-
-    n = duckdb_data_chunk_get_size(input);
-    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_schema(runtime, input_schema_xptr, meta, err_msg, err_cap)) goto fail;
-
-    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_array(runtime, input_array_xptr, input, err_msg, err_cap)) goto fail;
-    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
-
-    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_output_arrow_schema(runtime, output_schema_xptr, meta, err_msg, err_cap)) goto fail;
-
-    result_array = rducks_rc_eval_arrow_xptr_on_r_thread(meta, input_array_xptr, input_schema_xptr,
-                                                         output_schema_xptr, n, &protect_count, err_msg, err_cap);
-    if (result_array == R_NilValue) goto fail;
-    if (!rducks_import_arrow_result(runtime, result_array, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap)) goto fail;
-
-    UNPROTECT(protect_count);
-    return 1;
-
-fail:
-    UNPROTECT(protect_count);
-    return 0;
-}
-
-static SEXP rducks_rc_eval_arrow_vectorized_xptr_on_r_thread(rducks_r_scalar_meta_t *meta,
-                                                             SEXP input_array_xptr, SEXP input_schema_xptr,
-                                                             SEXP output_schema_xptr, idx_t n,
-                                                             int *protect_count, char *err_msg, size_t err_cap) {
     int r_err = 0;
     SEXP bundle;
     SEXP fun;
     SEXP arg_types;
     SEXP return_type;
-    SEXP prepare_inputs_fun;
-    SEXP result_array_fun;
     SEXP eval_rows_fun;
-    SEXP n_sexp;
-    SEXP prep_call;
     SEXP prepared;
     SEXP null_handling_sexp;
     SEXP exception_handling_sexp;
     SEXP results;
-    SEXP result_call;
-    SEXP result_array;
 
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         snprintf(err_msg, err_cap, "Rducks RC vectorized metadata missing");
-        return R_NilValue;
+        return 0;
+    }
+    if (!rducks_rc_direct_supported(meta)) {
+        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        return 0;
     }
     bundle = meta->fun;
     if (!rducks_rc_bundle_valid(bundle)) {
         snprintf(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
-        return R_NilValue;
-    }
-
-    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
-    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
-    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
-    prepare_inputs_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_PREPARE_INPUTS);
-    result_array_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RESULT_ARRAY);
-    eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
-
-    n_sexp = PROTECT(Rf_ScalarReal((double)n));
-    (*protect_count)++;
-    prep_call = PROTECT(Rf_lang5(prepare_inputs_fun, arg_types, input_array_xptr, input_schema_xptr, n_sexp));
-    (*protect_count)++;
-    prepared = PROTECT(R_tryEvalSilent(prep_call, R_GlobalEnv, &r_err));
-    (*protect_count)++;
-    if (r_err || TYPEOF(prepared) != VECSXP || XLENGTH(prepared) < 3) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized input preparation failed");
-        return R_NilValue;
-    }
-
-    null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
-    (*protect_count)++;
-    exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
-    (*protect_count)++;
-    results = PROTECT(rducks_rc_call_vectorized_eval(eval_rows_fun, fun, arg_types, return_type, prepared,
-                                                     null_handling_sexp, exception_handling_sexp, &r_err));
-    (*protect_count)++;
-    if (r_err || TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
-        return R_NilValue;
-    }
-
-    result_call = PROTECT(Rf_lang5(result_array_fun, return_type, results, output_schema_xptr, n_sexp));
-    (*protect_count)++;
-    r_err = 0;
-    result_array = PROTECT(R_tryEvalSilent(result_call, R_GlobalEnv, &r_err));
-    (*protect_count)++;
-    if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized Arrow result construction failed");
-        return R_NilValue;
-    }
-    return result_array;
-}
-
-static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                        duckdb_data_chunk input, duckdb_vector output,
-                                        char *err_msg, size_t err_cap) {
-    idx_t n;
-    int protect_count = 0;
-    SEXP input_schema_xptr;
-    SEXP input_array_xptr;
-    SEXP output_schema_xptr;
-    SEXP result_array;
-
-    if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata missing");
         return 0;
     }
 
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     n = duckdb_data_chunk_get_size(input);
-    input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_schema(runtime, input_schema_xptr, meta, err_msg, err_cap)) goto fail_vectorized;
+    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
+    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
+    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
+    eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
 
-    input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
-    protect_count++;
-    if (!rducks_fill_input_arrow_array(runtime, input_array_xptr, input, err_msg, err_cap)) goto fail_vectorized;
-    R_SetExternalPtrTag(input_array_xptr, input_schema_xptr);
+    prepared = rducks_rc_direct_prepare_inputs(meta, input, n, &protect_count, err_msg, err_cap);
+    if (prepared == R_NilValue) goto fail_vectorized;
 
-    output_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
     protect_count++;
-    if (!rducks_fill_output_arrow_schema(runtime, output_schema_xptr, meta, err_msg, err_cap)) goto fail_vectorized;
-
-    result_array = rducks_rc_eval_arrow_vectorized_xptr_on_r_thread(meta, input_array_xptr, input_schema_xptr,
-                                                                    output_schema_xptr, n, &protect_count,
-                                                                    err_msg, err_cap);
-    if (result_array == R_NilValue) goto fail_vectorized;
-    if (!rducks_import_arrow_result(runtime, result_array, output_schema_xptr, meta->return_desc, n, output,
-                                    err_msg, err_cap)) goto fail_vectorized;
+    exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
+    protect_count++;
+    results = PROTECT(rducks_rc_call_vectorized_eval(eval_rows_fun, fun, arg_types, return_type, prepared,
+                                                     null_handling_sexp, exception_handling_sexp, &r_err));
+    protect_count++;
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        goto fail_vectorized;
+    }
+    if (!rducks_rc_write_direct_results(meta, results, output, n, err_msg, err_cap)) {
+        if (!err_msg[0]) snprintf(err_msg, err_cap, "Rducks RC vectorized result writeback failed");
+        goto fail_vectorized;
+    }
 
     UNPROTECT(protect_count);
     return 1;

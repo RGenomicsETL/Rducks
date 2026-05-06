@@ -133,10 +133,23 @@ local({
   )
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  seen_arrow_c <- list()
+  invisible(rducks_register(con, "vec_arrow_c_plus_one", function(x) {
+    seen_arrow_c[[length(seen_arrow_c) + 1L]] <<- x
+    x + 1L
+  }, INTEGER, INTEGER, mode = "vectorized", side_effects = TRUE))
+  arrow_c_result <- DBI::dbGetQuery(con, "SELECT vec_arrow_c_plus_one(i::INTEGER) AS x FROM range(4) t(i)")
+  expect_equal(arrow_c_result$x, 1:4)
+  expect_true(length(seen_arrow_c) >= 1L)
+  expect_true(all(vapply(seen_arrow_c, is.integer, logical(1))))
+  arrow_c_explain <- rducks_explain_udf(con, "vec_arrow_c_plus_one")
+  expect_equal(arrow_c_explain$evaluator, "RCV")
+  expect_true(arrow_c_explain$arrow_c_chunks >= 1)
+  expect_equal(arrow_c_explain$arrow_r_chunks, 0)
   expect_error(
-    rducks_register(con, "vec_arrow_c_plus_one", function(x) x + 1L, INTEGER, INTEGER,
+    rducks_register(con, "vec_arrow_c_unsupported", function(x) x, BIGINT[], BIGINT[],
                     mode = "vectorized", side_effects = TRUE),
-    "arrow_c direct vectorized marshalling is not implemented"
+    "arrow_c direct marshalling is not implemented"
   )
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   expect_error(

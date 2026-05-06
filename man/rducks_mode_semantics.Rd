@@ -19,6 +19,6 @@ semantics for each mode.
 \code{rducks_mode_semantics()} is the package-level schema for execution-mode
 semantics. \code{mode = "scalar"} calls the R function once for each DuckDB row.
 \code{mode = "vectorized"} calls the R function once per DuckDB chunk with one R
-vector/list-column per declared argument. Vectorized mode is currently
-exposed for \code{arrow_r} and \code{arrow_ipc}, not for direct \code{arrow_c}.
+vector/list-column per declared argument. Vectorized mode is exposed for
+\code{arrow_r}, direct \code{arrow_c}, and Future-backed \code{arrow_ipc} plans.
 }

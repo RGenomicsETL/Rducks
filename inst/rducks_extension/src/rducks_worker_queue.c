@@ -156,8 +156,8 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
                                        request->output, err_msg, err_cap);
     }
     if (request->meta->eval_mode == RDUCKS_EVAL_RCV) {
-        snprintf(err_msg, err_cap, "arrow_c direct vectorized marshalling is not implemented");
-        return 0;
+        return rducks_rc_vectorized_execute(request->runtime, request->meta, request->input,
+                                           request->output, err_msg, err_cap);
     }
     if (request->meta->eval_mode == RDUCKS_EVAL_RIPC) {
         return rducks_ripc_execute(request->runtime, request->meta, request->input,

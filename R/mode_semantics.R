@@ -21,9 +21,9 @@ rducks_mode_semantics_rows <- list(
     null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
     length_semantics = "return length must equal the number of evaluated rows in the chunk",
     error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
-    threading = "arrow_r vectorized runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend; arrow_c vectorized is not exposed yet",
-    copy_semantics = "arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport",
-    notes = "batch/chunk call-shape used by arrow_r and the Future-based Arrow IPC backend; zero-argument vectorized UDFs and arrow_c vectorized UDFs are not exposed yet"
+    threading = "arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend",
+    copy_semantics = "arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport",
+    notes = "batch/chunk call-shape used by arrow_r, direct arrow_c, and the Future-based Arrow IPC backend; zero-argument vectorized UDFs are not exposed yet"
   )
 )
 
@@ -37,8 +37,8 @@ rducks_match_mode <- function(mode) {
 #' `rducks_mode_semantics()` is the package-level schema for execution-mode
 #' semantics. `mode = "scalar"` calls the R function once for each DuckDB row.
 #' `mode = "vectorized"` calls the R function once per DuckDB chunk with one R
-#' vector/list-column per declared argument. Vectorized mode is currently
-#' exposed for `arrow_r` and `arrow_ipc`, not for direct `arrow_c`.
+#' vector/list-column per declared argument. Vectorized mode is exposed for
+#' `arrow_r`, direct `arrow_c`, and Future-backed `arrow_ipc` plans.
 #'
 #' @param mode Optional character vector of mode names. When `NULL`, all known
 #'   modes are returned.

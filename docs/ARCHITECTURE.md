@@ -38,6 +38,7 @@ DuckDB
       -> mode = "scalar", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> R row-loop adapter
       -> mode = "scalar", plan marshalling = "arrow_c": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
       -> mode = "vectorized", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
+      -> mode = "vectorized", plan marshalling = "arrow_c": native C chunk materialization/writeback -> one R call over vectors/list-columns
       -> mode = "scalar", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker row loop -> Arrow IPC result
       -> mode = "vectorized", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker chunk call -> Arrow IPC result
 ```
@@ -47,10 +48,11 @@ row iteration, call construction, NULL handling, return checking, and direct
 DuckDB vector reads/writes into C for supported scalar storage; the user function
 itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical scoping, and side
 effects keep ordinary R semantics. `arrow_ipc` loops rows inside a Future worker.
-Vectorized mode calls the R function once per DuckDB chunk and currently
-supports `arrow_r` and `arrow_ipc`. `arrow_c + vectorized` is deliberately
-rejected until it has a direct native implementation rather than an Arrow/R
-helper bridge.
+Vectorized mode calls the R function once per DuckDB chunk and supports
+`arrow_r`, direct `arrow_c`, and Future-backed `arrow_ipc` plans. The `arrow_c +
+vectorized` path materializes supported DuckDB vectors directly in native C and
+writes returned rows back through the same direct-vector writer; it does not use
+the Arrow/R helper bridge.
 
 ## Thread model
 
@@ -59,14 +61,14 @@ R UDF execution on the calling R thread by requiring
 `external_threads=1` and `PRAGMA threads=1` at registration. After registration,
 `rducks_enable_inproc()` can switch the connection to the in-process queued
 backend. In that backend, non-main UDF callbacks submit requests to an
-extension-owned queue and wait while the recorded main R execution lane drains
+extension-owned queue and wait while the recorded main R thread drains
 those requests and performs all R API work. There is no package-side queue,
 hidden progress callback, or idle-loop pump.
 
 Thread-safety means preserving this invariant, not making R itself callable from
 DuckDB worker threads. In-process queuing is a same-process scheduling and
 liveness mechanism, not a parallel-R performance feature: R calls remain
-serialized on the main R lane. The public UDF contract should say what
+serialized on the main R thread. The public UDF contract should say what
 concurrency is allowed, not expose process pools, worker threads, mirai daemons,
 or a specific dispatcher implementation as scalar-function semantics.
 
@@ -111,8 +113,9 @@ DuckDB output vectors recursively. It must fail rather than falling back to the
 Arrow helper engine. A future threaded native backend must split worker-safe
 DuckDB/vector work from any R API or `SEXP` work, then cross an owned-buffer
 transport boundary before R-thread evaluation, or be a genuinely pure-native
-evaluator with no R callback. Vectorized mode uses the Arrow helper phases for
-`arrow_r` and Arrow IPC for `arrow_ipc`; it is not exposed for `arrow_c` today.
+evaluator with no R callback. Vectorized mode uses Arrow helper phases for
+`arrow_r`, direct DuckDB-vector materialization for `arrow_c`, and Arrow IPC for
+`arrow_ipc`.
 With `null_handling = "default"`, only rows with no top-level SQL NULL inputs
 are evaluated and SQL NULL rows are scattered back into the DuckDB result; with
 `null_handling = "special"`, all rows are passed through with the same NA/NULL
@@ -124,12 +127,12 @@ Internally the current concurrency backends are:
   may use direct `arrow_c` vector reads/writes.
 - `inproc_concurrent`: same-address-space queued dispatch. A worker-side UDF
   callback submits the current chunk request to the per-runtime queue and waits;
-  the main R execution lane drains the request, calls R, writes the DuckDB
-  output vector, and signals the waiter. This currently relies on the UDF
-  callback staying alive while the borrowed DuckDB chunk/output pointers are
-  processed; workers must not return before the main lane has consumed the
-  request. Direct `arrow_c` helpers remain main-lane-only unless split into pure
-  native worker-safe phases.
+  the main R thread drains the request, calls R, writes the DuckDB output vector,
+  and signals the waiter. This currently relies on the UDF callback staying
+  alive while the borrowed DuckDB chunk/output pointers are processed; workers
+  must not return before the main thread has consumed the request. Direct
+  `arrow_c` helpers remain main-thread-only unless split into pure native
+  worker-safe phases.
 - `multiprocess_parallel`: out-of-process execution through the current generic
   Future backend. The scalar-UDF callback implementation serializes chunk
   payloads with Arrow IPC so workers receive raw task/result payloads rather
@@ -137,7 +140,7 @@ Internally the current concurrency backends are:
   implemented in the native extension (`rducks_arrow.c` and
   `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects Future
   results, and imports returned Arrow IPC into the
-  DuckDB output vector. When a RIPC callback runs on the recorded main R lane,
+  DuckDB output vector. When a RIPC callback runs on the recorded main R thread,
   it cooperatively drains queued worker callbacks into the same submit/collect
   wave so parallel DuckDB execution does not depend on an external query pump.
 
@@ -165,7 +168,7 @@ an internal SQL function during `rducks_enable()`. The extension checks the
 execution thread before every R function execution. `rducks_enable_inproc()` is
 the explicit opt-in for queued same-process dispatch after registration, and can
 also adjust DuckDB's `threads`/`external_threads` settings for that queued phase.
-The queue has timeout/error paths so a missing main-lane drain fails rather than
+The queue has timeout/error paths so a missing main-thread drain fails rather than
 waiting indefinitely.
 
 ## nanoarrow direction and lifetime model
@@ -192,12 +195,12 @@ four questions at every boundary:
 
 Borrowed DuckDB chunk views must not outlive the DuckDB UDF stack that created
 them. The current in-process queue is synchronous: the worker waits until the
-main R lane consumes the request. If a future dispatcher allows the worker to
+main R thread consumes the request. If a future dispatcher allows the worker to
 return before that consumption, the request must copy into owned nanoarrow
 buffers instead of exporting a borrowed view.
 
-Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for both the
-scalar and vectorized adapters:
+Rducks uses the in-process DuckDB Arrow C Data API plus nanoarrow for `arrow_r`
+adapters:
 
 - `ArrowArray`
 - `ArrowSchema`

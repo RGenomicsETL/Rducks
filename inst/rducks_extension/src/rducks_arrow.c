@@ -642,7 +642,14 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 
     if (meta && meta->eval_mode == RDUCKS_EVAL_RCV) {
-        duckdb_scalar_function_set_error(info, "arrow_c direct vectorized marshalling is not implemented");
+        /* Reached only after the non-main-thread guard above. RCV materializes
+         * DuckDB vectors into R objects and calls the R function, so it must run
+         * on the recorded main R thread or through the queued main-thread path.
+         */
+        if (!rducks_rc_vectorized_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC vectorized R function failed");
+            return;
+        }
         return;
     }
 

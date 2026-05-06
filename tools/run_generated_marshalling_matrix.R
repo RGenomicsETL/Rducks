@@ -159,7 +159,8 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
 run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
   include_ipc_for_type <- isTRUE(include_ipc) &&
     Rducks:::rducks_arrow_ipc_mapping_supported(type)
-  marshallers <- c("arrow_r", if (include_ipc_for_type) "arrow_ipc")
+  include_arrow_c_for_type <- isTRUE(Rducks:::rducks_arrow_c_direct_mapping_supported(type))
+  marshallers <- c("arrow_r", if (include_arrow_c_for_type) "arrow_c", if (include_ipc_for_type) "arrow_ipc")
   for (marshalling in marshallers) {
     run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
   }

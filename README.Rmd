@@ -29,10 +29,10 @@ keeps an extension-owned connection associated with that runtime. UDF inputs and
 outputs move through explicit execution plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
-- `arrow_c`: native extension path for supported scalar calls with direct
-  DuckDB-vector materialization. Vectorized `arrow_c` is intentionally not
-  exposed until it has a direct implementation rather than the old Arrow/R
-  helper bridge.
+- `arrow_c`: native extension path for supported scalar and vectorized calls
+  with direct DuckDB-vector materialization. The vectorized `RCV` evaluator uses
+  direct native chunk materialization/writeback, not the old Arrow/R helper
+  bridge.
 - `arrow_ipc`: process-isolated R execution using Arrow IPC request/result
   payloads and a generic Future backend.
 
@@ -148,8 +148,8 @@ NULL handling, exception handling, and side-effect flag.
 | --- | --- | --- | --- |
 | `arrow_r + serial` | implemented | implemented | reference implementation |
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
-| `arrow_c + serial` | implemented | not implemented | direct native evaluator token `RC` for scalar |
-| `arrow_c + inproc_concurrent` | implemented | not implemented | queued same-process callbacks with scalar `arrow_c` marshalling |
+| `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
+| `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through the active Future backend; evaluator token `RIPC` |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans are tested
