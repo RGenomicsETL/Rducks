@@ -494,8 +494,13 @@ Mark or skip missing R-side registration records.
   the detached R-side registry are explicit instead of silently
   appearing as ordinary managed records.
 
-Generate/discover native UDF stat fields instead of mirroring names by
-hand in R and C.
+Discover native UDF stat fields instead of querying a hand-mirrored R
+vector.
+
+- Native `rducks_udf_stat_fields()` exposes the C stat field list and
+  `rducks_native_udf_stats()` uses it after validating it against the
+  known fallback list, with the old R vector retained for
+  compatibility/name collision fallback.
 
 ## P2/P3: Arrow IPC and worker execution
 

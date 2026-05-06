@@ -312,7 +312,10 @@
 <ul><li>
 <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code>/<code><a href="reference/rducks_list_udfs.html">rducks_list_udfs()</a></code> include <code>r_side_record</code> so rows whose native catalog metadata outlives the detached R-side registry are explicit instead of silently appearing as ordinary managed records.</li>
 </ul></li>
-<li><label><input type="checkbox">Generate/discover native UDF stat fields instead of mirroring names by hand in R and C.</label></li>
+<li>
+<label><input type="checkbox" checked>Discover native UDF stat fields instead of querying a hand-mirrored R vector.</label>
+<ul><li>Native <code>rducks_udf_stat_fields()</code> exposes the C stat field list and <code>rducks_native_udf_stats()</code> uses it after validating it against the known fallback list, with the old R vector retained for compatibility/name collision fallback.</li>
+</ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="p2p3-arrow-ipc-and-worker-execution">P2/P3: Arrow IPC and worker execution<a class="anchor" aria-label="anchor" href="#p2p3-arrow-ipc-and-worker-execution"></a></h2>

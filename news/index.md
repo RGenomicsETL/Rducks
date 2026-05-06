@@ -18,6 +18,9 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- UDF stat field discovery now comes from native
+  `rducks_udf_stat_fields()`; the R-side field vector is only a
+  fallback.
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
