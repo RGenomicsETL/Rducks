@@ -94,7 +94,10 @@ capture needs help.</p></dd>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p><code>arrow_r + serial</code> is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently fall back from one plan to another.</p>
+reference; Rducks does not silently fall back from one plan to another.
+Each valid pair maps to a concrete internal <code>engine_id</code> such as
+<code>"arrow_c_direct_serial"</code> or <code>"ipc_future_pool"</code>; the older
+<code>marshalling + concurrency</code> fields remain for user-facing readability.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

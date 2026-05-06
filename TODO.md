@@ -56,6 +56,11 @@ should describe what still needs doing.
 
 Implemented behavior to preserve:
 
+- Every valid `marshalling + concurrency` pair maps to a concrete
+  `engine_id`: `arrow_r_serial`, `arrow_r_main_queue`,
+  `arrow_c_direct_serial`, `arrow_c_direct_main_queue`, or
+  `ipc_future_pool`. These engine ids are accepted as internal shortcuts
+  while the user-facing pair API remains stable.
 - The active plan at
   [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   chooses the native evaluator stored in DuckDB UDF metadata (`R`, `RC`,

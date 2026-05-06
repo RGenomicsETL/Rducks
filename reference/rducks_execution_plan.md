@@ -59,3 +59,6 @@ An object of class `rducks_execution_plan`.
 `arrow_r + serial` is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
 reference; Rducks does not silently fall back from one plan to another.
+Each valid pair maps to a concrete internal `engine_id` such as
+`"arrow_c_direct_serial"` or `"ipc_future_pool"`; the older
+`marshalling + concurrency` fields remain for user-facing readability.

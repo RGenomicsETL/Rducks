@@ -18,6 +18,11 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- Execution plans now carry a concrete `engine_id` (for example
+  `arrow_c_direct_serial`, `arrow_c_direct_main_queue`, or
+  `ipc_future_pool`), and `rducks_as_execution_plan()` accepts those
+  engine-id shortcuts while preserving the existing
+  `marshalling + concurrency` API.
 - [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
   now reports main-thread drain attempts, non-empty drain batches, and
   maximum drain batch size in addition to pending/running queue pressure
