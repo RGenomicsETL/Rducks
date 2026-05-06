@@ -6,12 +6,13 @@ should describe what still needs doing.
 
 ## Current facts
 
-- Current development baseline when this file was refreshed: `cf4b007`.
-- Local validation at that baseline:
-  - `R CMD INSTALL .` OK
-  - `make test` OK: 652 tinytest results
+- Current working tree was audited from base commit `8ca0890`.
+- Local validation after this audit:
+  - `make check` OK
+  - `make test` OK: 733 tinytest results
   - `Rscript tools/run_generated_marshalling_matrix.R` OK: 945 generated
     cases
+  - `covr::package_coverage(type = "tests")` OK: 85.24% overall coverage
 - Recent architecture-audit fixes include database-runtime-scoped R
   metadata, opaque evaluator handles, non-destructive
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
@@ -19,8 +20,11 @@ should describe what still needs doing.
   native Arrow IPC encoding without rawConnection fallback, structural
   Arrow IPC type validation, copied Arrow result import, callback error
   fences, dev-only diagnostic SQL probes, capability-guarded backend
-  setting, richer queue/runtime diagnostics, and concrete execution
-  `engine_id`s.
+  setting, richer queue/runtime diagnostics, concrete execution
+  `engine_id`s, and a split R-side Arrow/IPC/provider helper layout.
+- Open unchecked TODO items below are expected to be genuinely open,
+  blocked by missing upstream lifecycle/removal hooks, or intentionally
+  future architecture; they should not describe already-finished work.
 - GitHub Actions/R-universe status was not rechecked while refreshing
   this file; use the workflow badges and R-universe package page for
   current hosted status.
@@ -204,79 +208,46 @@ Run with `lobstr` in this session:
   primary lifecycle guarantee. Cleanup must be idempotent and must not
   depend on whether duckdb-r’s disconnect finalizer has already run.
 
-## Decisions needed
+## Resolved and still-open design decisions
 
-1.  **Connection object model for R-side state.**
-    - R-side SEXP-address keying has been replaced for plan/registration
-      stores.
-    - Empirical result: S4 `duckdb_connection` wrappers are not
-      environments and are not mutated in the caller by assigning
-      attributes inside
-      [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
-      unless the modified object is returned and assigned.
-    - Chosen baseline: no S4 subclass is needed merely to clear Rducks
-      R-side state when the DuckDB connection external pointer is
-      collected. Rducks now uses read-only access to duckdb-r’s
-      `conn_ref` slot as the weakref anchor.
-    - Remaining decision: whether to add a subclass/wrapper only to
-      intercept explicit `DBI::dbDisconnect(con)` and run Rducks cleanup
-      immediately before delegating to duckdb-r.
-2.  **Runtime token contents.**
-    - Problem: DuckDB `current_connection_id()` is not globally unique
-      across independent database instances; raw wrapper addresses can
-      be reused.
-    - Additional problem: DuckDB’s C instance-cache API can create
-      multiple `duckdb_database` wrapper handles for the same underlying
-      database instance, and extension loading creates a load-state
-      wrapper. Do not use raw `duckdb_database` pointers as stable
-      runtime ids.
-    - Decision: define a native Rducks token such as
-      `(runtime_id, generation)`. It may include DuckDB
-      database/connection details for diagnostics, but the unique part
-      should be Rducks-owned and monotonic within the process.
-3.  **Runtime release API shape and finalizer ordering.**
-    - Problem: DuckDB has no database/connection close hook in the C
-      extension API. The extension-owned connection can pin the runtime.
-    - GC path: key Rducks cleanup to collection of the DuckDB connection
-      external pointer, clear token-keyed R stores, and call a native
-      idempotent release path that does not require a live DuckDB
-      connection.
-    - Do not equate one connection’s collection with database-runtime
-      death. Track Rducks-enabled connection anchors per runtime. Only
-      runtime-wide release should consider dropping/releasing UDF state.
-    - If releasing preserved R functions from the weakref finalizer,
-      first make native UDF metadata inert under lock: future calls must
-      error cleanly rather than calling a released `SEXP`, and later
-      DuckDB metadata destructors must not double-release. Releasing is
-      only safe when no in-flight callbacks use the metadata.
-    - Explicit disconnect caveat: if users call `DBI::dbDisconnect(con)`
-      but keep `con` referenced, a weakref/finalizer will not run until
-      `con@conn_ref` becomes unreachable. A subclass/wrapper or explicit
-      `rducks_release(con)` is still needed for deterministic cleanup at
-      disconnect time.
-    - Cleanup must not rely on finalizer ordering relative to duckdb-r’s
-      own `conn_ref` finalizer.
-    - Non-decision already made for now: native cleanup may leak
-      preserved R closures rather than calling R API off the main R
-      thread.
-4.  **Duplicate registration semantics.**
-    - Decide whether duplicate `name`/signature registration errors,
-      overwrites, or creates overloads.
-    - This blocks clear `rducks_unregister()` semantics.
-5.  **Registration-time vs query-time marshalling contract.**
-    - Current implementation is registration-time marshalling.
-    - Decision: document this as public semantics now, or redesign for
-      query-time marshalling dispatch.
-    - My recommendation: document registration-time marshalling for now.
-6.  **[`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
-    scope.**
-    - Current function exposes runtime-wide `submitted`, `executed`,
-      `timeouts`.
-    - Per-UDF pressure/batching counters are available through
-      [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
-    - Decide whether to keep
-      [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
-      intentionally minimal or add runtime-wide pending/max counters.
+Resolved decisions:
+
+- **Connection object model:** Rducks keeps plain `duckdb_connection`
+  objects, uses read-only access to duckdb-r’s `conn_ref` external
+  pointer as the weakref anchor, and documents explicit
+  `rducks_release(con)` before `DBI::dbDisconnect(con)` for
+  deterministic R-side cleanup. It does not add an S4 subclass only to
+  intercept disconnect.
+- **Runtime token contents:** native runtime identity is an Rducks-owned
+  process-local `(runtime_id, generation)` token, not a raw
+  `duckdb_database` pointer, DuckDB connection id, or R object address.
+- **Registration-time marshalling:** the execution plan active at
+  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+  freezes the UDF’s evaluator/marshalling metadata. Later plan changes
+  affect connection defaults and the native concurrency backend; they do
+  not retarget already-registered UDFs.
+- **[`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+  scope:** runtime-wide queue pressure counters live in
+  [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md),
+  while per-UDF evaluator/batching counters live in
+  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
+- **Duplicate same-signature registration:** current behavior replaces
+  the callable implementation for the same SQL name/signature in the
+  shared DuckDB database catalog. README/roxygen wording and tinytests
+  now cover that replacement behavior.
+
+Still-open or blocked decisions:
+
+- **Native runtime reclamation:** DuckDB’s C extension API still does
+  not expose a safe database-close hook for deterministic reclamation of
+  process-lifetime native runtime entries and successful extension-owned
+  connections. Rducks exposes retention/accounting diagnostics and keeps
+  R-side release non-destructive.
+- **Destructive unregister:** ordinary `DROP FUNCTION` cannot drop
+  extension-created internal catalog entries, and no supported DuckDB C
+  API removal path is identified. `docs/UNREGISTER.md` records the
+  exact-entry, overload, and atomicity requirements before any
+  `rducks_unregister()` implementation.
 
 ## P0: connection identity and lifecycle
 
@@ -450,6 +421,10 @@ Handle partial failures in
 
 - Thread settings are restored when thread/backend setup fails before
   the R-side plan cache is updated.
+- Backend mutation is now performed while Rducks briefly forces
+  single-thread SQL execution, so the capability-guarded backend setter
+  runs on the recorded main R thread before requested parallel DuckDB
+  settings are restored.
 
 Defensively clear Arrow C Data release callbacks on conversion failure.
 
@@ -639,12 +614,12 @@ Update `docs/EXECUTION_PLANS.md`.
   `arrow_c`, database-catalog versus connection-detach scope, and
   current diagnostic hooks including
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)/[`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md).
-- Note: `docs/` is ignored; use `git add -f docs/...` for files that
-  should be committed.
 
 Keep roxygen/Rd wording aligned with README.
 
-- Run `make rd` after roxygen changes.
+- Current audit refreshed the execution-plan and registration roxygen
+  blocks, regenerated Rd with `make rd`, and removed stale
+  connection/session wording.
 
 Publish an explicit type/mode/plan support table.
 

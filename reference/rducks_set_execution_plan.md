@@ -1,10 +1,13 @@
 # Set the Rducks execution plan for a connection
 
-Sets connection/session policy for Rducks chunk execution. Registration
-still defines UDF semantics such as scalar versus vectorized call shape,
-declared types, NULL handling, error handling, and side effects. The
-execution plan chooses the marshalling implementation and concurrency
-contract.
+Stores the R-side default execution plan used by subsequent
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+calls through this connection and updates the native runtime backend
+needed by that plan. Registration still defines UDF semantics such as
+scalar versus vectorized call shape, declared types, NULL handling,
+error handling, and side effects. The selected evaluator/marshalling for
+an already-registered UDF remains frozen in its database-catalog
+metadata.
 
 ## Usage
 
@@ -37,7 +40,9 @@ rducks_set_execution_plan(
 - external_threads:
 
   Optional positive integer to set with `SET external_threads`. Use
-  `NULL` to leave unchanged. For actual DuckDB worker concurrency, keep
+  `NULL` to restore/keep the previous setting after Rducks briefly
+  forces single-thread SQL execution to update its native backend on the
+  recorded main R thread. For actual DuckDB worker concurrency, keep
   this smaller than `threads`.
 
 ## Value

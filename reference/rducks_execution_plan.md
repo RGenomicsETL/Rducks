@@ -1,10 +1,13 @@
 # Define an Rducks execution plan
 
-An execution plan is connection/session policy: it says how Rducks
-should marshal DuckDB chunks and what concurrency model is allowed. It
-is separate from UDF registration semantics such as scalar versus
-vectorized call shape, argument/return types, NULL handling, error
-handling, and side effects.
+An execution plan describes how Rducks should marshal DuckDB chunks and
+what concurrency model is allowed. When stored on a connection it is the
+default for future
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+calls; the selected evaluator/marshalling is frozen into each registered
+UDF's database-catalog metadata. It is separate from UDF registration
+semantics such as scalar versus vectorized call shape, argument/return
+types, NULL handling, error handling, and side effects.
 
 ## Usage
 
