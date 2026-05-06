@@ -42,11 +42,11 @@
 <ul><li>
 <code>make check</code> OK</li>
 <li>
-<code>make test</code> OK: 743 tinytest results</li>
+<code>make test</code> OK: 762 tinytest results</li>
 <li>
 <code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 949 generated cases</li>
 <li>
-<code>covr::package_coverage(type = "tests")</code> OK: 85.28% overall coverage</li>
+<code>covr::package_coverage(type = "tests")</code> OK: 85.35% overall coverage</li>
 </ul></li>
 <li>Recent architecture-audit fixes include database-runtime-scoped R metadata, opaque evaluator handles, non-destructive <code><a href="reference/rducks_release.html">rducks_release()</a></code>, main-thread release queues, direct-only scalar/vectorized <code>arrow_c</code>, native Arrow IPC encoding without rawConnection fallback, structural Arrow IPC type validation, copied Arrow result import, callback error fences, dev-only diagnostic SQL probes, capability-guarded backend setting, richer queue/runtime diagnostics, concrete execution <code>engine_id</code>s, and a split R-side Arrow/IPC/provider helper layout.</li>
 <li>Open unchecked TODO items below are expected to be genuinely open, blocked by missing upstream lifecycle/removal hooks, or intentionally future architecture; they should not describe already-finished work.</li>
@@ -65,7 +65,7 @@
 <li><label><input type="checkbox" checked>Production SQL surface: dev/test probes are gated by <code>RDUCKS_DEV_SURFACES=true</code>; production backend mutation requires the recorded main-thread capability.</label></li>
 <li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed.</label></li>
 <li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
-<li><label><input type="checkbox">Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> now specifies the provider contract/envelopes, but persistent mirai/nanonext-style workers with preloaded evaluator/schema state are still future work.</label></li>
+<li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; an internal <code>rducks_mirai_provider()</code> prototype now starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. Wiring a persistent provider into a public UDF engine remains a separate open item below.</label></li>
 <li><label><input type="checkbox"><code>rducks_unregister()</code>: not implemented; DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path. <code>docs/UNREGISTER.md</code> now documents the blocked C-API constraint and required future database-scoped destructive semantics.</label></li>
 <li>
 <label><input type="checkbox" checked><code>R/arrow_bridge.R</code> split: core split done.</label>
@@ -334,10 +334,11 @@
 </ul></li>
 <li><p><label><input type="checkbox" checked>Replace fake Arrow IPC unsupported-type validation with a structural type check over scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION types.</label></p></li>
 <li>
-<p><label><input type="checkbox">Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback.</label></p>
-<ul><li>Done: Arrow IPC Future wrappers cache the output schema spec at registration wrapper scope after the first chunk, avoiding repeated schema-to-list conversion on every submission.</li>
-<li>Done: <code>future_globals</code> now defaults to <code>"auto"</code>, so generic Future UDF globals are discovered once at wrapper creation and chunk submissions send explicit worker state instead of running automatic global discovery every time. Users can still opt into per-task discovery with <code>TRUE</code>, required-state only with <code>FALSE</code>, or explicit character/named-list globals.</li>
-<li>Remaining: persistent workers should preload evaluator state and schemas once and submit only task id/UDF id/row count/IPC bytes per chunk.</li>
+<p><label><input type="checkbox" checked>Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback within the generic Future provider.</label></p>
+<ul><li>Arrow IPC Future wrappers cache the output schema spec at registration wrapper scope after the first chunk, avoiding repeated schema-to-list conversion on every submission.</li>
+<li>
+<code>future_globals</code> now defaults to <code>"auto"</code>, so generic Future UDF globals are discovered once at wrapper creation and chunk submissions send explicit worker state instead of running automatic global discovery every time. Users can still opt into per-task discovery with <code>TRUE</code>, required-state only with <code>FALSE</code>, or explicit character/named-list globals.</li>
+<li>An internal mirai-provider prototype demonstrates preloading evaluator state and schemas once and submitting only task id/UDF id/row count/IPC bytes per chunk. Public UDF-engine integration remains open below.</li>
 </ul></li>
 <li><p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p></li>
 <li>
@@ -351,7 +352,12 @@
 <code>docs/PERSISTENT_PROVIDER.md</code> keeps generic Future as the correctness adapter, selects mirai as the first persistent-worker target, and defers nanonext to a later lower-level transport if public APIs are needed.</li>
 <li>Do not link against uninstalled <code>nanonext.so</code> internals.</li>
 </ul></li>
-<li><p><label><input type="checkbox">Implement persistent worker startup/shutdown, backpressure, cancellation, and error propagation if generic <code>future</code> is not enough.</label></p></li>
+<li>
+<p><label><input type="checkbox" checked>Prototype persistent worker startup/shutdown, cancellation, and error propagation.</label></p>
+<ul><li>Internal <code>rducks_mirai_provider()</code> implements start/stop, register_udf, submit, collect_any, collect_many, cancel, and stats using persistent mirai daemons and preloaded UDF records.</li>
+<li>Focused tinytests cover successful Arrow IPC task execution, structured worker errors, and provider counters.</li>
+</ul></li>
+<li><p><label><input type="checkbox">Wire a persistent worker provider into a public UDF engine with bounded backpressure and no hidden fallback.</label></p></li>
 </ul></div>
 <div class="section level2">
 <h2 id="p3-owned-same-process-chunk-boundaries">P3: owned same-process chunk boundaries<a class="anchor" aria-label="anchor" href="#p3-owned-same-process-chunk-boundaries"></a></h2>

@@ -9,10 +9,10 @@ should describe what still needs doing.
 - Current working tree was audited from base commit `8ca0890`.
 - Local validation after this audit:
   - `make check` OK
-  - `make test` OK: 743 tinytest results
+  - `make test` OK: 762 tinytest results
   - `Rscript tools/run_generated_marshalling_matrix.R` OK: 949 generated
     cases
-  - `covr::package_coverage(type = "tests")` OK: 85.28% overall coverage
+  - `covr::package_coverage(type = "tests")` OK: 85.35% overall coverage
 - Recent architecture-audit fixes include database-runtime-scoped R
   metadata, opaque evaluator handles, non-destructive
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
@@ -73,9 +73,12 @@ Execution-plan simplification: valid plan pairs expose concrete
 `engine_id`s while preserving the readable marshalling/concurrency API.
 
 Persistent worker/provider architecture: generic Future remains the
-portable reference provider; `docs/PERSISTENT_PROVIDER.md` now specifies
-the provider contract/envelopes, but persistent mirai/nanonext-style
-workers with preloaded evaluator/schema state are still future work.
+portable reference provider; `docs/PERSISTENT_PROVIDER.md` specifies the
+provider contract/envelopes; an internal `rducks_mirai_provider()`
+prototype now starts/stops persistent mirai daemons, preloads
+evaluator/schema state, submits only task metadata plus Arrow IPC bytes,
+and returns structured result envelopes. Wiring a persistent provider
+into a public UDF engine remains a separate open item below.
 
 `rducks_unregister()`: not implemented; DuckDB reports extension-created
 functions as internal catalog entries that cannot be dropped through the
@@ -537,20 +540,22 @@ Replace fake Arrow IPC unsupported-type validation with a structural
 type check over scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and
 UNION types.
 
-Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback.
+Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback
+within the generic Future provider.
 
-- Done: Arrow IPC Future wrappers cache the output schema spec at
-  registration wrapper scope after the first chunk, avoiding repeated
-  schema-to-list conversion on every submission.
-- Done: `future_globals` now defaults to `"auto"`, so generic Future UDF
+- Arrow IPC Future wrappers cache the output schema spec at registration
+  wrapper scope after the first chunk, avoiding repeated schema-to-list
+  conversion on every submission.
+- `future_globals` now defaults to `"auto"`, so generic Future UDF
   globals are discovered once at wrapper creation and chunk submissions
   send explicit worker state instead of running automatic global
   discovery every time. Users can still opt into per-task discovery with
   `TRUE`, required-state only with `FALSE`, or explicit
   character/named-list globals.
-- Remaining: persistent workers should preload evaluator state and
-  schemas once and submit only task id/UDF id/row count/IPC bytes per
-  chunk.
+- An internal mirai-provider prototype demonstrates preloading evaluator
+  state and schemas once and submitting only task id/UDF id/row
+  count/IPC bytes per chunk. Public UDF-engine integration remains open
+  below.
 
 Improve batching beyond small waves for typical DuckDB physical scans.
 
@@ -573,8 +578,17 @@ Decide worker transport beyond generic `future` if needed.
   needed.
 - Do not link against uninstalled `nanonext.so` internals.
 
-Implement persistent worker startup/shutdown, backpressure,
-cancellation, and error propagation if generic `future` is not enough.
+Prototype persistent worker startup/shutdown, cancellation, and error
+propagation.
+
+- Internal `rducks_mirai_provider()` implements start/stop,
+  register_udf, submit, collect_any, collect_many, cancel, and stats
+  using persistent mirai daemons and preloaded UDF records.
+- Focused tinytests cover successful Arrow IPC task execution,
+  structured worker errors, and provider counters.
+
+Wire a persistent worker provider into a public UDF engine with bounded
+backpressure and no hidden fallback.
 
 ## P3: owned same-process chunk boundaries
 
