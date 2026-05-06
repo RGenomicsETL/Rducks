@@ -432,6 +432,23 @@ static bool rducks_register_unary_ubigint_surface(duckdb_connection con, rducks_
     return rducks_register_unary_ubigint_typed_surface(con, runtime, name, DUCKDB_TYPE_UBIGINT, callback);
 }
 
+static void rducks_queue_pending_timeout_ms_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                   duckdb_vector output) {
+    (void)info;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    uint64_t value = RDUCKS_QUEUE_PENDING_TIMEOUT_MS;
+    for (idx_t i = 0; i < n; i++) out[i] = value;
+}
+
+static void rducks_queue_running_timeout_supported_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                          duckdb_vector output) {
+    (void)info;
+    idx_t n = duckdb_data_chunk_get_size(input);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    for (idx_t i = 0; i < n; i++) out[i] = false;
+}
+
 static void rducks_thread_is_main_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -455,6 +472,10 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
                                            rducks_queue_running_current_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_max", DUCKDB_TYPE_UBIGINT,
                                            rducks_queue_running_max_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_pending_timeout_ms", DUCKDB_TYPE_UBIGINT,
+                                           rducks_queue_pending_timeout_ms_scalar, false) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_queue_running_timeout_supported", DUCKDB_TYPE_BOOLEAN,
+                                           rducks_queue_running_timeout_supported_scalar, false) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_queued", DUCKDB_TYPE_UBIGINT,
                                            rducks_release_queued_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_release_queue_released", DUCKDB_TYPE_UBIGINT,

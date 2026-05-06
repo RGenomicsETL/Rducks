@@ -58,7 +58,10 @@
   with timeout/error paths rather than a package-side pump or hidden progress
   callback.
 - Added native queue diagnostics and tests covering main-thread queue draining
-  and scalar/vectorized UDF execution through the queued path.
+  and scalar/vectorized UDF execution through the queued path. `rducks_inproc_stats()`
+  now reports the configured pending-request timeout and explicitly reports that running
+  queued requests cannot be cancelled safely while they borrow DuckDB callback
+  storage.
 - Split scalar execution and native extension runtime state so UDF metadata uses
   DuckDB C extension bind/init/local-state hooks and per-loaded-database runtime
   entries instead of a singleton connection.

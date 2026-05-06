@@ -16,6 +16,11 @@ local({
   rducks_enable(con, threads = "single")
 
   before <- rducks_inproc_stats(con)
+  expect_equal(names(before), c(
+    "submitted", "executed", "timeouts", "pending_current", "pending_max",
+    "running_current", "running_max", "pending_timeout_ms",
+    "running_timeout_supported"
+  ))
   expect_equal(before$submitted, 0)
   expect_equal(before$executed, 0)
   expect_equal(before$timeouts, 0)
@@ -23,6 +28,8 @@ local({
   expect_equal(before$pending_max, 0)
   expect_equal(before$running_current, 0)
   expect_equal(before$running_max, 0)
+  expect_true(before$pending_timeout_ms[[1L]] > 0)
+  expect_false(before$running_timeout_supported[[1L]])
 
   self_test <- rducks_inproc_self_test(con, 3)
   expect_equal(self_test, 3)

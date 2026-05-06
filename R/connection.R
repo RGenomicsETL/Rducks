@@ -147,6 +147,10 @@ rducks_detach <- function(con) {
 #' `pending_*` and `running_*` columns expose current and maximum queue pressure:
 #' pending requests are waiting to be drained by the main R thread, while running
 #' requests have been popped by that thread and are executing or collecting.
+#' `pending_timeout_ms` is the configured native pending-request timeout. Running requests
+#' borrow DuckDB callback-frame input/output storage, so running-timeout
+#' cancellation is intentionally not supported and is reported via
+#' `running_timeout_supported = FALSE`.
 #'
 #' @param con A `duckdb_connection`.
 #' @return A one-row data frame with queue diagnostic columns.
@@ -162,7 +166,9 @@ rducks_inproc_stats <- function(con) {
       "rducks_queue_pending_current() AS pending_current,",
       "rducks_queue_pending_max() AS pending_max,",
       "rducks_queue_running_current() AS running_current,",
-      "rducks_queue_running_max() AS running_max"
+      "rducks_queue_running_max() AS running_max,",
+      "rducks_queue_pending_timeout_ms() AS pending_timeout_ms,",
+      "rducks_queue_running_timeout_supported() AS running_timeout_supported"
     )
   )
 }
