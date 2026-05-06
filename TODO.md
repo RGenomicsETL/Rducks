@@ -428,6 +428,10 @@ Handle partial failures in
 
 Defensively clear Arrow C Data release callbacks on conversion failure.
 
+- DuckDB Arrow schema/export conversion errors now immediately release
+  and null any partially-populated `ArrowSchema`/`ArrowArray` callbacks
+  before returning through the UDF error path.
+
 Re-audit Arrow validity handling.
 
 - Current concern: `rducks_arrow_validity()` relies on nanoarrow/DuckDB

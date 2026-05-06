@@ -224,61 +224,64 @@
 <div class="section level2">
 <h2 id="p1-correctness-hardening">P1: correctness hardening<a class="anchor" aria-label="anchor" href="#p1-correctness-hardening"></a></h2>
 <ul class="task-list"><li>
-<p><label><input type="checkbox" checked>Remove the main-thread self-shim and its unbounded join.</label></p>
+<label><input type="checkbox" checked>Remove the main-thread self-shim and its unbounded join.</label>
 <ul><li>Main-thread in-process callbacks now drain queued worker requests before and after inline execution instead of spawning a synthetic worker thread.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Fix or document queued request waits once a request is <code>RUNNING</code>.</label></p>
+<label><input type="checkbox" checked>Fix or document queued request waits once a request is <code>RUNNING</code>.</label>
 <ul><li>
 <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> exposes <code>running_timeout_supported = FALSE</code> and <code>docs/SUPPORT_MATRIX.md</code> explains that once a queued request is running, borrowed DuckDB callback-frame input/output storage prevents safe cancellation; only pending timeout is supported.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Add stress tests for no-deadlock behavior.</label></p>
+<label><input type="checkbox" checked>Add stress tests for no-deadlock behavior.</label>
 <ul><li>Default tinytests cover queued scalar/vectorized <code>arrow_r</code> and direct <code>arrow_c</code> execution through <code>rducks_parallel_range()</code> and assert submitted requests complete without timeouts.</li>
 <li>
 <code>RDUCKS_STRESS_CONCURRENCY=true</code> enables a larger multi-threaded queued UDF stress case.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label></p>
+<label><input type="checkbox" checked>Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label>
 <ul><li>Native UDF metadata destructors now release preserved evaluator objects immediately only on the recorded main R thread; off-main destructors enqueue them for later safe release.</li>
 <li>Safe drain points include <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, <code><a href="reference/rducks_release.html">rducks_release()</a></code>, <code><a href="reference/rducks_register.html">rducks_register()</a></code>, UDF execution, and metadata/stat queries.</li>
 <li>
 <code><a href="reference/rducks_release_stats.html">rducks_release_stats()</a></code> exposes queued/released/failed/pending counters.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label></p>
+<label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label>
 <ul><li>
 <code>arrow_c</code> registration now fails for signatures that cannot yet use the native direct DuckDB-vector path instead of falling through to the R/Arrow bridge.</li>
 <li>Supported direct cases include scalar, DECIMAL, ENUM, STRUCT, UNION, and LIST/ARRAY/MAP descriptors whose element/key/value types are accepted by the stricter sequence-child support predicate. For example, top-level <code>BIGINT</code> is direct-supported but <code>BIGINT[]</code> is deliberately rejected until exact integer vector storage is implemented for homogeneous sequences.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
+<label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label>
 <ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported scalar and vectorized <code>arrow_c</code> cases. Vectorized <code>arrow_c</code> uses <code>RCV</code> direct native materialization rather than the old Arrow/R helper bridge.</li>
 <li>The generated matrix now asserts the expected direct-support allowlist and runs scalar <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts, including default/special NULL handling and <code>exception_handling = "return_null"</code> smoke cases.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label></p>
+<label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label>
 <ul><li>Done: recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT, MAP, and UNION.</li>
 <li>Acceptance: those scalar signatures register under <code>arrow_c</code>, execute through <code>arrow_c_chunks</code>, and keep <code>arrow_r_chunks == 0</code>.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Handle partial failures in <code><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>.</label></p>
+<label><input type="checkbox" checked>Handle partial failures in <code><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>.</label>
 <ul><li>Thread settings are restored when thread/backend setup fails before the R-side plan cache is updated.</li>
 <li>Backend mutation is now performed while Rducks briefly forces single-thread SQL execution, so the capability-guarded backend setter runs on the recorded main R thread before requested parallel DuckDB settings are restored.</li>
 </ul></li>
-<li><p><label><input type="checkbox">Defensively clear Arrow C Data release callbacks on conversion failure.</label></p></li>
 <li>
-<p><label><input type="checkbox">Re-audit Arrow validity handling.</label></p>
+<label><input type="checkbox" checked>Defensively clear Arrow C Data release callbacks on conversion failure.</label>
+<ul><li>DuckDB Arrow schema/export conversion errors now immediately release and null any partially-populated <code>ArrowSchema</code>/<code>ArrowArray</code> callbacks before returning through the UDF error path.</li>
+</ul></li>
+<li>
+<label><input type="checkbox">Re-audit Arrow validity handling.</label>
 <ul><li>Current concern: <code>rducks_arrow_validity()</code> relies on nanoarrow/DuckDB validity-buffer behavior that should be made explicit or guarded.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Audit remaining <code>Rf_*</code> longjmp paths.</label></p>
+<label><input type="checkbox">Audit remaining <code>Rf_*</code> longjmp paths.</label>
 <ul><li>Use <code>R_alloc()</code> or <code>R_UnwindProtect()</code> where heap state would otherwise leak across <code>Rf_error()</code>.</li>
 <li>IPC native encoding now uses <code>R_UnwindProtect()</code> around raw-vector allocation/copy so Arrow writer, stream, preserved nanoarrow external pointers, and native buffers are released if <code>Rf_allocVector()</code> longjmps.</li>
 <li>Direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect callbacks are fenced with <code>R_tryCatchError()</code> + <code>R_UnwindProtect()</code>; RIPC abnormal-unwind cleanup releases preserved Future/schema objects and marks in-flight tasks done.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox" checked>Add GC/lifetime tests.</label></p>
+<label><input type="checkbox" checked>Add GC/lifetime tests.</label>
 <ul><li>Tests drop R registration objects, run <code><a href="https://rdrr.io/r/base/gc.html" class="external-link">gc()</a></code>, then call DuckDB UDFs.</li>
 <li>Lifecycle tests close/release connections after registrations and confirm no crashes or stale R-side metadata in plan/runtime/registration stores.</li>
 </ul></li>
