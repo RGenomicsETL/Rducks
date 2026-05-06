@@ -9,10 +9,10 @@ should describe what still needs doing.
 - Current working tree was audited from base commit `8ca0890`.
 - Local validation after this audit:
   - `make check` OK
-  - `make test` OK: 733 tinytest results
+  - `make test` OK: 740 tinytest results
   - `Rscript tools/run_generated_marshalling_matrix.R` OK: 945 generated
     cases
-  - `covr::package_coverage(type = "tests")` OK: 85.24% overall coverage
+  - `covr::package_coverage(type = "tests")` OK: 85.28% overall coverage
 - Recent architecture-audit fixes include database-runtime-scoped R
   metadata, opaque evaluator handles, non-destructive
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
@@ -434,14 +434,14 @@ Defensively clear Arrow C Data release callbacks on conversion failure.
 
 Re-audit Arrow validity handling.
 
-- Current concern: `rducks_arrow_validity()` relies on nanoarrow/DuckDB
-  validity-buffer behavior that should be made explicit or guarded.
+- `rducks_arrow_validity()` now explicitly accepts nanoarrow’s logical
+  validity buffers and raw bit-packed Arrow validity buffers, honors
+  array offsets, rejects short buffers, and has focused tinytest
+  coverage.
 
 Audit remaining `Rf_*` longjmp paths.
 
-- Use `R_alloc()` or `R_UnwindProtect()` where heap state would
-  otherwise leak across `Rf_error()`.
-- IPC native encoding now uses `R_UnwindProtect()` around raw-vector
+- IPC native encoding uses `R_UnwindProtect()` around raw-vector
   allocation/copy so Arrow writer, stream, preserved nanoarrow external
   pointers, and native buffers are released if `Rf_allocVector()`
   longjmps.
@@ -449,6 +449,14 @@ Audit remaining `Rf_*` longjmp paths.
   fenced with `R_tryCatchError()` + `R_UnwindProtect()`; RIPC
   abnormal-unwind cleanup releases preserved Future/schema objects and
   marks in-flight tasks done.
+- The remaining direct-RC conversion helpers called inside DuckDB
+  callbacks borrow callback vectors, allocate temporary C buffers with
+  `R_alloc()`, or allocate R-managed `SEXP`s under the top-level RC
+  error boundary. No remaining callback path holds `malloc`/Arrow/DuckDB
+  handles across a raw `Rf_error()` without a cleanup boundary.
+- Package `.Call` helper code outside DuckDB callbacks may still use
+  ordinary R errors, but those paths do not cross DuckDB callback frames
+  or hold native callback-frame resources.
 
 Add GC/lifetime tests.
 

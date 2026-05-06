@@ -42,11 +42,11 @@
 <ul><li>
 <code>make check</code> OK</li>
 <li>
-<code>make test</code> OK: 733 tinytest results</li>
+<code>make test</code> OK: 740 tinytest results</li>
 <li>
 <code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 945 generated cases</li>
 <li>
-<code>covr::package_coverage(type = "tests")</code> OK: 85.24% overall coverage</li>
+<code>covr::package_coverage(type = "tests")</code> OK: 85.28% overall coverage</li>
 </ul></li>
 <li>Recent architecture-audit fixes include database-runtime-scoped R metadata, opaque evaluator handles, non-destructive <code><a href="reference/rducks_release.html">rducks_release()</a></code>, main-thread release queues, direct-only scalar/vectorized <code>arrow_c</code>, native Arrow IPC encoding without rawConnection fallback, structural Arrow IPC type validation, copied Arrow result import, callback error fences, dev-only diagnostic SQL probes, capability-guarded backend setting, richer queue/runtime diagnostics, concrete execution <code>engine_id</code>s, and a split R-side Arrow/IPC/provider helper layout.</li>
 <li>Open unchecked TODO items below are expected to be genuinely open, blocked by missing upstream lifecycle/removal hooks, or intentionally future architecture; they should not describe already-finished work.</li>
@@ -271,14 +271,16 @@
 <ul><li>DuckDB Arrow schema/export conversion errors now immediately release and null any partially-populated <code>ArrowSchema</code>/<code>ArrowArray</code> callbacks before returning through the UDF error path.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Re-audit Arrow validity handling.</label>
-<ul><li>Current concern: <code>rducks_arrow_validity()</code> relies on nanoarrow/DuckDB validity-buffer behavior that should be made explicit or guarded.</li>
+<label><input type="checkbox" checked>Re-audit Arrow validity handling.</label>
+<ul><li>
+<code>rducks_arrow_validity()</code> now explicitly accepts nanoarrow’s logical validity buffers and raw bit-packed Arrow validity buffers, honors array offsets, rejects short buffers, and has focused tinytest coverage.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Audit remaining <code>Rf_*</code> longjmp paths.</label>
-<ul><li>Use <code>R_alloc()</code> or <code>R_UnwindProtect()</code> where heap state would otherwise leak across <code>Rf_error()</code>.</li>
-<li>IPC native encoding now uses <code>R_UnwindProtect()</code> around raw-vector allocation/copy so Arrow writer, stream, preserved nanoarrow external pointers, and native buffers are released if <code>Rf_allocVector()</code> longjmps.</li>
+<label><input type="checkbox" checked>Audit remaining <code>Rf_*</code> longjmp paths.</label>
+<ul><li>IPC native encoding uses <code>R_UnwindProtect()</code> around raw-vector allocation/copy so Arrow writer, stream, preserved nanoarrow external pointers, and native buffers are released if <code>Rf_allocVector()</code> longjmps.</li>
 <li>Direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect callbacks are fenced with <code>R_tryCatchError()</code> + <code>R_UnwindProtect()</code>; RIPC abnormal-unwind cleanup releases preserved Future/schema objects and marks in-flight tasks done.</li>
+<li>The remaining direct-RC conversion helpers called inside DuckDB callbacks borrow callback vectors, allocate temporary C buffers with <code>R_alloc()</code>, or allocate R-managed <code>SEXP</code>s under the top-level RC error boundary. No remaining callback path holds <code>malloc</code>/Arrow/DuckDB handles across a raw <code>Rf_error()</code> without a cleanup boundary.</li>
+<li>Package <code>.Call</code> helper code outside DuckDB callbacks may still use ordinary R errors, but those paths do not cross DuckDB callback frames or hold native callback-frame resources.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Add GC/lifetime tests.</label>
