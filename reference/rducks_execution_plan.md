@@ -28,11 +28,9 @@ rducks_execution_plan(
   Chunk marshalling implementation. `"arrow_r"` uses Arrow C Data plus
   nanoarrow/R materialization and is the reference implementation.
   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
-  scalar registrations. It does not currently expose vectorized chunk
-  calls, because the old `RCV` implementation used Arrow/R helper
-  materialization rather than the direct `arrow_c` path. `"arrow_ipc"`
-  uses Arrow IPC bytes as the explicit task/result payload for the
-  Future-based multiprocess path.
+  scalar and vectorized registrations. `"arrow_ipc"` uses Arrow IPC
+  bytes as the explicit task/result payload for the Future-based
+  multiprocess path.
 
 - concurrency:
 

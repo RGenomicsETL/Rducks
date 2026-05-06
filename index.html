@@ -55,7 +55,7 @@
 <li>
 <code>arrow_r</code>: reference path using DuckDB Arrow C Data plus nanoarrow/R.</li>
 <li>
-<code>arrow_c</code>: native extension path for supported scalar calls with direct DuckDB-vector materialization. Vectorized <code>arrow_c</code> is intentionally not exposed until it has a direct implementation rather than the old Arrow/R helper bridge.</li>
+<code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization. The vectorized <code>RCV</code> evaluator uses direct native chunk materialization/writeback, not the old Arrow/R helper bridge.</li>
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using Arrow IPC request/result payloads and a generic Future backend.</li>
 </ul>
@@ -178,14 +178,15 @@
 <tr>
 <td><code>arrow_c + serial</code></td>
 <td>implemented</td>
-<td>not implemented</td>
-<td>direct native evaluator token <code>RC</code> for scalar</td>
+<td>implemented</td>
+<td>direct native evaluator tokens <code>RC</code>/<code>RCV</code>
+</td>
 </tr>
 <tr>
 <td><code>arrow_c + inproc_concurrent</code></td>
 <td>implemented</td>
-<td>not implemented</td>
-<td>queued same-process callbacks with scalar <code>arrow_c</code> marshalling</td>
+<td>implemented</td>
+<td>queued same-process callbacks with direct <code>arrow_c</code> marshalling</td>
 </tr>
 <tr>
 <td><code>arrow_ipc + multiprocess_parallel</code></td>
@@ -565,8 +566,8 @@
 <td align="left">one R vector/list-column per declared argument</td>
 <td align="left">one R vector/list of values compatible with the declared return type</td>
 <td align="left">return length must equal the number of evaluated rows in the chunk</td>
-<td align="left">arrow_r vectorized runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend; arrow_c vectorized is not exposed yet</td>
-<td align="left">arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport</td>
+<td align="left">arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend</td>
+<td align="left">arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport</td>
 </tr>
 </tbody>
 </table>

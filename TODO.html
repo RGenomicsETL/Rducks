@@ -95,19 +95,20 @@
 <td>queued same-process callbacks; R API work stays on the recorded main R thread</td>
 </tr><tr><td><code>arrow_c + serial</code></td>
 <td>implemented</td>
-<td>not implemented</td>
-<td>direct native scalar evaluator <code>RC</code>; vectorized <code>RCV</code> is rejected</td>
+<td>implemented</td>
+<td>direct native scalar/vectorized evaluators <code>RC</code>/<code>RCV</code>
+</td>
 </tr><tr><td><code>arrow_c + inproc_concurrent</code></td>
 <td>implemented</td>
-<td>not implemented</td>
-<td>queued same-process callbacks with scalar <code>arrow_c</code> marshalling</td>
+<td>implemented</td>
+<td>queued same-process callbacks with direct <code>arrow_c</code> marshalling</td>
 </tr><tr><td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
 <td>Future-backed Arrow IPC path, evaluator <code>RIPC</code>
 </td>
 </tr></tbody></table><p>Implemented behavior to preserve:</p>
-<ul><li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, or <code>RIPC</code>; <code>RCV</code> is rejected until direct vectorized <code>arrow_c</code> exists). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
+<ul><li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, <code>RCV</code>, or <code>RIPC</code>). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
 <li>Zero-argument scalar UDFs use <code>args = NULL</code>.</li>
 <li>Zero-argument vectorized UDFs are not exposed.</li>
 <li>
@@ -250,7 +251,7 @@
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
-<ul><li>Acceptance: scalar <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases. Vectorized <code>arrow_c</code> is rejected rather than using the old Arrow/R helper bridge.</li>
+<ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported scalar and vectorized <code>arrow_c</code> cases. Vectorized <code>arrow_c</code> uses <code>RCV</code> direct native materialization rather than the old Arrow/R helper bridge.</li>
 <li>The generated matrix now asserts the expected direct-support allowlist and runs scalar <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts, including default/special NULL handling and <code>exception_handling = "return_null"</code> smoke cases.</li>
 </ul></li>
 <li>

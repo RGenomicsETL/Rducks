@@ -7,7 +7,7 @@
   registrations loop over rows inside the worker, vectorized
   registrations call once per chunk, and the queued native path splits
   submit and collect phases so queued chunk tasks can be submitted
-  before grouped result collection. Main-lane RIPC callbacks now
+  before grouped result collection. Main-thread RIPC callbacks now
   cooperatively drain queued worker callbacks into the same
   submit/collect wave, avoiding the single-request timeout path for
   parallel DuckDB UDF execution.
@@ -18,12 +18,16 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- Added direct native `arrow_c` vectorized UDF support (`RCV`) for
+  signatures accepted by the direct `arrow_c` type matrix. Chunk
+  arguments are materialized from DuckDB vectors in C, return rows are
+  written back through the direct writer, and generated marshalling
+  coverage verifies the path does not fall back to Arrow/R helpers.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
-- `arrow_c` is now a direct scalar marshalling path only. Vectorized
-  `arrow_c` registrations are rejected until they have a direct
-  implementation; use `arrow_r` for in-process vectorized chunks or
-  `arrow_ipc + multiprocess_parallel` for Future-backed vectorized work.
+- `arrow_c` is now a direct scalar and vectorized marshalling path.
+  Unsupported signatures fail explicitly instead of falling back to
+  Arrow/R helper marshalling.
 - Added
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
@@ -69,8 +73,8 @@
   The backend keeps all R API work on the recorded main R thread and
   uses an extension-owned queue with timeout/error paths rather than a
   package-side pump or hidden progress callback.
-- Added native queue diagnostics and tests covering main-lane queue
-  draining and scalar UDF execution through the queued path.
+- Added native queue diagnostics and tests covering main-thread queue
+  draining and scalar/vectorized UDF execution through the queued path.
 - Split scalar execution and native extension runtime state so UDF
   metadata uses DuckDB C extension bind/init/local-state hooks and
   per-loaded-database runtime entries instead of a singleton connection.
