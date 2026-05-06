@@ -326,7 +326,13 @@ Run with `lobstr` in this session:
 
 - [x] Expand `rducks_inproc_stats()` beyond submitted/executed/timeouts.
   - Runtime-wide pending/running current and max counters are exposed alongside
-    submitted, executed, and timeouts.
+    submitted, executed, timeouts, configured pending timeout, and explicit
+    running-timeout support status.
+
+- [x] Gate dev/test SQL probes behind `RDUCKS_DEV_SURFACES=true`.
+  - `rducks_parallel_range`, `rducks_parallel_thread_probe`,
+    `rducks_queue_self_test`, and `rducks_thread_is_main` no longer register as
+    production SQL functions by default.
 
 - [ ] Add counter reset support.
   - Reset one UDF or all UDF counters without unregistering the UDF.

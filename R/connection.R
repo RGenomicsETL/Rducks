@@ -236,7 +236,8 @@ rducks_runtime_stats <- function(con) {
 #' Runs a native self-test that submits `n` requests from worker threads to the
 #' extension-owned main-thread queue and drains them on the recorded main R
 #' thread. This validates the queue/condition-variable path without calling an R
-#' UDF.
+#' UDF. This diagnostic SQL surface is dev/test-only; set
+#' `RDUCKS_DEV_SURFACES=true` before `rducks_enable()` if you need it.
 #'
 #' @param con A `duckdb_connection`.
 #' @param n Number of queue round trips to run.
@@ -244,11 +245,21 @@ rducks_runtime_stats <- function(con) {
 #' @export
 rducks_inproc_self_test <- function(con, n = 1000L) {
   rducks_assert_duckdb_connection(con)
+  if (!rducks_dev_surfaces_enabled()) {
+    stop(
+      "rducks_inproc_self_test() requires RDUCKS_DEV_SURFACES=true before rducks_enable()",
+      call. = FALSE
+    )
+  }
   n <- rducks_validate_thread_count(n, "n")
   DBI::dbGetQuery(
     con,
     sprintf("SELECT rducks_queue_self_test(%s::UBIGINT) AS n", as.character(n))
   )$n[[1L]]
+}
+
+rducks_dev_surfaces_enabled <- function() {
+  tolower(Sys.getenv("RDUCKS_DEV_SURFACES", "")) %in% c("1", "true", "yes", "on")
 }
 
 rducks_sql_string <- function(x) {

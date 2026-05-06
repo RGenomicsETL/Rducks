@@ -1,6 +1,20 @@
 library(Rducks)
 
 local({
+  old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
+  Sys.unsetenv("RDUCKS_DEV_SURFACES")
+  on.exit({
+    if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
+  }, add = TRUE)
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_thread_is_main(1::UBIGINT) AS ok"), "does not exist|not exist|Catalog Error")
+  expect_error(DBI::dbGetQuery(con, "SELECT * FROM rducks_parallel_range(1::UBIGINT)"), "does not exist|not exist|Catalog Error")
+})
+Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+
+local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")

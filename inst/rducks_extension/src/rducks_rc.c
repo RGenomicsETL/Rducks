@@ -2513,6 +2513,10 @@ static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks
     return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
 }
 
+typedef int (*rducks_rc_execute_fn_t)(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                       duckdb_data_chunk input, duckdb_vector output,
+                                       char *err_msg, size_t err_cap);
+
 typedef struct rducks_rc_execute_context {
     rducks_runtime_entry_t *runtime;
     rducks_r_scalar_meta_t *meta;
@@ -2520,37 +2524,70 @@ typedef struct rducks_rc_execute_context {
     duckdb_vector output;
     char *err_msg;
     size_t err_cap;
+    const char *fallback_error;
+    rducks_rc_execute_fn_t execute;
     int ok;
+    int jumped;
 } rducks_rc_execute_context_t;
 
-static void rducks_rc_scalar_execute_toplevel(void *data) {
-    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
-    ctx->ok = rducks_rc_scalar_execute_impl(ctx->runtime, ctx->meta, ctx->input,
-                                            ctx->output, ctx->err_msg, ctx->err_cap);
-}
-
-static void rducks_rc_vectorized_execute_toplevel(void *data) {
-    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
-    ctx->ok = rducks_rc_vectorized_execute_impl(ctx->runtime, ctx->meta, ctx->input,
-                                                ctx->output, ctx->err_msg, ctx->err_cap);
-}
-
-/* The direct RC impl bodies use R allocation/protection and borrowed DuckDB
- * callback vectors but do not acquire malloc/Arrow/DuckDB handles that require
- * deterministic cleanup after an R allocation error. R_ToplevelExec() is used
- * only as the callback-boundary error fence; add R_UnwindProtect() around any
- * future native-resource section inserted into these impl paths.
- */
-static int rducks_rc_execute_with_toplevel(rducks_rc_execute_context_t *ctx,
-                                           void (*execute)(void *), const char *fallback_error) {
-    ctx->ok = 0;
-    if (ctx->err_msg && ctx->err_cap > 0U) ctx->err_msg[0] = '\0';
-    if (!R_ToplevelExec(execute, ctx)) {
-        if (ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0]) {
-            snprintf(ctx->err_msg, ctx->err_cap, "%s", fallback_error);
-        }
-        return 0;
+static void rducks_rc_set_fallback_error(rducks_rc_execute_context_t *ctx) {
+    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->fallback_error) {
+        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->fallback_error);
     }
+}
+
+static SEXP rducks_rc_execute_unwind_body(void *data) {
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    ctx->ok = ctx->execute(ctx->runtime, ctx->meta, ctx->input, ctx->output,
+                           ctx->err_msg, ctx->err_cap);
+    return R_NilValue;
+}
+
+static void rducks_rc_execute_unwind_cleanup(void *data, Rboolean jump) {
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    if (!ctx) return;
+    if (jump) {
+        ctx->jumped = 1;
+        ctx->ok = 0;
+        rducks_rc_set_fallback_error(ctx);
+    }
+}
+
+static SEXP rducks_rc_execute_try_body(void *data) {
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    return R_UnwindProtect(rducks_rc_execute_unwind_body, ctx,
+                           rducks_rc_execute_unwind_cleanup, ctx,
+                           NULL);
+}
+
+static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
+    (void)condition;
+    rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
+    if (ctx) {
+        ctx->ok = 0;
+        rducks_rc_set_fallback_error(ctx);
+    }
+    return R_NilValue;
+}
+
+/* Direct RC callbacks run from inside DuckDB scalar UDF callbacks, not from an
+ * R prompt. Do not install a fresh top-level context here. R_tryCatchError()
+ * catches R allocation/marshalling errors that would otherwise longjmp across
+ * DuckDB, while R_UnwindProtect() marks abnormal unwinds and is the place to
+ * add deterministic cleanup if future direct-RC sections acquire native
+ * malloc/Arrow/DuckDB handles. The current impl bodies only borrow callback
+ * vectors and use R PROTECT/UNPROTECT-managed SEXPs.
+ */
+static int rducks_rc_execute_with_error_boundary(rducks_rc_execute_context_t *ctx,
+                                                 rducks_rc_execute_fn_t execute,
+                                                 const char *fallback_error) {
+    ctx->ok = 0;
+    ctx->jumped = 0;
+    ctx->execute = execute;
+    ctx->fallback_error = fallback_error;
+    if (ctx->err_msg && ctx->err_cap > 0U) ctx->err_msg[0] = '\0';
+    (void)R_tryCatchError(rducks_rc_execute_try_body, ctx,
+                          rducks_rc_execute_error_handler, ctx);
     return ctx->ok;
 }
 
@@ -2565,8 +2602,8 @@ static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sc
     ctx.output = output;
     ctx.err_msg = err_msg;
     ctx.err_cap = err_cap;
-    return rducks_rc_execute_with_toplevel(&ctx, rducks_rc_scalar_execute_toplevel,
-                                           "Rducks RC scalar R function or marshal error");
+    return rducks_rc_execute_with_error_boundary(&ctx, rducks_rc_scalar_execute_impl,
+                                                 "Rducks RC scalar R function or marshal error");
 }
 
 static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
@@ -2580,6 +2617,6 @@ static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_
     ctx.output = output;
     ctx.err_msg = err_msg;
     ctx.err_cap = err_cap;
-    return rducks_rc_execute_with_toplevel(&ctx, rducks_rc_vectorized_execute_toplevel,
-                                           "Rducks RC vectorized R function or marshal error");
+    return rducks_rc_execute_with_error_boundary(&ctx, rducks_rc_vectorized_execute_impl,
+                                                 "Rducks RC vectorized R function or marshal error");
 }

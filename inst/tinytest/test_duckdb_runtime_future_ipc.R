@@ -1,3 +1,4 @@
+Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 library(Rducks)
 
 rducks_test_stress_concurrency <- function() {
@@ -22,6 +23,9 @@ local({
   expect_true(Rducks:::rducks_arrow_ipc_mapping_supported(STRUCT(x = LIST(ENUM(c("red", "blue"))))))
   expect_equal(Rducks:::rducks_arrow_ipc_unsupported_types(MAP(VARCHAR, DECIMAL(10, 2))), character())
   expect_error(Rducks:::rducks_arrow_ipc_mapping_supported("list<i32>"), "constructors")
+  expect_error(Rducks:::rducks_arrow_ipc_encode(list()), "nanoarrow_array")
+  expect_error(Rducks:::rducks_arrow_ipc_decode_array(raw()), "record batch|Arrow|IPC|schema|Invalid|read")
+  expect_error(Rducks:::rducks_arrow_ipc_decode_array(as.raw(c(1L, 2L, 3L, 4L))), "record batch|Arrow|IPC|schema|Invalid|read")
 
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
@@ -45,6 +49,19 @@ local({
 
   out <- DBI::dbGetQuery(con, "SELECT future_ipc_plus_offset(i::INTEGER) AS x FROM range(5) AS t(i)")
   expect_equal(out$x, 11:15)
+
+  invisible(rducks_register(
+    con, "future_ipc_bad_integer_result",
+    function(x) rep(NaN, length(x)),
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT future_ipc_bad_integer_result(i::INTEGER) AS x FROM range(3) AS t(i)"),
+    "Future Arrow IPC|worker|marshal|Rducks"
+  )
+  expect_equal(DBI::dbGetQuery(con, "SELECT future_ipc_plus_offset(1::INTEGER) AS x")$x, 12L)
 
   explain <- rducks_explain_udf(con, "future_ipc_plus_offset")
   expect_equal(explain$marshalling, "arrow_ipc")

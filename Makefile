@@ -16,7 +16,7 @@ catalog:
 	Rscript tools/generate_function_catalog.R
 
 test:
-	Rscript -e 'tinytest::test_package("$(PKGNAME)", testdir = "inst/tinytest")'
+	RDUCKS_DEV_SURFACES=true Rscript -e 'tinytest::test_package("$(PKGNAME)", testdir = "inst/tinytest")'
 
 install: build
 	USE_UNSTABLE_C_API=$(USE_UNSTABLE_C_API) \
@@ -27,7 +27,7 @@ build: rd
 	R CMD build .
 
 check: build
-	R CMD check $(PKGNAME)_$(PKGVERS).tar.gz
+	RDUCKS_DEV_SURFACES=true R CMD check $(PKGNAME)_$(PKGVERS).tar.gz
 
 rdm: install
 	Rscript -e 'rmarkdown::render("README.Rmd", output_format = rmarkdown::github_document(), quiet = TRUE)'

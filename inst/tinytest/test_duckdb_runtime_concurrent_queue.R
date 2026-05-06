@@ -1,3 +1,4 @@
+Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 library(Rducks)
 
 rducks_test_stress_concurrency <- function() {
@@ -78,6 +79,18 @@ local({
   expect_equal(queued_c_result$x, sum((0:9) + 1))
   queued_c_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_vec_result$x, sum((0:9) + 1))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_bad_i32",
+    function(x) rep(NaN, length(x)),
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT rducks_queue_arrow_c_bad_i32(i::INTEGER) AS x FROM rducks_parallel_range(4::UBIGINT) AS t(i)"),
+    "Rducks RC vectorized|marshal|integer|INTEGER"
+  )
+  expect_equal(DBI::dbGetQuery(con, "SELECT 3 AS ok")$ok, 3)
   explain_c <- rducks_explain_udf(con, "rducks_queue_plus_one_c")
   expect_equal(explain_c$evaluator, "RC")
   expect_true(explain_c$dispatch_chunks >= 1)

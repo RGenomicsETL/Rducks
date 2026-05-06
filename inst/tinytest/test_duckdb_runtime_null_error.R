@@ -63,3 +63,30 @@ local({
   invisible(rducks_register(con, "rducks_counter", counter, character(), "i32", side_effects = TRUE))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_counter() AS x FROM range(5)")$x, 1:5)
 })
+
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+
+  invisible(rducks_register(con, "rducks_arrow_c_i32_nan_bad", function() NaN, character(), INTEGER))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT rducks_arrow_c_i32_nan_bad() AS x"),
+    "Rducks RC|marshal|integer|INTEGER"
+  )
+  expect_equal(DBI::dbGetQuery(con, "SELECT 1 AS ok")$ok, 1)
+
+  invisible(rducks_register(
+    con, "rducks_arrow_c_vec_i32_nan_bad",
+    function(x) rep(NaN, length(x)),
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT rducks_arrow_c_vec_i32_nan_bad(i::INTEGER) AS x FROM range(4) AS t(i)"),
+    "Rducks RC vectorized|marshal|integer|INTEGER"
+  )
+  expect_equal(DBI::dbGetQuery(con, "SELECT 2 AS ok")$ok, 2)
+})

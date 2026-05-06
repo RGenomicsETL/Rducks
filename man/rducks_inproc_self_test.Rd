@@ -18,5 +18,6 @@ Integer-like numeric scalar: number of requests completed.
 Runs a native self-test that submits \code{n} requests from worker threads to the
 extension-owned main-thread queue and drains them on the recorded main R
 thread. This validates the queue/condition-variable path without calling an R
-UDF.
+UDF. This diagnostic SQL surface is dev/test-only; set
+\code{RDUCKS_DEV_SURFACES=true} before \code{rducks_enable()} if you need it.
 }

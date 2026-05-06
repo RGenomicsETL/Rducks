@@ -1,5 +1,18 @@
 /* Included by ../rducks_extension.c. */
 
+static int rducks_dev_surfaces_enabled(void) {
+    const char *value = getenv("RDUCKS_DEV_SURFACES");
+    char lowered[8];
+    size_t i;
+    if (!value || !value[0]) return 0;
+    for (i = 0; i < sizeof(lowered) - 1U && value[i]; i++) {
+        lowered[i] = (char)tolower((unsigned char)value[i]);
+    }
+    lowered[i] = '\0';
+    return strcmp(lowered, "1") == 0 || strcmp(lowered, "true") == 0 ||
+           strcmp(lowered, "yes") == 0 || strcmp(lowered, "on") == 0;
+}
+
 static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     (void)info;
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -501,7 +514,13 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_connection_open_failed", DUCKDB_TYPE_UBIGINT,
                                            rducks_runtime_connection_open_failed_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_queue_init_failed", DUCKDB_TYPE_UBIGINT,
-                                           rducks_runtime_queue_init_failed_stat_scalar, true) &&
+                                           rducks_runtime_queue_init_failed_stat_scalar, true);
+}
+
+static bool rducks_register_dev_diagnostic_surfaces(duckdb_connection con, rducks_runtime_entry_t *runtime) {
+    if (!rducks_dev_surfaces_enabled()) return true;
+    return rducks_register_parallel_range(con) &&
+           rducks_register_parallel_thread_probe(con, runtime) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
@@ -599,7 +618,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
         }
         if (!rducks_register_version(connection) || !rducks_register_runtime_token(connection, runtime) ||
             !rducks_register_queue_stats(connection, runtime) ||
-            !rducks_register_parallel_range(connection) || !rducks_register_parallel_thread_probe(connection, runtime) ||
+            !rducks_register_dev_diagnostic_surfaces(connection, runtime) ||
             !rducks_register_main_thread_token_surface(connection, runtime) ||
             !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_udf_stat_surface(connection, runtime) ||
             !rducks_register_scalar_surface(connection, runtime)) {

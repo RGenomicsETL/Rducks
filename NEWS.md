@@ -12,9 +12,16 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
-- Direct `arrow_c` scalar/vectorized execution is wrapped in a top-level R error
-  boundary so unexpected marshalling/allocation errors are converted into DuckDB
-  UDF errors instead of long-jumping across the callback boundary.
+- Dev/test-only SQL probes (`rducks_parallel_range`,
+  `rducks_parallel_thread_probe`, `rducks_queue_self_test`, and
+  `rducks_thread_is_main`) are now registered only when
+  `RDUCKS_DEV_SURFACES=true` is set before extension load. Production SQL
+  surfaces keep only the registration, execution, and documented statistics
+  helpers.
+- Direct `arrow_c` scalar/vectorized execution is fenced with
+  `R_tryCatchError()` plus `R_UnwindProtect()` so unexpected
+  marshalling/allocation errors are converted into DuckDB UDF errors without
+  installing a fresh R top-level context inside DuckDB callbacks.
 - Arrow C Data result import now copies the temporary imported DuckDB vector
   into the callback-owned output vector before destroying the imported chunk,
   avoiding reliance on reference-vector lifetime semantics.

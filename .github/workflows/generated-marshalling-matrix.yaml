@@ -32,6 +32,7 @@ jobs:
     env:
       USE_UNSTABLE_C_API: "1"
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
+      RDUCKS_DEV_SURFACES: "true"
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
       RDUCKS_MATRIX_INCLUDE_IPC: ${{ github.event.inputs.include_ipc || 'false' }}
       RDUCKS_MATRIX_FUTURE_WORKERS: ${{ github.event.inputs.future_workers || '1' }}
