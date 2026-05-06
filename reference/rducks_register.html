@@ -112,8 +112,10 @@ values).</p></dd>
 
 
 <dt id="arg-exception-handling">exception_handling<a class="anchor" aria-label="anchor" href="#arg-exception-handling"></a></dt>
-<dd><p>Either <code>"rethrow"</code> to report R errors to DuckDB, or
-<code>"return_null"</code> to turn R errors into SQL NULL values.</p></dd>
+<dd><p>Either <code>"rethrow"</code> to report user R function
+errors to DuckDB, or <code>"return_null"</code> to turn user R function errors into
+SQL NULL values. Return type-checking and marshalling errors still abort
+the query.</p></dd>
 
 
 <dt id="arg-side-effects">side_effects<a class="anchor" aria-label="anchor" href="#arg-side-effects"></a></dt>

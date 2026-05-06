@@ -95,20 +95,19 @@
 <td>queued same-process callbacks; R API work stays on the recorded main R thread</td>
 </tr><tr><td><code>arrow_c + serial</code></td>
 <td>implemented</td>
-<td>implemented</td>
-<td>native scalar evaluator <code>RC</code>; vectorized evaluator <code>RCV</code>
-</td>
+<td>not implemented</td>
+<td>direct native scalar evaluator <code>RC</code>; vectorized <code>RCV</code> is rejected</td>
 </tr><tr><td><code>arrow_c + inproc_concurrent</code></td>
 <td>implemented</td>
-<td>implemented</td>
-<td>queued same-process callbacks with <code>arrow_c</code> marshalling</td>
+<td>not implemented</td>
+<td>queued same-process callbacks with scalar <code>arrow_c</code> marshalling</td>
 </tr><tr><td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
 <td>Future-backed Arrow IPC path, evaluator <code>RIPC</code>
 </td>
 </tr></tbody></table><p>Implemented behavior to preserve:</p>
-<ul><li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, <code>RCV</code>, or <code>RIPC</code>). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
+<ul><li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, or <code>RIPC</code>; <code>RCV</code> is rejected until direct vectorized <code>arrow_c</code> exists). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
 <li>Zero-argument scalar UDFs use <code>args = NULL</code>.</li>
 <li>Zero-argument vectorized UDFs are not exposed.</li>
 <li>
@@ -244,17 +243,17 @@
 <p><label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label></p>
 <ul><li>
 <code>arrow_c</code> registration now fails for signatures that cannot yet use the native direct DuckDB-vector path instead of falling through to the R/Arrow bridge.</li>
-<li>Supported direct cases include scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION descriptors when their children are themselves direct-supported.</li>
+<li>Supported direct cases include scalar, DECIMAL, ENUM, STRUCT, UNION, and LIST/ARRAY/MAP descriptors whose element/key/value types are accepted by the stricter sequence-child support predicate. For example, top-level <code>BIGINT</code> is direct-supported but <code>BIGINT[]</code> is deliberately rejected until exact integer vector storage is implemented for homogeneous sequences.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
-<ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases.</li>
-<li>The generated matrix now asserts the expected direct-support allowlist and only runs <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts.</li>
+<ul><li>Acceptance: scalar <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases. Vectorized <code>arrow_c</code> is rejected rather than using the old Arrow/R helper bridge.</li>
+<li>The generated matrix now asserts the expected direct-support allowlist and runs scalar <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts, including default/special NULL handling and <code>exception_handling = "return_null"</code> smoke cases.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label></p>
 <ul><li>Done: recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT, MAP, and UNION.</li>
-<li>Acceptance: those signatures register under <code>arrow_c</code>, execute through <code>arrow_c_chunks</code>, and keep <code>arrow_r_chunks == 0</code>.</li>
+<li>Acceptance: those scalar signatures register under <code>arrow_c</code>, execute through <code>arrow_c_chunks</code>, and keep <code>arrow_r_chunks == 0</code>.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Handle partial failures in <code><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>.</label></p>

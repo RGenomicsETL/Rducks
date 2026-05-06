@@ -68,8 +68,9 @@ rducks_register(
 
 - exception_handling:
 
-  Either `"rethrow"` to report R errors to DuckDB, or `"return_null"` to
-  turn R errors into SQL NULL values.
+  Either `"rethrow"` to report user R function errors to DuckDB, or
+  `"return_null"` to turn user R function errors into SQL NULL values.
+  Return type-checking and marshalling errors still abort the query.
 
 - side_effects:
 

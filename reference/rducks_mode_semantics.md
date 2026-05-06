@@ -3,8 +3,9 @@
 `rducks_mode_semantics()` is the package-level schema for execution-mode
 semantics. `mode = "scalar"` calls the R function once for each DuckDB
 row. `mode = "vectorized"` calls the R function once per DuckDB chunk
-with one R vector/list-column per declared argument. Both modes are
-implemented on top of DuckDB Arrow C Data export/import plus nanoarrow.
+with one R vector/list-column per declared argument. Vectorized mode is
+currently exposed for `arrow_r` and `arrow_ipc`, not for direct
+`arrow_c`.
 
 ## Usage
 

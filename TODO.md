@@ -50,8 +50,8 @@ should describe what still needs doing.
 |----|----|----|----|
 | `arrow_r + serial` | implemented | implemented | semantic reference |
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
-| `arrow_c + serial` | implemented | implemented | native scalar evaluator `RC`; vectorized evaluator `RCV` |
-| `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with `arrow_c` marshalling |
+| `arrow_c + serial` | implemented | not implemented | direct native scalar evaluator `RC`; vectorized `RCV` is rejected |
+| `arrow_c + inproc_concurrent` | implemented | not implemented | queued same-process callbacks with scalar `arrow_c` marshalling |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | Future-backed Arrow IPC path, evaluator `RIPC` |
 
 Implemented behavior to preserve:
@@ -59,8 +59,9 @@ Implemented behavior to preserve:
 - The active plan at
   [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   chooses the native evaluator stored in DuckDB UDF metadata (`R`, `RC`,
-  `RCV`, or `RIPC`). Later plan changes alter the runtime concurrency
-  backend, but do not retarget already-registered UDF marshalling.
+  or `RIPC`; `RCV` is rejected until direct vectorized `arrow_c`
+  exists). Later plan changes alter the runtime concurrency backend, but
+  do not retarget already-registered UDF marshalling.
 - Zero-argument scalar UDFs use `args = NULL`.
 - Zero-argument vectorized UDFs are not exposed.
 - `side_effects = TRUE` marks the DuckDB scalar function volatile; it
@@ -318,27 +319,32 @@ Extend no-fallback assertions for `arrow_c` direct registration.
 - `arrow_c` registration now fails for signatures that cannot yet use
   the native direct DuckDB-vector path instead of falling through to the
   R/Arrow bridge.
-- Supported direct cases include scalar, DECIMAL, ENUM, LIST, ARRAY,
-  STRUCT, MAP, and UNION descriptors when their children are themselves
-  direct-supported.
+- Supported direct cases include scalar, DECIMAL, ENUM, STRUCT, UNION,
+  and LIST/ARRAY/MAP descriptors whose element/key/value types are
+  accepted by the stricter sequence-child support predicate. For
+  example, top-level `BIGINT` is direct-supported but `BIGINT[]` is
+  deliberately rejected until exact integer vector storage is
+  implemented for homogeneous sequences.
 
 Add generated matrix no-fallback coverage for every supported scalar,
 DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.
 
-- Acceptance:
+- Acceptance: scalar
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   shows `arrow_c_chunks > 0` and `arrow_r_chunks == 0` for supported
-  `arrow_c` cases.
+  `arrow_c` cases. Vectorized `arrow_c` is rejected rather than using
+  the old Arrow/R helper bridge.
 - The generated matrix now asserts the expected direct-support allowlist
-  and only runs `arrow_c` no-fallback counter checks for descriptors
-  that the direct-support predicate accepts.
+  and runs scalar `arrow_c` no-fallback counter checks for descriptors
+  that the direct-support predicate accepts, including default/special
+  NULL handling and `exception_handling = "return_null"` smoke cases.
 
 Implement native direct `arrow_c` composite/union marshalling.
 
 - Done: recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT,
   MAP, and UNION.
-- Acceptance: those signatures register under `arrow_c`, execute through
-  `arrow_c_chunks`, and keep `arrow_r_chunks == 0`.
+- Acceptance: those scalar signatures register under `arrow_c`, execute
+  through `arrow_c_chunks`, and keep `arrow_r_chunks == 0`.
 
 Handle partial failures in
 [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md).

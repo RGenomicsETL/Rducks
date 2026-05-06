@@ -20,11 +20,10 @@
   explicit Rducks enum-storage IPC convention.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
-- Implemented `arrow_c + vectorized` registrations for both `serial` and
-  `inproc_concurrent` execution plans. The native evaluator token is
-  `RCV`, and
-  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  reports `arrow_c` counters for these chunk calls.
+- `arrow_c` is now a direct scalar marshalling path only. Vectorized
+  `arrow_c` registrations are rejected until they have a direct
+  implementation; use `arrow_r` for in-process vectorized chunks or
+  `arrow_ipc + multiprocess_parallel` for Future-backed vectorized work.
 - Added
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
