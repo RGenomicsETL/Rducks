@@ -37,29 +37,34 @@
 <p>This file is development-facing. Keep user-facing changes in <code>NEWS.md</code> and README/docs. Do not use this file as a historical changelog; it should describe what still needs doing.</p>
 <div class="section level2">
 <h2 id="current-facts">Current facts<a class="anchor" aria-label="anchor" href="#current-facts"></a></h2>
-<ul><li>Current development baseline when this file was refreshed: weakref-based R-side lifecycle cleanup in progress after <code>ed05eee Track database-cache lifecycle risks</code>.</li>
-<li>Local validation for the weakref cleanup change:
+<ul><li>Current development baseline when this file was refreshed: <code>cf4b007</code>.</li>
+<li>Local validation at that baseline:
 <ul><li>
-<code>make install</code> OK</li>
+<code>R CMD INSTALL .</code> OK</li>
 <li>
-<code>make test</code> OK: 541 tinytest results</li>
+<code>make test</code> OK: 652 tinytest results</li>
 <li>
-<code>README.Rmd</code> not rerendered for this internal lifecycle change</li>
+<code>Rscript tools/run_generated_marshalling_matrix.R</code> OK: 945 generated cases</li>
 </ul></li>
-<li>Last checked GitHub Actions before the weakref cleanup change:
-<ul><li>
-<code>R-CMD-check.yaml</code>: success, including R 4.3</li>
-<li>
-<code>Generated marshalling matrix</code>: success, release and R 4.3</li>
-<li>
-<code>pkgdown.yaml</code>: success</li>
-</ul></li>
-<li>Last checked R-universe before the weakref cleanup change:
-<ul><li><code>RemoteSha = 4ac8ba2079dc13e91c511246fdd9cad4defb654f</code></li>
-<li><code>_status = success</code></li>
-<li>Linux/macOS/Windows binaries success</li>
-<li>wasm binary success</li>
-</ul></li>
+<li>Recent architecture-audit fixes include database-runtime-scoped R metadata, opaque evaluator handles, non-destructive <code><a href="reference/rducks_release.html">rducks_release()</a></code>, main-thread release queues, direct-only scalar/vectorized <code>arrow_c</code>, native Arrow IPC encoding without rawConnection fallback, structural Arrow IPC type validation, copied Arrow result import, callback error fences, dev-only diagnostic SQL probes, capability-guarded backend setting, richer queue/runtime diagnostics, and concrete execution <code>engine_id</code>s.</li>
+<li>GitHub Actions/R-universe status was not rechecked while refreshing this file; use the workflow badges and R-universe package page for current hosted status.</li>
+</ul></div>
+<div class="section level2">
+<h2 id="expert-review-checklist-status">Expert-review checklist status<a class="anchor" aria-label="anchor" href="#expert-review-checklist-status"></a></h2>
+<ul class="task-list"><li><label><input type="checkbox" checked>Database/runtime identity: use Rducks-owned database runtime tokens for shared registration metadata; connection tokens are only attachment/default plan bookkeeping.</label></li>
+<li><label><input type="checkbox" checked>Registration safety: no raw <code>SEXP</code> pointer-through-SQL evaluator handles; native registration validates opaque evaluator id/token pairs.</label></li>
+<li><label><input type="checkbox" checked>Main-thread queue simplification: removed the synthetic worker self-shim; main-thread callbacks execute inline and drain queued work cooperatively.</label></li>
+<li><label><input type="checkbox" checked>Preserved R object lifetime: off-main native metadata destruction queues preserved evaluator releases for recorded-main-thread drain points.</label></li>
+<li><label><input type="checkbox" checked>Longjmp/error fences: native IPC encoding, direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect paths use <code>R_UnwindProtect()</code>/R error boundaries where R errors could otherwise cross DuckDB callbacks or skip native cleanup.</label></li>
+<li><label><input type="checkbox" checked>Honest <code>arrow_c</code>: scalar and vectorized <code>arrow_c</code> are direct-only; unsupported signatures fail instead of falling back to Arrow/R helpers.</label></li>
+<li><label><input type="checkbox" checked>Arrow IPC validation/fallbacks: structural type validation replaces the fake unsupported-type check, and the primary IPC encoder has no rawConnection fallback.</label></li>
+<li><label><input type="checkbox" checked>Result import lifetime: imported Arrow result chunks are copied into callback-owned DuckDB output vectors before temporary chunks are destroyed.</label></li>
+<li><label><input type="checkbox" checked>Production SQL surface: dev/test probes are gated by <code>RDUCKS_DEV_SURFACES=true</code>; production backend mutation requires the recorded main-thread capability.</label></li>
+<li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed.</label></li>
+<li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
+<li><label><input type="checkbox">Persistent worker/provider architecture: generic Future remains the portable reference provider; persistent mirai/nanonext-style workers with preloaded evaluator/schema state are still future work.</label></li>
+<li><label><input type="checkbox"><code>rducks_unregister()</code>: not implemented; DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path, so destructive database-scoped unregistering needs a separate design.</label></li>
+<li><label><input type="checkbox"><code>R/arrow_bridge.R</code> split: still monolithic; provider/codec/schema/eval modules should be separated when the provider abstraction is reworked.</label></li>
 </ul></div>
 <div class="section level2">
 <h2 id="non-negotiable-constraints">Non-negotiable constraints<a class="anchor" aria-label="anchor" href="#non-negotiable-constraints"></a></h2>
