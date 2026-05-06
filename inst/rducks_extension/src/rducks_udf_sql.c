@@ -139,19 +139,53 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     return true;
 }
 
+static int rducks_lookup_evaluator_ref(const char *id, const char *token, SEXP *eval_ref,
+                                        char *err, size_t err_cap) {
+    int r_err = 0;
+    int protect_count = 0;
+    SEXP pkg = PROTECT(Rf_mkString("Rducks"));
+    protect_count++;
+    SEXP ns = PROTECT(R_FindNamespace(pkg));
+    protect_count++;
+    SEXP fun = PROTECT(Rf_findFun(Rf_install("rducks_evaluator_ref_get"), ns));
+    protect_count++;
+    if (!Rf_isFunction(fun)) {
+        snprintf(err, err_cap, "Rducks evaluator registry lookup function is unavailable");
+        UNPROTECT(protect_count);
+        return 0;
+    }
+    SEXP id_sexp = PROTECT(Rf_mkString(id ? id : ""));
+    protect_count++;
+    SEXP token_sexp = PROTECT(Rf_mkString(token ? token : ""));
+    protect_count++;
+    SEXP call = PROTECT(Rf_lang3(fun, id_sexp, token_sexp));
+    protect_count++;
+    SEXP value = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
+    protect_count++;
+    if (r_err || value == R_NilValue) {
+        snprintf(err, err_cap, "invalid Rducks evaluator handle");
+        UNPROTECT(protect_count);
+        return 0;
+    }
+    *eval_ref = value;
+    UNPROTECT(protect_count);
+    return 1;
+}
+
 static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
     duckdb_string_t *names = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
-    uint64_t *fun_ptrs = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
-    duckdb_string_t *args_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 2));
-    duckdb_string_t *return_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 3));
+    duckdb_string_t *evaluator_ids = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
+    duckdb_string_t *evaluator_tokens = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 2));
+    duckdb_string_t *args_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 3));
+    duckdb_string_t *return_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 4));
     duckdb_string_t *null_handling_specs =
-        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 4));
-    duckdb_string_t *exception_handling_specs =
         (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 5));
-    bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
-    duckdb_string_t *eval_mode_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 7));
+    duckdb_string_t *exception_handling_specs =
+        (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 6));
+    bool *side_effects_values = (bool *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 7));
+    duckdb_string_t *eval_mode_specs = (duckdb_string_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 8));
     bool *out = (bool *)duckdb_vector_get_data(output);
     if (!runtime) {
         duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
@@ -160,16 +194,21 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
 
     for (idx_t i = 0; i < n; i++) {
         char *name = rducks_copy_duckdb_string(&names[i]);
+        char *evaluator_id = rducks_copy_duckdb_string(&evaluator_ids[i]);
+        char *evaluator_token = rducks_copy_duckdb_string(&evaluator_tokens[i]);
         char *args_spec = rducks_copy_duckdb_string(&args_specs[i]);
         char *return_spec = rducks_copy_duckdb_string(&return_specs[i]);
         char *null_handling_spec = rducks_copy_duckdb_string(&null_handling_specs[i]);
         char *exception_handling_spec = rducks_copy_duckdb_string(&exception_handling_specs[i]);
         char *eval_mode_spec = rducks_copy_duckdb_string(&eval_mode_specs[i]);
         char err[256];
-        SEXP eval_ref;
+        SEXP eval_ref = R_NilValue;
         err[0] = '\0';
-        if (!name || !args_spec || !return_spec || !null_handling_spec || !exception_handling_spec || !eval_mode_spec) {
+        if (!name || !evaluator_id || !evaluator_token || !args_spec || !return_spec ||
+            !null_handling_spec || !exception_handling_spec || !eval_mode_spec) {
             free(name);
+            free(evaluator_id);
+            free(evaluator_token);
             free(args_spec);
             free(return_spec);
             free(null_handling_spec);
@@ -178,10 +217,24 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
             duckdb_scalar_function_set_error(info, "out of memory");
             return;
         }
-        eval_ref = (SEXP)(uintptr_t)fun_ptrs[i];
+        if (!rducks_allow_calling_thread_r_execution(runtime, err, sizeof(err)) ||
+            !rducks_lookup_evaluator_ref(evaluator_id, evaluator_token, &eval_ref, err, sizeof(err))) {
+            free(name);
+            free(evaluator_id);
+            free(evaluator_token);
+            free(args_spec);
+            free(return_spec);
+            free(null_handling_spec);
+            free(exception_handling_spec);
+            free(eval_mode_spec);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "invalid Rducks evaluator handle");
+            return;
+        }
         out[i] = rducks_register_r_scalar(runtime, name, eval_ref, args_spec, return_spec, null_handling_spec,
                                           exception_handling_spec, side_effects_values[i], eval_mode_spec, err, sizeof(err));
         free(name);
+        free(evaluator_id);
+        free(evaluator_token);
         free(args_spec);
         free(return_spec);
         free(null_handling_spec);

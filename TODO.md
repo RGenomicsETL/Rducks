@@ -193,6 +193,12 @@ Run with `lobstr` in this session:
     R-side stores when the DuckDB connection external pointer is collected.
   - Covered by `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
+- [x] Remove raw SEXP pointer-through-SQL evaluator registration.
+  - `rducks_register()` now stores the evaluator in a temporary R-side registry
+    and passes an opaque evaluator id/token to the DuckDB extension.
+  - Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
+    error instead of letting native code cast arbitrary integers to `SEXP`.
+
 - [ ] Add native runtime token/anchor accounting.
   - Target: a stable Rducks runtime token from the native extension, for example
     `SELECT rducks_connection_token()` or a `.Call` equivalent.

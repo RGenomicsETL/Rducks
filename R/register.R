@@ -1,3 +1,64 @@
+rducks_evaluator_ref_store <- function() {
+  store <- .rducks_state$evaluator_refs
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv())
+    .rducks_state$evaluator_refs <- store
+  }
+  store
+}
+
+rducks_next_evaluator_id <- function() {
+  counter <- .rducks_state$evaluator_ref_counter %||% 0
+  counter <- counter + 1
+  .rducks_state$evaluator_ref_counter <- counter
+  paste0("rducks-evaluator-", counter)
+}
+
+rducks_evaluator_ref_token <- function(id) {
+  counter <- .rducks_state$evaluator_ref_token_counter %||% 0
+  counter <- counter + 1
+  .rducks_state$evaluator_ref_token_counter <- counter
+  paste(
+    id,
+    Sys.getpid(),
+    format(Sys.time(), "%Y%m%d%H%M%OS6", tz = "UTC"),
+    counter,
+    sep = "-"
+  )
+}
+
+rducks_evaluator_ref_put <- function(eval_ref) {
+  id <- rducks_next_evaluator_id()
+  token <- rducks_evaluator_ref_token(id)
+  assign(id, list(token = token, value = eval_ref), envir = rducks_evaluator_ref_store())
+  list(id = id, token = token)
+}
+
+rducks_evaluator_ref_get <- function(id, token) {
+  if (!is.character(id) || length(id) != 1L || is.na(id) || !nzchar(id) ||
+      !is.character(token) || length(token) != 1L || is.na(token) || !nzchar(token)) {
+    stop("invalid Rducks evaluator handle", call. = FALSE)
+  }
+  store <- rducks_evaluator_ref_store()
+  if (!exists(id, envir = store, inherits = FALSE)) {
+    stop("invalid Rducks evaluator handle", call. = FALSE)
+  }
+  record <- get(id, envir = store, inherits = FALSE)
+  if (!identical(record$token, token)) {
+    stop("invalid Rducks evaluator handle", call. = FALSE)
+  }
+  record$value
+}
+
+rducks_evaluator_ref_remove <- function(handle) {
+  if (!is.list(handle) || is.null(handle$id)) return(invisible(NULL))
+  store <- .rducks_state$evaluator_refs
+  if (!is.null(store) && exists(handle$id, envir = store, inherits = FALSE)) {
+    rm(list = handle$id, envir = store)
+  }
+  invisible(NULL)
+}
+
 rducks_registration_spec <- function(name, fun, args, returns, mode) {
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
@@ -104,14 +165,17 @@ rducks_register <- function(con, name, fun, args, returns,
   } else {
     stop("Rducks execution plan ", plan$plan_id, " is not implemented for local registration", call. = FALSE)
   }
-  # The SQL registration call below is synchronous. `eval_ref` is live in this
-  # R frame until the DuckDB extension receives the address and preserves it in
-  # per-UDF metadata with R_PreserveObject().
-  eval_ref_ptr <- .Call(RDUCKS_sexp_addr, eval_ref)
+  # The SQL registration call below is synchronous. `eval_ref` is held in a
+  # temporary R-side registry while the DuckDB extension looks it up by opaque
+  # evaluator id + token and then preserves it in per-UDF metadata with
+  # R_PreserveObject(). Do not expose raw SEXP addresses through SQL.
+  eval_ref_handle <- rducks_evaluator_ref_put(eval_ref)
+  on.exit(rducks_evaluator_ref_remove(eval_ref_handle), add = TRUE)
   sql <- sprintf(
-    "SELECT rducks_register_scalar(%s, %s::UBIGINT, %s, %s, %s, %s, %s, %s) AS ok",
+    "SELECT rducks_register_scalar(%s, %s, %s, %s, %s, %s, %s, %s, %s) AS ok",
     rducks_sql_string(name),
-    as.character(eval_ref_ptr),
+    rducks_sql_string(eval_ref_handle$id),
+    rducks_sql_string(eval_ref_handle$token),
     rducks_sql_string(paste(spec$args, collapse = ",")),
     rducks_sql_string(spec$returns),
     rducks_sql_string(null_handling),

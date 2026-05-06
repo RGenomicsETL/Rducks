@@ -14,6 +14,18 @@ local({
   expect_equal(reg0$spec$args, character())
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_hello() AS x")$x, "hello from R")
 
+  expect_error(
+    DBI::dbGetQuery(
+      con,
+      paste(
+        "SELECT rducks_register_scalar(",
+        "'bad_manual', 'not-a-valid-evaluator-id', 'not-a-valid-evaluator-token',",
+        "'i32', 'i32', 'default', 'rethrow', FALSE, 'R') AS ok"
+      )
+    ),
+    "invalid Rducks evaluator handle"
+  )
+
   invisible(rducks_register(
     con,
     "rducks_gc_survives",

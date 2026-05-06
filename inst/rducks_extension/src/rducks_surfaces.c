@@ -11,18 +11,14 @@ static void rducks_version_scalar(duckdb_function_info info, duckdb_data_chunk i
 static bool rducks_register_scalar_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
     duckdb_scalar_function fn = duckdb_create_scalar_function();
     duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
-    duckdb_logical_type ubigint_type = duckdb_create_logical_type(DUCKDB_TYPE_UBIGINT);
     duckdb_logical_type bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
     duckdb_state rc;
-    if (!fn || !varchar_type || !ubigint_type || !bool_type) {
+    if (!fn || !varchar_type || !bool_type) {
         if (fn) {
             duckdb_destroy_scalar_function(&fn);
         }
         if (varchar_type) {
             duckdb_destroy_logical_type(&varchar_type);
-        }
-        if (ubigint_type) {
-            duckdb_destroy_logical_type(&ubigint_type);
         }
         if (bool_type) {
             duckdb_destroy_logical_type(&bool_type);
@@ -31,7 +27,8 @@ static bool rducks_register_scalar_surface(duckdb_connection con, rducks_runtime
     }
     duckdb_scalar_function_set_name(fn, "rducks_register_scalar");
     duckdb_scalar_function_add_parameter(fn, varchar_type);
-    duckdb_scalar_function_add_parameter(fn, ubigint_type);
+    duckdb_scalar_function_add_parameter(fn, varchar_type);
+    duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
@@ -45,7 +42,6 @@ static bool rducks_register_scalar_surface(duckdb_connection con, rducks_runtime
     rc = duckdb_register_scalar_function(con, fn);
     duckdb_destroy_scalar_function(&fn);
     duckdb_destroy_logical_type(&varchar_type);
-    duckdb_destroy_logical_type(&ubigint_type);
     duckdb_destroy_logical_type(&bool_type);
     return rc == DuckDBSuccess;
 }
