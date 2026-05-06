@@ -244,17 +244,15 @@
 <p><label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label></p>
 <ul><li>
 <code>arrow_c</code> registration now fails for signatures that cannot yet use the native direct DuckDB-vector path instead of falling through to the R/Arrow bridge.</li>
-<li>Supported direct cases include scalar, DECIMAL, ENUM, LIST, and ARRAY descriptors when their children are themselves direct-supported.</li>
-<li>Remaining STRUCT/MAP/UNION signatures are implementation gaps to close in C, not desired long-term failures.</li>
+<li>Supported direct cases include scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION descriptors when their children are themselves direct-supported.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, and ARRAY direct type.</label></p>
+<p><label><input type="checkbox">Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label></p>
 <ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Implement native direct <code>arrow_c</code> composite/union marshalling.</label></p>
-<ul><li>Done: recursive DuckDB-vector readers/writers for LIST and ARRAY.</li>
-<li>Remaining: STRUCT, MAP, and UNION instead of relying on the old R/Arrow bridge.</li>
+<p><label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label></p>
+<ul><li>Done: recursive DuckDB-vector readers/writers for LIST, ARRAY, STRUCT, MAP, and UNION.</li>
 <li>Acceptance: those signatures register under <code>arrow_c</code>, execute through <code>arrow_c_chunks</code>, and keep <code>arrow_r_chunks == 0</code>.</li>
 </ul></li>
 <li>
