@@ -91,8 +91,22 @@ local({
   )
 
   for (case in cases) {
-    register_pair(case[[1L]], case[[2L]], case[[3L]], case[[4L]])
-    expect_plan_equal(case[[5L]])
+    arrow_c_direct_supported <- all(vapply(
+      c(Rducks:::rducks_as_type_list(case[[3L]]), list(Rducks:::rducks_as_type(case[[4L]]))),
+      Rducks:::rducks_arrow_c_direct_mapping_supported,
+      logical(1)
+    ))
+    if (arrow_c_direct_supported) {
+      register_pair(case[[1L]], case[[2L]], case[[3L]], case[[4L]])
+      expect_plan_equal(case[[5L]])
+    } else {
+      invisible(rducks_register(con_r, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE))
+      expect_error(
+        rducks_register(con_c, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE),
+        "arrow_c direct marshalling is not implemented"
+      )
+      expect_true(NROW(DBI::dbGetQuery(con_r, case[[5L]])) >= 1L)
+    }
   }
 
   calls_default_r <- 0L

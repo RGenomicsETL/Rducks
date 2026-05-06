@@ -1527,8 +1527,9 @@ static int rducks_rc_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sc
         return 0;
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
-    if (rducks_rc_direct_supported(meta)) {
-        return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
+    if (!rducks_rc_direct_supported(meta)) {
+        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        return 0;
     }
-    return rducks_rc_arrow_scalar_execute_on_r_thread(runtime, meta, input, output, err_msg, err_cap);
+    return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
 }

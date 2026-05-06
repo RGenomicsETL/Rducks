@@ -450,6 +450,18 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
       call. = FALSE
     )
   }
+  if (identical(plan$marshalling, "arrow_c")) {
+    types <- c(spec$arg_types, list(spec$return_type))
+    unsupported <- unique(unlist(lapply(types, rducks_arrow_c_direct_unsupported_types), use.names = FALSE))
+    if (length(unsupported)) {
+      stop(
+        "arrow_c direct marshalling is not implemented for: ",
+        paste(unsupported, collapse = ", "),
+        "; use marshalling = 'arrow_r' for these types",
+        call. = FALSE
+      )
+    }
+  }
   if (identical(plan$marshalling, "arrow_ipc")) {
     unsupported <- unique(unlist(lapply(c(spec$arg_types, list(spec$return_type)), rducks_arrow_ipc_unsupported_types), use.names = FALSE))
     unsupported <- unsupported[nzchar(unsupported)]

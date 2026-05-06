@@ -576,6 +576,23 @@ rducks_scalar_mapping_supported <- function(type) {
   FALSE
 }
 
+rducks_arrow_c_direct_mapping_supported <- function(type) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  kind <- rducks_type_kind(type)
+  if (identical(kind, "decimal")) {
+    return(TRUE)
+  }
+  if (identical(kind, "scalar")) {
+    return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
+  }
+  FALSE
+}
+
+rducks_arrow_c_direct_unsupported_types <- function(type) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  if (rducks_arrow_c_direct_mapping_supported(type)) character() else rducks_type_duckdb_sql(type)
+}
+
 rducks_unsupported_duckdb_types <- function(type) {
   type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
   if (rducks_scalar_mapping_supported(type)) {
