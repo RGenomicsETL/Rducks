@@ -191,7 +191,8 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc);
 
 static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *desc) {
     if (!desc) return 0;
-    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY || desc->kind == RDUCKS_KIND_STRUCT) {
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY ||
+        desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_MAP) {
         return rducks_rc_direct_type_supported(desc);
     }
     if (rducks_rc_direct_enum_supported(desc)) return 1;
@@ -229,6 +230,10 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
             if (!rducks_rc_direct_type_supported(desc->field_types[i])) return 0;
         }
         return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        return rducks_rc_direct_sequence_child_supported(desc->key) &&
+               rducks_rc_direct_sequence_child_supported(desc->value);
     }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
@@ -973,6 +978,41 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
 
 static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row);
 
+static SEXP rducks_rc_named_field(SEXP value, const char *name, int *ok) {
+    SEXP names;
+    *ok = 1;
+    if (TYPEOF(value) != VECSXP) {
+        *ok = 0;
+        return R_NilValue;
+    }
+    names = Rf_getAttrib(value, R_NamesSymbol);
+    if (TYPEOF(names) != STRSXP || XLENGTH(names) != XLENGTH(value)) {
+        *ok = 0;
+        return R_NilValue;
+    }
+    for (R_xlen_t i = 0; i < XLENGTH(names); i++) {
+        SEXP elt_name = STRING_ELT(names, i);
+        if (elt_name != NA_STRING && name && strcmp(CHAR(elt_name), name) == 0) {
+            return VECTOR_ELT(value, i);
+        }
+    }
+    *ok = 0;
+    return R_NilValue;
+}
+
+static int rducks_rc_any_duplicated(SEXP x, int *duplicated) {
+    int r_err = 0;
+    SEXP call = PROTECT(Rf_lang2(Rf_install("anyDuplicated"), x));
+    SEXP value = PROTECT(R_tryEvalSilent(call, R_BaseEnv, &r_err));
+    if (r_err || TYPEOF(value) != INTSXP || XLENGTH(value) < 1) {
+        UNPROTECT(2);
+        return 0;
+    }
+    *duplicated = INTEGER(value)[0] != 0;
+    UNPROTECT(2);
+    return 1;
+}
+
 static SEXP rducks_rc_struct_field(SEXP value, const char *name, size_t index, int *ok) {
     SEXP names;
     int has_names = 0;
@@ -1179,6 +1219,25 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         }
         Rf_setAttrib(out, R_NamesSymbol, names);
         UNPROTECT(2);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        duckdb_list_entry *entries = (duckdb_list_entry *)input->data;
+        duckdb_vector entry_vector = duckdb_list_vector_get_child(input->vector);
+        duckdb_vector key_vector = duckdb_struct_vector_get_child(entry_vector, 0);
+        duckdb_vector value_vector = duckdb_struct_vector_get_child(entry_vector, 1);
+        idx_t offset = (idx_t)entries[row].offset;
+        idx_t len = (idx_t)entries[row].length;
+        SEXP keys = PROTECT(rducks_rc_direct_sequence_arg(desc->key, key_vector, offset, len));
+        SEXP values = PROTECT(rducks_rc_direct_sequence_arg(desc->value, value_vector, offset, len));
+        SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+        out = PROTECT(Rf_allocVector(VECSXP, 2));
+        SET_VECTOR_ELT(out, 0, keys);
+        SET_VECTOR_ELT(out, 1, values);
+        SET_STRING_ELT(names, 0, Rf_mkChar("keys"));
+        SET_STRING_ELT(names, 1, Rf_mkChar("values"));
+        Rf_setAttrib(out, R_NamesSymbol, names);
+        UNPROTECT(4);
         return out;
     }
     if (desc->kind == RDUCKS_KIND_ENUM) {
@@ -1498,6 +1557,82 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             }
             UNPROTECT(1);
         }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        int keys_ok = 1;
+        int values_ok = 1;
+        SEXP keys = PROTECT(rducks_rc_named_field(value, "keys", &keys_ok));
+        SEXP values = PROTECT(rducks_rc_named_field(value, "values", &values_ok));
+        R_xlen_t len;
+        int duplicated = 0;
+        idx_t offset = duckdb_list_vector_get_size(output->vector);
+        idx_t required = 0;
+        duckdb_list_entry *entries = (duckdb_list_entry *)output->data;
+        duckdb_vector entry_vector;
+        duckdb_vector key_vector;
+        duckdb_vector value_vector;
+        rducks_rc_direct_vector_view_t key_view;
+        rducks_rc_direct_vector_view_t value_view;
+        if (!keys_ok || !values_ok) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "Rducks MAP return value must have keys and values fields");
+            return 0;
+        }
+        len = XLENGTH(keys);
+        if (len < 0 || XLENGTH(values) != len || !rducks_rc_idx_add(offset, (idx_t)len, &required)) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "Rducks MAP keys and values must have equal valid length");
+            return 0;
+        }
+        if (!rducks_rc_any_duplicated(keys, &duplicated)) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "failed to validate Rducks MAP keys");
+            return 0;
+        }
+        if (duplicated) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "Rducks MAP keys must be unique");
+            return 0;
+        }
+        if (duckdb_list_vector_reserve(output->vector, required) == DuckDBError) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "failed to reserve DuckDB MAP child storage");
+            return 0;
+        }
+        entry_vector = duckdb_list_vector_get_child(output->vector);
+        key_vector = duckdb_struct_vector_get_child(entry_vector, 0);
+        value_vector = duckdb_struct_vector_get_child(entry_vector, 1);
+        rducks_rc_direct_output_view_init(&key_view, key_vector);
+        rducks_rc_direct_output_view_init(&value_view, value_vector);
+        for (R_xlen_t j = 0; j < len; j++) {
+            int key_ok = 1;
+            int value_ok = 1;
+            SEXP key = PROTECT(rducks_rc_vector_value_at(keys, (idx_t)j, &key_ok));
+            SEXP item = PROTECT(rducks_rc_vector_value_at(values, (idx_t)j, &value_ok));
+            idx_t child_row = 0;
+            if (key_ok && rducks_rc_value_is_null_for_output(desc->key, key)) {
+                UNPROTECT(4);
+                snprintf(err_msg, err_cap, "Rducks MAP keys must not be NULL");
+                return 0;
+            }
+            if (!rducks_rc_idx_add(offset, (idx_t)j, &child_row) || !key_ok || !value_ok ||
+                !rducks_rc_write_direct_output(desc->key, &key_view, child_row, key, err_msg, err_cap) ||
+                !rducks_rc_write_direct_output(desc->value, &value_view, child_row, item, err_msg, err_cap)) {
+                UNPROTECT(4);
+                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB MAP entry");
+                return 0;
+            }
+            UNPROTECT(2);
+        }
+        if (duckdb_list_vector_set_size(output->vector, required) == DuckDBError) {
+            UNPROTECT(2);
+            snprintf(err_msg, err_cap, "failed to commit DuckDB MAP child storage");
+            return 0;
+        }
+        entries[row].offset = offset;
+        entries[row].length = (uint64_t)len;
+        UNPROTECT(2);
         return 1;
     }
     if (desc->kind == RDUCKS_KIND_ENUM) {

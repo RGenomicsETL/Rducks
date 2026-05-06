@@ -74,4 +74,23 @@ local({
   expect_equal(struct_out_explain$evaluator, "RC")
   expect_true(struct_out_explain$arrow_c_chunks >= 1)
   expect_equal(struct_out_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_map_sum_arrow_c", function(x) sum(x$values), MAP(VARCHAR, INTEGER), INTEGER))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_map_sum_arrow_c(map(['a','b'], [20,22])) AS x")$x, 42L)
+  map_in_explain <- rducks_explain_udf(con, "rducks_map_sum_arrow_c")
+  expect_equal(map_in_explain$evaluator, "RC")
+  expect_true(map_in_explain$arrow_c_chunks >= 1)
+  expect_equal(map_in_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_map_make_arrow_c", function(x) list(keys = c('a', 'b'), values = c(x, x + 1L)), INTEGER, MAP(VARCHAR, INTEGER)))
+  expect_equal(DBI::dbGetQuery(con, "SELECT list_sum(map_values(rducks_map_make_arrow_c(20::INTEGER))) AS x")$x, 41L)
+  map_out_explain <- rducks_explain_udf(con, "rducks_map_make_arrow_c")
+  expect_equal(map_out_explain$evaluator, "RC")
+  expect_true(map_out_explain$arrow_c_chunks >= 1)
+  expect_equal(map_out_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_map_null_key_arrow_c", function() list(keys = c('a', NA_character_), values = c(1L, 2L)), character(), MAP(VARCHAR, INTEGER)))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_map_null_key_arrow_c() AS x"), "MAP keys must not be NULL")
+  invisible(rducks_register(con, "rducks_map_duplicate_key_arrow_c", function() list(keys = c('a', 'a'), values = c(1L, 2L)), character(), MAP(VARCHAR, INTEGER)))
+  expect_error(DBI::dbGetQuery(con, "SELECT rducks_map_duplicate_key_arrow_c() AS x"), "MAP keys must be unique")
 })
