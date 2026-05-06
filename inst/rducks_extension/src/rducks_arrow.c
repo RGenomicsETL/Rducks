@@ -35,6 +35,20 @@ static void rducks_release_arrow_options(duckdb_arrow_options *options, int borr
     if (!borrowed && options && *options) duckdb_destroy_arrow_options(options);
 }
 
+static void rducks_release_arrow_schema_if_set(struct ArrowSchema *schema) {
+    if (schema && schema->release) {
+        schema->release(schema);
+        schema->release = NULL;
+    }
+}
+
+static void rducks_release_arrow_array_if_set(struct ArrowArray *array) {
+    if (array && array->release) {
+        array->release(array);
+        array->release = NULL;
+    }
+}
+
 static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
                                            rducks_type_desc_t **descs, size_t count,
                                            const char **names, char *err_msg, size_t err_cap) {
@@ -87,6 +101,7 @@ static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, stru
         if (has_error) {
             rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create Arrow C Data schema", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
+            rducks_release_arrow_schema_if_set(schema);
             return 0;
         }
         duckdb_destroy_error_data(&error_data);
@@ -185,6 +200,7 @@ static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime,
         if (has_error) {
             rducks_arrow_error_to_buffer(error_data, "DuckDB failed to export input chunk to Arrow C Data", err_msg, err_cap);
             duckdb_destroy_error_data(&error_data);
+            rducks_release_arrow_array_if_set(array);
             return 0;
         }
         duckdb_destroy_error_data(&error_data);

@@ -345,7 +345,10 @@ Still-open or blocked decisions:
     SQL execution, so the capability-guarded backend setter runs on the recorded
     main R thread before requested parallel DuckDB settings are restored.
 
-- [ ] Defensively clear Arrow C Data release callbacks on conversion failure.
+- [x] Defensively clear Arrow C Data release callbacks on conversion failure.
+  - DuckDB Arrow schema/export conversion errors now immediately release and
+    null any partially-populated `ArrowSchema`/`ArrowArray` callbacks before
+    returning through the UDF error path.
 
 - [ ] Re-audit Arrow validity handling.
   - Current concern: `rducks_arrow_validity()` relies on nanoarrow/DuckDB
