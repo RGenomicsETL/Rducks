@@ -478,10 +478,11 @@ current callbacks, but not for an asynchronous same-process design.
   probe rows, and states that speedup should not be inferred.
 - [x] README uses explicit main-thread / worker-thread wording.
 
-- [ ] Update `docs/EXECUTION_PLANS.md`.
-  - Include implemented matrix, no-fallback principle, registration-time
-    marshalling behavior, `arrow_lossless_conversion=true`, and
-    `rducks_explain_udf()` counters.
+- [x] Update `docs/EXECUTION_PLANS.md`.
+  - Includes the concrete implemented engine matrix, no-fallback principle,
+    registration-time/frozen engine behavior, direct-only `arrow_c`,
+    database-catalog versus connection-detach scope, and current diagnostic
+    hooks including `rducks_explain_udf()`/`rducks_native_execution_backend()`.
   - Note: `docs/` is ignored; use `git add -f docs/...` for files that should be
     committed.
 

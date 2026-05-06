@@ -6,9 +6,10 @@ true multiprocess parallelism.
 
 The core rule is:
 
-> Registration states the UDF semantics. A connection/session execution plan
-> states how chunks are evaluated. The runtime resolves exactly one plan and
-> never silently falls back to another plan.
+> Registration states the UDF semantics and freezes the execution engine for
+> that catalog UDF. A connection execution plan is only the default for future
+> registrations through that connection. The runtime resolves exactly one engine
+> per registered UDF and never silently falls back to another engine.
 
 ## Vocabulary
 
@@ -35,9 +36,10 @@ These are execution-plan choices, not UDF semantics:
 - `arrow_r`: Arrow C Data plus nanoarrow/R materialization. This is the semantic
   reference implementation.
 - `arrow_c`: C/native DuckDB-vector materialization for supported scalar and
-  vectorized registrations. The `RCV` path materializes chunk arguments and
-  writes chunk results through direct DuckDB-vector helpers; it does not use the
-  Arrow/R helper bridge.
+  vectorized registrations. This is direct-only: unsupported signatures fail
+  validation rather than bridging through Arrow/R helpers. The `RCV` path
+  materializes chunk arguments and writes chunk results through direct
+  DuckDB-vector helpers.
 - `arrow_ipc`: owned Arrow IPC bytes as the process/thread transport boundary.
 
 ### Concurrency model
@@ -84,13 +86,17 @@ the test case.
 
 ## No-fallback rule
 
-A UDF invocation resolves to exactly one execution plan:
+A UDF invocation resolves to exactly one frozen execution engine:
 
 ```text
-registered UDF semantics + active connection/session plan
+rducks_register() semantics + connection default plan at registration time
   -> exact plan validation
-  -> exact plan execution
+  -> frozen UDF engine metadata
+  -> exact engine execution for every invocation
 ```
+
+Changing a sibling connection's default execution plan later must not mutate the
+engine for already-registered database-catalog UDFs.
 
 If the plan cannot support the declared signature or semantic options, Rducks
 must fail loudly before execution when possible, and at execution only as a
@@ -107,22 +113,47 @@ observable plan remains one named plan with one declared support matrix.
 
 ## Target plan matrix
 
-| Marshalling | Concurrency | Scalar status | Vectorized status | Notes |
-| --- | --- | --- | --- | --- |
-| `arrow_r` | `serial` | implemented/reference | implemented/reference | The semantic oracle for all other plans. |
-| `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded main R thread. |
-| `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`). |
-| `arrow_c` | `inproc_concurrent` | implemented | implemented | Same direct marshalling semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded main R thread. |
-| `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, cooperatively draining queued worker callbacks when execution reaches the main R thread, collecting Future results, and importing returned Arrow IPC into the DuckDB output vector. |
+| Engine ID | Marshalling | Concurrency | Scalar status | Vectorized status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `arrow_r_serial` | `arrow_r` | `serial` | implemented/reference | implemented/reference | The semantic oracle for all other engines. |
+| `arrow_r_main_queue` | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded main R thread. |
+| `arrow_c_direct_serial` | `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`); no Arrow/R bridge fallback. |
+| `arrow_c_direct_main_queue` | `arrow_c` | `inproc_concurrent` | implemented | implemented | Same direct marshalling semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded main R thread. |
+| `ipc_future_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, cooperatively draining queued worker callbacks when execution reaches the main R thread, collecting Future results, and copying returned Arrow results into the DuckDB output vector. |
 
 Current API direction:
 
-- `rducks_register()` is focused on UDF semantics;
-- marshalling/concurrency selection lives in a connection/session execution-plan
-  API;
+- `rducks_register()` is focused on UDF semantics and freezes the resolved
+  execution plan/engine into the database-scoped UDF metadata;
+- marshalling/concurrency selection lives in a connection execution-plan API, but
+  the connection's current plan is only the default for future registrations;
+- `rducks_current_execution_plan()` reports that R-side default plan;
+- `rducks_native_execution_backend()` reports the native database-scoped backend
+  currently installed for the runtime as a diagnostic cross-check;
 - `rducks_enable_inproc()` is a compatibility helper that sets the connection's
   concurrency to `inproc_concurrent` while preserving the current marshalling
   choice.
+
+
+## Database catalog and connection scope
+
+DuckDB function catalog entries are database-scoped. Sibling DBI connections to
+the same in-process database can see the same registered SQL functions. Rducks
+therefore separates three scopes:
+
+- **R process/package scope**: recorded main R thread identity, release queue,
+  package diagnostics, and provider factories.
+- **DuckDB database runtime/catalog scope**: registered Rducks SQL functions,
+  opaque evaluator handles, frozen UDF engine metadata, counters, and preserved
+  R closures while catalog metadata refers to them.
+- **DBI connection attachment scope**: the connection-local default execution
+  plan and finalizer bookkeeping.
+
+`rducks_release(con)`/detach is non-destructive: it clears connection-local
+defaults and R registry views, but it must not drop database-catalog functions or
+release closures still owned by catalog UDF metadata. `rducks_explain_udf()`
+reports `r_side_record = FALSE` when native UDF metadata remains available but
+the detached R-side registry record is not present.
 
 ## Validation requirements for every non-reference plan
 
