@@ -1,7 +1,7 @@
 /* Included by ../rducks_extension.c.
  *
- * RC scalar execution is intentionally a calling-R-thread implementation today.
- * This file mixes DuckDB vector access with R API calls because
+ * The arrow_c direct evaluator is intentionally a recorded-main-R-thread
+ * implementation today. This file mixes DuckDB vector access with R API calls because
  * rducks_r_scalar_udf() rejects non-calling-thread execution before entering the
  * evaluator. Do not treat these helpers as worker-thread safe.
  *
@@ -2492,9 +2492,10 @@ fail_vectorized:
     return 0;
 }
 
-/* Current calling-R-thread RC dispatcher. This does not rule out a future
- * threaded RC backend; it means this direct-vector implementation is only legal
- * on the calling R thread because it may call R and touch SEXPs. Concurrent
+/* Current recorded-main-R-thread arrow_c direct dispatcher. This does not rule
+ * out a future worker-safe native backend; it means this direct-vector
+ * implementation is only legal on the calling R thread because it may call R
+ * and touch SEXPs. Concurrent
  * backends must route through a transport boundary and write DuckDB output from
  * owned non-SEXP result memory, or use a pure-native evaluator with no R calls.
  */
@@ -2570,13 +2571,13 @@ static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
     return R_NilValue;
 }
 
-/* Direct RC callbacks run from inside DuckDB scalar UDF callbacks, not from an
- * R prompt. Do not install a fresh top-level context here. R_tryCatchError()
- * catches R allocation/marshalling errors that would otherwise longjmp across
- * DuckDB, while R_UnwindProtect() marks abnormal unwinds and is the place to
- * add deterministic cleanup if future direct-RC sections acquire native
- * malloc/Arrow/DuckDB handles. The current impl bodies only borrow callback
- * vectors and use R PROTECT/UNPROTECT-managed SEXPs.
+/* Direct arrow_c callbacks run from inside DuckDB scalar UDF callbacks, not
+ * from an R prompt. Do not install a fresh top-level context here.
+ * R_tryCatchError() catches R allocation/marshalling errors that would otherwise
+ * longjmp across DuckDB, while R_UnwindProtect() marks abnormal unwinds and is
+ * the place to add deterministic cleanup if future direct arrow_c sections
+ * acquire native malloc/Arrow/DuckDB handles. The current impl bodies only
+ * borrow callback vectors and use R PROTECT/UNPROTECT-managed SEXPs.
  */
 static int rducks_rc_execute_with_error_boundary(rducks_rc_execute_context_t *ctx,
                                                  rducks_rc_execute_fn_t execute,

@@ -248,8 +248,9 @@ Additional multiprocess cases:
 
 ### Iteration 3: reframe current native scalar path as `arrow_c + scalar`
 
-- [ ] Rename internal comments/docs from generic `RC` to `arrow_c scalar` where
-      possible.
+- [x] Rename internal comments/docs from generic `RC` to `arrow_c direct` where
+      possible, while keeping `RC`/`RCV` as internal evaluator tokens exposed by
+      diagnostics.
 - [x] Ensure current direct-buffer and Arrow-helper native paths are one named
       plan, not an implicit fallback from one plan to another. `arrow_c` is now
       direct-only; the old helper bridge is not a hidden fallback.
