@@ -366,6 +366,25 @@ static int rducks_queue_request_is_ripc(rducks_udf_request_t *request) {
     return request && request->meta && request->meta->eval_mode == RDUCKS_EVAL_RIPC;
 }
 
+static void rducks_queue_record_local_start(rducks_runtime_entry_t *runtime) {
+    if (!runtime) return;
+    rducks_queue_lock(runtime);
+    runtime->queue_submitted++;
+    runtime->queue_running_current++;
+    if (runtime->queue_running_current > runtime->queue_running_max) {
+        runtime->queue_running_max = runtime->queue_running_current;
+    }
+    rducks_queue_unlock(runtime);
+}
+
+static void rducks_queue_record_local_finish(rducks_runtime_entry_t *runtime) {
+    if (!runtime) return;
+    rducks_queue_lock(runtime);
+    runtime->queue_executed++;
+    if (runtime->queue_running_current > 0) runtime->queue_running_current--;
+    rducks_queue_unlock(runtime);
+}
+
 static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
                                         int ok, const char *err_msg) {
     if (!runtime || !request) return;
@@ -615,8 +634,10 @@ static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *
     local_request.state = RDUCKS_REQUEST_RUNNING;
     local_request.error[0] = '\0';
 
+    rducks_queue_record_local_start(runtime);
     if (!rducks_queue_submit_ripc_request_on_main(&local_request, err_msg, err_cap)) {
         rducks_ripc_release_preserved(&local_request.ripc_future, &local_request.ripc_output_schema_xptr);
+        rducks_queue_record_local_finish(runtime);
         return 0;
     }
     rducks_queue_append_local(&ripc_head, &ripc_tail, &local_request);
@@ -646,7 +667,11 @@ static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *
     }
 
     err_msg[0] = '\0';
-    return rducks_queue_collect_ripc_groups_on_main(runtime, ripc_head, &local_request, err_msg, err_cap);
+    {
+        int ok = rducks_queue_collect_ripc_groups_on_main(runtime, ripc_head, &local_request, err_msg, err_cap);
+        rducks_queue_record_local_finish(runtime);
+        return ok;
+    }
 }
 
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {
