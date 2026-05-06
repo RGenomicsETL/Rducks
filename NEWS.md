@@ -12,6 +12,9 @@
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
+- Arrow C Data result import now copies the temporary imported DuckDB vector
+  into the callback-owned output vector before destroying the imported chunk,
+  avoiding reliance on reference-vector lifetime semantics.
 - Added direct native `arrow_c` vectorized UDF support (`RCV`) for signatures
   accepted by the direct `arrow_c` type matrix. Chunk arguments are materialized
   from DuckDB vectors in C, return rows are written back through the direct

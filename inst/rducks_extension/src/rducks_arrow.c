@@ -208,19 +208,26 @@ static SEXP rducks_arrow_array_schema_xptr(SEXP array_xptr, SEXP fallback_schema
 static int rducks_copy_imported_result_vector(rducks_type_desc_t *return_desc, duckdb_vector imported,
                                               duckdb_vector output, idx_t count,
                                               char *err_msg, size_t err_cap) {
-    if (return_desc && return_desc->kind == RDUCKS_KIND_ENUM) {
-        duckdb_selection_vector sel = duckdb_create_selection_vector(count);
-        if (!sel) {
-            snprintf(err_msg, err_cap, "failed to allocate DuckDB selection vector for enum result copy");
-            return 0;
-        }
-        sel_t *sel_data = duckdb_selection_vector_get_data_ptr(sel);
-        for (idx_t i = 0; i < count; i++) sel_data[i] = (sel_t)i;
-        duckdb_vector_copy_sel(imported, output, sel, count, 0, 0);
-        duckdb_destroy_selection_vector(sel);
-        return 1;
+    (void)return_desc;
+    if (count == 0) return 1;
+    if (count > (idx_t)UINT32_MAX) {
+        snprintf(err_msg, err_cap, "Arrow result chunk is too large to copy into DuckDB output");
+        return 0;
     }
-    duckdb_vector_reference_vector(output, imported);
+    duckdb_selection_vector sel = duckdb_create_selection_vector(count);
+    if (!sel) {
+        snprintf(err_msg, err_cap, "failed to allocate DuckDB selection vector for Arrow result copy");
+        return 0;
+    }
+    /* Copy the imported Arrow result into DuckDB's callback-owned output vector
+     * before destroying the temporary imported chunk below. This deliberately
+     * avoids relying on duckdb_vector_reference_vector() lifetime semantics for
+     * vectors owned by a soon-to-be-destroyed data chunk.
+     */
+    sel_t *sel_data = duckdb_selection_vector_get_data_ptr(sel);
+    for (idx_t i = 0; i < count; i++) sel_data[i] = (sel_t)i;
+    duckdb_vector_copy_sel(imported, output, sel, count, 0, 0);
+    duckdb_destroy_selection_vector(sel);
     return 1;
 }
 
