@@ -307,14 +307,25 @@ rducks_assert_execution_plan_implemented <- function(plan) {
   invisible(TRUE)
 }
 
-rducks_arrow_ipc_mapping_supported <- function(type) {
-  if (!inherits(type, "rducks_type")) invisible(rducks_type_object(type))
-  TRUE
+rducks_arrow_ipc_unsupported_types <- function(type) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  kind <- rducks_type_kind(type)
+  if (identical(kind, "scalar")) {
+    return(if (rducks_type_token(type) %in% rducks_all_scalar_type_names()) character() else rducks_type_duckdb_sql(type))
+  }
+  if (kind %in% c("decimal", "enum")) {
+    return(character())
+  }
+  if (kind %in% c("list", "array", "struct", "map", "union")) {
+    children <- rducks_type_children(type)
+    out <- unlist(lapply(children, rducks_arrow_ipc_unsupported_types), use.names = FALSE)
+    return(if (is.null(out)) character() else unique(out))
+  }
+  rducks_type_duckdb_sql(type)
 }
 
-rducks_arrow_ipc_unsupported_types <- function(type) {
-  if (!inherits(type, "rducks_type")) invisible(rducks_type_object(type))
-  character()
+rducks_arrow_ipc_mapping_supported <- function(type) {
+  !length(rducks_arrow_ipc_unsupported_types(type))
 }
 
 rducks_validate_execution_plan_for_registration <- function(plan, spec) {

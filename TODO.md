@@ -313,6 +313,9 @@ Run with `lobstr` in this session:
   - The former `nanoarrow::write_nanoarrow()` / `rawConnection()` fallback is no
     longer present in package code.
 
+- [x] Replace fake Arrow IPC unsupported-type validation with a structural type
+  check over scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION types.
+
 - [ ] Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback.
 
 - [ ] Improve batching beyond small waves for typical DuckDB physical scans.
