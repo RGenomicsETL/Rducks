@@ -357,8 +357,10 @@
 <code>docs/PERSISTENT_PROVIDER.md</code> defines provider operations, registration/task/result envelopes, collect-any/backpressure/cancellation expectations, and keeps the hot data path as Arrow IPC bytes with no R <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize()</a></code> / <code><a href="https://rdrr.io/r/base/serialize.html" class="external-link">unserialize()</a></code> fallback for chunk payloads.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Decide worker transport beyond generic <code>future</code> if needed.</label></p>
-<ul><li>Do not link against uninstalled <code>nanonext.so</code> internals.</li>
+<p><label><input type="checkbox" checked>Decide worker transport beyond generic <code>future</code> if needed.</label></p>
+<ul><li>
+<code>docs/PERSISTENT_PROVIDER.md</code> keeps generic Future as the correctness adapter, selects mirai as the first persistent-worker target, and defers nanonext to a later lower-level transport if public APIs are needed.</li>
+<li>Do not link against uninstalled <code>nanonext.so</code> internals.</li>
 </ul></li>
 <li><p><label><input type="checkbox">Implement persistent worker startup/shutdown, backpressure, cancellation, and error propagation if generic <code>future</code> is not enough.</label></p></li>
 </ul></div>
