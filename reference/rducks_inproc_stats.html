@@ -6,9 +6,12 @@ requests that were abandoned rather than waiting indefinitely. The
 pending_* and running_* columns expose current and maximum queue pressure:
 pending requests are waiting to be drained by the main R thread, while running
 requests have been popped by that thread and are executing or collecting.
-pending_timeout_ms is the configured native pending-request timeout. Running requests
-borrow DuckDB callback-frame input/output storage, so running-timeout
-cancellation is intentionally not supported and is reported via
+main_drains, main_drain_batches, and main_drain_max_batch count how
+often the recorded main R thread attempted queue drains and how many queued
+requests were handled in non-empty drain waves. pending_timeout_ms is the
+configured native pending-request timeout. Running requests borrow DuckDB
+callback-frame input/output storage, so running-timeout cancellation is
+intentionally not supported and is reported via
 running_timeout_supported = FALSE."><meta property="og:description" content="Returns diagnostic counters for the extension-owned in-process queue.
 submitted counts requests submitted to the recorded main R thread,
 executed counts requests drained by that thread, and timeouts counts
@@ -16,9 +19,12 @@ requests that were abandoned rather than waiting indefinitely. The
 pending_* and running_* columns expose current and maximum queue pressure:
 pending requests are waiting to be drained by the main R thread, while running
 requests have been popped by that thread and are executing or collecting.
-pending_timeout_ms is the configured native pending-request timeout. Running requests
-borrow DuckDB callback-frame input/output storage, so running-timeout
-cancellation is intentionally not supported and is reported via
+main_drains, main_drain_batches, and main_drain_max_batch count how
+often the recorded main R thread attempted queue drains and how many queued
+requests were handled in non-empty drain waves. pending_timeout_ms is the
+configured native pending-request timeout. Running requests borrow DuckDB
+callback-frame input/output storage, so running-timeout cancellation is
+intentionally not supported and is reported via
 running_timeout_supported = FALSE."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -61,9 +67,12 @@ requests that were abandoned rather than waiting indefinitely. The
 <code>pending_*</code> and <code>running_*</code> columns expose current and maximum queue pressure:
 pending requests are waiting to be drained by the main R thread, while running
 requests have been popped by that thread and are executing or collecting.
-<code>pending_timeout_ms</code> is the configured native pending-request timeout. Running requests
-borrow DuckDB callback-frame input/output storage, so running-timeout
-cancellation is intentionally not supported and is reported via
+<code>main_drains</code>, <code>main_drain_batches</code>, and <code>main_drain_max_batch</code> count how
+often the recorded main R thread attempted queue drains and how many queued
+requests were handled in non-empty drain waves. <code>pending_timeout_ms</code> is the
+configured native pending-request timeout. Running requests borrow DuckDB
+callback-frame input/output storage, so running-timeout cancellation is
+intentionally not supported and is reported via
 <code>running_timeout_supported = FALSE</code>.</p>
     </div>
 

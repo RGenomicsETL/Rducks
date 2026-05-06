@@ -396,7 +396,8 @@ beyond submitted/executed/timeouts.
 
 - Runtime-wide pending/running current and max counters are exposed
   alongside submitted, executed, timeouts, configured pending timeout,
-  and explicit running-timeout support status.
+  explicit running-timeout support status, main-thread drain attempts,
+  non-empty drain batches, and maximum drain batch size.
 
 Gate dev/test SQL probes behind `RDUCKS_DEV_SURFACES=true`.
 
