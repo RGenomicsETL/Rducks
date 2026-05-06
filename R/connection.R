@@ -221,13 +221,17 @@ rducks_release_stats <- function(con) {
 #' raw database address. DuckDB's C extension API does not currently provide a
 #' clean database-close callback for this package, so these counters are
 #' accounting diagnostics rather than deterministic lifetime guarantees.
+#' `connections_current` and `native_release_supported` are derived R-side
+#' summary fields: native runtime entries and successful extension-owned
+#' connections are currently retained for the process lifetime unless a failure
+#' path closes them during initialization.
 #'
 #' @param con An enabled `duckdb_connection`.
 #' @return A one-row data frame with runtime registry and connection counters.
 #' @export
 rducks_runtime_stats <- function(con) {
   rducks_assert_duckdb_connection(con)
-  DBI::dbGetQuery(
+  stats <- DBI::dbGetQuery(
     con,
     paste(
       "SELECT rducks_runtime_registry_entries() AS registry_entries,",
@@ -241,6 +245,14 @@ rducks_runtime_stats <- function(con) {
       "rducks_runtime_queue_init_failed() AS queue_init_failed"
     )
   )
+  stats$connections_current <- stats$connections_opened - stats$connections_closed
+  stats$native_release_supported <- rep(FALSE, nrow(stats))
+  stats[, c(
+    "registry_entries", "active_entries", "stale_entries", "entries_created",
+    "stale_aliases", "connections_opened", "connections_closed",
+    "connections_current", "connection_open_failed", "queue_init_failed",
+    "native_release_supported"
+  )]
 }
 
 #' Exercise the in-process queue

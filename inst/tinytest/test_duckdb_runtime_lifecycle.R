@@ -62,14 +62,20 @@ local({
   expect_equal(names(runtime_stats), c(
     "registry_entries", "active_entries", "stale_entries", "entries_created",
     "stale_aliases", "connections_opened", "connections_closed",
-    "connection_open_failed", "queue_init_failed"
+    "connections_current", "connection_open_failed", "queue_init_failed",
+    "native_release_supported"
   ))
   expect_true(runtime_stats$registry_entries[[1L]] >= 1)
   expect_true(runtime_stats$active_entries[[1L]] >= 1)
   expect_equal(runtime_stats$registry_entries[[1L]], runtime_stats$active_entries[[1L]] + runtime_stats$stale_entries[[1L]])
   expect_true(runtime_stats$entries_created[[1L]] >= runtime_stats$active_entries[[1L]])
   expect_true(runtime_stats$connections_opened[[1L]] >= runtime_stats$connections_closed[[1L]])
-  expect_true(all(unlist(runtime_stats[1, ], use.names = FALSE) >= 0))
+  expect_equal(runtime_stats$connections_current[[1L]], runtime_stats$connections_opened[[1L]] - runtime_stats$connections_closed[[1L]])
+  expect_false(runtime_stats$native_release_supported[[1L]])
+  expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_registry_capacity()"), "function|Function|Catalog")
+  expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_connections_current()"), "function|Function|Catalog")
+  expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_native_release_supported()"), "function|Function|Catalog")
+  expect_true(all(unlist(runtime_stats[1, setdiff(names(runtime_stats), "native_release_supported")], use.names = FALSE) >= 0))
   release_stats <- rducks_release_stats(con1)
   expect_equal(names(release_stats), c("queued", "released", "failed", "pending"))
   expect_true(all(unlist(release_stats[1, ], use.names = FALSE) >= 0))

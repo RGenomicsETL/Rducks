@@ -260,11 +260,18 @@ Run with `lobstr` in this session:
   - Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
     error instead of letting native code cast arbitrary integers to `SEXP`.
 
-- [ ] Add native runtime release accounting.
+- [x] Expose native runtime retention/accounting diagnostics.
+  - `rducks_runtime_stats()` reports native runtime registry entries,
+    active/stale entry counts, opened/closed/failure counters, and R-side derived
+    fields for current retained extension-owned connections and
+    `native_release_supported = FALSE`.
   - The runtime token and R-side anchors exist, but native runtime entries and
-    extension-owned connections are still retained for the process lifetime.
-  - Add native release accounting separately from the R-side cleanup now in
-    place.
+    successful extension-owned connections are still retained for the process
+    lifetime because the DuckDB C extension API does not provide a suitable
+    database-close callback.
+
+- [ ] Implement native runtime reclamation if DuckDB exposes a safe database-close
+  callback or removable extension-owned connection lifecycle hook.
   - Acceptance: repeated connect/register/disconnect/reconnect loops cannot leak
     unbounded native runtime entries or retain stale native backend state.
 
