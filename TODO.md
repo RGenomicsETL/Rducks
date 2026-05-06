@@ -57,12 +57,13 @@ what still needs doing.
   functions as internal catalog entries that cannot be dropped through the
   ordinary `DROP FUNCTION` path, so destructive database-scoped unregistering
   needs a separate design.
-- [ ] `R/arrow_bridge.R` split: partially done. IPC codec helpers live in
-  `R/ipc_codec.R`, scalar/vectorized evaluation helpers live in
-  `R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` so they are available
-  before `R/arrow_bridge.R` top-level aliases, and the generic Future provider
-  lives in `R/provider_future.R`; schema/materialization helpers still need a
-  later split when the provider abstraction is reworked.
+- [x] `R/arrow_bridge.R` split: core split done.
+  - `R/aab_arrow_materialize.R` holds Arrow schema/materialization helpers.
+  - `R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` hold scalar/vectorized
+    evaluation helpers and load before `R/arrow_bridge.R` top-level aliases.
+  - `R/ipc_codec.R` holds IPC codec helpers and `R/provider_future.R` holds the
+    generic Future provider. `R/arrow_bridge.R` now focuses on engine/wrapper
+    construction.
 
 ## Non-negotiable constraints
 
