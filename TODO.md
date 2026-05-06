@@ -329,14 +329,12 @@ Add GC/lifetime tests.
 
 ## P2: observability and diagnostics
 
-Decide and implement the
+Expand
 [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
-scope decision.
+beyond submitted/executed/timeouts.
 
-- If expanded, include runtime-wide pending current/max counters.
-- If kept minimal, docs should explicitly point users to per-UDF
-  counters in
-  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
+- Runtime-wide pending/running current and max counters are exposed
+  alongside submitted, executed, and timeouts.
 
 Add counter reset support.
 

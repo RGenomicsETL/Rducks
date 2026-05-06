@@ -259,9 +259,8 @@
 <div class="section level2">
 <h2 id="p2-observability-and-diagnostics">P2: observability and diagnostics<a class="anchor" aria-label="anchor" href="#p2-observability-and-diagnostics"></a></h2>
 <ul class="task-list"><li>
-<label><input type="checkbox">Decide and implement the <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> scope decision.</label>
-<ul><li>If expanded, include runtime-wide pending current/max counters.</li>
-<li>If kept minimal, docs should explicitly point users to per-UDF counters in <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code>.</li>
+<label><input type="checkbox" checked>Expand <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> beyond submitted/executed/timeouts.</label>
+<ul><li>Runtime-wide pending/running current and max counters are exposed alongside submitted, executed, and timeouts.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Add counter reset support.</label>
