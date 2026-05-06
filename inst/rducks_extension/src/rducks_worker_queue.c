@@ -193,16 +193,16 @@ static int rducks_queue_collect_ripc_request_on_main(rducks_udf_request_t *reque
         snprintf(err_msg, err_cap, "Rducks queued RIPC request was not submitted");
         return 0;
     }
-    ok = rducks_ripc_collect_chunk_on_main(request->runtime, request->meta, request->ripc_future,
-                                          request->ripc_output_schema_xptr, request->ripc_n,
+    ok = rducks_ripc_collect_chunk_on_main(request->runtime, request->meta, &request->ripc_future,
+                                          &request->ripc_output_schema_xptr, request->ripc_n,
                                           request->output, err_msg, err_cap);
     rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
     request->ripc_submitted = 0;
     return ok;
 }
 
-static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, size_t count,
-                                                   char *err_msg, size_t err_cap) {
+static int rducks_queue_collect_ripc_group_on_main_impl(rducks_udf_request_t *head, size_t count,
+                                                        char *err_msg, size_t err_cap) {
     rducks_udf_request_t *request;
     rducks_r_scalar_meta_t *meta;
     int protect_count = 0;
@@ -281,6 +281,73 @@ done:
     }
     UNPROTECT(protect_count);
     return ok;
+}
+
+typedef struct rducks_ripc_collect_group_context {
+    rducks_udf_request_t *head;
+    size_t count;
+    char *err_msg;
+    size_t err_cap;
+    int ok;
+} rducks_ripc_collect_group_context_t;
+
+static void rducks_ripc_collect_group_release_requests(rducks_udf_request_t *head, size_t count,
+                                                       int record_inflight_done) {
+    rducks_udf_request_t *request;
+    size_t i = 0;
+    for (request = head; request && i < count; request = request->next, i++) {
+        if (record_inflight_done && request->ripc_submitted && request->meta) {
+            rducks_udf_record_ripc_inflight_done(request->meta, 1U);
+        }
+        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
+        request->ripc_submitted = 0;
+    }
+}
+
+static SEXP rducks_ripc_collect_group_unwind_body(void *data) {
+    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
+    ctx->ok = rducks_queue_collect_ripc_group_on_main_impl(ctx->head, ctx->count,
+                                                           ctx->err_msg, ctx->err_cap);
+    return R_NilValue;
+}
+
+static void rducks_ripc_collect_group_unwind_cleanup(void *data, Rboolean jump) {
+    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
+    if (jump) {
+        ctx->ok = 0;
+        rducks_ripc_collect_group_release_requests(ctx->head, ctx->count, 1);
+        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                       "Rducks Future Arrow IPC collect-many failed");
+    }
+}
+
+static SEXP rducks_ripc_collect_group_try_body(void *data) {
+    return R_UnwindProtect(rducks_ripc_collect_group_unwind_body, data,
+                           rducks_ripc_collect_group_unwind_cleanup, data,
+                           NULL);
+}
+
+static SEXP rducks_ripc_collect_group_error_handler(SEXP condition, void *data) {
+    (void)condition;
+    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
+    ctx->ok = 0;
+    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                   "Rducks Future Arrow IPC collect-many failed");
+    return R_NilValue;
+}
+
+static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, size_t count,
+                                                   char *err_msg, size_t err_cap) {
+    rducks_ripc_collect_group_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    if (err_msg && err_cap > 0U) err_msg[0] = '\0';
+    ctx.head = head;
+    ctx.count = count;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    (void)R_tryCatchError(rducks_ripc_collect_group_try_body, &ctx,
+                          rducks_ripc_collect_group_error_handler, &ctx);
+    return ctx.ok;
 }
 
 static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {

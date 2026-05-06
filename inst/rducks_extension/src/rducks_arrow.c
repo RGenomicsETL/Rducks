@@ -449,10 +449,10 @@ static void rducks_ripc_release_preserved(SEXP *future, SEXP *output_schema_xptr
     }
 }
 
-static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                            duckdb_data_chunk input,
-                                            SEXP *future_out, SEXP *output_schema_out, idx_t *n_out,
-                                            char *err_msg, size_t err_cap) {
+static int rducks_ripc_submit_chunk_on_main_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                                 duckdb_data_chunk input,
+                                                 SEXP *future_out, SEXP *output_schema_out, idx_t *n_out,
+                                                 char *err_msg, size_t err_cap) {
     idx_t n = 0;
     int protect_count = 0;
     int r_err = 0;
@@ -490,10 +490,10 @@ static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rdu
     if (rducks_r_scalar_result_is_error(future, err_msg, err_cap)) goto fail;
 
     R_PreserveObject(future);
-    R_PreserveObject(output_schema_xptr);
-    rducks_udf_record_ripc_inflight_add(meta);
     *future_out = future;
+    R_PreserveObject(output_schema_xptr);
     *output_schema_out = output_schema_xptr;
+    rducks_udf_record_ripc_inflight_add(meta);
     *n_out = n;
     UNPROTECT(protect_count);
     return 1;
@@ -503,9 +503,81 @@ fail:
     return 0;
 }
 
-static int rducks_ripc_collect_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                                             SEXP future, SEXP output_schema_xptr, idx_t n,
-                                             duckdb_vector output, char *err_msg, size_t err_cap) {
+typedef struct rducks_ripc_submit_context {
+    rducks_runtime_entry_t *runtime;
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk input;
+    SEXP *future_out;
+    SEXP *output_schema_out;
+    idx_t *n_out;
+    char *err_msg;
+    size_t err_cap;
+    int ok;
+} rducks_ripc_submit_context_t;
+
+static void rducks_ripc_set_fallback_error(char *err_msg, size_t err_cap, const char *fallback) {
+    if (err_msg && err_cap > 0U && !err_msg[0]) snprintf(err_msg, err_cap, "%s", fallback);
+}
+
+static SEXP rducks_ripc_submit_unwind_body(void *data) {
+    rducks_ripc_submit_context_t *ctx = (rducks_ripc_submit_context_t *)data;
+    ctx->ok = rducks_ripc_submit_chunk_on_main_impl(ctx->runtime, ctx->meta, ctx->input,
+                                                    ctx->future_out, ctx->output_schema_out,
+                                                    ctx->n_out, ctx->err_msg, ctx->err_cap);
+    return R_NilValue;
+}
+
+static void rducks_ripc_submit_unwind_cleanup(void *data, Rboolean jump) {
+    rducks_ripc_submit_context_t *ctx = (rducks_ripc_submit_context_t *)data;
+    if (jump) {
+        ctx->ok = 0;
+        rducks_ripc_release_preserved(ctx->future_out, ctx->output_schema_out);
+        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                       "Rducks Future Arrow IPC submit failed");
+    }
+}
+
+static SEXP rducks_ripc_submit_try_body(void *data) {
+    return R_UnwindProtect(rducks_ripc_submit_unwind_body, data,
+                           rducks_ripc_submit_unwind_cleanup, data,
+                           NULL);
+}
+
+static SEXP rducks_ripc_submit_error_handler(SEXP condition, void *data) {
+    (void)condition;
+    rducks_ripc_submit_context_t *ctx = (rducks_ripc_submit_context_t *)data;
+    ctx->ok = 0;
+    rducks_ripc_release_preserved(ctx->future_out, ctx->output_schema_out);
+    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                   "Rducks Future Arrow IPC submit failed");
+    return R_NilValue;
+}
+
+static int rducks_ripc_submit_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                            duckdb_data_chunk input,
+                                            SEXP *future_out, SEXP *output_schema_out, idx_t *n_out,
+                                            char *err_msg, size_t err_cap) {
+    rducks_ripc_submit_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    if (future_out) *future_out = R_NilValue;
+    if (output_schema_out) *output_schema_out = R_NilValue;
+    if (err_msg && err_cap > 0U) err_msg[0] = '\0';
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.input = input;
+    ctx.future_out = future_out;
+    ctx.output_schema_out = output_schema_out;
+    ctx.n_out = n_out;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    (void)R_tryCatchError(rducks_ripc_submit_try_body, &ctx,
+                          rducks_ripc_submit_error_handler, &ctx);
+    return ctx.ok;
+}
+
+static int rducks_ripc_collect_chunk_on_main_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                                  SEXP future, SEXP output_schema_xptr, idx_t n,
+                                                  duckdb_vector output, char *err_msg, size_t err_cap) {
     int protect_count = 0;
     int r_err = 0;
     SEXP result = R_NilValue;
@@ -532,6 +604,79 @@ fail:
     return 0;
 }
 
+typedef struct rducks_ripc_collect_context {
+    rducks_runtime_entry_t *runtime;
+    rducks_r_scalar_meta_t *meta;
+    SEXP *future_slot;
+    SEXP *output_schema_slot;
+    idx_t n;
+    duckdb_vector output;
+    char *err_msg;
+    size_t err_cap;
+    int ok;
+    int inflight_active;
+} rducks_ripc_collect_context_t;
+
+static SEXP rducks_ripc_collect_unwind_body(void *data) {
+    rducks_ripc_collect_context_t *ctx = (rducks_ripc_collect_context_t *)data;
+    SEXP future = ctx->future_slot ? *ctx->future_slot : R_NilValue;
+    SEXP output_schema_xptr = ctx->output_schema_slot ? *ctx->output_schema_slot : R_NilValue;
+    ctx->ok = rducks_ripc_collect_chunk_on_main_impl(ctx->runtime, ctx->meta, future,
+                                                     output_schema_xptr, ctx->n,
+                                                     ctx->output, ctx->err_msg, ctx->err_cap);
+    ctx->inflight_active = 0;
+    return R_NilValue;
+}
+
+static void rducks_ripc_collect_unwind_cleanup(void *data, Rboolean jump) {
+    rducks_ripc_collect_context_t *ctx = (rducks_ripc_collect_context_t *)data;
+    if (jump) {
+        ctx->ok = 0;
+        if (ctx->inflight_active) {
+            rducks_udf_record_ripc_inflight_done(ctx->meta, 1U);
+            ctx->inflight_active = 0;
+        }
+        rducks_ripc_release_preserved(ctx->future_slot, ctx->output_schema_slot);
+        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                       "Rducks Future Arrow IPC collect failed");
+    }
+}
+
+static SEXP rducks_ripc_collect_try_body(void *data) {
+    return R_UnwindProtect(rducks_ripc_collect_unwind_body, data,
+                           rducks_ripc_collect_unwind_cleanup, data,
+                           NULL);
+}
+
+static SEXP rducks_ripc_collect_error_handler(SEXP condition, void *data) {
+    (void)condition;
+    rducks_ripc_collect_context_t *ctx = (rducks_ripc_collect_context_t *)data;
+    ctx->ok = 0;
+    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+                                   "Rducks Future Arrow IPC collect failed");
+    return R_NilValue;
+}
+
+static int rducks_ripc_collect_chunk_on_main(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                             SEXP *future_slot, SEXP *output_schema_slot, idx_t n,
+                                             duckdb_vector output, char *err_msg, size_t err_cap) {
+    rducks_ripc_collect_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    if (err_msg && err_cap > 0U) err_msg[0] = '\0';
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.future_slot = future_slot;
+    ctx.output_schema_slot = output_schema_slot;
+    ctx.n = n;
+    ctx.inflight_active = 1;
+    ctx.output = output;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    (void)R_tryCatchError(rducks_ripc_collect_try_body, &ctx,
+                          rducks_ripc_collect_error_handler, &ctx);
+    return ctx.ok;
+}
+
 static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                duckdb_data_chunk input, duckdb_vector output,
                                char *err_msg, size_t err_cap) {
@@ -543,13 +688,13 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
         rducks_ripc_release_preserved(&future, &output_schema_xptr);
         return 0;
     }
-    ok = rducks_ripc_collect_chunk_on_main(runtime, meta, future, output_schema_xptr, n, output, err_msg, err_cap);
+    ok = rducks_ripc_collect_chunk_on_main(runtime, meta, &future, &output_schema_xptr, n, output, err_msg, err_cap);
     rducks_ripc_release_preserved(&future, &output_schema_xptr);
     return ok;
 }
 
-static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
-                                   char *err_msg, size_t err_cap) {
+static int rducks_r_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                        char *err_msg, size_t err_cap) {
     idx_t n = 0;
     int protect_count = 0;
     int r_err = 0;
@@ -584,6 +729,70 @@ static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sca
 fail:
     UNPROTECT(protect_count);
     return 0;
+}
+
+typedef struct rducks_arrow_execute_context {
+    rducks_runtime_entry_t *runtime;
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk input;
+    duckdb_vector output;
+    char *err_msg;
+    size_t err_cap;
+    const char *fallback_error;
+    int ok;
+} rducks_arrow_execute_context_t;
+
+static void rducks_arrow_set_fallback_error(rducks_arrow_execute_context_t *ctx) {
+    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->fallback_error) {
+        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->fallback_error);
+    }
+}
+
+static SEXP rducks_r_scalar_execute_unwind_body(void *data) {
+    rducks_arrow_execute_context_t *ctx = (rducks_arrow_execute_context_t *)data;
+    ctx->ok = rducks_r_scalar_execute_impl(ctx->runtime, ctx->meta, ctx->input,
+                                           ctx->output, ctx->err_msg, ctx->err_cap);
+    return R_NilValue;
+}
+
+static void rducks_arrow_execute_unwind_cleanup(void *data, Rboolean jump) {
+    rducks_arrow_execute_context_t *ctx = (rducks_arrow_execute_context_t *)data;
+    if (jump) {
+        ctx->ok = 0;
+        rducks_arrow_set_fallback_error(ctx);
+    }
+}
+
+static SEXP rducks_r_scalar_execute_try_body(void *data) {
+    return R_UnwindProtect(rducks_r_scalar_execute_unwind_body, data,
+                           rducks_arrow_execute_unwind_cleanup, data,
+                           NULL);
+}
+
+static SEXP rducks_arrow_execute_error_handler(SEXP condition, void *data) {
+    (void)condition;
+    rducks_arrow_execute_context_t *ctx = (rducks_arrow_execute_context_t *)data;
+    ctx->ok = 0;
+    rducks_arrow_set_fallback_error(ctx);
+    return R_NilValue;
+}
+
+static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                   duckdb_data_chunk input, duckdb_vector output,
+                                   char *err_msg, size_t err_cap) {
+    rducks_arrow_execute_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.input = input;
+    ctx.output = output;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    ctx.fallback_error = "Rducks nanoarrow R function or marshal error";
+    if (err_msg && err_cap > 0U) err_msg[0] = '\0';
+    (void)R_tryCatchError(rducks_r_scalar_execute_try_body, &ctx,
+                          rducks_arrow_execute_error_handler, &ctx);
+    return ctx.ok;
 }
 
 static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {

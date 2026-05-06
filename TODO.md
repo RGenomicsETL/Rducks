@@ -316,6 +316,9 @@ Run with `lobstr` in this session:
   - IPC native encoding now uses `R_UnwindProtect()` around raw-vector
     allocation/copy so Arrow writer, stream, preserved nanoarrow external
     pointers, and native buffers are released if `Rf_allocVector()` longjmps.
+  - Direct `arrow_c`, Arrow/R, and RIPC submit/collect callbacks are fenced with
+    `R_tryCatchError()` + `R_UnwindProtect()`; RIPC abnormal-unwind cleanup
+    releases preserved Future/schema objects and marks in-flight tasks done.
 
 - [ ] Add GC/lifetime tests.
   - Drop R registration objects, run `gc()`, then call DuckDB UDFs.
