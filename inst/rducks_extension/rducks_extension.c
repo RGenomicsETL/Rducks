@@ -103,6 +103,7 @@ typedef struct rducks_type_desc {
     idx_t array_size;
     uint8_t decimal_width;
     uint8_t decimal_scale;
+    duckdb_type enum_internal_type;
     size_t field_count;
     char **field_names;
     struct rducks_type_desc **field_types;

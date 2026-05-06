@@ -1684,7 +1684,8 @@ rducks_future_submit_vectorized_chunk <- function(engine, input_payload, output_
   rducks_future_collect_vectorized_chunk(engine, fut)
 }
 
-rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,
+                                                       output_schema_spec = NULL) {
   n <- as.integer(n)
   if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
     stop("input nanoarrow array pointer is not valid", call. = FALSE)
@@ -1694,7 +1695,7 @@ rducks_arrow_ipc_future_submit_arrow_chunk <- function(engine, input_array, inpu
   }
   storage_input <- rducks_arrow_ipc_storage_input(engine$arg_types, input_array, input_schema)
   input_payload <- rducks_arrow_ipc_encode(storage_input$array)
-  output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
+  output_schema_spec <- output_schema_spec %||% rducks_arrow_schema_to_spec(output_schema)
   rducks_future_start_vectorized_chunk(engine, input_payload, output_schema_spec, n)
 }
 
@@ -1727,9 +1728,13 @@ rducks_arrow_ipc_future_collect_many_arrow_chunks <- function(engine, futs, outp
   lapply(result_payloads, function(payload) rducks_arrow_ipc_decode_array(payload)$array)
 }
 
-rducks_arrow_ipc_future_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+rducks_arrow_ipc_future_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,
+                                                        output_schema_spec = NULL) {
   tryCatch({
-    fut <- rducks_arrow_ipc_future_submit_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+    fut <- rducks_arrow_ipc_future_submit_arrow_chunk(
+      engine, input_array, input_schema, output_schema, n,
+      output_schema_spec = output_schema_spec
+    )
     rducks_arrow_ipc_future_collect_arrow_chunk(engine, fut, output_schema, n)
   }, error = function(e) {
     msg <- paste0("Rducks Future Arrow IPC R function or marshal error: ", conditionMessage(e))
@@ -1823,13 +1828,26 @@ rducks_make_arrow_ipc_future_wrapper <- function(fun, spec, null_handling, excep
     rducks_make_vectorized_engine(fun, spec, null_handling, exception_handling, plan = plan)
   }
   engine$mode <- mode
+  output_schema_spec_cache <- NULL
+  cached_output_schema_spec <- function(output_schema) {
+    if (is.null(output_schema_spec_cache)) {
+      output_schema_spec_cache <<- rducks_arrow_schema_to_spec(output_schema)
+    }
+    output_schema_spec_cache
+  }
   list(
     execute = function(input_array, input_schema, output_schema, n) {
-      rducks_arrow_ipc_future_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+      rducks_arrow_ipc_future_evaluate_arrow_chunk(
+        engine, input_array, input_schema, output_schema, n,
+        output_schema_spec = cached_output_schema_spec(output_schema)
+      )
     },
     submit = function(input_array, input_schema, output_schema, n) {
       tryCatch(
-        rducks_arrow_ipc_future_submit_arrow_chunk(engine, input_array, input_schema, output_schema, n),
+        rducks_arrow_ipc_future_submit_arrow_chunk(
+          engine, input_array, input_schema, output_schema, n,
+          output_schema_spec = cached_output_schema_spec(output_schema)
+        ),
         error = function(e) {
           msg <- paste0("Rducks Future Arrow IPC submit error: ", conditionMessage(e))
           .rducks_state$last_arrow_error <- msg

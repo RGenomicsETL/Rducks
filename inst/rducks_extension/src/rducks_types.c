@@ -459,7 +459,7 @@ fail:
     return 0;
 }
 
-static duckdb_logical_type rducks_create_logical_type_for_desc(const rducks_type_desc_t *desc) {
+static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_t *desc) {
     if (!desc) return NULL;
     if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_create_logical_type_for_id(desc->scalar);
     if (desc->kind == RDUCKS_KIND_LIST) {
@@ -507,8 +507,13 @@ cleanup_struct:
         return duckdb_create_decimal_type(desc->decimal_width, desc->decimal_scale);
     }
     if (desc->kind == RDUCKS_KIND_ENUM) {
+        duckdb_logical_type out;
         if (desc->field_count == 0) return NULL;
-        return duckdb_create_enum_type((const char **)desc->field_names, (idx_t)desc->field_count);
+        out = duckdb_create_enum_type((const char **)desc->field_names, (idx_t)desc->field_count);
+        if (out) {
+            desc->enum_internal_type = duckdb_enum_internal_type(out);
+        }
+        return out;
     }
     if (desc->kind == RDUCKS_KIND_UNION) {
         duckdb_logical_type *types;

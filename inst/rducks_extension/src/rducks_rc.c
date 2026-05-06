@@ -183,6 +183,11 @@ static SEXP rducks_rc_call_vectorized_eval(SEXP eval_rows_fun, SEXP fun, SEXP ar
 static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     if (!desc) return 0;
     if (desc->kind == RDUCKS_KIND_DECIMAL) return 1;
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        return desc->enum_internal_type == DUCKDB_TYPE_UTINYINT ||
+               desc->enum_internal_type == DUCKDB_TYPE_USMALLINT ||
+               desc->enum_internal_type == DUCKDB_TYPE_UINTEGER;
+    }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
@@ -769,8 +774,111 @@ static int rducks_rc_payload_from_bits(SEXP value, char **payload_out, idx_t *le
     return 1;
 }
 
+static int rducks_rc_enum_storage_width(const rducks_type_desc_t *desc) {
+    if (!desc || desc->kind != RDUCKS_KIND_ENUM) return 0;
+    switch (desc->enum_internal_type) {
+    case DUCKDB_TYPE_UTINYINT:
+        return 1;
+    case DUCKDB_TYPE_USMALLINT:
+        return 2;
+    case DUCKDB_TYPE_UINTEGER:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+static uint32_t rducks_rc_enum_index_from_data(const rducks_type_desc_t *desc, const void *data, idx_t row) {
+    switch (rducks_rc_enum_storage_width(desc)) {
+    case 1:
+        return ((const uint8_t *)data)[row];
+    case 2:
+        return ((const uint16_t *)data)[row];
+    case 4:
+        return ((const uint32_t *)data)[row];
+    default:
+        return UINT32_MAX;
+    }
+}
+
+static int rducks_rc_enum_index_to_data(const rducks_type_desc_t *desc, void *data, idx_t row, uint32_t index) {
+    switch (rducks_rc_enum_storage_width(desc)) {
+    case 1:
+        ((uint8_t *)data)[row] = (uint8_t)index;
+        return 1;
+    case 2:
+        ((uint16_t *)data)[row] = (uint16_t)index;
+        return 1;
+    case 4:
+        ((uint32_t *)data)[row] = index;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static SEXP rducks_rc_make_enum(const rducks_type_desc_t *desc, int32_t index) {
+    SEXP out = PROTECT(Rf_allocVector(INTSXP, 1));
+    SEXP levels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)desc->field_count));
+    SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
+    if (index < 0 || (size_t)index >= desc->field_count) {
+        INTEGER(out)[0] = NA_INTEGER;
+    } else {
+        INTEGER(out)[0] = index + 1;
+    }
+    for (size_t i = 0; i < desc->field_count; i++) {
+        SET_STRING_ELT(levels, (R_xlen_t)i, Rf_mkChar(desc->field_names[i] ? desc->field_names[i] : ""));
+    }
+    SET_STRING_ELT(cls, 0, Rf_mkChar("rducks_enum"));
+    SET_STRING_ELT(cls, 1, Rf_mkChar("factor"));
+    Rf_setAttrib(out, R_LevelsSymbol, levels);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(3);
+    return out;
+}
+
+static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value,
+                                      uint32_t *index_out, char *err_msg, size_t err_cap) {
+    SEXP ch = R_NilValue;
+    const char *value_text;
+    if (!desc || desc->kind != RDUCKS_KIND_ENUM || !index_out) {
+        snprintf(err_msg, err_cap, "Rducks enum metadata missing");
+        return 0;
+    }
+    if (TYPEOF(value) == STRSXP && XLENGTH(value) > 0) {
+        ch = STRING_ELT(value, 0);
+    } else if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0 && Rf_inherits(value, "factor")) {
+        int idx = INTEGER(value)[0];
+        SEXP levels = Rf_getAttrib(value, R_LevelsSymbol);
+        if (idx == NA_INTEGER || TYPEOF(levels) != STRSXP || idx < 1 || idx > XLENGTH(levels)) {
+            snprintf(err_msg, err_cap, "Rducks enum return value is invalid");
+            return 0;
+        }
+        ch = STRING_ELT(levels, idx - 1);
+    } else {
+        snprintf(err_msg, err_cap, "Rducks enum return value must be character or factor");
+        return 0;
+    }
+    if (ch == NA_STRING) {
+        snprintf(err_msg, err_cap, "Rducks enum return value is NA");
+        return 0;
+    }
+    value_text = CHAR(ch);
+    for (size_t i = 0; i < desc->field_count; i++) {
+        if (desc->field_names[i] && strcmp(value_text, desc->field_names[i]) == 0) {
+            *index_out = (uint32_t)i;
+            return 1;
+        }
+    }
+    snprintf(err_msg, err_cap, "Rducks enum return value is outside declared levels");
+    return 0;
+}
+
 static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     SEXP out;
+    if (desc && desc->kind == RDUCKS_KIND_ENUM) {
+        return rducks_rc_make_enum(desc, -1);
+    }
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
         out = PROTECT(Rf_allocVector(LGLSXP, 1));
@@ -812,6 +920,10 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
 static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row) {
     SEXP out;
     if (!rducks_rc_direct_view_valid_at(input, row)) return rducks_rc_missing_arg(desc);
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        uint32_t index = rducks_rc_enum_index_from_data(desc, input->data, row);
+        return rducks_rc_make_enum(desc, index < desc->field_count ? (int32_t)index : -1);
+    }
     if (desc->kind == RDUCKS_KIND_DECIMAL) {
         uint8_t bytes[16];
         int storage_width = rducks_rc_decimal_storage_width(desc);
@@ -995,6 +1107,13 @@ static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SE
         SEXP values = VECTOR_ELT(value, 0);
         return TYPEOF(values) == STRSXP && XLENGTH(values) > 0 && STRING_ELT(values, 0) == NA_STRING;
     }
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        if (TYPEOF(value) == STRSXP && XLENGTH(value) > 0) return STRING_ELT(value, 0) == NA_STRING;
+        if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0 && Rf_inherits(value, "factor")) {
+            return INTEGER(value)[0] == NA_INTEGER;
+        }
+        return 0;
+    }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     if (desc->scalar == RDUCKS_TYPE_F32 || desc->scalar == RDUCKS_TYPE_F64) {
         if (TYPEOF(value) != REALSXP || XLENGTH(value) < 1) return 0;
@@ -1027,6 +1146,17 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     }
     rducks_rc_output_set_valid_if_needed(output, row);
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        uint32_t index = 0;
+        if (!rducks_rc_enum_value_index(desc, value, &index, err_msg, err_cap)) {
+            return 0;
+        }
+        if (!rducks_rc_enum_index_to_data(desc, output->data, row, index)) {
+            snprintf(err_msg, err_cap, "Rducks enum storage type is unsupported");
+            return 0;
+        }
+        return 1;
+    }
     if (desc->kind == RDUCKS_KIND_DECIMAL) {
         uint8_t bytes[16];
         int storage_width = rducks_rc_decimal_storage_width(desc);
