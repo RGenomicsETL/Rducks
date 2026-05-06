@@ -6,22 +6,58 @@ what still needs doing.
 
 ## Current facts
 
-- Current development baseline when this file was refreshed: weakref-based
-  R-side lifecycle cleanup in progress after `ed05eee Track database-cache
-  lifecycle risks`.
-- Local validation for the weakref cleanup change:
-  - `make install` OK
-  - `make test` OK: 541 tinytest results
-  - `README.Rmd` not rerendered for this internal lifecycle change
-- Last checked GitHub Actions before the weakref cleanup change:
-  - `R-CMD-check.yaml`: success, including R 4.3
-  - `Generated marshalling matrix`: success, release and R 4.3
-  - `pkgdown.yaml`: success
-- Last checked R-universe before the weakref cleanup change:
-  - `RemoteSha = 4ac8ba2079dc13e91c511246fdd9cad4defb654f`
-  - `_status = success`
-  - Linux/macOS/Windows binaries success
-  - wasm binary success
+- Current development baseline when this file was refreshed: `cf4b007`.
+- Local validation at that baseline:
+  - `R CMD INSTALL .` OK
+  - `make test` OK: 652 tinytest results
+  - `Rscript tools/run_generated_marshalling_matrix.R` OK: 945 generated cases
+- Recent architecture-audit fixes include database-runtime-scoped R metadata,
+  opaque evaluator handles, non-destructive `rducks_release()`, main-thread
+  release queues, direct-only scalar/vectorized `arrow_c`, native Arrow IPC
+  encoding without rawConnection fallback, structural Arrow IPC type validation,
+  copied Arrow result import, callback error fences, dev-only diagnostic SQL
+  probes, capability-guarded backend setting, richer queue/runtime diagnostics,
+  and concrete execution `engine_id`s.
+- GitHub Actions/R-universe status was not rechecked while refreshing this file;
+  use the workflow badges and R-universe package page for current hosted status.
+
+## Expert-review checklist status
+
+- [x] Database/runtime identity: use Rducks-owned database runtime tokens for
+  shared registration metadata; connection tokens are only attachment/default
+  plan bookkeeping.
+- [x] Registration safety: no raw `SEXP` pointer-through-SQL evaluator handles;
+  native registration validates opaque evaluator id/token pairs.
+- [x] Main-thread queue simplification: removed the synthetic worker self-shim;
+  main-thread callbacks execute inline and drain queued work cooperatively.
+- [x] Preserved R object lifetime: off-main native metadata destruction queues
+  preserved evaluator releases for recorded-main-thread drain points.
+- [x] Longjmp/error fences: native IPC encoding, direct `arrow_c`, Arrow/R, and
+  RIPC submit/collect paths use `R_UnwindProtect()`/R error boundaries where R
+  errors could otherwise cross DuckDB callbacks or skip native cleanup.
+- [x] Honest `arrow_c`: scalar and vectorized `arrow_c` are direct-only; unsupported
+  signatures fail instead of falling back to Arrow/R helpers.
+- [x] Arrow IPC validation/fallbacks: structural type validation replaces the
+  fake unsupported-type check, and the primary IPC encoder has no rawConnection
+  fallback.
+- [x] Result import lifetime: imported Arrow result chunks are copied into
+  callback-owned DuckDB output vectors before temporary chunks are destroyed.
+- [x] Production SQL surface: dev/test probes are gated by
+  `RDUCKS_DEV_SURFACES=true`; production backend mutation requires the recorded
+  main-thread capability.
+- [x] Diagnostics: runtime accounting, preserved-release stats, pending/running
+  queue pressure, timeout semantics, and main-thread drain counters are exposed.
+- [x] Execution-plan simplification: valid plan pairs expose concrete
+  `engine_id`s while preserving the readable marshalling/concurrency API.
+- [ ] Persistent worker/provider architecture: generic Future remains the
+  portable reference provider; persistent mirai/nanonext-style workers with
+  preloaded evaluator/schema state are still future work.
+- [ ] `rducks_unregister()`: not implemented; DuckDB reports extension-created
+  functions as internal catalog entries that cannot be dropped through the
+  ordinary `DROP FUNCTION` path, so destructive database-scoped unregistering
+  needs a separate design.
+- [ ] `R/arrow_bridge.R` split: still monolithic; provider/codec/schema/eval
+  modules should be separated when the provider abstraction is reworked.
 
 ## Non-negotiable constraints
 
