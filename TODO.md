@@ -77,8 +77,10 @@ functions as internal catalog entries that cannot be dropped through the
 ordinary `DROP FUNCTION` path, so destructive database-scoped
 unregistering needs a separate design.
 
-`R/arrow_bridge.R` split: still monolithic; provider/codec/schema/eval
-modules should be separated when the provider abstraction is reworked.
+`R/arrow_bridge.R` split: partially done. IPC codec helpers live in
+`R/ipc_codec.R` and the generic Future provider lives in
+`R/provider_future.R`; schema/materialization/eval helpers still need a
+later split when the provider abstraction is reworked.
 
 ## Non-negotiable constraints
 
