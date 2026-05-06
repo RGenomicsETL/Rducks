@@ -7,7 +7,10 @@ requests that were abandoned rather than waiting indefinitely. The
 `pending_*` and `running_*` columns expose current and maximum queue
 pressure: pending requests are waiting to be drained by the main R
 thread, while running requests have been popped by that thread and are
-executing or collecting.
+executing or collecting. `pending_timeout_ms` is the configured native
+pending-request timeout. Running requests borrow DuckDB callback-frame
+input/output storage, so running-timeout cancellation is intentionally
+not supported and is reported via `running_timeout_supported = FALSE`.
 
 ## Usage
 

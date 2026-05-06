@@ -82,6 +82,10 @@
   package-side pump or hidden progress callback.
 - Added native queue diagnostics and tests covering main-thread queue
   draining and scalar/vectorized UDF execution through the queued path.
+  [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+  now reports the configured pending-request timeout and explicitly
+  reports that running queued requests cannot be cancelled safely while
+  they borrow DuckDB callback storage.
 - Split scalar execution and native extension runtime state so UDF
   metadata uses DuckDB C extension bind/init/local-state hooks and
   per-loaded-database runtime entries instead of a singleton connection.
