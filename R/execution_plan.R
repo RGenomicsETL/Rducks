@@ -20,6 +20,18 @@ rducks_plan_serialization <- function(marshalling) {
   if (identical(marshalling, "arrow_ipc")) "arrow_ipc" else "none"
 }
 
+rducks_plan_engine_id <- function(marshalling, concurrency) {
+  switch(
+    paste(marshalling, concurrency, sep = "+"),
+    `arrow_r+serial` = "arrow_r_serial",
+    `arrow_r+inproc_concurrent` = "arrow_r_main_queue",
+    `arrow_c+serial` = "arrow_c_direct_serial",
+    `arrow_c+inproc_concurrent` = "arrow_c_direct_main_queue",
+    `arrow_ipc+multiprocess_parallel` = "ipc_future_pool",
+    NA_character_
+  )
+}
+
 rducks_plan_implemented <- function(marshalling, concurrency) {
   (marshalling %in% c("arrow_r", "arrow_c") &&
     concurrency %in% c("serial", "inproc_concurrent")) ||
@@ -93,6 +105,9 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' `arrow_r + serial` is the reference implementation used for conformance.
 #' Other plans must be explicitly implemented and validated against that
 #' reference; Rducks does not silently fall back from one plan to another.
+#' Each valid pair maps to a concrete internal `engine_id` such as
+#' `"arrow_c_direct_serial"` or `"ipc_future_pool"`; the older
+#' `marshalling + concurrency` fields remain for user-facing readability.
 #'
 #' @param marshalling Chunk marshalling implementation. `"arrow_r"` uses Arrow C
 #'   Data plus nanoarrow/R materialization and is the reference implementation.
@@ -125,6 +140,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
   backend <- rducks_plan_backend(concurrency)
   serialization <- rducks_plan_serialization(marshalling)
   implemented <- rducks_plan_implemented(marshalling, concurrency)
+  engine_id <- rducks_plan_engine_id(marshalling, concurrency)
   supported_call_shapes <- rducks_plan_supported_call_shapes(marshalling, concurrency)
   future_options <- if (identical(marshalling, "arrow_ipc")) {
     rducks_future_options(
@@ -143,6 +159,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       marshalling = marshalling,
       concurrency = concurrency,
       plan_id = paste(marshalling, concurrency, sep = "+"),
+      engine_id = engine_id,
       reference = identical(marshalling, "arrow_r") && identical(concurrency, "serial"),
       implemented = implemented,
       supported_call_shapes = supported_call_shapes,
@@ -160,6 +177,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
 print.rducks_execution_plan <- function(x, ...) {
   cat("<rducks_execution_plan>\n")
   cat("  plan_id:     ", x$plan_id, "\n", sep = "")
+  cat("  engine_id:   ", x$engine_id %||% "<unknown>", "\n", sep = "")
   cat("  marshalling: ", x$marshalling, "\n", sep = "")
   cat("  concurrency: ", x$concurrency, "\n", sep = "")
   cat("  reference:   ", if (isTRUE(x$reference)) "yes" else "no", "\n", sep = "")
@@ -180,6 +198,11 @@ rducks_as_execution_plan <- function(plan) {
       inproc_concurrent = rducks_execution_plan("arrow_r", "inproc_concurrent"),
       arrow_r = rducks_execution_plan("arrow_r", "serial"),
       arrow_c = rducks_execution_plan("arrow_c", "serial"),
+      arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
+      arrow_r_main_queue = rducks_execution_plan("arrow_r", "inproc_concurrent"),
+      arrow_c_direct_serial = rducks_execution_plan("arrow_c", "serial"),
+      arrow_c_direct_main_queue = rducks_execution_plan("arrow_c", "inproc_concurrent"),
+      ipc_future_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel"),
       stop("unknown Rducks execution plan shortcut: ", plan, call. = FALSE)
     ))
   }

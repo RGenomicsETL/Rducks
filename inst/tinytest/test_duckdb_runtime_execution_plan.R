@@ -7,10 +7,14 @@ local({
 
   current <- rducks_current_execution_plan(con)
   expect_equal(current$plan_id, "arrow_r+serial")
+  expect_equal(current$engine_id, "arrow_r_serial")
+  expect_equal(Rducks:::rducks_as_execution_plan("arrow_c_direct_serial")$plan_id, "arrow_c+serial")
+  expect_equal(Rducks:::rducks_as_execution_plan("ipc_future_pool")$plan_id, "arrow_ipc+multiprocess_parallel")
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   current <- rducks_current_execution_plan(con)
   expect_equal(current$plan_id, "arrow_c+serial")
+  expect_equal(current$engine_id, "arrow_c_direct_serial")
 
   reg <- rducks_register(con, "plan_plus_one", function(x) x + 1L, INTEGER, INTEGER)
   expect_equal(reg$execution_plan$marshalling, "arrow_c")

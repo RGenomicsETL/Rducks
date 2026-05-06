@@ -45,4 +45,7 @@ argument/return types, NULL handling, error handling, and side effects.
 \code{arrow_r + serial} is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
 reference; Rducks does not silently fall back from one plan to another.
+Each valid pair maps to a concrete internal \code{engine_id} such as
+\code{"arrow_c_direct_serial"} or \code{"ipc_future_pool"}; the older
+\code{marshalling + concurrency} fields remain for user-facing readability.
 }
