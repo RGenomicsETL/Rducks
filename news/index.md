@@ -38,7 +38,10 @@
   [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
   to inspect process-local counters for preserved R objects queued by
   off-main DuckDB metadata destructors and drained later on the recorded
-  main R thread.
+  main R thread. Added
+  [`rducks_runtime_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_runtime_stats.md)
+  to inspect native runtime registry and extension-owned connection
+  accounting.
 - Added an R-universe badge to the README and lowered the package R
   dependency floor to R 4.3.
 - Added wasm/webR build detection in `configure`, including the DuckDB
