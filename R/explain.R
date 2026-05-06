@@ -198,6 +198,32 @@ rducks_explain_udf <- function(con, name) {
   rducks_explain_udf_row(con, name)
 }
 
+#' Reset Rducks UDF counters
+#'
+#' Resets native per-UDF diagnostic counters without unregistering any DuckDB
+#' catalog function. Current liveness gauges such as pending/in-flight counts are
+#' preserved; their max fields are reset to the current values.
+#'
+#' @param con A `duckdb_connection` with Rducks enabled.
+#' @param name Optional SQL function name registered with [rducks_register()]. If
+#'   `NULL`, reset counters for all native Rducks UDFs in the database runtime.
+#' @return Invisibly `TRUE` on success.
+#' @export
+rducks_reset_udf_counters <- function(con, name = NULL) {
+  rducks_assert_duckdb_connection(con)
+  if (is.null(name)) {
+    name <- ""
+  } else if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("name must be NULL or a non-empty character scalar", call. = FALSE)
+  }
+  ok <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT rducks_reset_udf_stats(%s) AS ok", rducks_sql_string(name))
+  )$ok[[1L]]
+  if (!isTRUE(ok)) stop("failed to reset Rducks UDF counters", call. = FALSE)
+  invisible(TRUE)
+}
+
 #' List registered Rducks UDFs
 #'
 #' Returns one row per UDF registered through [rducks_register()] in the current

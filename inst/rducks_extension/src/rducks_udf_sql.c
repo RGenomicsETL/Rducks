@@ -320,6 +320,41 @@ static void rducks_udf_stat_fields_scalar(duckdb_function_info info, duckdb_data
     }
 }
 
+static void rducks_reset_udf_stats_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                          duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector name_vector = duckdb_data_chunk_get_vector(input, 0);
+    duckdb_string_t *names = (duckdb_string_t *)duckdb_vector_get_data(name_vector);
+    uint64_t *validity = duckdb_vector_get_validity(name_vector);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+
+    for (idx_t i = 0; i < n; i++) {
+        char *name;
+        char err[256];
+        err[0] = '\0';
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            duckdb_scalar_function_set_error(info, "Rducks UDF stat reset name must not be NULL");
+            return;
+        }
+        name = rducks_copy_duckdb_string(&names[i]);
+        if (!name) {
+            duckdb_scalar_function_set_error(info, "out of memory resetting Rducks UDF stats");
+            return;
+        }
+        out[i] = rducks_runtime_reset_udf_stats(runtime, name, err, sizeof(err)) ? true : false;
+        free(name);
+        if (!out[i]) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to reset Rducks UDF stats");
+            return;
+        }
+    }
+}
+
 static void rducks_set_execution_backend_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                                 duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);

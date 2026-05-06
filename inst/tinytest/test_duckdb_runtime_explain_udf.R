@@ -34,6 +34,11 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_true(after$dispatch_chunks >= 1)
   expect_true(after$arrow_r_chunks >= 1)
   expect_equal(after$arrow_c_chunks, 0)
+  invisible(rducks_reset_udf_counters(con, "explain_plus_one"))
+  reset_one <- rducks_explain_udf(con, "explain_plus_one")
+  expect_equal(reset_one$dispatch_chunks, 0)
+  expect_equal(reset_one$dispatch_rows, 0)
+  expect_equal(reset_one$arrow_r_chunks, 0)
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   invisible(rducks_register(con, "explain_plus_two_c", function(x) x + 2L, INTEGER, INTEGER))
@@ -45,7 +50,13 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_equal(after_c$native_marshalling, "arrow_c")
   expect_true(after_c$arrow_c_chunks >= 1)
   expect_equal(after_c$arrow_r_chunks, 0)
+  invisible(rducks_reset_udf_counters(con))
+  reset_all <- rducks_list_udfs(con)
+  expect_equal(reset_all$dispatch_chunks, c(0, 0))
+  expect_equal(reset_all$arrow_c_chunks[[2L]], 0)
 
+  DBI::dbGetQuery(con, "SELECT explain_plus_one(i::INTEGER) AS x FROM range(2) t(i)")
+  DBI::dbGetQuery(con, "SELECT explain_plus_two_c(i::INTEGER) AS x FROM range(2) t(i)")
   listed <- rducks_list_udfs(con)
   expect_equal(listed$name, c("explain_plus_one", "explain_plus_two_c"))
   expect_equal(listed$native_marshalling, c("arrow_r", "arrow_c"))
@@ -55,4 +66,9 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_true(listed$dispatch_chunks[[2L]] >= 1)
 
   expect_error(rducks_explain_udf(con, "missing_rducks_udf"), "unknown Rducks UDF")
+  expect_error(rducks_reset_udf_counters(con, "missing_rducks_udf"), "unknown Rducks UDF")
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT rducks_reset_udf_stats(NULL::VARCHAR)"),
+    "must not be NULL"
+  )
 }

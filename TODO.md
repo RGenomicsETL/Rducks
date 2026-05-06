@@ -390,8 +390,10 @@ Run with `lobstr` in this session:
     requires the recorded main-thread capability payload; bare manual SQL calls
     cannot mutate runtime backend state.
 
-- [ ] Add counter reset support.
-  - Reset one UDF or all UDF counters without unregistering the UDF.
+- [x] Add counter reset support.
+  - `rducks_reset_udf_counters(con, name)` resets one UDF; `name = NULL`
+    resets all native UDF counters in the database runtime without unregistering
+    catalog functions.
 
 - [x] Expose native current-backend diagnostics.
   - `rducks_native_execution_backend()` returns the database-scoped native

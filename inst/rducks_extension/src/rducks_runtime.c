@@ -321,6 +321,53 @@ static const char *rducks_udf_stat_fields_text(void) {
            "ripc_inflight_max";
 }
 
+static void rducks_runtime_reset_udf_stats_locked(rducks_r_scalar_meta_t *meta) {
+    if (!meta) return;
+    meta->dispatch_chunks = 0U;
+    meta->dispatch_rows = 0U;
+    meta->direct_chunks = 0U;
+    meta->queued_chunks = 0U;
+    meta->arrow_r_chunks = 0U;
+    meta->arrow_c_chunks = 0U;
+    meta->arrow_ipc_chunks = 0U;
+    meta->ripc_collect_batches = 0U;
+    meta->ripc_collect_requests = 0U;
+    meta->ripc_collect_max_batch = 0U;
+    meta->ripc_submit_wave_max = 0U;
+    meta->ripc_collect_ready_max = 0U;
+    meta->queue_pending_max = meta->queue_pending_current;
+    meta->ripc_inflight_max = meta->ripc_inflight_current;
+}
+
+static int rducks_runtime_reset_udf_stats(rducks_runtime_entry_t *runtime, const char *name,
+                                          char *err, size_t err_cap) {
+    rducks_r_scalar_meta_t *meta;
+    int reset_any = 0;
+    if (!runtime || !name) {
+        snprintf(err, err_cap, "invalid Rducks UDF stat reset request");
+        return 0;
+    }
+    rducks_runtime_lock();
+    if (!name[0]) {
+        for (meta = runtime->udf_registry_head; meta; meta = meta->registry_next) {
+            rducks_runtime_reset_udf_stats_locked(meta);
+            reset_any = 1;
+        }
+    } else {
+        meta = rducks_runtime_find_udf_locked(runtime, name);
+        if (meta) {
+            rducks_runtime_reset_udf_stats_locked(meta);
+            reset_any = 1;
+        }
+    }
+    rducks_runtime_unlock();
+    if (!reset_any && name[0]) {
+        snprintf(err, err_cap, "unknown Rducks UDF: %s", name);
+        return 0;
+    }
+    return 1;
+}
+
 static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *name, const char *field,
                                    char *out, size_t out_cap, char *err, size_t err_cap) {
     rducks_r_scalar_meta_t *meta;

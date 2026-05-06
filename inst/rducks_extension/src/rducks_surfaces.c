@@ -59,8 +59,9 @@ static bool rducks_register_scalar_surface(duckdb_connection con, rducks_runtime
     return rc == DuckDBSuccess;
 }
 
-static bool rducks_register_unary_varchar_bool_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
-                                                       const char *name, duckdb_scalar_function_t callback) {
+static bool rducks_register_unary_varchar_bool_surface_ex(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                          const char *name, duckdb_scalar_function_t callback,
+                                                          bool special_handling) {
     duckdb_scalar_function fn = duckdb_create_scalar_function();
     duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
     duckdb_logical_type bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
@@ -74,6 +75,7 @@ static bool rducks_register_unary_varchar_bool_surface(duckdb_connection con, rd
     duckdb_scalar_function_set_name(fn, name);
     duckdb_scalar_function_add_parameter(fn, varchar_type);
     duckdb_scalar_function_set_return_type(fn, bool_type);
+    if (special_handling) duckdb_scalar_function_set_special_handling(fn);
     duckdb_scalar_function_set_volatile(fn);
     duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
     duckdb_scalar_function_set_function(fn, callback);
@@ -82,6 +84,11 @@ static bool rducks_register_unary_varchar_bool_surface(duckdb_connection con, rd
     duckdb_destroy_logical_type(&varchar_type);
     duckdb_destroy_logical_type(&bool_type);
     return rc == DuckDBSuccess;
+}
+
+static bool rducks_register_unary_varchar_bool_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                       const char *name, duckdb_scalar_function_t callback) {
+    return rducks_register_unary_varchar_bool_surface_ex(con, runtime, name, callback, false);
 }
 
 static bool rducks_register_noarg_scalar_ex(duckdb_connection con, rducks_runtime_entry_t *runtime,
@@ -118,7 +125,8 @@ static bool rducks_register_udf_stat_surface(duckdb_connection con, rducks_runti
      * if this helper is unavailable due to a user/session name collision. */
     (void)rducks_register_noarg_scalar_ex(con, runtime, "rducks_udf_stat_fields", DUCKDB_TYPE_VARCHAR,
                                           rducks_udf_stat_fields_scalar, false);
-    return true;
+    return rducks_register_unary_varchar_bool_surface_ex(con, runtime, "rducks_reset_udf_stats",
+                                                         rducks_reset_udf_stats_scalar, true);
 }
 
 static bool rducks_register_main_thread_token_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
