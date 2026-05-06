@@ -60,4 +60,18 @@ local({
   expect_equal(array_explain$evaluator, "RC")
   expect_true(array_explain$arrow_c_chunks >= 1)
   expect_equal(array_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_struct_sum_arrow_c", function(x) x$a + x$b, STRUCT(a = INTEGER, b = INTEGER), INTEGER))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_struct_sum_arrow_c({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS x")$x, 42L)
+  struct_in_explain <- rducks_explain_udf(con, "rducks_struct_sum_arrow_c")
+  expect_equal(struct_in_explain$evaluator, "RC")
+  expect_true(struct_in_explain$arrow_c_chunks >= 1)
+  expect_equal(struct_in_explain$arrow_r_chunks, 0)
+
+  invisible(rducks_register(con, "rducks_struct_make_arrow_c", function(x) list(a = x, b = x + 1L), INTEGER, STRUCT(a = INTEGER, b = INTEGER)))
+  expect_equal(DBI::dbGetQuery(con, "SELECT (rducks_struct_make_arrow_c(41::INTEGER)).b AS x")$x, 42L)
+  struct_out_explain <- rducks_explain_udf(con, "rducks_struct_make_arrow_c")
+  expect_equal(struct_out_explain$evaluator, "RC")
+  expect_true(struct_out_explain$arrow_c_chunks >= 1)
+  expect_equal(struct_out_explain$arrow_r_chunks, 0)
 })

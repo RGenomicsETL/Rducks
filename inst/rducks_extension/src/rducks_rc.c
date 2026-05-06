@@ -187,12 +187,14 @@ static int rducks_rc_direct_enum_supported(const rducks_type_desc_t *desc) {
             desc->enum_internal_type == DUCKDB_TYPE_UINTEGER);
 }
 
+static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc);
+
 static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *desc) {
     if (!desc) return 0;
-    if (rducks_rc_direct_enum_supported(desc)) return 1;
-    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY) {
-        return rducks_rc_direct_sequence_child_supported(desc->child);
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY || desc->kind == RDUCKS_KIND_STRUCT) {
+        return rducks_rc_direct_type_supported(desc);
     }
+    if (rducks_rc_direct_enum_supported(desc)) return 1;
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
@@ -220,6 +222,13 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     if (desc->kind == RDUCKS_KIND_ENUM) return rducks_rc_direct_enum_supported(desc);
     if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY) {
         return rducks_rc_direct_sequence_child_supported(desc->child);
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        if (desc->field_count == 0) return 0;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (!rducks_rc_direct_type_supported(desc->field_types[i])) return 0;
+        }
+        return 1;
     }
     if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
     switch (desc->scalar) {
@@ -964,6 +973,35 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
 
 static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc_direct_vector_view_t *input, idx_t row);
 
+static SEXP rducks_rc_struct_field(SEXP value, const char *name, size_t index, int *ok) {
+    SEXP names;
+    int has_names = 0;
+    *ok = 1;
+    if (TYPEOF(value) != VECSXP) {
+        *ok = 0;
+        return R_NilValue;
+    }
+    names = Rf_getAttrib(value, R_NamesSymbol);
+    if (TYPEOF(names) == STRSXP && XLENGTH(names) == XLENGTH(value)) {
+        for (R_xlen_t i = 0; i < XLENGTH(names); i++) {
+            SEXP elt_name = STRING_ELT(names, i);
+            if (elt_name != NA_STRING && CHAR(elt_name)[0] != '\0') {
+                has_names = 1;
+                if (name && strcmp(CHAR(elt_name), name) == 0) {
+                    return VECTOR_ELT(value, i);
+                }
+            }
+        }
+    }
+    if (has_names) {
+        *ok = 0;
+        return R_NilValue;
+    }
+    if (index < (size_t)XLENGTH(value)) return VECTOR_ELT(value, (R_xlen_t)index);
+    *ok = 0;
+    return R_NilValue;
+}
+
 static SEXP rducks_rc_make_posixct_vector(R_xlen_t n) {
     SEXP out = PROTECT(Rf_allocVector(REALSXP, n));
     SEXP cls = PROTECT(Rf_allocVector(STRSXP, 2));
@@ -1128,6 +1166,20 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
             Rf_error("Rducks ARRAY child index overflow");
         }
         return rducks_rc_direct_sequence_arg(desc->child, child, start, desc->array_size);
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)desc->field_count));
+        SEXP names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)desc->field_count));
+        for (size_t i = 0; i < desc->field_count; i++) {
+            duckdb_vector child = duckdb_struct_vector_get_child(input->vector, (idx_t)i);
+            rducks_rc_direct_vector_view_t child_view;
+            SET_STRING_ELT(names, (R_xlen_t)i, Rf_mkChar(desc->field_names[i] ? desc->field_names[i] : ""));
+            rducks_rc_direct_input_view_init(&child_view, child);
+            SET_VECTOR_ELT(out, (R_xlen_t)i, rducks_rc_direct_arg(desc->field_types[i], &child_view, row));
+        }
+        Rf_setAttrib(out, R_NamesSymbol, names);
+        UNPROTECT(2);
+        return out;
     }
     if (desc->kind == RDUCKS_KIND_ENUM) {
         uint32_t index = rducks_rc_enum_index_from_data(desc, input->data, row);
@@ -1416,6 +1468,32 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
                 !ok || !rducks_rc_write_direct_output(desc->child, &child_view, child_row, element, err_msg, err_cap)) {
                 UNPROTECT(1);
                 if (ok && !err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB ARRAY child value");
+                return 0;
+            }
+            UNPROTECT(1);
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        if (TYPEOF(value) != VECSXP) {
+            snprintf(err_msg, err_cap, "Rducks STRUCT return value must be a list");
+            return 0;
+        }
+        for (size_t i = 0; i < desc->field_count; i++) {
+            int ok = 1;
+            duckdb_vector child = duckdb_struct_vector_get_child(output->vector, (idx_t)i);
+            rducks_rc_direct_vector_view_t child_view;
+            SEXP field = PROTECT(rducks_rc_struct_field(value, desc->field_names[i], i, &ok));
+            rducks_rc_direct_output_view_init(&child_view, child);
+            if (!ok || !rducks_rc_write_direct_output(desc->field_types[i], &child_view, row, field, err_msg, err_cap)) {
+                UNPROTECT(1);
+                if (!ok) {
+                    snprintf(err_msg, err_cap, "Rducks STRUCT return value is missing field %s",
+                             desc->field_names[i] ? desc->field_names[i] : "<unnamed>");
+                } else if (!err_msg[0]) {
+                    snprintf(err_msg, err_cap, "failed to write DuckDB STRUCT field %s",
+                             desc->field_names[i] ? desc->field_names[i] : "<unnamed>");
+                }
                 return 0;
             }
             UNPROTECT(1);
