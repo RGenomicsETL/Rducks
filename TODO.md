@@ -58,9 +58,11 @@ what still needs doing.
   ordinary `DROP FUNCTION` path, so destructive database-scoped unregistering
   needs a separate design.
 - [ ] `R/arrow_bridge.R` split: partially done. IPC codec helpers live in
-  `R/ipc_codec.R` and the generic Future provider lives in
-  `R/provider_future.R`; schema/materialization/eval helpers still need a later
-  split when the provider abstraction is reworked.
+  `R/ipc_codec.R`, scalar/vectorized evaluation helpers live in
+  `R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` so they are available
+  before `R/arrow_bridge.R` top-level aliases, and the generic Future provider
+  lives in `R/provider_future.R`; schema/materialization helpers still need a
+  later split when the provider abstraction is reworked.
 
 ## Non-negotiable constraints
 
