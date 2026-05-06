@@ -350,9 +350,10 @@ Still-open or blocked decisions:
     null any partially-populated `ArrowSchema`/`ArrowArray` callbacks before
     returning through the UDF error path.
 
-- [ ] Re-audit Arrow validity handling.
-  - Current concern: `rducks_arrow_validity()` relies on nanoarrow/DuckDB
-    validity-buffer behavior that should be made explicit or guarded.
+- [x] Re-audit Arrow validity handling.
+  - `rducks_arrow_validity()` now explicitly accepts nanoarrow's logical
+    validity buffers and raw bit-packed Arrow validity buffers, honors array
+    offsets, rejects short buffers, and has focused tinytest coverage.
 
 - [ ] Audit remaining `Rf_*` longjmp paths.
   - Use `R_alloc()` or `R_UnwindProtect()` where heap state would otherwise leak

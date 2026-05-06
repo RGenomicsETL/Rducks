@@ -10,16 +10,34 @@ rducks_arrow_uses_r_null_for_null <- function(type) {
   ))
 }
 
+rducks_arrow_unpack_bits <- function(bytes) {
+  bytes <- as.integer(bytes)
+  if (!length(bytes)) return(logical())
+  bits <- rep.int(FALSE, length(bytes) * 8L)
+  bit_index <- 0:7
+  for (i in seq_along(bytes)) {
+    bits[((i - 1L) * 8L + 1L):(i * 8L)] <- bitwAnd(bytes[[i]], bitwShiftL(1L, bit_index)) != 0L
+  }
+  bits
+}
+
 rducks_arrow_validity <- function(array, n = NULL) {
-  validity <- as.vector(array$buffers[[1]])
   if (is.null(n)) n <- array$length
   n <- as.integer(n)
   offset <- as.integer(array$offset %||% 0L)
-  if (!length(validity)) {
-    rep(TRUE, n)
-  } else {
-    validity[offset + seq_len(n)]
+  if (is.na(n) || n < 0L || is.na(offset) || offset < 0L) {
+    stop("invalid Arrow array length or offset", call. = FALSE)
   }
+  if (n == 0L) return(logical())
+  validity <- as.vector(array$buffers[[1]])
+  if (!length(validity)) return(rep(TRUE, n))
+  if (is.raw(validity)) validity <- rducks_arrow_unpack_bits(validity)
+  if (!is.logical(validity)) validity <- as.logical(validity)
+  needed <- offset + n
+  if (length(validity) < needed) {
+    stop("Arrow validity buffer is shorter than array length plus offset", call. = FALSE)
+  }
+  validity[offset + seq_len(n)]
 }
 
 rducks_arrow_pack_bits <- function(values) {
