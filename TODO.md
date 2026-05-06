@@ -283,12 +283,14 @@ Run with `lobstr` in this session:
   - Must not call DBI/SQL from finalizers.
   - Must not call R API from off-main native destructors.
 
-- [ ] Integrate release with `dbDisconnect()` if the connection object model
+- [x] Integrate release with `dbDisconnect()` if the connection object model
   permits it.
-  - If subclass/wrapper is chosen, implement a `dbDisconnect()` method that calls
-    `rducks_release()` before delegating to duckdb-r.
-  - If plain `duckdb_connection` is retained, document explicit release. Basic
-    idempotent/non-destructive release behavior is covered in
+  - Rducks retains the plain `duckdb_connection` object and therefore does not
+    override DBI's `dbDisconnect()` method.
+  - `rducks_release()` documentation now explicitly recommends calling
+    `rducks_release(con)` before `DBI::dbDisconnect(con)` for deterministic
+    connection-local cleanup; weak-reference finalizers remain best-effort.
+  - Basic idempotent/non-destructive release behavior is covered in
     `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
 - [x] Add repeated lifecycle tests.

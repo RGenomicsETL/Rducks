@@ -115,6 +115,12 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' metadata. If sibling DBI connections are attached to the same DuckDB database
 #' runtime, their database-scoped Rducks registration metadata remains visible.
 #'
+#' Rducks deliberately keeps the plain `duckdb_connection` object and does not
+#' override DBI's `dbDisconnect()` method. Call `rducks_release(con)` explicitly
+#' before `DBI::dbDisconnect(con)` when you want deterministic connection-local
+#' Rducks cleanup; weak-reference finalizers provide only best-effort cleanup if
+#' the connection object is garbage-collected.
+#'
 #' Call [rducks_enable()] again before using `con` for further Rducks
 #' registrations or connection-local plan changes.
 #'

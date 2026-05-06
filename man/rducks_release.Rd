@@ -24,6 +24,12 @@ metadata. If sibling DBI connections are attached to the same DuckDB database
 runtime, their database-scoped Rducks registration metadata remains visible.
 }
 \details{
+Rducks deliberately keeps the plain \code{duckdb_connection} object and does not
+override DBI's \code{dbDisconnect()} method. Call \code{rducks_release(con)} explicitly
+before \code{DBI::dbDisconnect(con)} when you want deterministic connection-local
+Rducks cleanup; weak-reference finalizers provide only best-effort cleanup if
+the connection object is garbage-collected.
+
 Call \code{\link[=rducks_enable]{rducks_enable()}} again before using \code{con} for further Rducks
 registrations or connection-local plan changes.
 }
