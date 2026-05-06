@@ -75,8 +75,9 @@ workers with preloaded evaluator/schema state are still future work.
 
 `rducks_unregister()`: not implemented; DuckDB reports extension-created
 functions as internal catalog entries that cannot be dropped through the
-ordinary `DROP FUNCTION` path, so destructive database-scoped
-unregistering needs a separate design.
+ordinary `DROP FUNCTION` path. `docs/UNREGISTER.md` now documents the
+blocked C-API constraint and required future database-scoped destructive
+semantics.
 
 `R/arrow_bridge.R` split: core split done.
 
