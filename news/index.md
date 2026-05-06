@@ -18,6 +18,11 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+  and
+  [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
+  now include `r_side_record` to make detached/missing R-side registry
+  metadata explicit.
 - Added
   [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
   to cross-check the native database-scoped execution backend against
