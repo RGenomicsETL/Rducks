@@ -14,8 +14,10 @@ that runtime. UDF inputs and outputs move through explicit execution
 plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
-- `arrow_c`: native extension path for supported scalar and vectorized
-  calls.
+- `arrow_c`: native extension path for supported scalar calls with direct
+  DuckDB-vector materialization. Vectorized `arrow_c` is intentionally not
+  exposed until it has a direct implementation rather than the old Arrow/R
+  helper bridge.
 - `arrow_ipc`: process-isolated R execution using Arrow IPC
   request/result payloads and a generic Future backend.
 
@@ -146,8 +148,8 @@ side-effect flag.
 |-------------------------------------|-------------|-------------|---------------------------------------------------------------------------------------------|
 | `arrow_r + serial`                  | implemented | implemented | reference implementation                                                                    |
 | `arrow_r + inproc_concurrent`       | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread               |
-| `arrow_c + serial`                  | implemented | implemented | native evaluator token `RC` for scalar, `RCV` for vectorized                                |
-| `arrow_c + inproc_concurrent`       | implemented | implemented | queued same-process callbacks with `arrow_c` marshalling                                    |
+| `arrow_c + serial`                  | implemented | not implemented | direct native evaluator token `RC` for scalar                                               |
+| `arrow_c + inproc_concurrent`       | implemented | not implemented | queued same-process callbacks with scalar `arrow_c` marshalling                             |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through the active Future backend; evaluator token `RIPC` |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans
@@ -554,7 +556,7 @@ The table below is produced by `rducks_mode_semantics()`.
 | mode         | status      | call_granularity            | input_shape                                        | return_shape                                                          | length_semantics                                                   | threading                                                                                                                                                                   | copy_semantics                                                                                                                                                            |
 |:-------------|:------------|:----------------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:-------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `scalar`     | implemented | one R call per row          | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call                               | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside Future workers after Arrow IPC encoding   | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport |
-| `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | return length must equal the number of evaluated rows in the chunk | same execution-plan threading rules as scalar mode for arrow_r/arrow_c; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend | DuckDB chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport                      |
+| `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | return length must equal the number of evaluated rows in the chunk | arrow_r vectorized runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend; arrow_c vectorized is not exposed yet | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport                      |
 
 ## Type descriptors
 
@@ -757,8 +759,9 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 
 ## Exceptions and side effects
 
-Set `exception_handling = "return_null"` to turn R errors into SQL
-`NULL`.
+Set `exception_handling = "return_null"` to turn errors thrown by the user R
+function into SQL `NULL`. Return type-checking and marshalling errors still
+abort the query so type bugs are not hidden as NULLs.
 
 ``` r
 reg_error_null <- rducks_register(

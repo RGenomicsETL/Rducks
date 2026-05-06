@@ -47,8 +47,10 @@ row iteration, call construction, NULL handling, return checking, and direct
 DuckDB vector reads/writes into C for supported scalar storage; the user function
 itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical scoping, and side
 effects keep ordinary R semantics. `arrow_ipc` loops rows inside a Future worker.
-Vectorized mode calls the R function once per DuckDB chunk and supports
-`arrow_r`, `arrow_c`, and `arrow_ipc` plans without falling back between them.
+Vectorized mode calls the R function once per DuckDB chunk and currently
+supports `arrow_r` and `arrow_ipc`. `arrow_c + vectorized` is deliberately
+rejected until it has a direct native implementation rather than an Arrow/R
+helper bridge.
 
 ## Thread model
 
@@ -85,38 +87,36 @@ Keep the following layers separate when changing the native path:
    must not pass borrowed DuckDB vectors or transient `SEXP` objects across
    threads.
 
-The current `arrow_c` scalar execution helpers are deliberately main-R-lane
+The current `arrow_c` scalar execution helpers are deliberately main-thread
 helpers and therefore mix R API calls with direct DuckDB vector reads/writes in
 one callback-local loop. In the `serial` concurrency plan, DuckDB enters them
 directly on the recorded R thread. In the `inproc_concurrent` plan, an off-main
-callback must queue first; the main R lane drains the request and only then runs
-those helpers. Do not reuse `arrow_c` direct-buffer helpers as worker-safe
+callback must queue first; the main R thread drains the request and only then
+runs those helpers. Do not reuse `arrow_c` direct-buffer helpers as worker-safe
 building blocks without first splitting them along the boundaries above.
 
 ## Prepared scalar and vectorized execution plans
 
-The `arrow_r` and `arrow_c` scalar row-loop code is split into explicit phases:
+The `arrow_r` scalar row-loop code is split into explicit Arrow helper phases:
 
 1. prepare typed R inputs from an Arrow C Data chunk;
 2. evaluate the scalar R function row-by-row;
 3. validate each scalar return;
 4. build an Arrow C Data result chunk.
 
-`arrow_r` calls this engine through an R wrapper on the recorded R lane.
-`arrow_c` keeps its current main-lane direct-buffer fast path and its C row-loop
-fallback, but the fallback bundle now carries the same prepare/result helpers
-plus an R engine object. This does not rule out a future threaded `arrow_c`
-implementation; it only describes the path that is safe today. A threaded native
-backend must split worker-safe DuckDB/vector work from any R API or `SEXP` work,
-then cross an owned-buffer transport boundary before R-thread evaluation, or be
-a genuinely pure-native evaluator with no R callback. This keeps scalar
-semantics independent from the transport that delivered a chunk while preserving
-the marshalling-plan split. Vectorized mode reuses the same prepare/result
-phases but replaces row-wise evaluation with one call over column-shaped R
-arguments. With `null_handling = "default"`, only rows with no top-level SQL NULL
-inputs are evaluated and SQL NULL rows are scattered back into the DuckDB result;
-with `null_handling = "special"`, all rows are passed through with the same
-NA/NULL shapes used by scalar mode.
+`arrow_c` scalar execution is separate: for signatures accepted by the direct
+support predicate, C reads DuckDB vectors recursively, calls the R function
+row-by-row on the recorded main R thread, validates each return, and writes
+DuckDB output vectors recursively. It must fail rather than falling back to the
+Arrow helper engine. A future threaded native backend must split worker-safe
+DuckDB/vector work from any R API or `SEXP` work, then cross an owned-buffer
+transport boundary before R-thread evaluation, or be a genuinely pure-native
+evaluator with no R callback. Vectorized mode uses the Arrow helper phases for
+`arrow_r` and Arrow IPC for `arrow_ipc`; it is not exposed for `arrow_c` today.
+With `null_handling = "default"`, only rows with no top-level SQL NULL inputs
+are evaluated and SQL NULL rows are scattered back into the DuckDB result; with
+`null_handling = "special"`, all rows are passed through with the same NA/NULL
+shapes used by scalar mode.
 
 Internally the current concurrency backends are:
 

@@ -33,7 +33,7 @@ rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
   switch(
     marshalling,
     arrow_r = c("scalar", "vectorized"),
-    arrow_c = c("scalar", "vectorized"),
+    arrow_c = "scalar",
     arrow_ipc = c("scalar", "vectorized"),
     character()
   )
@@ -97,8 +97,10 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' @param marshalling Chunk marshalling implementation. `"arrow_r"` uses Arrow C
 #'   Data plus nanoarrow/R materialization and is the reference implementation.
 #'   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
-#'   plans. `"arrow_ipc"` uses Arrow IPC bytes as the explicit task/result
-#'   payload for the Future-based multiprocess path.
+#'   scalar registrations. It does not currently expose vectorized chunk calls,
+#'   because the old `RCV` implementation used Arrow/R helper materialization
+#'   rather than the direct `arrow_c` path. `"arrow_ipc"` uses Arrow IPC bytes as
+#'   the explicit task/result payload for the Future-based multiprocess path.
 #' @param concurrency Concurrency contract. `"serial"` evaluates one chunk at a
 #'   time in the calling process. `"inproc_concurrent"` allows in-process DuckDB
 #'   callback concurrency while keeping R API work serialized on the recorded
@@ -444,6 +446,14 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
     stop("unknown Rducks UDF call shape: ", spec$mode, call. = FALSE)
   }
   if (!spec$mode %in% plan$supported_call_shapes) {
+    if (identical(plan$marshalling, "arrow_c") && identical(spec$mode, "vectorized")) {
+      stop(
+        "arrow_c direct vectorized marshalling is not implemented; ",
+        "use marshalling = 'arrow_r' for vectorized in-process chunks or ",
+        "marshalling = 'arrow_ipc' with concurrency = 'multiprocess_parallel' for Future workers",
+        call. = FALSE
+      )
+    }
     stop(
       "Rducks execution plan ", plan$plan_id,
       " does not support mode = '", spec$mode, "'",
@@ -485,7 +495,9 @@ rducks_plan_native_evaluator_token <- function(plan, mode = "scalar") {
   switch(
     plan$marshalling,
     arrow_r = "R",
-    arrow_c = if (identical(mode, "vectorized")) "RCV" else "RC",
+    arrow_c = if (identical(mode, "vectorized")) {
+      stop("arrow_c direct vectorized marshalling is not implemented", call. = FALSE)
+    } else "RC",
     arrow_ipc = "RIPC",
     stop("unsupported Rducks execution-plan marshalling: ", plan$marshalling, call. = FALSE)
   )

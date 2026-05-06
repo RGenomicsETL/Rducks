@@ -40,8 +40,10 @@ type's missing-value shape for NULL inputs (for example typed \code{NA} for
 ordinary scalar types and \code{NULL} for exact/exotic, binary, and composite
 values).}
 
-\item{exception_handling}{Either \code{"rethrow"} to report R errors to DuckDB, or
-\code{"return_null"} to turn R errors into SQL NULL values.}
+\item{exception_handling}{Either \code{"rethrow"} to report user R function
+errors to DuckDB, or \code{"return_null"} to turn user R function errors into
+SQL NULL values. Return type-checking and marshalling errors still abort
+the query.}
 
 \item{side_effects}{Logical scalar. Use \code{TRUE} for functions with randomness,
 counters, I/O, mutation, or other side effects so DuckDB does not treat the

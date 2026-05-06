@@ -24,9 +24,13 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     if (!rducks_parse_eval_mode(eval_mode_spec, &eval_mode, err, err_cap)) {
         return false;
     }
+    if (eval_mode == RDUCKS_EVAL_RCV) {
+        snprintf(err, err_cap, "arrow_c direct vectorized marshalling is not implemented");
+        return false;
+    }
     if ((eval_mode == RDUCKS_EVAL_R && !Rf_isFunction(eval_ref)) ||
         (eval_mode == RDUCKS_EVAL_RIPC && !rducks_ripc_bundle_valid(eval_ref)) ||
-        ((eval_mode == RDUCKS_EVAL_RC || eval_mode == RDUCKS_EVAL_RCV) && !rducks_rc_bundle_valid(eval_ref))) {
+        (eval_mode == RDUCKS_EVAL_RC && !rducks_rc_bundle_valid(eval_ref))) {
         snprintf(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
     }

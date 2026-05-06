@@ -121,8 +121,10 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
 #'   ordinary scalar types and `NULL` for exact/exotic, binary, and composite
 #'   values).
-#' @param exception_handling Either `"rethrow"` to report R errors to DuckDB, or
-#'   `"return_null"` to turn R errors into SQL NULL values.
+#' @param exception_handling Either `"rethrow"` to report user R function
+#'   errors to DuckDB, or `"return_null"` to turn user R function errors into
+#'   SQL NULL values. Return type-checking and marshalling errors still abort
+#'   the query.
 #' @param side_effects Logical scalar. Use `TRUE` for functions with randomness,
 #'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
 #'   function as pure.
@@ -153,7 +155,7 @@ rducks_register <- function(con, name, fun, args, returns,
   eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_r")) {
     rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
-    rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
+    stop("arrow_c direct vectorized marshalling is not implemented", call. = FALSE)
   } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
     rducks_make_arrow_ipc_future_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_r")) {

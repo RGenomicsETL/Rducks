@@ -19,8 +19,10 @@ rducks_execution_plan(
 \item{marshalling}{Chunk marshalling implementation. \code{"arrow_r"} uses Arrow C
 Data plus nanoarrow/R materialization and is the reference implementation.
 \code{"arrow_c"} uses native C/DuckDB-vector materialization for supported
-plans. \code{"arrow_ipc"} uses Arrow IPC bytes as the explicit task/result
-payload for the Future-based multiprocess path.}
+scalar registrations. It does not currently expose vectorized chunk calls,
+because the old \code{RCV} implementation used Arrow/R helper materialization
+rather than the direct \code{arrow_c} path. \code{"arrow_ipc"} uses Arrow IPC bytes as
+the explicit task/result payload for the Future-based multiprocess path.}
 
 \item{concurrency}{Concurrency contract. \code{"serial"} evaluates one chunk at a
 time in the calling process. \code{"inproc_concurrent"} allows in-process DuckDB

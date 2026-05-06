@@ -18,15 +18,10 @@ local({
   result <- DBI::dbGetQuery(con, "SELECT plan_plus_one(41::INTEGER) AS x")
   expect_equal(result$x, 42L)
 
-  reg_vec <- rducks_register(con, "plan_vec", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized")
-  expect_equal(reg_vec$execution_plan$plan_id, "arrow_c+serial")
-  result_vec <- DBI::dbGetQuery(con, "SELECT plan_vec(i::INTEGER) AS x FROM range(3) t(i)")
-  expect_equal(result_vec$x, 1:3)
-  explain_vec <- rducks_explain_udf(con, "plan_vec")
-  expect_equal(explain_vec$native_marshalling, "arrow_c")
-  expect_equal(explain_vec$evaluator, "RCV")
-  expect_true(explain_vec$arrow_c_chunks >= 1)
-  expect_equal(explain_vec$arrow_r_chunks, 0)
+  expect_error(
+    rducks_register(con, "plan_vec", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized"),
+    "arrow_c direct vectorized marshalling is not implemented"
+  )
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   reg_r <- rducks_register(con, "plan_r_plus_one", function(x) x + 1L, INTEGER, INTEGER)

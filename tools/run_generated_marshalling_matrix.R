@@ -86,7 +86,7 @@ run_return <- function(case) {
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, case$sql1)), paste0("return ", case$name))
 }
 
-assert_vectorized_marshalling_counter <- function(name, marshalling, label) {
+assert_marshalling_counter <- function(name, marshalling, label) {
   info <- rducks_explain_udf(con, name)
   if (!identical(info$native_marshalling[[1L]], marshalling)) {
     stop(
@@ -135,7 +135,7 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
     sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_expr, row_expr)),
     default_label
   )
-  assert_vectorized_marshalling_counter(vec_name, marshalling, default_label)
+  assert_marshalling_counter(vec_name, marshalling, default_label)
 
   if (include_null) {
     maybe_stop_for_limit()
@@ -152,19 +152,70 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
       sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data", values_sql, sql_compare_expr(vec_special_expr, row_special_expr)),
       special_label
     )
-    assert_vectorized_marshalling_counter(vec_special_name, marshalling, special_label)
+    assert_marshalling_counter(vec_special_name, marshalling, special_label)
   }
 }
 
 run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
-  include_arrow_c_for_type <- Rducks:::rducks_arrow_c_direct_mapping_supported(type)
   include_ipc_for_type <- isTRUE(include_ipc) &&
     Rducks:::rducks_arrow_ipc_mapping_supported(type)
-  marshallers <- c("arrow_r", if (include_arrow_c_for_type) "arrow_c", if (include_ipc_for_type) "arrow_ipc")
+  marshallers <- c("arrow_r", if (include_ipc_for_type) "arrow_ipc")
   for (marshalling in marshallers) {
     run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
   }
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+}
+
+run_arrow_c_scalar_no_fallback <- function(type, sql1, sql2, label, include_null = TRUE) {
+  if (!Rducks:::rducks_arrow_c_direct_mapping_supported(type)) return(invisible(FALSE))
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  type_sql <- rducks_type_sql(type)
+  values_sql <- if (include_null) {
+    sprintf("(%s), (NULL::%s), (%s)", sql1, type_sql, sql2)
+  } else {
+    sprintf("(%s), (%s)", sql1, sql2)
+  }
+
+  maybe_stop_for_limit()
+  default_name <- next_name("arrow_c_scalar")
+  invisible(rducks_register(con, default_name, function(x) x, type, type, side_effects = TRUE))
+  sql_ok(
+    sprintf(
+      "WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data",
+      values_sql,
+      sql_compare_expr(sprintf("%s(x)", default_name), "x")
+    ),
+    paste0("arrow_c scalar/default ", label)
+  )
+  assert_marshalling_counter(default_name, "arrow_c", paste0("arrow_c scalar/default ", label))
+
+  if (include_null) {
+    maybe_stop_for_limit()
+    special_name <- next_name("arrow_c_scalar_special")
+    invisible(rducks_register(con, special_name, function(x) x, type, type,
+                              null_handling = "special", side_effects = TRUE))
+    sql_ok(
+      sprintf(
+        "WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data",
+        values_sql,
+        sql_compare_expr(sprintf("%s(x)", special_name), "x")
+      ),
+      paste0("arrow_c scalar/special ", label)
+    )
+    assert_marshalling_counter(special_name, "arrow_c", paste0("arrow_c scalar/special ", label))
+  }
+
+  maybe_stop_for_limit()
+  error_name <- next_name("arrow_c_scalar_error")
+  invisible(rducks_register(con, error_name, function(x) stop("boom"), type, type,
+                            exception_handling = "return_null", side_effects = TRUE))
+  sql_ok(
+    sprintf("SELECT %s(%s) IS NULL AS ok", error_name, sql1),
+    paste0("arrow_c scalar/return_null ", label)
+  )
+  assert_marshalling_counter(error_name, "arrow_c", paste0("arrow_c scalar/return_null ", label))
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  invisible(TRUE)
 }
 
 sequence_r_value <- function(case) {
@@ -207,6 +258,7 @@ run_composite_identity <- function(case, shape) {
   invisible(rducks_register(con, name, function(x) x, spec$type, spec$type))
   got <- sprintf("%s(%s)", name, spec$sql)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, spec$sql)), paste(shape, case$name))
+  run_arrow_c_scalar_no_fallback(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
   run_vectorized_row_conformance(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
 
   maybe_stop_for_limit()
@@ -282,6 +334,7 @@ tryCatch({
   for (case in scalar_cases) {
     run_identity(case)
     run_return(case)
+    run_arrow_c_scalar_no_fallback(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
     run_vectorized_row_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
   }
 

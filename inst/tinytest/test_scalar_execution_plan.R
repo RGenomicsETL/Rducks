@@ -19,7 +19,7 @@ expect_equal(inproc$plan_id, "arrow_c+inproc_concurrent")
 expect_false(inproc$reference)
 expect_true(inproc$implemented)
 expect_equal(inproc$backend, "concurrent_inproc")
-expect_equal(inproc$supported_call_shapes, c("scalar", "vectorized"))
+expect_equal(inproc$supported_call_shapes, "scalar")
 
 ipc <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
 expect_equal(ipc$serialization, "arrow_ipc")
@@ -41,12 +41,16 @@ expect_error(
 vectorized_spec <- Rducks:::rducks_registration_spec(
   "vec", function(x) x, INTEGER, INTEGER, mode = "vectorized"
 )
-expect_silent(
+expect_error(
   Rducks:::rducks_validate_execution_plan_for_registration(
     rducks_execution_plan("arrow_c", "serial"), vectorized_spec
-  )
+  ),
+  "arrow_c direct vectorized marshalling is not implemented"
 )
-expect_equal(Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"), "RCV")
+expect_error(
+  Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"),
+  "arrow_c direct vectorized marshalling is not implemented"
+)
 
 input <- data.frame(x = 1:3, y = c("a", "b", "c"))
 expect_error(
