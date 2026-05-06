@@ -236,8 +236,11 @@
 <ul><li>Repeated queued UDF calls with multiple DuckDB threads should complete or fail with documented timeout text, never hang.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label></p>
-<ul><li>Current native destructors avoid unsafe <code>R_ReleaseObject()</code> off-main.</li>
+<p><label><input type="checkbox" checked>Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label></p>
+<ul><li>Native UDF metadata destructors now release preserved evaluator objects immediately only on the recorded main R thread; off-main destructors enqueue them for later safe release.</li>
+<li>Safe drain points include <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, <code><a href="reference/rducks_release.html">rducks_release()</a></code>, <code><a href="reference/rducks_register.html">rducks_register()</a></code>, UDF execution, and metadata/stat queries.</li>
+<li>
+<code><a href="reference/rducks_release_stats.html">rducks_release_stats()</a></code> exposes queued/released/failed/pending counters.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label></p>

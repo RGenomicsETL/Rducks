@@ -312,7 +312,16 @@ Add stress tests for no-deadlock behavior.
 Add a main-thread release queue for preserved R objects, or explicitly
 document the leak-until-session-end policy.
 
-- Current native destructors avoid unsafe `R_ReleaseObject()` off-main.
+- Native UDF metadata destructors now release preserved evaluator
+  objects immediately only on the recorded main R thread; off-main
+  destructors enqueue them for later safe release.
+- Safe drain points include
+  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
+  [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
+  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
+  UDF execution, and metadata/stat queries.
+- [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
+  exposes queued/released/failed/pending counters.
 
 Extend no-fallback assertions for `arrow_c` direct registration.
 

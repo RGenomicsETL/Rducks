@@ -61,6 +61,8 @@
 - [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   [`rducks_detach()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   : Detach Rducks connection-local state
+- [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
+  : Inspect preserved-object release counters
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
   : Set the Rducks execution plan for a connection
 - [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md)

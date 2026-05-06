@@ -30,7 +30,11 @@
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   with native per-UDF execution counters so users can inspect
   registration metadata and verify that `arrow_r`/`arrow_c` chunks ran
-  through the requested evaluator without fallback.
+  through the requested evaluator without fallback. Added
+  [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
+  to inspect process-local counters for preserved R objects queued by
+  off-main DuckDB metadata destructors and drained later on the recorded
+  main R thread.
 - Added an R-universe badge to the README and lowered the package R
   dependency floor to R 4.3.
 - Added wasm/webR build detection in `configure`, including the DuckDB
