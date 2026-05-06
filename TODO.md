@@ -9,9 +9,9 @@ what still needs doing.
 - Current working tree was audited from base commit `8ca0890`.
 - Local validation after this audit:
   - `make check` OK
-  - `make test` OK: 733 tinytest results
+  - `make test` OK: 740 tinytest results
   - `Rscript tools/run_generated_marshalling_matrix.R` OK: 945 generated cases
-  - `covr::package_coverage(type = "tests")` OK: 85.24% overall coverage
+  - `covr::package_coverage(type = "tests")` OK: 85.28% overall coverage
 - Recent architecture-audit fixes include database-runtime-scoped R metadata,
   opaque evaluator handles, non-destructive `rducks_release()`, main-thread
   release queues, direct-only scalar/vectorized `arrow_c`, native Arrow IPC
