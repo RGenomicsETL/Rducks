@@ -241,11 +241,14 @@
 <ul><li>Current native destructors avoid unsafe <code>R_ReleaseObject()</code> off-main.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Extend no-fallback assertions to scalar generated matrix cases where native counters are meaningful.</label></p>
-<ul><li>Vectorized generated cases already assert <code>arrow_r</code>/<code>arrow_c</code> counter movement.</li>
+<p><label><input type="checkbox" checked>Extend no-fallback assertions for <code>arrow_c</code> direct registration.</label></p>
+<ul><li>
+<code>arrow_c</code> registration now fails for signatures that cannot use the native direct DuckDB-vector path instead of falling through to the R/Arrow bridge.</li>
+<li>
+<code>inst/tinytest/test_duckdb_runtime_eval_mode.R</code> keeps supported direct cases on the <code>arrow_c</code> path and asserts unsupported composite/enum/union cases fail registration with an explicit <code>arrow_c direct</code> error.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add focused tests for every <code>arrow_c</code> fallback-to-<code>arrow_r</code> risk.</label></p>
+<p><label><input type="checkbox">Add generated matrix no-fallback coverage for every supported scalar direct type.</label></p>
 <ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported <code>arrow_c</code> cases.</li>
 </ul></li>
 <li>

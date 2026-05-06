@@ -313,13 +313,18 @@ document the leak-until-session-end policy.
 
 - Current native destructors avoid unsafe `R_ReleaseObject()` off-main.
 
-Extend no-fallback assertions to scalar generated matrix cases where
-native counters are meaningful.
+Extend no-fallback assertions for `arrow_c` direct registration.
 
-- Vectorized generated cases already assert `arrow_r`/`arrow_c` counter
-  movement.
+- `arrow_c` registration now fails for signatures that cannot use the
+  native direct DuckDB-vector path instead of falling through to the
+  R/Arrow bridge.
+- `inst/tinytest/test_duckdb_runtime_eval_mode.R` keeps supported direct
+  cases on the `arrow_c` path and asserts unsupported
+  composite/enum/union cases fail registration with an explicit
+  `arrow_c direct` error.
 
-Add focused tests for every `arrow_c` fallback-to-`arrow_r` risk.
+Add generated matrix no-fallback coverage for every supported scalar
+direct type.
 
 - Acceptance:
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
