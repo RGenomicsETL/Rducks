@@ -183,6 +183,12 @@
 <li>Covered by <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
 </ul></li>
 <li>
+<label><input type="checkbox" checked>Remove raw SEXP pointer-through-SQL evaluator registration.</label>
+<ul><li>
+<code><a href="reference/rducks_register.html">rducks_register()</a></code> now stores the evaluator in a temporary R-side registry and passes an opaque evaluator id/token to the DuckDB extension.</li>
+<li>Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB error instead of letting native code cast arbitrary integers to <code>SEXP</code>.</li>
+</ul></li>
+<li>
 <label><input type="checkbox">Add native runtime token/anchor accounting.</label>
 <ul><li>Target: a stable Rducks runtime token from the native extension, for example <code>SELECT rducks_connection_token()</code> or a <code>.Call</code> equivalent.</li>
 <li>Token should be Rducks-owned and generation-safe, e.g. <code>(runtime_id, generation)</code>, not just a raw R object address, raw <code>duckdb_database</code> wrapper pointer, or DuckDB connection id.</li>

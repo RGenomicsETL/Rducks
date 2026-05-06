@@ -218,6 +218,15 @@ Replace SEXP-address keying for R-side connection state.
   is collected.
 - Covered by `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
+Remove raw SEXP pointer-through-SQL evaluator registration.
+
+- [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+  now stores the evaluator in a temporary R-side registry and passes an
+  opaque evaluator id/token to the DuckDB extension.
+- Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
+  error instead of letting native code cast arbitrary integers to
+  `SEXP`.
+
 Add native runtime token/anchor accounting.
 
 - Target: a stable Rducks runtime token from the native extension, for
