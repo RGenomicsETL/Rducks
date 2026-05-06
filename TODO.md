@@ -452,9 +452,9 @@ Audit remaining `Rf_*` longjmp paths.
   fenced with `R_tryCatchError()` + `R_UnwindProtect()`; RIPC
   abnormal-unwind cleanup releases preserved Future/schema objects and
   marks in-flight tasks done.
-- The remaining direct-RC conversion helpers called inside DuckDB
+- The remaining direct `arrow_c` conversion helpers called inside DuckDB
   callbacks borrow callback vectors, allocate temporary C buffers with
-  `R_alloc()`, or allocate R-managed `SEXP`s under the top-level RC
+  `R_alloc()`, or allocate R-managed `SEXP`s under the top-level arrow_c
   error boundary. No remaining callback path holds `malloc`/Arrow/DuckDB
   handles across a raw `Rf_error()` without a cleanup boundary.
 - Package `.Call` helper code outside DuckDB callbacks may still use

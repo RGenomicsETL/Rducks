@@ -279,7 +279,7 @@
 <label><input type="checkbox" checked>Audit remaining <code>Rf_*</code> longjmp paths.</label>
 <ul><li>IPC native encoding uses <code>R_UnwindProtect()</code> around raw-vector allocation/copy so Arrow writer, stream, preserved nanoarrow external pointers, and native buffers are released if <code>Rf_allocVector()</code> longjmps.</li>
 <li>Direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect callbacks are fenced with <code>R_tryCatchError()</code> + <code>R_UnwindProtect()</code>; RIPC abnormal-unwind cleanup releases preserved Future/schema objects and marks in-flight tasks done.</li>
-<li>The remaining direct-RC conversion helpers called inside DuckDB callbacks borrow callback vectors, allocate temporary C buffers with <code>R_alloc()</code>, or allocate R-managed <code>SEXP</code>s under the top-level RC error boundary. No remaining callback path holds <code>malloc</code>/Arrow/DuckDB handles across a raw <code>Rf_error()</code> without a cleanup boundary.</li>
+<li>The remaining direct <code>arrow_c</code> conversion helpers called inside DuckDB callbacks borrow callback vectors, allocate temporary C buffers with <code>R_alloc()</code>, or allocate R-managed <code>SEXP</code>s under the top-level arrow_c error boundary. No remaining callback path holds <code>malloc</code>/Arrow/DuckDB handles across a raw <code>Rf_error()</code> without a cleanup boundary.</li>
 <li>Package <code>.Call</code> helper code outside DuckDB callbacks may still use ordinary R errors, but those paths do not cross DuckDB callback frames or hold native callback-frame resources.</li>
 </ul></li>
 <li>
