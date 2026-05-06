@@ -281,6 +281,12 @@
 <p><label><input type="checkbox">Fix cooperative RIPC counter under-reporting.</label></p>
 <ul><li>Runtime-wide <code>submitted/executed</code> can be lower than per-UDF queued chunk counts on cooperative paths.</li>
 </ul></li>
+<li>
+<p><label><input type="checkbox" checked>Remove the hidden slow R encoder fallback from the primary Arrow IPC encoder.</label></p>
+<ul><li>
+<code>rducks_arrow_ipc_encode()</code> now requires a <code>nanoarrow_array</code> and uses the native encoder only.</li>
+<li>The former <code><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/read_nanoarrow.html" class="external-link">nanoarrow::write_nanoarrow()</a></code> / <code><a href="https://rdrr.io/r/base/rawConnection.html" class="external-link">rawConnection()</a></code> fallback is no longer present in package code.</li>
+</ul></li>
 <li><p><label><input type="checkbox">Reduce Arrow IPC/Future overhead for cheap UDFs without hidden fallback.</label></p></li>
 <li><p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p></li>
 <li>
