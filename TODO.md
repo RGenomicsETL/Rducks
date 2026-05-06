@@ -300,9 +300,8 @@ Add focused tests for every `arrow_c` fallback-to-`arrow_r` risk.
 Handle partial failures in
 [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md).
 
-- Current risk: thread settings may change before native backend setup
-  fails, while the R-side plan cache remains old.
-- Either roll back thread settings or document partial application.
+- Thread settings are restored when thread/backend setup fails before
+  the R-side plan cache is updated.
 
 Defensively clear Arrow C Data release callbacks on conversion failure.
 
