@@ -297,6 +297,46 @@ scalar_cases <- list(
   list(name = "union", type = UNION(code = INTEGER, label = VARCHAR), sql1 = "union_value(code := 42)::UNION(code INTEGER, label VARCHAR)", sql2 = "union_value(label := 'duck')::UNION(code INTEGER, label VARCHAR)", r1 = rducks_union("code", 42L), r2 = rducks_union("label", "duck"))
 )
 
+expect_registration_error <- function(expr, pattern, label) {
+  maybe_stop_for_limit()
+  err <- tryCatch({
+    force(expr)
+    NULL
+  }, error = identity)
+  if (is.null(err)) {
+    stop("generated negative marshalling case did not error: ", label, call. = FALSE)
+  }
+  if (!grepl(pattern, conditionMessage(err))) {
+    stop(
+      "generated negative marshalling case errored with unexpected message: ", label,
+      "\nExpected pattern: ", pattern,
+      "\nActual: ", conditionMessage(err),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+run_arrow_c_unsupported_negative_cases <- function() {
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  unsupported_cases <- list(
+    list(name = "list_i64_arg", args = LIST(BIGINT), returns = LIST(BIGINT)),
+    list(name = "array_u64_arg", args = ARRAY(UBIGINT, 2), returns = ARRAY(UBIGINT, 2)),
+    list(name = "map_hugeint_arg", args = MAP(VARCHAR, HUGEINT), returns = MAP(VARCHAR, HUGEINT)),
+    list(name = "list_i64_return", args = INTEGER, returns = LIST(BIGINT))
+  )
+  for (case in unsupported_cases) {
+    fname <- next_name(paste0("arrow_c_unsupported_", case$name))
+    expect_registration_error(
+      rducks_register(con, fname, function(x) x, list(case$args), case$returns),
+      "arrow_c direct marshalling is not implemented",
+      paste0("arrow_c unsupported ", case$name)
+    )
+  }
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  invisible(TRUE)
+}
+
 assert_expected_arrow_c_direct_support <- function() {
   case_names <- vapply(scalar_cases, `[[`, character(1), "name")
   cases_by_name <- setNames(scalar_cases, case_names)
@@ -330,6 +370,7 @@ assert_expected_arrow_c_direct_support <- function() {
 }
 
 assert_expected_arrow_c_direct_support()
+run_arrow_c_unsupported_negative_cases()
 
 tryCatch({
   for (case in scalar_cases) {

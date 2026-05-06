@@ -243,7 +243,7 @@ Additional multiprocess cases:
       generated tests.
 - [ ] Expand the generated matrix until it covers every claimed public type and
       every NULL/error semantic option.
-- [ ] Add negative generated cases for unsupported plan/type combinations.
+- [x] Add negative generated cases for unsupported plan/type combinations.
 - [x] Run the generated matrix in CI, not only manually.
 
 ### Iteration 3: reframe current native scalar path as `arrow_c + scalar`
@@ -312,8 +312,8 @@ not the old Arrow/R helper bridge.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
 - [ ] Add worker lifecycle/shutdown/cancellation tests.
-- [ ] Add tests proving hot-path payloads are Arrow IPC and not R
-      `serialize()`/`unserialize()`.
+- [x] Add tests proving provider worker chunk input/output payloads are raw
+      Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a
       non-UDF surface: split an input source into owned Arrow IPC tasks, submit a
       window ahead, collect by task sequence, and expose results without
