@@ -78,13 +78,16 @@ functions as internal catalog entries that cannot be dropped through the
 ordinary `DROP FUNCTION` path, so destructive database-scoped
 unregistering needs a separate design.
 
-`R/arrow_bridge.R` split: partially done. IPC codec helpers live in
-`R/ipc_codec.R`, scalar/vectorized evaluation helpers live in
-`R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` so they are
-available before `R/arrow_bridge.R` top-level aliases, and the generic
-Future provider lives in `R/provider_future.R`; schema/materialization
-helpers still need a later split when the provider abstraction is
-reworked.
+`R/arrow_bridge.R` split: core split done.
+
+- `R/aab_arrow_materialize.R` holds Arrow schema/materialization
+  helpers.
+- `R/aaa_eval_scalar.R` and `R/aaa_eval_vectorized.R` hold
+  scalar/vectorized evaluation helpers and load before
+  `R/arrow_bridge.R` top-level aliases.
+- `R/ipc_codec.R` holds IPC codec helpers and `R/provider_future.R`
+  holds the generic Future provider. `R/arrow_bridge.R` now focuses on
+  engine/wrapper construction.
 
 ## Non-negotiable constraints
 
@@ -343,12 +346,13 @@ Implement non-destructive R-side connection release/detach.
 Integrate release with `dbDisconnect()` if the connection object model
 permits it.
 
-- If subclass/wrapper is chosen, implement a `dbDisconnect()` method
-  that calls
-  [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
-  before delegating to duckdb-r.
-- If plain `duckdb_connection` is retained, document explicit release.
-  Basic idempotent/non-destructive release behavior is covered in
+- Rducks retains the plain `duckdb_connection` object and therefore does
+  not override DBI’s `dbDisconnect()` method.
+- [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+  documentation now explicitly recommends calling `rducks_release(con)`
+  before `DBI::dbDisconnect(con)` for deterministic connection-local
+  cleanup; weak-reference finalizers remain best-effort.
+- Basic idempotent/non-destructive release behavior is covered in
   `inst/tinytest/test_duckdb_runtime_lifecycle.R`.
 
 Add repeated lifecycle tests.

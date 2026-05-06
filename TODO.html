@@ -64,7 +64,15 @@
 <li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
 <li><label><input type="checkbox">Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> now specifies the provider contract/envelopes, but persistent mirai/nanonext-style workers with preloaded evaluator/schema state are still future work.</label></li>
 <li><label><input type="checkbox"><code>rducks_unregister()</code>: not implemented; DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path, so destructive database-scoped unregistering needs a separate design.</label></li>
-<li><label><input type="checkbox"><code>R/arrow_bridge.R</code> split: partially done. IPC codec helpers live in <code>R/ipc_codec.R</code>, scalar/vectorized evaluation helpers live in <code>R/aaa_eval_scalar.R</code> and <code>R/aaa_eval_vectorized.R</code> so they are available before <code>R/arrow_bridge.R</code> top-level aliases, and the generic Future provider lives in <code>R/provider_future.R</code>; schema/materialization helpers still need a later split when the provider abstraction is reworked.</label></li>
+<li>
+<label><input type="checkbox" checked><code>R/arrow_bridge.R</code> split: core split done.</label>
+<ul><li>
+<code>R/aab_arrow_materialize.R</code> holds Arrow schema/materialization helpers.</li>
+<li>
+<code>R/aaa_eval_scalar.R</code> and <code>R/aaa_eval_vectorized.R</code> hold scalar/vectorized evaluation helpers and load before <code>R/arrow_bridge.R</code> top-level aliases.</li>
+<li>
+<code>R/ipc_codec.R</code> holds IPC codec helpers and <code>R/provider_future.R</code> holds the generic Future provider. <code>R/arrow_bridge.R</code> now focuses on engine/wrapper construction.</li>
+</ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="non-negotiable-constraints">Non-negotiable constraints<a class="anchor" aria-label="anchor" href="#non-negotiable-constraints"></a></h2>
@@ -218,9 +226,11 @@
 <li>Must not call R API from off-main native destructors.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Integrate release with <code>dbDisconnect()</code> if the connection object model permits it.</label>
-<ul><li>If subclass/wrapper is chosen, implement a <code>dbDisconnect()</code> method that calls <code><a href="reference/rducks_release.html">rducks_release()</a></code> before delegating to duckdb-r.</li>
-<li>If plain <code>duckdb_connection</code> is retained, document explicit release. Basic idempotent/non-destructive release behavior is covered in <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
+<label><input type="checkbox" checked>Integrate release with <code>dbDisconnect()</code> if the connection object model permits it.</label>
+<ul><li>Rducks retains the plain <code>duckdb_connection</code> object and therefore does not override DBI’s <code>dbDisconnect()</code> method.</li>
+<li>
+<code><a href="reference/rducks_release.html">rducks_release()</a></code> documentation now explicitly recommends calling <code>rducks_release(con)</code> before <code>DBI::dbDisconnect(con)</code> for deterministic connection-local cleanup; weak-reference finalizers remain best-effort.</li>
+<li>Basic idempotent/non-destructive release behavior is covered in <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Add repeated lifecycle tests.</label>

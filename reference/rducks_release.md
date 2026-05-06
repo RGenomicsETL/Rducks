@@ -28,6 +28,14 @@ rducks_detach(con)
 
 ## Details
 
+Rducks deliberately keeps the plain `duckdb_connection` object and does
+not override DBI's
+[`dbDisconnect()`](https://dbi.r-dbi.org/reference/dbDisconnect.html)
+method. Call `rducks_release(con)` explicitly before
+`DBI::dbDisconnect(con)` when you want deterministic connection-local
+Rducks cleanup; weak-reference finalizers provide only best-effort
+cleanup if the connection object is garbage-collected.
+
 Call
 [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
 again before using `con` for further Rducks registrations or

@@ -73,7 +73,12 @@ runtime, their database-scoped Rducks registration metadata remains visible.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Call <code><a href="rducks_enable.html">rducks_enable()</a></code> again before using <code>con</code> for further Rducks
+    <p>Rducks deliberately keeps the plain <code>duckdb_connection</code> object and does not
+override DBI's <code><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect()</a></code> method. Call <code>rducks_release(con)</code> explicitly
+before <code>DBI::dbDisconnect(con)</code> when you want deterministic connection-local
+Rducks cleanup; weak-reference finalizers provide only best-effort cleanup if
+the connection object is garbage-collected.</p>
+<p>Call <code><a href="rducks_enable.html">rducks_enable()</a></code> again before using <code>con</code> for further Rducks
 registrations or connection-local plan changes.</p>
     </div>
 
