@@ -349,9 +349,12 @@ permits it.
 
 Add repeated lifecycle tests.
 
-- Include repeated `:memory:` databases, extension reloads, UDF
-  registration, explicit release, and DBI disconnect.
-- Assert R-side stores do not expose stale plans or UDF metadata.
+- Repeated `:memory:` connections now enable Rducks, register UDFs,
+  query, explicitly release, disconnect, force GC, and assert R-side
+  plan/runtime and registration stores do not expose stale entries.
+- Native runtime entries and extension-owned connections still need
+  separate release accounting; see the native runtime release item
+  above.
 
 ## P1: correctness hardening
 
@@ -447,10 +450,11 @@ Audit remaining `Rf_*` longjmp paths.
 
 Add GC/lifetime tests.
 
-- Drop R registration objects, run
+- Tests drop R registration objects, run
   [`gc()`](https://rdrr.io/r/base/gc.html), then call DuckDB UDFs.
-- Close/release connections after registrations and confirm no crashes
-  or stale R-side metadata.
+- Lifecycle tests close/release connections after registrations and
+  confirm no crashes or stale R-side metadata in
+  plan/runtime/registration stores.
 
 ## P2: observability and diagnostics
 
@@ -478,9 +482,10 @@ Add counter reset support.
 
 Expose native current-backend diagnostics.
 
-- R-side
+- [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
+  returns the database-scoped native backend so
   [`rducks_current_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.md)
-  should be cross-checkable against native backend state.
+  can be cross-checked against native backend state.
 
 Mark or skip missing R-side registration records.
 

@@ -18,6 +18,10 @@
   writer instead of an R `rawConnection`, avoiding large transient
   allocations. Enum arguments and returns are supported through an
   explicit Rducks enum-storage IPC convention.
+- Added
+  [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
+  to cross-check the native database-scoped execution backend against
+  the R-side current/default execution plan.
 - The Arrow IPC Future path now defaults to one-time UDF global
   discovery (`future_globals = "auto"`) and then submits explicit Future
   globals per chunk. This avoids per-chunk automatic global discovery

@@ -56,6 +56,8 @@
   : List registered Rducks UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
   : Describe Rducks execution mode semantics
+- [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
+  : Inspect the native Rducks execution backend
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
 - [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)

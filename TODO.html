@@ -223,9 +223,9 @@
 <li>If plain <code>duckdb_connection</code> is retained, document explicit release. Basic idempotent/non-destructive release behavior is covered in <code>inst/tinytest/test_duckdb_runtime_lifecycle.R</code>.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Add repeated lifecycle tests.</label>
-<ul><li>Include repeated <code>:memory:</code> databases, extension reloads, UDF registration, explicit release, and DBI disconnect.</li>
-<li>Assert R-side stores do not expose stale plans or UDF metadata.</li>
+<label><input type="checkbox" checked>Add repeated lifecycle tests.</label>
+<ul><li>Repeated <code>:memory:</code> connections now enable Rducks, register UDFs, query, explicitly release, disconnect, force GC, and assert R-side plan/runtime and registration stores do not expose stale entries.</li>
+<li>Native runtime entries and extension-owned connections still need separate release accounting; see the native runtime release item above.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -281,9 +281,9 @@
 <li>Direct <code>arrow_c</code>, Arrow/R, and RIPC submit/collect callbacks are fenced with <code>R_tryCatchError()</code> + <code>R_UnwindProtect()</code>; RIPC abnormal-unwind cleanup releases preserved Future/schema objects and marks in-flight tasks done.</li>
 </ul></li>
 <li>
-<p><label><input type="checkbox">Add GC/lifetime tests.</label></p>
-<ul><li>Drop R registration objects, run <code><a href="https://rdrr.io/r/base/gc.html" class="external-link">gc()</a></code>, then call DuckDB UDFs.</li>
-<li>Close/release connections after registrations and confirm no crashes or stale R-side metadata.</li>
+<p><label><input type="checkbox" checked>Add GC/lifetime tests.</label></p>
+<ul><li>Tests drop R registration objects, run <code><a href="https://rdrr.io/r/base/gc.html" class="external-link">gc()</a></code>, then call DuckDB UDFs.</li>
+<li>Lifecycle tests close/release connections after registrations and confirm no crashes or stale R-side metadata in plan/runtime/registration stores.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -303,8 +303,9 @@
 <ul><li>Reset one UDF or all UDF counters without unregistering the UDF.</li>
 </ul></li>
 <li>
-<label><input type="checkbox">Expose native current-backend diagnostics.</label>
-<ul><li>R-side <code><a href="reference/rducks_current_execution_plan.html">rducks_current_execution_plan()</a></code> should be cross-checkable against native backend state.</li>
+<label><input type="checkbox" checked>Expose native current-backend diagnostics.</label>
+<ul><li>
+<code><a href="reference/rducks_native_execution_backend.html">rducks_native_execution_backend()</a></code> returns the database-scoped native backend so <code><a href="reference/rducks_current_execution_plan.html">rducks_current_execution_plan()</a></code> can be cross-checked against native backend state.</li>
 </ul></li>
 <li>
 <label><input type="checkbox">Mark or skip missing R-side registration records.</label>
