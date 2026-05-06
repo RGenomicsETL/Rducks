@@ -49,14 +49,12 @@ expect_silent(
 expect_equal(Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"), "RCV")
 
 input <- data.frame(x = 1:3, y = c("a", "b", "c"))
-payload <- Rducks:::rducks_arrow_ipc_encode(input)
-expect_true(is.raw(payload))
-expect_true(length(payload) > 0L)
-roundtrip <- as.data.frame(Rducks:::rducks_arrow_ipc_decode_stream(payload))
-expect_equal(roundtrip, input)
-
-array_payload <- Rducks:::rducks_arrow_ipc_encode(nanoarrow::as_nanoarrow_array(input))
-expect_true(is.raw(array_payload))
-expect_true(length(array_payload) > 0L)
-array_roundtrip <- as.data.frame(Rducks:::rducks_arrow_ipc_decode_stream(array_payload))
-expect_equal(array_roundtrip, input)
+expect_error(
+  Rducks:::rducks_arrow_ipc_encode(input),
+  "requires a nanoarrow_array"
+)
+native_payload <- Rducks:::rducks_arrow_ipc_encode(nanoarrow::as_nanoarrow_array(input))
+expect_true(is.raw(native_payload))
+expect_true(length(native_payload) > 0L)
+native_roundtrip <- as.data.frame(Rducks:::rducks_arrow_ipc_decode_stream(native_payload))
+expect_equal(native_roundtrip, input)

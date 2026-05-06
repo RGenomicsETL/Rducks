@@ -1191,18 +1191,15 @@ rducks_arrow_result_array <- function(type, results, output_schema, n) {
 }
 
 rducks_arrow_ipc_encode <- function(data) {
-  if (inherits(data, "nanoarrow_array")) {
-    getNamespace("nanoarrow")
-    dll <- getLoadedDLLs()[["nanoarrow"]]
-    if (is.null(dll) || is.null(dll[["path"]])) {
-      stop("nanoarrow shared library is not loaded", call. = FALSE)
-    }
-    return(.Call(RDUCKS_arrow_ipc_encode_array, data, dll[["path"]]))
+  if (!inherits(data, "nanoarrow_array")) {
+    stop("Arrow IPC native path requires a nanoarrow_array", call. = FALSE)
   }
-  con <- rawConnection(raw(), open = "wb")
-  on.exit(close(con), add = TRUE)
-  nanoarrow::write_nanoarrow(data, con)
-  rawConnectionValue(con)
+  getNamespace("nanoarrow")
+  dll <- getLoadedDLLs()[["nanoarrow"]]
+  if (is.null(dll) || is.null(dll[["path"]])) {
+    stop("nanoarrow shared library is not loaded", call. = FALSE)
+  }
+  .Call(RDUCKS_arrow_ipc_encode_array, data, dll[["path"]])
 }
 
 rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {

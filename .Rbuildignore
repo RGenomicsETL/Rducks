@@ -11,6 +11,7 @@
 ^Dockerfile\.webr-test$
 ^TODO\.md$
 ^AGENTS\.md$
+^claude_review\.md$
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$
 ^docs$
