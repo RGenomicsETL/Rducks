@@ -645,9 +645,11 @@ Add a webR runtime smoke test harness, not just a build test.
 - The browser smoke installs the built `.tgz` in webR, loads Rducks,
   runs public native/type helpers, and attempts minimal DuckDB extension
   load/register/query when the webR DuckDB runtime supports it.
-- CI execution of this browser smoke remains a separate release
-  hardening step; package docs still avoid claiming webR runtime
-  support.
+- `.github/workflows/webr-smoke.yaml` runs the browser smoke through
+  Chromium/Playwright on push, pull request, and manual dispatch.
+  Package docs still avoid claiming webR runtime support unless that
+  workflow is green for the target runtime and proves extension
+  load/register/query behavior.
 
 Document wasm support level.
 

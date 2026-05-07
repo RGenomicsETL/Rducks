@@ -390,7 +390,8 @@
 <ul><li>
 <code>scripts/start_webr_local_test.sh</code> builds the <code>.tgz</code>, creates a local webR repository, and serves <code>scripts/webr-local-test.html</code>.</li>
 <li>The browser smoke installs the built <code>.tgz</code> in webR, loads Rducks, runs public native/type helpers, and attempts minimal DuckDB extension load/register/query when the webR DuckDB runtime supports it.</li>
-<li>CI execution of this browser smoke remains a separate release hardening step; package docs still avoid claiming webR runtime support.</li>
+<li>
+<code>.github/workflows/webr-smoke.yaml</code> runs the browser smoke through Chromium/Playwright on push, pull request, and manual dispatch. Package docs still avoid claiming webR runtime support unless that workflow is green for the target runtime and proves extension load/register/query behavior.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Document wasm support level.</label>
