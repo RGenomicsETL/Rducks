@@ -55,7 +55,8 @@
   and
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   now include `r_side_record` to make detached/missing R-side registry
-  metadata explicit.
+  metadata explicit. Native per-UDF hot-path counters are updated with
+  atomics rather than the process-global runtime registry lock.
 - Added
   [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
   to cross-check the native database-scoped execution backend against

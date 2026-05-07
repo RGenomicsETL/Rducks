@@ -12,7 +12,10 @@ callable implementation is replaced in the shared DuckDB database
 catalog rather than being tied to the registering DBI connection. After
 registration, use
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to opt into queued same-process execution.
+to opt into queued same-process execution. For `arrow_ipc` plans with
+`ipc_provider = "mirai"`, the UDF closure and discovered globals are
+copied once to each daemon in the shared provider pool and retained for
+that pool's lifetime.
 
 ## Usage
 

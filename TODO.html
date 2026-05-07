@@ -63,7 +63,7 @@
 <li><label><input type="checkbox" checked>Arrow IPC validation/fallbacks: structural type validation replaces the fake unsupported-type check, and the primary IPC encoder has no rawConnection fallback.</label></li>
 <li><label><input type="checkbox" checked>Result import lifetime: imported Arrow result chunks are copied into callback-owned DuckDB output vectors before temporary chunks are destroyed.</label></li>
 <li><label><input type="checkbox" checked>Production SQL surface: dev/test probes are gated by <code>RDUCKS_DEV_SURFACES=true</code>; production backend mutation requires the recorded main-thread capability.</label></li>
-<li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed.</label></li>
+<li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed. Per-UDF hot-path counters use atomics rather than the process-global runtime registry lock.</label></li>
 <li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
 <li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; <code>rducks_mirai_provider()</code> starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. The experimental public <code>ipc_mirai_pool</code> engine is selected with <code>ipc_provider = "mirai"</code>. Mirai pools are shared by database-runtime token and provider shape rather than spawned once per registered UDF.</label></li>
 <li><label><input type="checkbox" checked>No <code>rducks_unregister()</code> API: DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path, and destructive database-scoped removal is not planned for the current package surface. <code>docs/UNREGISTER.md</code> documents the no-unregister policy and intentional catalog/runtime-lifetime retention of preserved R closures.</label></li>
@@ -130,6 +130,7 @@
 <li>Zero-argument vectorized UDFs are not exposed.</li>
 <li>
 <code>side_effects = TRUE</code> marks the DuckDB scalar function volatile; it does not alter R-thread or queue semantics.</li>
+<li>For <code>ipc_provider = "mirai"</code>, UDF closures and discovered globals/packages are broadcast once to every daemon in the shared database-runtime provider pool; users should avoid accidentally capturing very large objects.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="empirical-notes-from-connection-object-checks">Empirical notes from connection-object checks<a class="anchor" aria-label="anchor" href="#empirical-notes-from-connection-object-checks"></a></h2>
