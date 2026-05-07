@@ -375,7 +375,11 @@
 <div class="section level2">
 <h2 id="p3-owned-same-process-chunk-boundaries">P3: owned same-process chunk boundaries<a class="anchor" aria-label="anchor" href="#p3-owned-same-process-chunk-boundaries"></a></h2>
 <p>The current in-process queue is synchronous and borrows DuckDB input/output pointers only for the duration of a scalar UDF callback. That is acceptable for current callbacks, but not for an asynchronous same-process design.</p>
-<ul class="task-list"><li><label><input type="checkbox">Implement owned input snapshots for worker-originating chunk requests.</label></li>
+<ul class="task-list"><li>
+<label><input type="checkbox" checked>Implement owned input snapshots for worker-originating queued direct <code>arrow_c</code> chunk requests.</label>
+<ul><li>Off-main queued <code>RC</code>/<code>RCV</code> callbacks now copy supported direct inputs into an owned DuckDB data chunk with no R API calls before submitting the request to the recorded main R thread. The main thread materializes R arguments from snapshot-owned vector storage. <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> exposes <code>arrow_c_input_snapshot_chunks</code> to prove this path was used.</li>
+<li>This covers direct scalar, temporal, enum/decimal, variable-width, and composite input vectors through DuckDB’s vector-copy API. Arrow/R and RIPC queued requests still use their existing Arrow/IPC payload paths.</li>
+</ul></li>
 <li>
 <label><input type="checkbox">Implement owned result payloads plus safe writeback.</label>
 <ul><li>Queued direct <code>arrow_c</code> scalar and vectorized UDFs with supported scalar return types now evaluate into an owned Arrow C Data result chunk on the recorded main R thread; the waiting worker writes DuckDB output from those Arrow buffers without touching <code>SEXP</code>s or nanoarrow R external pointers. Covered return families include <code>bool</code>, integer widths, floating point, date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL.</li>
@@ -383,8 +387,8 @@
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Split current <code>arrow_c</code> code into explicit worker-safe/native and recorded-main-R-thread phases.</label>
-<ul><li>Scalar <code>arrow_c</code> now snapshots borrowed DuckDB vector views in a no-R-API phase, then runs R argument materialization/evaluation in a named main-thread phase while the callback remains blocked. Queued supported scalar returns use the owned Arrow C Data result payload described above; composite return shapes still use SEXP writeback on the main thread.</li>
-<li>Vectorized <code>arrow_c</code> now has named main-thread prepare/evaluate phases and uses the owned Arrow C Data result payload for queued supported scalar returns. Fully worker-safe vectorized input snapshots still depend on the owned input item above.</li>
+<ul><li>Scalar <code>arrow_c</code> still has a borrowed-view phase for direct serial calls, but queued off-main calls snapshot inputs into owned DuckDB chunks before main-thread R argument materialization/evaluation. Queued supported scalar returns use the owned Arrow C Data result payload described above; composite return shapes still use SEXP writeback on the main thread.</li>
+<li>Vectorized <code>arrow_c</code> now has named main-thread prepare/evaluate phases, owned queued input snapshots, and the owned Arrow C Data result payload for queued supported scalar returns. Composite direct returns still depend on the remaining owned-result item above.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">

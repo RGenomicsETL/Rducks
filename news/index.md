@@ -26,12 +26,12 @@
   submit/collect wave, avoiding the single-request timeout path for
   parallel DuckDB UDF execution.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  now reports queue-pending, RIPC-in-flight, and RIPC submit/collect
-  wave counters for diagnosing whether chunks are actually overlapping.
-  Arrow IPC encoding for nanoarrow arrays now uses a native buffer
-  writer instead of an R `rawConnection`, avoiding large transient
-  allocations. Enum arguments and returns are supported through an
-  explicit Rducks enum-storage IPC convention.
+  now reports queue-pending, `arrow_c` input-snapshot, RIPC-in-flight,
+  and RIPC submit/collect wave counters for diagnosing whether chunks
+  are actually overlapping. Arrow IPC encoding for nanoarrow arrays now
+  uses a native buffer writer instead of an R `rawConnection`, avoiding
+  large transient allocations. Enum arguments and returns are supported
+  through an explicit Rducks enum-storage IPC convention.
 - Added
   [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
   to reset one UDF’s diagnostic counters or all native UDF counters in
@@ -89,13 +89,14 @@
   arguments are materialized from DuckDB vectors in C, return rows are
   written back through the direct writer, and generated marshalling
   coverage verifies the path does not fall back to Arrow/R helpers.
-  Queued direct `arrow_c` scalar and vectorized UDFs with supported
-  scalar returns now evaluate on the recorded main R thread into an
-  owned Arrow C Data result chunk; the waiting worker writes DuckDB
-  output from those Arrow buffers without touching `SEXP`s or nanoarrow
-  R external pointers. The owned return envelope covers primitive,
-  temporal, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and
-  INTERVAL results.
+  Queued direct `arrow_c` scalar and vectorized UDFs now copy input
+  vectors into an owned DuckDB data chunk before the request is
+  submitted to the recorded main R thread. With supported scalar
+  returns, they then evaluate into an owned Arrow C Data result chunk;
+  the waiting worker writes DuckDB output from those Arrow buffers
+  without touching `SEXP`s or nanoarrow R external pointers. The owned
+  return envelope covers primitive, temporal, VARCHAR/BLOB/BIT, DECIMAL,
+  ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL results.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
 - `arrow_c` is now a direct scalar and vectorized marshalling path.
