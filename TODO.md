@@ -60,6 +60,8 @@ what still needs doing.
   mirai daemons, preloads evaluator/schema state, submits only task metadata plus
   Arrow IPC bytes, and returns structured result envelopes. The experimental
   public `ipc_mirai_pool` engine is selected with `ipc_provider = "mirai"`.
+  Mirai pools are shared by database-runtime token and provider shape rather
+  than spawned once per registered UDF.
 - [x] No `rducks_unregister()` API: DuckDB reports extension-created functions
   as internal catalog entries that cannot be dropped through the ordinary
   `DROP FUNCTION` path, and destructive database-scoped removal is not planned
@@ -450,7 +452,9 @@ Still-open or blocked decisions:
     can still opt into per-task discovery with `TRUE`, required-state only with
     `FALSE`, or explicit character/named-list globals.
   - The experimental `ipc_mirai_pool` engine preloads evaluator state and schema
-    once and submits only task id/UDF id/row count/IPC bytes per chunk.
+    once and submits only task id/UDF id/row count/IPC bytes per chunk. UDFs
+    registered in the same database runtime with the same provider shape share a
+    mirai daemon pool.
   - `tools/benchmark_ipc_providers.R` compares `future::multisession`,
     `future.mirai::mirai_multisession`, and direct `ipc_mirai_pool` paths using
     the same provider-level Arrow IPC payload.
@@ -488,11 +492,13 @@ Still-open or blocked decisions:
   propagation.
   - Internal `rducks_mirai_provider()` implements start/stop, register_udf,
     submit, collect_any, collect_many, cancel, and stats using persistent mirai
-    daemons and preloaded UDF records.
+    daemons and preloaded UDF records. Runtime-token keyed provider records are
+    stopped when the last Rducks runtime anchor is released for that database.
   - Focused tinytests cover successful Arrow IPC task execution, structured
-    worker errors, and provider counters. Provider/task counters use numeric
-    increments and formatted ids instead of R integer `+ 1L` increments, avoiding
-    `NA_integer_` wrap in long-lived sessions.
+    worker errors, provider counters, shared runtime-token provider pools, and
+    provider cleanup on `rducks_release()`. Provider/task/UDF counters use
+    numeric increments and formatted ids instead of R integer `+ 1L` increments,
+    avoiding `NA_integer_` wrap in long-lived sessions.
 
 - [x] Wire a persistent worker provider into a public UDF engine with no hidden
   fallback.

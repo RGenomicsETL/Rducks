@@ -5,8 +5,11 @@ multiprocess_parallel`. It discovers UDF globals once at registration/wrapper
 creation time, but still constructs generic Future tasks per DuckDB chunk.
 `ipc_mirai_pool` is the first public experimental persistent-provider engine: it
 starts mirai daemon workers, registers evaluator/schema state once per UDF, then
-submits owned Arrow IPC bytes per chunk. The no-hidden-fallback rule applies to
-both engines.
+submits owned Arrow IPC bytes per chunk. Mirai daemon pools are shared by
+DuckDB database-runtime token and provider shape (`ipc_workers`, dispatcher, and
+`ipc_max_pending`) so registering multiple IPC UDFs in one database does not
+spawn one worker cluster per UDF. The no-hidden-fallback rule applies to both
+engines.
 
 ## Non-goals
 
@@ -77,9 +80,12 @@ The provider must acknowledge registration before query execution can use the
 UDF. The current mirai engine starts and registers lazily on the first callback,
 when DuckDB provides the output schema; registration still fails immediately if
 `mirai` is unavailable. Its accepted-but-uncollected task count is bounded by the
-plan's `ipc_max_pending` setting. For the generic Future adapter,
-acknowledgement is local because workers receive the precomputed globals in each
-task.
+plan's `ipc_max_pending` setting across the shared provider pool. Runtime-token
+keyed mirai provider records are stopped when the last Rducks runtime anchor for
+that database is released (for example through `rducks_release(con)`), and can be
+created again if a preserved catalog UDF is executed later. For the generic
+Future adapter, acknowledgement is local because workers receive the precomputed
+globals in each task.
 
 ## Task envelope
 
@@ -174,6 +180,8 @@ API intentionally abstracts away:
 - return structured result envelopes with task/chunk identity;
 - collect many/any ready tasks for DuckDB callback batching and future
   backpressure work;
+- share daemon pools across UDFs with the same database runtime and provider
+  shape;
 - keep provider cancellation/stats/error accounting under Rducks' control.
 
 If benchmarks or maintenance experience show that these controls do not matter,

@@ -1,8 +1,7 @@
 rducks_mirai_next_udf_id <- function() {
-  counter <- .rducks_state$mirai_udf_counter %||% 0L
-  counter <- counter + 1L
+  counter <- rducks_mirai_counter_next(.rducks_state$mirai_udf_counter)
   .rducks_state$mirai_udf_counter <- counter
-  paste("rducks-mirai-udf", Sys.getpid(), counter, sep = "-")
+  paste("rducks-mirai-udf", Sys.getpid(), rducks_mirai_counter_label(counter), sep = "-")
 }
 
 rducks_arrow_ipc_mirai_submit_arrow_chunk <- function(engine, provider, udf_id,
@@ -101,7 +100,8 @@ rducks_arrow_ipc_mirai_collect_any_arrow_chunks <- function(engine, provider, ta
 
 rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                 mode = c("scalar", "vectorized"),
-                                                plan = rducks_execution_plan()) {
+                                                plan = rducks_execution_plan(),
+                                                runtime_token = NULL) {
   rducks_mirai_require()
   mode <- rducks_match_mode(mode)
   engine <- if (identical(mode, "scalar")) {
@@ -116,23 +116,19 @@ rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, except
   provider_registered <- FALSE
   udf_id <- rducks_mirai_next_udf_id()
   output_schema_spec_cache <- NULL
-  finalizer_env <- new.env(parent = emptyenv())
-  finalizer_env$provider <- NULL
-  reg.finalizer(finalizer_env, function(env) {
-    if (!is.null(env$provider)) try(env$provider$stop(), silent = TRUE)
-  }, onexit = TRUE)
+  runtime_token <- runtime_token %||% paste("process", Sys.getpid(), sep = "-")
 
   ensure_provider <- function(output_schema) {
     if (is.null(output_schema_spec_cache)) {
       output_schema_spec_cache <<- rducks_arrow_schema_to_spec(output_schema)
     }
     if (is.null(provider)) {
-      provider <<- rducks_mirai_provider(
+      provider <<- rducks_mirai_provider_for_runtime(
+        runtime_token = runtime_token,
         workers = engine$plan$ipc_workers %||% 1L,
         max_pending = engine$plan$ipc_max_pending %||% 64L
       )
       provider$start(engine$plan)
-      finalizer_env$provider <- provider
     }
     if (!isTRUE(provider_registered)) {
       tryCatch({
@@ -151,9 +147,7 @@ rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, except
         )
         provider_registered <<- TRUE
       }, error = function(e) {
-        try(provider$stop(), silent = TRUE)
         provider <<- NULL
-        finalizer_env$provider <- NULL
         stop(e)
       })
     }
@@ -231,17 +225,24 @@ rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, except
         .rducks_state$last_arrow_error <- msg
         rducks_arrow_error(msg)
       })
-    },
-    .finalizer = finalizer_env
+    }
   )
 }
 
 rducks_make_arrow_ipc_mirai_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
-                                                       plan = rducks_execution_plan()) {
-  rducks_make_arrow_ipc_mirai_wrapper(fun, spec, null_handling, exception_handling, mode = "scalar", plan = plan)
+                                                       plan = rducks_execution_plan(),
+                                                       runtime_token = NULL) {
+  rducks_make_arrow_ipc_mirai_wrapper(
+    fun, spec, null_handling, exception_handling,
+    mode = "scalar", plan = plan, runtime_token = runtime_token
+  )
 }
 
 rducks_make_arrow_ipc_mirai_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
-                                                           plan = rducks_execution_plan()) {
-  rducks_make_arrow_ipc_mirai_wrapper(fun, spec, null_handling, exception_handling, mode = "vectorized", plan = plan)
+                                                           plan = rducks_execution_plan(),
+                                                           runtime_token = NULL) {
+  rducks_make_arrow_ipc_mirai_wrapper(
+    fun, spec, null_handling, exception_handling,
+    mode = "vectorized", plan = plan, runtime_token = runtime_token
+  )
 }

@@ -351,6 +351,7 @@ rducks_cleanup_runtime_anchor <- function(db_token, token) {
   anchor_env <- get(db_token, envir = store, inherits = FALSE)
   rducks_remove_store_entry(anchor_env, token)
   if (rducks_runtime_anchor_empty(anchor_env)) {
+    rducks_mirai_stop_runtime_providers(db_token)
     rducks_remove_store_entry(store, db_token)
     rducks_remove_store_entry(.rducks_state$registrations, db_token)
   }

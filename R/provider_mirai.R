@@ -32,6 +32,69 @@ rducks_mirai_sleep_until_deadline <- function(deadline, max_sleep = 0.01) {
   invisible(TRUE)
 }
 
+rducks_mirai_provider_store <- function() {
+  store <- .rducks_state$mirai_providers
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv())
+    .rducks_state$mirai_providers <- store
+  }
+  store
+}
+
+rducks_mirai_provider_key <- function(runtime_token, workers, max_pending, dispatcher = TRUE) {
+  paste(
+    runtime_token %||% paste("process", Sys.getpid(), sep = "-"),
+    as.character(workers),
+    as.character(max_pending %||% Inf),
+    if (isTRUE(dispatcher)) "dispatcher" else "direct",
+    sep = "\r"
+  )
+}
+
+rducks_mirai_provider_for_runtime <- function(runtime_token, workers, max_pending, dispatcher = TRUE) {
+  runtime_token <- runtime_token %||% paste("process", Sys.getpid(), sep = "-")
+  key <- rducks_mirai_provider_key(runtime_token, workers, max_pending, dispatcher)
+  store <- rducks_mirai_provider_store()
+  if (exists(key, envir = store, inherits = FALSE)) {
+    return(get(key, envir = store, inherits = FALSE)$provider)
+  }
+  provider <- rducks_mirai_provider(
+    workers = workers,
+    dispatcher = dispatcher,
+    max_pending = max_pending
+  )
+  assign(
+    key,
+    list(
+      runtime_token = runtime_token,
+      workers = workers,
+      max_pending = max_pending,
+      dispatcher = dispatcher,
+      provider = provider
+    ),
+    envir = store
+  )
+  provider
+}
+
+rducks_mirai_stop_runtime_providers <- function(runtime_token = NULL) {
+  store <- .rducks_state$mirai_providers
+  if (is.null(store)) return(invisible(NULL))
+  keys <- ls(store, all.names = TRUE)
+  for (key in keys) {
+    record <- get(key, envir = store, inherits = FALSE)
+    if (is.null(runtime_token) || identical(record$runtime_token, runtime_token)) {
+      try(record$provider$stop(), silent = TRUE)
+      rm(list = key, envir = store)
+    }
+  }
+  invisible(NULL)
+}
+
+rducks_mirai_stop_all_providers <- function() {
+  rducks_mirai_stop_runtime_providers(NULL)
+}
+
 rducks_mirai_worker_globals <- function(fun, globals) {
   if (identical(globals, "auto") || isTRUE(globals)) {
     return(rducks_future_precompute_worker_globals(fun, "auto"))

@@ -10,9 +10,12 @@
   and written back without waiting for slower tasks in the same submitted group.
   `tools/benchmark_ipc_providers.R` compares this direct provider path with both
   `future::multisession` and `future.mirai::mirai_multisession`. The mirai
-  provider now uses wrap-resistant numeric task/provider counters and uses
-  mirai's blocking wait primitives for no-deadline `collect_many()` /
-  `collect_any()` calls instead of scanning tasks with a 1 ms sleep loop.
+  provider now reuses one daemon pool for registrations with the same database
+  runtime token and provider shape, stops database-scoped pools on
+  `rducks_release()`/runtime-anchor cleanup, uses wrap-resistant numeric
+  task/provider/UDF counters, and uses mirai's blocking wait primitives for
+  no-deadline `collect_many()` / `collect_any()` calls instead of scanning tasks
+  with a 1 ms sleep loop.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
   rows inside the worker, vectorized registrations call once per chunk, and the

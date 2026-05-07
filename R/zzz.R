@@ -36,5 +36,9 @@ rducks_cache_nanoarrow_dll_path <- function() {
     rducks_cache_nanoarrow_dll_path(),
     error = function(e) NULL
   )
+  reg.finalizer(.rducks_state, function(env) {
+    rducks_mirai_stop_all_providers()
+    invisible(NULL)
+  }, onexit = TRUE)
   S7::methods_register()
 }
