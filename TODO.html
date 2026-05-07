@@ -65,8 +65,8 @@
 <li><label><input type="checkbox" checked>Production SQL surface: dev/test probes are gated by <code>RDUCKS_DEV_SURFACES=true</code>; production backend mutation requires the recorded main-thread capability.</label></li>
 <li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed.</label></li>
 <li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
-<li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; an internal <code>rducks_mirai_provider()</code> prototype now starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. Wiring a persistent provider into a public UDF engine remains a separate open item below.</label></li>
-<li><label><input type="checkbox"><code>rducks_unregister()</code>: not implemented; DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path. <code>docs/UNREGISTER.md</code> now documents the blocked C-API constraint and required future database-scoped destructive semantics.</label></li>
+<li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; <code>rducks_mirai_provider()</code> starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. The experimental public <code>ipc_mirai_pool</code> engine is selected with <code>ipc_provider = "mirai"</code>.</label></li>
+<li><label><input type="checkbox" checked>No <code>rducks_unregister()</code> API: DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path, and destructive database-scoped removal is not planned for the current package surface. <code>docs/UNREGISTER.md</code> documents the no-unregister policy and intentional catalog/runtime-lifetime retention of preserved R closures.</label></li>
 <li>
 <label><input type="checkbox" checked><code>R/arrow_bridge.R</code> split: core split done.</label>
 <ul><li>
@@ -74,7 +74,7 @@
 <li>
 <code>R/aaa_eval_scalar.R</code> and <code>R/aaa_eval_vectorized.R</code> hold scalar/vectorized evaluation helpers and load before <code>R/arrow_bridge.R</code> top-level aliases.</li>
 <li>
-<code>R/ipc_codec.R</code> holds IPC codec helpers and <code>R/provider_future.R</code> holds the generic Future provider. <code>R/arrow_bridge.R</code> now focuses on engine/wrapper construction.</li>
+<code>R/ipc_codec.R</code> holds IPC codec helpers, <code>R/provider_future.R</code> holds the generic Future provider, and <code>R/provider_mirai.R</code> / <code>R/provider_mirai_engine.R</code> hold the persistent mirai provider and UDF-engine wrapper. <code>R/arrow_bridge.R</code> stays focused on common engine/wrapper construction.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
@@ -121,10 +121,10 @@
 </tr><tr><td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>Future-backed Arrow IPC path, evaluator <code>RIPC</code>
+<td>Arrow IPC path through <code>ipc_future_pool</code> or experimental <code>ipc_mirai_pool</code>, evaluator <code>RIPC</code>
 </td>
 </tr></tbody></table><p>Implemented behavior to preserve:</p>
-<ul><li>Every valid <code>marshalling + concurrency</code> pair maps to a concrete <code>engine_id</code>: <code>arrow_r_serial</code>, <code>arrow_r_main_queue</code>, <code>arrow_c_direct_serial</code>, <code>arrow_c_direct_main_queue</code>, or <code>ipc_future_pool</code>. These engine ids are accepted as internal shortcuts while the user-facing pair API remains stable.</li>
+<ul><li>Every valid <code>marshalling + concurrency</code> pair maps to a concrete <code>engine_id</code>: <code>arrow_r_serial</code>, <code>arrow_r_main_queue</code>, <code>arrow_c_direct_serial</code>, <code>arrow_c_direct_main_queue</code>, <code>ipc_future_pool</code>, or <code>ipc_mirai_pool</code>. These engine ids are accepted as internal shortcuts while the user-facing pair API remains stable.</li>
 <li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, <code>RCV</code>, or <code>RIPC</code>). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
 <li>Zero-argument scalar UDFs use <code>args = NULL</code>.</li>
 <li>Zero-argument vectorized UDFs are not exposed.</li>
@@ -165,7 +165,7 @@
 <ul><li>
 <strong>Native runtime reclamation:</strong> DuckDB’s C extension API still does not expose a safe database-close hook for deterministic reclamation of process-lifetime native runtime entries and successful extension-owned connections. Rducks exposes retention/accounting diagnostics and keeps R-side release non-destructive.</li>
 <li>
-<strong>Destructive unregister:</strong> ordinary <code>DROP FUNCTION</code> cannot drop extension-created internal catalog entries, and no supported DuckDB C API removal path is identified. <code>docs/UNREGISTER.md</code> records the exact-entry, overload, and atomicity requirements before any <code>rducks_unregister()</code> implementation.</li>
+<strong>No unregister API:</strong> ordinary <code>DROP FUNCTION</code> cannot drop extension-created internal catalog entries, and destructive database-scoped removal is not part of the supported package surface. Catalog-owned R closures may be retained for the database/runtime lifetime rather than being released from connection cleanup.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="p0-connection-identity-and-lifecycle">P0: connection identity and lifecycle<a class="anchor" aria-label="anchor" href="#p0-connection-identity-and-lifecycle"></a></h2>
@@ -254,7 +254,7 @@
 <li>
 <label><input type="checkbox" checked>Add generated matrix no-fallback coverage for every supported scalar, DECIMAL, ENUM, LIST, ARRAY, STRUCT, MAP, and UNION direct type.</label>
 <ul><li>Acceptance: <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> shows <code>arrow_c_chunks &gt; 0</code> and <code>arrow_r_chunks == 0</code> for supported scalar and vectorized <code>arrow_c</code> cases. Vectorized <code>arrow_c</code> uses <code>RCV</code> direct native materialization rather than the old Arrow/R helper bridge.</li>
-<li>The generated matrix now asserts the expected direct-support allowlist and runs scalar <code>arrow_c</code> no-fallback counter checks for descriptors that the direct-support predicate accepts, including default/special NULL handling and <code>exception_handling = "return_null"</code> smoke cases.</li>
+<li>The generated matrix now asserts the expected direct-support allowlist and runs scalar/vectorized no-fallback counter checks for descriptors that the direct-support predicates accept, including default/special NULL handling and <code>exception_handling = "return_null"</code> smoke cases. Latest run: 1213 cases.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Implement native direct <code>arrow_c</code> composite/union marshalling.</label>
@@ -338,9 +338,15 @@
 <ul><li>Arrow IPC Future wrappers cache the output schema spec at registration wrapper scope after the first chunk, avoiding repeated schema-to-list conversion on every submission.</li>
 <li>
 <code>future_globals</code> now defaults to <code>"auto"</code>, so generic Future UDF globals are discovered once at wrapper creation and chunk submissions send explicit worker state instead of running automatic global discovery every time. Users can still opt into per-task discovery with <code>TRUE</code>, required-state only with <code>FALSE</code>, or explicit character/named-list globals.</li>
-<li>An internal mirai-provider prototype demonstrates preloading evaluator state and schemas once and submitting only task id/UDF id/row count/IPC bytes per chunk. Public UDF-engine integration remains open below.</li>
+<li>The experimental <code>ipc_mirai_pool</code> engine preloads evaluator state and schema once and submits only task id/UDF id/row count/IPC bytes per chunk.</li>
+<li>
+<code>tools/benchmark_ipc_providers.R</code> compares <code><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">future::multisession</a></code>, <code><a href="https://future.mirai.futureverse.org/reference/mirai_multisession.html" class="external-link">future.mirai::mirai_multisession</a></code>, and direct <code>ipc_mirai_pool</code> paths using the same provider-level Arrow IPC payload.</li>
 </ul></li>
-<li><p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p></li>
+<li>
+<p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p>
+<ul><li>
+<code>ipc_mirai_pool</code> now has provider-level backpressure via <code>ipc_max_pending</code>, so persistent workers cannot accumulate unbounded accepted-but-uncollected tasks. Larger collect-any scheduling remains open.</li>
+</ul></li>
 <li>
 <p><label><input type="checkbox" checked>Specify a persistent worker/request envelope if generic <code>future</code> is not enough.</label></p>
 <ul><li>
@@ -357,7 +363,12 @@
 <ul><li>Internal <code>rducks_mirai_provider()</code> implements start/stop, register_udf, submit, collect_any, collect_many, cancel, and stats using persistent mirai daemons and preloaded UDF records.</li>
 <li>Focused tinytests cover successful Arrow IPC task execution, structured worker errors, and provider counters.</li>
 </ul></li>
-<li><p><label><input type="checkbox">Wire a persistent worker provider into a public UDF engine with bounded backpressure and no hidden fallback.</label></p></li>
+<li>
+<p><label><input type="checkbox" checked>Wire a persistent worker provider into a public UDF engine with no hidden fallback.</label></p>
+<ul><li>
+<code>rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai")</code> selects <code>ipc_mirai_pool</code>.</li>
+<li>The first implementation uses the existing RIPC callback/writeback path and mirai task envelopes. Bounded backpressure remains part of the batching item above rather than a hidden fallback.</li>
+</ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="p3-owned-same-process-chunk-boundaries">P3: owned same-process chunk boundaries<a class="anchor" aria-label="anchor" href="#p3-owned-same-process-chunk-boundaries"></a></h2>
@@ -370,13 +381,16 @@
 <h2 id="wasm--webr">Wasm / webR<a class="anchor" aria-label="anchor" href="#wasm--webr"></a></h2>
 <ul class="task-list"><li><label><input type="checkbox" checked>wasm builds on R-universe for the current baseline.</label></li>
 <li>
-<label><input type="checkbox">Add a webR runtime smoke test, not just a build test.</label>
-<ul><li>Install the built <code>.tgz</code> in webR and run at least package load, native helper calls, and a minimal DuckDB extension load if supported.</li>
+<label><input type="checkbox" checked>Add a webR runtime smoke test harness, not just a build test.</label>
+<ul><li>
+<code>scripts/start_webr_local_test.sh</code> builds the <code>.tgz</code>, creates a local webR repository, and serves <code>scripts/webr-local-test.html</code>.</li>
+<li>The browser smoke installs the built <code>.tgz</code> in webR, loads Rducks, runs public native/type helpers, and attempts minimal DuckDB extension load/register/query when the webR DuckDB runtime supports it.</li>
+<li>CI execution of this browser smoke remains a separate release hardening step; package docs still avoid claiming webR runtime support.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Document wasm support level.</label>
 <ul><li>
-<code>docs/WASM.md</code> clarifies that wasm/webR support is experimental/build-only for now and must not be claimed as runtime-supported until a real extension-load/register/query smoke test is committed.</li>
+<code>docs/WASM.md</code> clarifies that wasm/webR support remains experimental and must not be claimed as runtime-supported until the local browser smoke is run in CI and proves extension-load/register/query behavior.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">

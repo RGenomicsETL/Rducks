@@ -62,7 +62,10 @@ argument/return types, NULL handling, error handling, and side effects.</p>
 <span>  future_seed <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  future_stdout <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  future_conditions <span class="op">=</span> <span class="st">"condition"</span>,</span>
-<span>  future_timeout <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  future_timeout <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ipc_provider <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"future"</span>, <span class="st">"mirai"</span><span class="op">)</span>,</span>
+<span>  ipc_workers <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>  ipc_max_pending <span class="op">=</span> <span class="fl">64L</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -93,7 +96,26 @@ sends explicit worker state per chunk, avoiding per-chunk automatic global
 discovery. Use <code>future_packages</code> for packages that workers should attach,
 <code>future_globals = TRUE</code> for Future's per-task discovery, <code>FALSE</code> for only
 Rducks' required task state, or a character vector/named list for explicit
-extra globals.</p></dd>
+extra globals. <code>future_timeout</code> is also used as the Arrow IPC provider wait
+timeout. The persistent mirai provider preloads the same discovered
+globals/packages once per provider registration.</p></dd>
+
+
+<dt id="arg-ipc-provider">ipc_provider<a class="anchor" aria-label="anchor" href="#arg-ipc-provider"></a></dt>
+<dd><p>Worker provider for <code>arrow_ipc + multiprocess_parallel</code>.
+<code>"future"</code> is the portable default. <code>"mirai"</code> uses persistent mirai daemon
+workers and fails at registration if the <code>mirai</code> package is unavailable; it
+does not fall back to Future.</p></dd>
+
+
+<dt id="arg-ipc-workers">ipc_workers<a class="anchor" aria-label="anchor" href="#arg-ipc-workers"></a></dt>
+<dd><p>Number of persistent workers for <code>ipc_provider = "mirai"</code>.</p></dd>
+
+
+<dt id="arg-ipc-max-pending">ipc_max_pending<a class="anchor" aria-label="anchor" href="#arg-ipc-max-pending"></a></dt>
+<dd><p>Maximum accepted but uncollected tasks for the
+persistent provider. The default bounds provider memory/use of outstanding
+callback work; <code>NULL</code> disables this provider-level limit.</p></dd>
 
 </dl></div>
     <div class="section level2">

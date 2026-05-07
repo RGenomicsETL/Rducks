@@ -16,7 +16,8 @@ plans:
   evaluator uses direct native chunk materialization/writeback, not the
   old Arrow/R helper bridge.
 - `arrow_ipc`: process-isolated R execution using Arrow IPC
-  request/result payloads and a generic Future backend.
+  request/result payloads through generic Future or experimental
+  persistent mirai workers.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
@@ -77,6 +78,10 @@ current default plan and R-side runtime anchor. It is non-destructive:
 it does not drop DuckDB catalog functions and does not release closures
 still owned by native catalog metadata. Call it before
 `DBI::dbDisconnect(con)` when you want deterministic R-side cleanup.
+Rducks does not provide `rducks_unregister()`; registered catalog UDFs
+and their preserved R closures are intentionally retained for the
+database/runtime lifetime or until the same SQL name/signature is
+replaced.
 
 ``` r
 
@@ -136,25 +141,17 @@ guarantee.
 
 ``` r
 
-bench_n <- 10000L
-bench_result <- bench::mark(
-  scalar = DBI::dbGetQuery(
-    con,
-    sprintf("SELECT sum(r_plus_one(i::DOUBLE)) AS x FROM range(%d) AS t(i)", bench_n)
-  ),
-  vectorized = DBI::dbGetQuery(
-    con,
-    sprintf("SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(%d) AS t(i)", bench_n)
-  ),
+bench::mark(
+  scalar = dbGetQuery(con, "SELECT sum(r_plus_one(i::DOUBLE)) AS x FROM range(10000) AS t(i)"),
+  vectorized = dbGetQuery(con, "SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(10000) AS t(i)"),
   iterations = 3,
   check = FALSE
-)
-bench_result[, c("expression", "median", "itr/sec", "mem_alloc")]
+)[, c("expression", "median", "itr/sec", "mem_alloc")]
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.44    1.97MB
-#> 2 vectorized    232ms      4.29    2.34MB
+#> 1 scalar        291ms      3.44    1.97MB
+#> 2 vectorized    231ms      4.34    2.34MB
 ```
 
 ## Execution plans
@@ -173,7 +170,7 @@ changes do not retarget already-registered UDFs.
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
 | `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
 | `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
-| `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through the active Future backend; evaluator token `RIPC` |
+| `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through `ipc_future_pool` or experimental `ipc_mirai_pool`; evaluator token `RIPC` |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans
 are tested against it and do not silently fall back to another
@@ -195,86 +192,36 @@ rducks_explain_udf(con, "r_vec_plus_one")[, c(
 
 ## In-process queued execution
 
-Register UDFs in the registration-safe configuration. Then call
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to switch query execution to the explicit in-process queue. This is a
-liveness and scheduling feature for same-process callbacks; it still
-serializes R API work on the recorded main R thread.
-
-DuckDB interprets `external_threads` as threads supplied by the caller
-rather than DuckDB-created worker threads. For stress tests, prefer
-settings such as `threads = 4, external_threads = 1`; do not set
-`external_threads = threads` unless you intentionally want no
-DuckDB-created worker pool.
-
-The example below uses a DuckDB table scan, not an Rducks table source.
-It is a diagnostic, not a speed benchmark. The `rducks_thread_is_main()`
-probe is a `RDUCKS_DEV_SURFACES=true` development diagnostic and shows
-whether DuckDB evaluated a scan on the recorded main R thread or on
-DuckDB worker threads. To run this probe yourself, set
-`RDUCKS_DEV_SURFACES=true` before the first
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)/extension
-load in the session. The UDF query then runs over the same table and the
-queue counters show how many DuckDB chunks were routed through the
-in-process queue. Do not infer an expected speed gain from this mode: R
-API work is still serialized on the recorded main R thread, and the
-queue plus Arrow marshalling add overhead.
+lets DuckDB worker threads enqueue same-process R calls while the
+recorded main R thread drains the queue. This is for safety and
+liveness, not automatic speed: R API work still runs on the main thread.
 
 ``` r
 
-reg_inproc_plus_one <- rducks_register(
+rducks_register(
   con,
   name = "r_inproc_plus_one",
   fun = function(x) x + 1,
   args = DOUBLE,
   returns = DOUBLE
 )
+#> <rducks_registration>
+#>   registered: yes
+#>   name:       r_inproc_plus_one
+#>   mode:       scalar
+#>   plan:       arrow_r+serial
+#>   signature:  r_inproc_plus_one(DOUBLE) -> DOUBLE
 
 rducks_enable_inproc(con, threads = 4, external_threads = 1)
-rducks_current_execution_plan(con)$plan_id
-#> [1] "arrow_r+inproc_concurrent"
-
-dbGetQuery(
-  con,
-  "SELECT current_setting('threads') AS threads, current_setting('external_threads') AS external_threads"
-)
-#>   threads external_threads
-#> 1       4                1
-
-inproc_n <- 200000L
-invisible(DBI::dbExecute(
-  con,
-  sprintf(
-    "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x, i::UBIGINT AS tid FROM range(%d) AS t(i)",
-    inproc_n
-  )
-))
-
-dbGetQuery(
-  con,
-  paste(
-    "SELECT count(*)::VARCHAR AS rows,",
-    "sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END)::VARCHAR AS main_thread_rows,",
-    "(count(*) - sum(CASE WHEN rducks_thread_is_main(tid) THEN 1 ELSE 0 END))::VARCHAR AS worker_thread_rows",
-    "FROM inproc_input"
-  )
-)
-#>     rows main_thread_rows worker_thread_rows
-#> 1 200000           122880              77120
-
-stats0 <- rducks_inproc_stats(con)
+dbExecute(con, "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)")
+#> [1] 2e+05
 dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
 #>         total
 #> 1 20000100000
-stats1 <- rducks_inproc_stats(con)
-stats1 - stats0
-#>   submitted executed timeouts pending_current pending_max running_current
-#> 1        38       38        0               0           1               0
-#>   running_max main_drains main_drain_batches main_drain_max_batch
-#> 1           1         120                 38                    1
-#>   pending_timeout_ms running_timeout_supported
-#> 1                  0                         0
-
+rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain_batches")]
+#>   submitted executed pending_max main_drain_batches
+#> 1        38       38           1                 38
 rducks_disable_inproc(con, threads = 1)
 ```
 
@@ -283,7 +230,8 @@ rducks_disable_inproc(con, threads = 1)
 `arrow_ipc + multiprocess_parallel` uses Arrow IPC bytes for chunk tasks
 and results. Scalar mode loops over rows inside the worker process;
 vectorized mode calls the R function once per chunk inside the worker
-process. Configure the Future backend before executing queries.
+process. The default provider is generic Future;
+`ipc_provider = "mirai"` uses persistent mirai workers.
 
 ``` r
 
@@ -324,240 +272,82 @@ rducks_explain_udf(con, "r_ipc_plus_one")[, c(
 ```
 
 For `arrow_ipc + multiprocess_parallel`, the native extension submits
-Arrow IPC chunk work through the Future-backed RIPC path and imports the
+Arrow IPC chunk work through the RIPC provider path and imports the
 returned Arrow IPC result into DuckDB. When a RIPC callback runs on the
 recorded main R thread, it can submit its own chunk and queued worker
 chunks before grouped collection. The `ripc_collect_max_batch`,
 `ripc_submit_wave_max`, and `ripc_collect_ready_max` counters report
 native queue batch/wave sizes.
 
-### DuckDB table-scan no-op benchmark
+### Persistent mirai workers
 
-This benchmark uses a DuckDB table scan over a table created from
-[`range()`](https://rdrr.io/r/base/range.html), not an Rducks table
-source. The `parallel_probe` query verifies that DuckDB actually uses a
-non-main worker thread for this table scan before timing the no-op UDF.
+The experimental `ipc_mirai_pool` engine keeps worker processes alive
+and preloads UDF state once per worker.
 
 ``` r
 
-arrow_ipc_noop_benchmark <- local({
-  future::plan(future::multisession, workers = 4)
+mirai_plan <- rducks_execution_plan(
+  "arrow_ipc", "multiprocess_parallel",
+  ipc_provider = "mirai",
+  ipc_workers = 1,
+  ipc_max_pending = 64,
+  future_timeout = 30
+)
+rducks_set_execution_plan(con, mirai_plan)
 
-  bench_con <- DBI::dbConnect(
-    duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
-    dbdir = ":memory:"
-  )
-  on.exit({
-    rducks_release(bench_con)
-    DBI::dbDisconnect(bench_con, shutdown = TRUE)
-  }, add = TRUE)
+reg_mirai_plus_one <- rducks_register(
+  con,
+  name = "r_mirai_plus_one",
+  fun = function(x) x + 1L,
+  args = INTEGER,
+  returns = INTEGER,
+  mode = "vectorized",
+  side_effects = TRUE
+)
 
-  rducks_enable(bench_con, threads = "single")
-  bench_plan <- rducks_execution_plan(
-    "arrow_ipc", "multiprocess_parallel",
-    future_timeout = 120
-  )
-
-  bench_n <- 200000L
-  DBI::dbExecute(
-    bench_con,
-    sprintf(
-      "CREATE TABLE bench_input AS SELECT i::BIGINT AS i FROM range(%d) AS t(i)",
-      bench_n
-    )
-  )
-  DBI::dbExecute(bench_con, "PRAGMA threads=5")
-  DBI::dbExecute(bench_con, "SET external_threads=1")
-  parallel_probe <- DBI::dbGetQuery(
-    bench_con,
-    paste(
-      "SELECT count(*) AS rows,",
-      "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows",
-      "FROM bench_input"
-    )
-  )
-  stopifnot(parallel_probe$main_thread_rows[[1L]] < parallel_probe$rows[[1L]])
-
-  rducks_set_execution_plan(bench_con, bench_plan, threads = 1L, external_threads = 1L)
-  invisible(rducks_register(
-    bench_con,
-    name = "r_ipc_noop_bench",
-    fun = function(x) as.numeric(x) + 1,
-    args = BIGINT,
-    returns = DOUBLE,
-    mode = "vectorized",
-    side_effects = FALSE
-  ))
-
-  expected <- DBI::dbGetQuery(bench_con, "SELECT sum(i + 1) AS x FROM bench_input")$x[[1L]]
-  sql <- "SELECT sum(r_ipc_noop_bench(i)) AS x FROM bench_input"
-
-  time_query <- function(threads) {
-    rducks_set_execution_plan(
-      bench_con, bench_plan,
-      threads = threads,
-      external_threads = 1L
-    )
-    invisible(DBI::dbGetQuery(bench_con, sql)) # warm this execution shape
-    elapsed <- system.time(out <- DBI::dbGetQuery(bench_con, sql))[["elapsed"]]
-    stopifnot(isTRUE(all.equal(as.numeric(out$x), as.numeric(expected))))
-    elapsed
-  }
-
-  elapsed <- data.frame(
-    mode = c("threads=1", "threads=5"),
-    elapsed_seconds = c(time_query(1L), time_query(5L))
-  )
-  elapsed$speedup_vs_threads_1 <- elapsed$elapsed_seconds[[1L]] / elapsed$elapsed_seconds
-
-  diagnostics <- rducks_explain_udf(bench_con, "r_ipc_noop_bench")[, c(
-    "queue_pending_max", "ripc_inflight_max", "ripc_submit_wave_max",
-    "ripc_collect_ready_max", "ripc_collect_max_batch"
-  )]
-
-  list(
-    parallel_probe = parallel_probe,
-    elapsed = elapsed,
-    diagnostics = diagnostics
-  )
-})
-
-arrow_ipc_noop_benchmark$parallel_probe
-#>    rows main_thread_rows
-#> 1 2e+05           122880
-arrow_ipc_noop_benchmark$elapsed
-#>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1          10.453             1.000000
-#> 2 threads=5           6.549             1.596122
-arrow_ipc_noop_benchmark$diagnostics
-#>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
-#> 1                 1                 2                    2
-#>   ripc_collect_ready_max ripc_collect_max_batch
-#> 1                      2                      2
+dbGetQuery(con, "SELECT sum(r_mirai_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)")
+#>          x
+#> 1 50005000
+rducks_explain_udf(con, "r_mirai_plus_one")[, c("engine_id", "evaluator", "arrow_ipc_chunks")]
+#>        engine_id evaluator arrow_ipc_chunks
+#> 1 ipc_mirai_pool      RIPC                5
 ```
 
-### DuckDB multi-file sleep benchmark
+A local provider-level run (`tools/benchmark_ipc_providers.R`) with one
+worker, 50 tasks, three iterations, and 64 rows per Arrow IPC task
+measured:
 
-This benchmark uses DuckDB input: four temporary CSV files read by
-DuckDB’s `read_csv()` table function. The UDF sleeps for 0.50 seconds
-once per vectorized DuckDB chunk. The probe again checks that the source
-runs on a non-main worker thread before timing the UDF query.
+| provider path | median seconds | relative to [`future::multisession`](https://future.futureverse.org/reference/multisession.html) |
+|----|---:|---:|
+| [`future::multisession`](https://future.futureverse.org/reference/multisession.html) through `ipc_future_pool` | 0.222 | 1.00x |
+| [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html) through `ipc_future_pool` | 0.219 | 1.01x |
+| `ipc_mirai_pool`, sequential submit/collect | 0.193 | 1.15x |
+| `ipc_mirai_pool`, batched submit/collect | 0.152 | 1.46x |
+
+Those numbers are diagnostics for this machine, not a portable promise.
+`future.mirai` is a useful drop-in Future backend for `ipc_future_pool`.
+The separate `ipc_mirai_pool` engine exists to use Rducks’ provider
+envelope directly: preload evaluator/schema state once, submit only task
+metadata plus Arrow IPC bytes, return structured task results, and
+support collect-many/collect-any style scheduling without routing every
+chunk through the generic Future API. It remains experimental while
+backpressure and cancellation semantics are hardened.
+
+### Performance diagnostics
+
+Long-running benchmarks and provider-level diagnostics live under
+`tools/` rather than in the README. For cheap UDFs,
+`multiprocess_parallel` is often slower than serial execution because
+Arrow IPC and scheduler overhead dominate the R work. Use it when the R
+function is expensive enough, or when process isolation matters.
+
+Switch back to the reference serial plan for the remaining examples.
 
 ``` r
 
-arrow_ipc_sleep_benchmark <- local({
-  future::plan(future::multisession, workers = 4)
-
-  bench_con <- DBI::dbConnect(
-    duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
-    dbdir = ":memory:"
-  )
-  on.exit({
-    rducks_release(bench_con)
-    DBI::dbDisconnect(bench_con, shutdown = TRUE)
-  }, add = TRUE)
-
-  rducks_enable(bench_con, threads = "single")
-  bench_plan <- rducks_execution_plan(
-    "arrow_ipc", "multiprocess_parallel",
-    future_timeout = 120
-  )
-  rducks_set_execution_plan(bench_con, bench_plan)
-
-  csv_dir <- tempfile("rducks-csv-bench-")
-  dir.create(csv_dir)
-  csv_files <- file.path(csv_dir, paste0("part", seq_len(4L), ".csv"))
-  start <- 0L
-  for (file in csv_files) {
-    values <- start + seq_len(1024L) - 1L
-    writeLines(c("i", as.character(values)), file)
-    start <- start + 1024L
-  }
-  csv_paths <- paste(sprintf("'%s'", csv_files), collapse = ",")
-  csv_source <- sprintf(
-    "read_csv([%s], types={'i':'BIGINT'}, header=true)",
-    csv_paths
-  )
-
-  invisible(rducks_register(
-    bench_con,
-    name = "r_ipc_sleep_half_second_bench",
-    fun = function(x) {
-      Sys.sleep(0.50)
-      as.numeric(x) + 1
-    },
-    args = BIGINT,
-    returns = DOUBLE,
-    mode = "vectorized",
-    side_effects = TRUE
-  ))
-
-  DBI::dbExecute(bench_con, "PRAGMA threads=5")
-  DBI::dbExecute(bench_con, "SET external_threads=1")
-  parallel_probe <- DBI::dbGetQuery(
-    bench_con,
-    sprintf(
-      paste(
-        "SELECT count(*) AS rows,",
-        "sum(CASE WHEN rducks_thread_is_main(i::UBIGINT) THEN 1 ELSE 0 END) AS main_thread_rows",
-        "FROM %s"
-      ),
-      csv_source
-    )
-  )
-  stopifnot(parallel_probe$main_thread_rows[[1L]] < parallel_probe$rows[[1L]])
-
-  expected <- 4096L * 4097L / 2
-  sql <- sprintf("SELECT sum(r_ipc_sleep_half_second_bench(i)) AS x FROM %s", csv_source)
-
-  time_query <- function(threads) {
-    rducks_set_execution_plan(
-      bench_con, bench_plan,
-      threads = threads,
-      external_threads = 1L
-    )
-    invisible(DBI::dbGetQuery(bench_con, sql)) # warm this execution shape
-    elapsed <- system.time(out <- DBI::dbGetQuery(bench_con, sql))[["elapsed"]]
-    stopifnot(isTRUE(all.equal(as.numeric(out$x), expected)))
-    elapsed
-  }
-
-  elapsed <- data.frame(
-    mode = c("threads=1", "threads=5"),
-    elapsed_seconds = c(time_query(1L), time_query(5L))
-  )
-  elapsed$speedup_vs_threads_1 <- elapsed$elapsed_seconds[[1L]] / elapsed$elapsed_seconds
-
-  diagnostics <- rducks_explain_udf(bench_con, "r_ipc_sleep_half_second_bench")[, c(
-    "queue_pending_max", "ripc_inflight_max", "ripc_submit_wave_max",
-    "ripc_collect_ready_max", "ripc_collect_max_batch"
-  )]
-
-  list(
-    parallel_probe = parallel_probe,
-    elapsed = elapsed,
-    diagnostics = diagnostics
-  )
-})
-
-arrow_ipc_sleep_benchmark$parallel_probe
-#>   rows main_thread_rows
-#> 1 4096             1024
-arrow_ipc_sleep_benchmark$elapsed
-#>        mode elapsed_seconds speedup_vs_threads_1
-#> 1 threads=1           2.351             1.000000
-#> 2 threads=5           0.667             3.524738
-arrow_ipc_sleep_benchmark$diagnostics
-#>   queue_pending_max ripc_inflight_max ripc_submit_wave_max
-#> 1                 3                 4                    4
-#>   ripc_collect_ready_max ripc_collect_max_batch
-#> 1                      4                      4
+rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+future::plan(future::sequential)
 ```
-
-These timings are diagnostics, not a portable performance promise. In
-particular, cheap UDFs can be slower with `multiprocess_parallel`
-because Arrow IPC and Future scheduling overhead dominate much of the
-work being done.
 
 ## Current scope
 
@@ -608,10 +398,10 @@ structural validation via
 The table below is produced by
 [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md).
 
-| mode | status | call_granularity | input_shape | return_shape | length_semantics | threading | copy_semantics |
-|:---|:---|:---|:---|:---|:---|:---|:---|
-| `scalar` | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | one output value per R function call | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside Future workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport |
-| `vectorized` | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument | one R vector/list of values compatible with the declared return type | return length must equal the number of evaluated rows in the chunk | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the current future backend | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport |
+| mode | status | call_granularity | input_shape | return_shape | null_semantics | length_semantics | error_semantics | threading | copy_semantics | notes |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| scalar | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values | one output value per R function call | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
+| vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument | one R vector/list of values compatible with the declared return type | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet |
 
 ## Type descriptors
 
@@ -652,36 +442,16 @@ homogeneous scalar lists/arrays, SQL `NULL` elements are represented as
 typed `NA` values where the child type has an R `NA` representation;
 nested composite `NULL` values are represented as R `NULL`.
 
-| argument_type | r_type | r_value_passed_to_fun | sql_null_in_function | copy_semantics | notes |
-|:---|:---|:---|:---|:---|:---|
-| `BOOLEAN` | logical | logical(1) | NA | boxed scalar |  |
-| `TINYINT` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
-| `UTINYINT` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
-| `SMALLINT` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
-| `USMALLINT` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
-| `INTEGER` | integer | integer(1) | NA_integer\_ | boxed scalar |  |
-| `UINTEGER` | numeric | numeric(1) | NA_real\_ | boxed scalar | R double |
-| `BIGINT` | rducks_bigint | rducks_bigint scalar | NULL | boxed exact Rducks value object | exact signed 64-bit integer string |
-| `UBIGINT` | rducks_ubigint | rducks_ubigint scalar | NULL | boxed exact Rducks value object | exact unsigned 64-bit integer string |
-| `FLOAT` | numeric | numeric(1) | NA_real\_ | boxed scalar | widened to R double |
-| `DOUBLE` | numeric | numeric(1) | NA_real\_ | boxed scalar |  |
-| `VARCHAR` | character | character(1) | NA_character\_ | string copied into R | string copied into R |
-| `BLOB` | raw | raw vector | NULL | bytes copied into R | bytes copied into R |
-| `DATE` | Date | Date scalar | Date NA | boxed scalar | days since 1970-01-01 |
-| `TIME` | numeric | numeric(1) seconds | NA_real\_ | boxed scalar | microseconds converted to seconds |
-| `TIMESTAMP` | POSIXct | POSIXct scalar | POSIXct NA | boxed scalar | microseconds converted to seconds |
-| `HUGEINT` | rducks_hugeint | rducks_hugeint | NULL | boxed exact Rducks value object | exact Rducks value class |
-| `UHUGEINT` | rducks_uhugeint | rducks_uhugeint | NULL | boxed exact Rducks value object | exact Rducks value class |
-| `UUID` | rducks_uuid | rducks_uuid | NULL | boxed exact Rducks value object | exact Rducks value class |
-| `INTERVAL` | rducks_interval | rducks_interval | NULL | boxed exact Rducks value object | exact Rducks value class |
-| `BIT` | rducks_bits | rducks_bits | NULL | boxed exact Rducks value object | exact Rducks value class |
-| `INTEGER[]` | vector | integer vector | NULL | R vector allocation | homogeneous scalar children use atomic vectors |
-| `BIGINT[3]` | vector | rducks_bigint vector of length 3 | NULL | R vector allocation | fixed-size array; homogeneous scalar children use atomic vectors |
-| `STRUCT(a UUID, b DECIMAL(10, 2))` | list | named list of fields | NULL | recursive R allocation | recursive field mapping |
-| `MAP(VARCHAR, INTEGER)` | list | list(keys = character vector, values = integer vector) | NULL | recursive R allocation | keys and values use sequence mapping |
-| `DECIMAL(10, 2)` | rducks_decimal | rducks_decimal scalar | NULL | boxed exact Rducks value object | exact fixed-point value class |
-| `ENUM('red', 'blue')` | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | factor with enum levels |
-| `UNION(code INTEGER, label VARCHAR)` | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | tagged value object |
+| rducks_type | duckdb_sql | argument_kind | r_type | r_value_passed_to_fun | sql_null_in_function | copy_semantics | uses_r_double_for_integer | uses_r_double_for_float | precision_may_be_lost | notes |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| i32 | INTEGER | scalar | integer | integer(1) | NA_integer\_ | boxed scalar | FALSE | FALSE | FALSE |  |
+| f64 | DOUBLE | scalar | numeric | numeric(1) | NA_real\_ | boxed scalar | FALSE | FALSE | FALSE |  |
+| list | INTEGER\[\] | list | vector | integer vector | NULL | R vector allocation | FALSE | FALSE | FALSE | homogeneous scalar children use atomic vectors |
+| i64\[3\] | BIGINT\[3\] | array | vector | rducks_bigint vector of length 3 | NULL | R vector allocation | FALSE | FALSE | FALSE | fixed-size array; homogeneous scalar children use atomic vectors |
+| struct\<a:uuid;b:decimal\<10;2\>\> | STRUCT(a UUID, b DECIMAL(10, 2)) | struct | list | named list of fields | NULL | recursive R allocation | FALSE | FALSE | FALSE | recursive field mapping |
+| map\<varchar;i32\> | MAP(VARCHAR, INTEGER) | map | list | list(keys = character vector, values = integer vector) | NULL | recursive R allocation | FALSE | FALSE | FALSE | keys and values use sequence mapping |
+| enum\<red\|blue\> | ENUM(‘red’, ‘blue’) | enum | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | factor with enum levels |
+| union\<code:i32;label:varchar\> | UNION(code INTEGER, label VARCHAR) | union | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | tagged value object |
 
 ### NULL, NA, NaN, Inf, and value-class semantics
 
@@ -695,22 +465,16 @@ R `NA` values map to SQL `NULL` when represented by the declared R type.
 `NaN` and `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date,
 time, timestamp, exact, and exotic return paths reject them.
 
-| duckdb_type | sql_null_special | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics |
-|:---|:---|:---|:---|:---|:---|:---|
-| `INTEGER` | NA_integer\_ | NA_integer\_ -\> SQL NULL | error | error | no Rducks-specific binary ops | NaN, Inf, fractional, and out-of-range return values error |
-| `DOUBLE` | NA_real\_ | NA_real\_ -\> SQL NULL | preserved as DuckDB NaN | preserved as DuckDB +/-Inf | ordinary R numeric semantics in the R function | NA is NULL; NaN and Inf are valid DOUBLE values |
-| `BIGINT` | NULL | rducks_bigint(NA) -\> SQL NULL | error | error | rducks_bigint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
-| `UBIGINT` | NULL | rducks_ubigint(NA) -\> SQL NULL | error | error | rducks_ubigint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
-| `HUGEINT` | NULL | rducks_hugeint(NA) -\> SQL NULL | error | error | rducks_hugeint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
-| `UHUGEINT` | NULL | rducks_uhugeint(NA) -\> SQL NULL | error | error | rducks_uhugeint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error |
-| `UUID` | NULL | rducks_uuid(NA) -\> SQL NULL | error | error | no Rducks-specific binary ops | NA UUID values are NULL; malformed UUID text errors |
-| `INTERVAL` | NULL | any NA component in rducks_interval() -\> SQL NULL | error | error | rducks_interval + and -; NA components propagate; component overflow remains an error | NaN/Inf components and months/days/micros outside DuckDB ranges error |
-| `BIT` | NULL | no NA bit payload; use R NULL for SQL NULL | error | error | rducks_bits &, \|, !, rducks_bits_xor(); NA bits are rejected | BIT inputs must contain only 0/1 or TRUE/FALSE; NA bits error |
-| `DECIMAL(10, 2)` | NULL | rducks_decimal(NA, width, scale) -\> SQL NULL | error | error | rducks_decimal +, -, comparisons; NA propagates; matching scales are required | NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error |
-| `ENUM('red', 'blue')` | NULL | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error |
-| `UNION(code INTEGER, label VARCHAR)` | NULL | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error |
-| `STRUCT(amount DECIMAL(10, 2), id BIGINT)` | NULL | field values recurse; scalar field NA values become SQL NULL fields | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | missing fields and field type mismatches error |
-| `MAP(VARCHAR, INTEGER)` | NULL | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error |
+| rducks_type | duckdb_sql | kind | r_type | sql_null_input_default | sql_null_input_special | sql_nan_inf_input | r_null_return | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics | notes |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| i32 | INTEGER | scalar | integer | short-circuit to SQL NULL result; R function is not called | NA_integer\_ | not representable for this DuckDB type | SQL NULL | NA_integer\_ -\> SQL NULL | error | error | no Rducks-specific binary ops | NaN, Inf, fractional, and out-of-range return values error |  |
+| f64 | DOUBLE | scalar | numeric | short-circuit to SQL NULL result; R function is not called | NA_real\_ | DuckDB NaN/Inf pass through as R numeric values | SQL NULL | NA_real\_ -\> SQL NULL | preserved as DuckDB NaN | preserved as DuckDB +/-Inf | ordinary R numeric semantics in the R function | NA is NULL; NaN and Inf are valid DOUBLE values |  |
+| i64 | BIGINT | scalar | rducks_bigint | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_bigint(NA) -\> SQL NULL | error | error | rducks_bigint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error | exact signed 64-bit integer string |
+| uuid | UUID | scalar | rducks_uuid | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_uuid(NA) -\> SQL NULL | error | error | no Rducks-specific binary ops | NA UUID values are NULL; malformed UUID text errors | exact Rducks value class |
+| decimal\<10;2\> | DECIMAL(10, 2) | decimal | rducks_decimal | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB DECIMAL | SQL NULL for the top-level value; nested NULLs map recursively | rducks_decimal(NA, width, scale) -\> SQL NULL | error | error | rducks_decimal +, -, comparisons; NA propagates; matching scales are required | NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error | exact fixed-point value class |
+| enum\<red\|blue\> | ENUM(‘red’, ‘blue’) | enum | rducks_enum | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB ENUM | SQL NULL for the top-level value; nested NULLs map recursively | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error | factor with enum levels |
+| union\<code:i32;label:varchar\> | UNION(code INTEGER, label VARCHAR) | union | rducks_union | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE union members can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error | tagged value object |
+| map\<varchar;i32\> | MAP(VARCHAR, INTEGER) | map | list | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE children can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error | keys and values use sequence mapping |
 
 ## Composite input examples
 
@@ -768,15 +532,15 @@ reg_make_array <- rducks_register(
   returns = INTEGER[]
 )
 
-dbGetQuery(con, paste(
-  "SELECT",
-  "r_list_len([1,2,3]::INTEGER[]) AS list_len,",
-  "r_array_sum([1,2,3]::INTEGER[3]) AS array_sum,",
-  "r_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS struct_sum,",
-  "r_map_sum(map(['a','b'], [20,22])) AS map_sum,",
-  "(r_make_struct(41::INTEGER)).b AS struct_return,",
-  "list_sum(r_make_array(20::INTEGER)) AS array_return"
-))
+dbGetQuery(con, "
+  SELECT
+    r_list_len([1,2,3]::INTEGER[]) AS list_len,
+    r_array_sum([1,2,3]::INTEGER[3]) AS array_sum,
+    r_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS struct_sum,
+    r_map_sum(map(['a','b'], [20,22])) AS map_sum,
+    (r_make_struct(41::INTEGER)).b AS struct_return,
+    list_sum(r_make_array(20::INTEGER)) AS array_return
+")
 #>   list_len array_sum struct_sum map_sum struct_return array_return
 #> 1        3         6         42      42            42           41
 ```
@@ -904,18 +668,10 @@ callback support. On extension reload, Rducks verifies that the active
 connection has the SQL surface registered and re-registers it when
 needed.
 
-The following unstable DuckDB C extension ABI entries are derived by
-scanning the Rducks extension C sources and matching `duckdb_*` calls
-against the versioned sections of the bundled `duckdb_extension.h`:
-
-| ABI group | Functions used | Count |
-|----|----|---:|
-| `unstable_new_arrow_functions` | `duckdb_data_chunk_from_arrow`, `duckdb_data_chunk_to_arrow`, `duckdb_destroy_arrow_converted_schema`, `duckdb_schema_from_arrow`, `duckdb_to_arrow_schema` | 5 |
-| `unstable_new_error_data_functions` | `duckdb_destroy_error_data`, `duckdb_error_data_has_error`, `duckdb_error_data_message` | 3 |
-| `unstable_new_open_connect_functions` | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_arrow_options`, `duckdb_destroy_arrow_options`, `duckdb_destroy_client_context` | 4 |
-| `unstable_new_scalar_function_functions` | `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` | 6 |
-| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_client_context`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init` | 7 |
-| `unstable_new_vector_functions` | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel` | 4 |
+The unstable DuckDB C extension ABI entries are tracked by
+`tools/used_duckdb_unstable_api.R` and documented in `docs/BUILD.md`.
+The README intentionally does not source repository helper scripts while
+rendering.
 
 # Package index
 

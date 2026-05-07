@@ -20,7 +20,10 @@ rducks_execution_plan(
   future_seed = FALSE,
   future_stdout = FALSE,
   future_conditions = "condition",
-  future_timeout = NULL
+  future_timeout = NULL,
+  ipc_provider = c("future", "mirai"),
+  ipc_workers = 1L,
+  ipc_max_pending = 64L
 )
 ```
 
@@ -56,7 +59,26 @@ rducks_execution_plan(
   `future_packages` for packages that workers should attach,
   `future_globals = TRUE` for Future's per-task discovery, `FALSE` for
   only Rducks' required task state, or a character vector/named list for
-  explicit extra globals.
+  explicit extra globals. `future_timeout` is also used as the Arrow IPC
+  provider wait timeout. The persistent mirai provider preloads the same
+  discovered globals/packages once per provider registration.
+
+- ipc_provider:
+
+  Worker provider for `arrow_ipc + multiprocess_parallel`. `"future"` is
+  the portable default. `"mirai"` uses persistent mirai daemon workers
+  and fails at registration if the `mirai` package is unavailable; it
+  does not fall back to Future.
+
+- ipc_workers:
+
+  Number of persistent workers for `ipc_provider = "mirai"`.
+
+- ipc_max_pending:
+
+  Maximum accepted but uncollected tasks for the persistent provider.
+  The default bounds provider memory/use of outstanding callback work;
+  `NULL` disables this provider-level limit.
 
 ## Value
 
