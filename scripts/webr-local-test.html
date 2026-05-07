@@ -55,8 +55,8 @@
         const shelter = await new webR.Shelter();
         const repo = `${location.origin}/r/Rducks/webr-repo`;
 
-        await capture(shelter, `options(repos = c(RducksLocal = '${repo}', CRAN = 'https://repo.r-wasm.org/'))`);
-        await capture(shelter, "install.packages('Rducks')");
+        await capture(shelter, `options(repos = c(RducksLocal = '${repo}', CRAN = 'https://repo.r-wasm.org/'), pkgType = 'binary')`);
+        await capture(shelter, "install.packages('Rducks', type = 'binary')");
         await capture(shelter, `
           library(Rducks)
           stopifnot(identical(rducks_type_sql(INTEGER), 'INTEGER'))
