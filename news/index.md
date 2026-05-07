@@ -16,6 +16,10 @@
   [`future::multisession`](https://future.futureverse.org/reference/multisession.html)
   and
   [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html).
+  The mirai provider now uses wrap-resistant numeric task/provider
+  counters and uses mirai’s blocking wait primitives for no-deadline
+  `collect_many()` / `collect_any()` calls instead of scanning tasks
+  with a 1 ms sleep loop.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic
   `future` backends with Arrow IPC task/result payloads. Scalar
   registrations loop over rows inside the worker, vectorized
@@ -30,9 +34,11 @@
   owned-result-chunk, RIPC-in-flight, and RIPC submit/collect wave
   counters for diagnosing whether chunks are actually overlapping. Arrow
   IPC encoding for nanoarrow arrays now uses a native buffer writer
-  instead of an R `rawConnection`, avoiding large transient allocations.
-  Enum arguments and returns are supported through an explicit Rducks
-  enum-storage IPC convention.
+  instead of an R `rawConnection`, avoiding large transient allocations;
+  the nanoarrow shared-library path is cached at package load/first use
+  rather than rediscovered for every encoded chunk. Enum arguments and
+  returns are supported through an explicit Rducks enum-storage IPC
+  convention.
 - Added
   [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
   to reset one UDF’s diagnostic counters or all native UDF counters in
