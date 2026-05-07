@@ -31,6 +31,7 @@ struct rducks_udf_request {
     idx_t ripc_n;
     int ripc_submitted;
     rducks_rc_owned_result_payload_t *rc_result_payload;
+    duckdb_data_chunk rc_result_chunk;
     rducks_udf_request_state_t state;
     int ok;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
@@ -84,8 +85,8 @@ static int rducks_queue_wait_timed(rducks_runtime_entry_t *runtime, unsigned int
 #endif
 }
 
-static void rducks_queue_error_copy(char *dst, size_t dst_cap, const char *src, const char *fallback) {
-    const char *msg = (src && src[0]) ? src : fallback;
+static void rducks_queue_error_copy(char *dst, size_t dst_cap, const char *src, const char *default_msg) {
+    const char *msg = (src && src[0]) ? src : default_msg;
     size_t n;
     if (!dst || dst_cap == 0U) return;
     if (!msg) msg = "Rducks queued scalar UDF request failed";
@@ -185,8 +186,16 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
         rducks_rc_owned_result_payload_free(request->rc_result_payload);
         request->rc_result_payload = NULL;
     }
-    return rducks_rc_scalar_execute_to_owned_payload(request->runtime, request->meta, request->input, request->output,
-                                                     &request->rc_result_payload, err_msg, err_cap);
+    if (request->rc_result_chunk) {
+        duckdb_destroy_data_chunk(&request->rc_result_chunk);
+        request->rc_result_chunk = NULL;
+    }
+    if (rducks_rc_owned_result_supported(request->meta)) {
+        return rducks_rc_scalar_execute_to_owned_payload(request->runtime, request->meta, request->input, request->output,
+                                                         &request->rc_result_payload, err_msg, err_cap);
+    }
+    return rducks_rc_scalar_execute_to_owned_chunk(request->runtime, request->meta, request->input, request->output,
+                                                  &request->rc_result_chunk, err_msg, err_cap);
 }
 
 static int rducks_queue_submit_ripc_request_on_main(rducks_udf_request_t *request,
@@ -534,7 +543,7 @@ static void rducks_ripc_collect_group_unwind_cleanup(void *data, Rboolean jump) 
     if (jump) {
         ctx->ok = 0;
         rducks_ripc_collect_group_release_requests(ctx->head, ctx->count, 1);
-        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+        rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                        "Rducks Future Arrow IPC collect-many failed");
     }
 }
@@ -549,7 +558,7 @@ static SEXP rducks_ripc_collect_group_error_handler(SEXP condition, void *data) 
     (void)condition;
     rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
     ctx->ok = 0;
-    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+    rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                    "Rducks Future Arrow IPC collect-many failed");
     return R_NilValue;
 }
@@ -716,7 +725,7 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     }
 
     memset(&request, 0, sizeof(request));
-    request.execute = rducks_rc_owned_result_supported(meta) ?
+    request.execute = rducks_rc_owned_result_queue_supported(meta) ?
         rducks_queue_execute_rc_scalar_to_payload_on_main :
         rducks_queue_execute_scalar_on_main;
     request.meta = meta;
@@ -739,9 +748,16 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     if (ok && request.rc_result_payload) {
         ok = rducks_rc_owned_result_payload_writeback(request.rc_result_payload, output, err_msg, err_cap);
     }
+    if (ok && request.rc_result_chunk) {
+        ok = rducks_rc_owned_result_chunk_writeback(request.rc_result_chunk, output, err_msg, err_cap);
+    }
     if (request.rc_result_payload) {
         rducks_rc_owned_result_payload_free(request.rc_result_payload);
         request.rc_result_payload = NULL;
+    }
+    if (request.rc_result_chunk) {
+        duckdb_destroy_data_chunk(&request.rc_result_chunk);
+        request.rc_result_chunk = NULL;
     }
     if (owned_input) {
         duckdb_destroy_data_chunk(&owned_input);

@@ -250,6 +250,17 @@ local({
     VARCHAR, INTEGER,
     mode = "vectorized", side_effects = TRUE
   ))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_owned_list_result",
+    function(x) c(x, x + 1L),
+    INTEGER, INTEGER[]
+  ))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_owned_struct_result",
+    function(x) data.frame(a = x, b = x + 1L),
+    INTEGER, STRUCT(a = INTEGER, b = INTEGER),
+    mode = "vectorized", side_effects = TRUE
+  ))
 
   snapshot_n <- 4096L
   snapshot_expected <- sum(c(
@@ -294,6 +305,36 @@ local({
   expect_true(vectorized_explain$queued_chunks >= 1)
   expect_true(vectorized_explain$arrow_c_input_snapshot_chunks >= 1)
   expect_equal(vectorized_explain$arrow_r_chunks, 0)
+
+  list_result <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      "SELECT sum(list_sum(rducks_queue_arrow_c_owned_list_result(i::INTEGER))) AS x FROM rducks_parallel_range(%d::UBIGINT) AS t(i)",
+      snapshot_n
+    )
+  )
+  expect_equal(as.numeric(list_result$x), as.numeric(snapshot_n * snapshot_n))
+  list_explain <- rducks_explain_udf(con, "rducks_queue_arrow_c_owned_list_result")
+  expect_equal(list_explain$evaluator, "RC")
+  expect_true(list_explain$queued_chunks >= 1)
+  expect_true(list_explain$arrow_c_input_snapshot_chunks >= 1)
+  expect_true(list_explain$arrow_c_owned_result_chunk_chunks >= 1)
+  expect_equal(list_explain$arrow_r_chunks, 0)
+
+  struct_result <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      "SELECT sum((rducks_queue_arrow_c_owned_struct_result(i::INTEGER)).b) AS x FROM rducks_parallel_range(%d::UBIGINT) AS t(i)",
+      snapshot_n
+    )
+  )
+  expect_equal(as.numeric(struct_result$x), as.numeric(snapshot_n * (snapshot_n - 1L) / 2L + snapshot_n))
+  struct_explain <- rducks_explain_udf(con, "rducks_queue_arrow_c_owned_struct_result")
+  expect_equal(struct_explain$evaluator, "RCV")
+  expect_true(struct_explain$queued_chunks >= 1)
+  expect_true(struct_explain$arrow_c_input_snapshot_chunks >= 1)
+  expect_true(struct_explain$arrow_c_owned_result_chunk_chunks >= 1)
+  expect_equal(struct_explain$arrow_r_chunks, 0)
 
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] > before$submitted[[1L]])

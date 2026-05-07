@@ -1,12 +1,12 @@
 /* Included by ../rducks_extension.c. */
 
-static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const char *fallback,
+static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const char *default_msg,
                                          char *err_msg, size_t err_cap) {
     const char *msg = NULL;
     if (error_data && duckdb_error_data_has_error(error_data)) {
         msg = duckdb_error_data_message(error_data);
     }
-    snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : fallback);
+    snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : default_msg);
 }
 
 static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
@@ -214,10 +214,15 @@ static int rducks_fill_input_arrow_array(rducks_runtime_entry_t *runtime, SEXP a
     return rducks_fill_input_arrow_array_native(runtime, nanoarrow_output_array_from_xptr(array_xptr), input, err_msg, err_cap);
 }
 
-static SEXP rducks_arrow_array_schema_xptr(SEXP array_xptr, SEXP fallback_schema_xptr) {
+static SEXP rducks_arrow_array_schema_or_expected_xptr(SEXP array_xptr, SEXP expected_schema_xptr) {
+    /* Result arrays produced by some nanoarrow/R helpers carry their schema in
+     * the external-pointer tag. When they do not, use the explicit schema that
+     * registration computed for this UDF result. This is schema selection, not
+     * a marshalling fallback to another execution path.
+     */
     SEXP schema_xptr = R_ExternalPtrTag(array_xptr);
-    if (schema_xptr == R_NilValue) return fallback_schema_xptr;
-    if (!Rf_inherits(schema_xptr, "nanoarrow_schema")) return fallback_schema_xptr;
+    if (schema_xptr == R_NilValue) return expected_schema_xptr;
+    if (!Rf_inherits(schema_xptr, "nanoarrow_schema")) return expected_schema_xptr;
     return schema_xptr;
 }
 
@@ -331,7 +336,7 @@ static int rducks_import_arrow_result(rducks_runtime_entry_t *runtime, SEXP resu
     }
 
     result_array = nanoarrow_array_from_xptr(result_array_xptr);
-    result_schema_xptr = rducks_arrow_array_schema_xptr(result_array_xptr, output_schema_xptr);
+    result_schema_xptr = rducks_arrow_array_schema_or_expected_xptr(result_array_xptr, output_schema_xptr);
     result_schema = nanoarrow_schema_from_xptr(result_schema_xptr);
     return rducks_import_arrow_result_native(runtime, result_array, result_schema, return_desc, expected_size, output,
                                             err_msg, err_cap);
@@ -564,8 +569,8 @@ typedef struct rducks_ripc_submit_context {
     int ok;
 } rducks_ripc_submit_context_t;
 
-static void rducks_ripc_set_fallback_error(char *err_msg, size_t err_cap, const char *fallback) {
-    if (err_msg && err_cap > 0U && !err_msg[0]) snprintf(err_msg, err_cap, "%s", fallback);
+static void rducks_ripc_set_default_error(char *err_msg, size_t err_cap, const char *default_msg) {
+    if (err_msg && err_cap > 0U && !err_msg[0]) snprintf(err_msg, err_cap, "%s", default_msg);
 }
 
 static SEXP rducks_ripc_submit_unwind_body(void *data) {
@@ -581,7 +586,7 @@ static void rducks_ripc_submit_unwind_cleanup(void *data, Rboolean jump) {
     if (jump) {
         ctx->ok = 0;
         rducks_ripc_release_preserved(ctx->future_out, ctx->output_schema_out);
-        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+        rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                        "Rducks Future Arrow IPC submit failed");
     }
 }
@@ -597,7 +602,7 @@ static SEXP rducks_ripc_submit_error_handler(SEXP condition, void *data) {
     rducks_ripc_submit_context_t *ctx = (rducks_ripc_submit_context_t *)data;
     ctx->ok = 0;
     rducks_ripc_release_preserved(ctx->future_out, ctx->output_schema_out);
-    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+    rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                    "Rducks Future Arrow IPC submit failed");
     return R_NilValue;
 }
@@ -686,7 +691,7 @@ static void rducks_ripc_collect_unwind_cleanup(void *data, Rboolean jump) {
             ctx->inflight_active = 0;
         }
         rducks_ripc_release_preserved(ctx->future_slot, ctx->output_schema_slot);
-        rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+        rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                        "Rducks Future Arrow IPC collect failed");
     }
 }
@@ -701,7 +706,7 @@ static SEXP rducks_ripc_collect_error_handler(SEXP condition, void *data) {
     (void)condition;
     rducks_ripc_collect_context_t *ctx = (rducks_ripc_collect_context_t *)data;
     ctx->ok = 0;
-    rducks_ripc_set_fallback_error(ctx->err_msg, ctx->err_cap,
+    rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
                                    "Rducks Future Arrow IPC collect failed");
     return R_NilValue;
 }
@@ -787,13 +792,13 @@ typedef struct rducks_arrow_execute_context {
     duckdb_vector output;
     char *err_msg;
     size_t err_cap;
-    const char *fallback_error;
+    const char *default_error;
     int ok;
 } rducks_arrow_execute_context_t;
 
-static void rducks_arrow_set_fallback_error(rducks_arrow_execute_context_t *ctx) {
-    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->fallback_error) {
-        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->fallback_error);
+static void rducks_arrow_set_default_error(rducks_arrow_execute_context_t *ctx) {
+    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->default_error) {
+        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
     }
 }
 
@@ -808,7 +813,7 @@ static void rducks_arrow_execute_unwind_cleanup(void *data, Rboolean jump) {
     rducks_arrow_execute_context_t *ctx = (rducks_arrow_execute_context_t *)data;
     if (jump) {
         ctx->ok = 0;
-        rducks_arrow_set_fallback_error(ctx);
+        rducks_arrow_set_default_error(ctx);
     }
 }
 
@@ -822,7 +827,7 @@ static SEXP rducks_arrow_execute_error_handler(SEXP condition, void *data) {
     (void)condition;
     rducks_arrow_execute_context_t *ctx = (rducks_arrow_execute_context_t *)data;
     ctx->ok = 0;
-    rducks_arrow_set_fallback_error(ctx);
+    rducks_arrow_set_default_error(ctx);
     return R_NilValue;
 }
 
@@ -837,7 +842,7 @@ static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sca
     ctx.output = output;
     ctx.err_msg = err_msg;
     ctx.err_cap = err_cap;
-    ctx.fallback_error = "Rducks nanoarrow R function or marshal error";
+    ctx.default_error = "Rducks nanoarrow R function or marshal error";
     if (err_msg && err_cap > 0U) err_msg[0] = '\0';
     (void)R_tryCatchError(rducks_r_scalar_execute_try_body, &ctx,
                           rducks_arrow_execute_error_handler, &ctx);

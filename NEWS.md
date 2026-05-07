@@ -18,8 +18,9 @@
   cooperatively drain queued worker callbacks into the same submit/collect wave,
   avoiding the single-request timeout path for parallel DuckDB UDF execution.
   `rducks_explain_udf()` now reports queue-pending, `arrow_c` input-snapshot,
-  RIPC-in-flight, and RIPC submit/collect wave counters for diagnosing whether
-  chunks are actually overlapping. Arrow IPC encoding for nanoarrow arrays now uses a native buffer
+  `arrow_c` owned-result-chunk, RIPC-in-flight, and RIPC submit/collect wave
+  counters for diagnosing whether chunks are actually overlapping. Arrow IPC
+  encoding for nanoarrow arrays now uses a native buffer
   writer instead of an R `rawConnection`, avoiding large transient allocations.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
@@ -27,7 +28,8 @@
   all native UDF counters in the current database runtime without unregistering
   catalog functions.
 - UDF stat field discovery now comes from native `rducks_udf_stat_fields()`;
-  the R-side field vector is only a fallback.
+  the R-side field vector is only a documented compatibility list for sessions
+  where that optional native discovery helper is unavailable.
 - `rducks_explain_udf()` and `rducks_list_udfs()` now include `r_side_record`
   to make detached/missing R-side registry metadata explicit.
 - Added `rducks_native_execution_backend()` to cross-check the native
@@ -73,9 +75,11 @@
   submitted to the recorded main R thread. With supported scalar returns, they
   then evaluate into an owned Arrow C Data result chunk; the waiting worker
   writes DuckDB output from those Arrow buffers without touching `SEXP`s or
-  nanoarrow R external pointers. The owned return envelope covers primitive,
-  temporal, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and
-  INTERVAL results.
+  nanoarrow R external pointers. Composite direct returns now use an owned
+  DuckDB result chunk filled on the main R thread and copied into callback output
+  by the waiting worker. The owned return envelope covers primitive, temporal,
+  VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL results;
+  the owned DuckDB result-chunk path covers direct composite returns.
 - Added an internal `%||%` compatibility shim so the package works under the
   lowered R 4.3 dependency floor.
 - `arrow_c` is now a direct scalar and vectorized marshalling path. Unsupported

@@ -102,9 +102,11 @@ worker reads those Arrow buffers and writes DuckDB output without touching
 `SEXP`s or nanoarrow R external pointers. This owned result envelope covers bool,
 integer widths, floating point, date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL,
 ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL returns. Composite direct `arrow_c`
-returns still use main-thread SEXP-based writeback. Do not use the remaining SEXP
-materialization/writeback helpers as worker-safe building blocks without
-replacing them with owned native input/result payloads.
+returns evaluate into an owned DuckDB result chunk on the main R thread; the
+waiting worker copies that owned vector into callback output with DuckDB's
+vector-copy API. Do not use the remaining SEXP materialization/writeback helpers
+as worker-safe building blocks without replacing them with owned native
+input/result payloads.
 
 ## Prepared scalar and vectorized execution plans
 
@@ -122,16 +124,18 @@ validate each return. Queued off-main direct `arrow_c` scalar/vectorized calls
 copy inputs into owned DuckDB chunks before the main thread materializes R
 arguments. For queued callbacks with supported scalar returns, validated returns
 are copied into an owned Arrow C Data result chunk and DuckDB output is written
-by the waiting worker thread from those Arrow buffers. Serial scalar callbacks
-and unsupported owned-payload return shapes still write DuckDB output on the
-recorded main R thread before the callback returns. It must fail rather than
-falling back to the Arrow helper engine. A future threaded native backend must
-also replace the remaining SEXP writeback cases with owned buffers before
-crossing threads, or be a genuinely pure-native evaluator with no R callback.
-Vectorized mode uses Arrow helper phases for `arrow_r`, named main-thread
-prepare/evaluate phases for direct `arrow_c`, owned queued input snapshots,
-owned Arrow C Data writeback for queued supported scalar returns, main-thread
-writeback for composite direct returns, and Arrow IPC for `arrow_ipc`.
+by the waiting worker thread from those Arrow buffers. For queued composite
+direct returns, checked R results are written into an owned DuckDB result chunk
+on the main R thread and copied to callback output by the waiting worker. Serial
+scalar callbacks still write DuckDB output on the recorded main R thread before
+the callback returns. It must fail rather than falling back to the Arrow helper
+engine. A future threaded native backend must also replace any remaining SEXP
+writeback cases with owned buffers before crossing threads, or be a genuinely
+pure-native evaluator with no R callback. Vectorized mode uses Arrow helper
+phases for `arrow_r`, named main-thread prepare/evaluate phases for direct
+`arrow_c`, owned queued input snapshots, owned Arrow C Data writeback for queued
+supported scalar returns, owned DuckDB result-chunk writeback for queued
+composite direct returns, and Arrow IPC for `arrow_ipc`.
 With `null_handling = "default"`, only rows with no top-level SQL NULL inputs
 are evaluated and SQL NULL rows are scattered back into the DuckDB result; with
 `null_handling = "special"`, all rows are passed through with the same NA/NULL
@@ -148,10 +152,12 @@ Internally the current concurrency backends are:
   the main R thread drains the request, calls R, fills an owned Arrow C Data
   result chunk, and signals the waiter; the waiting worker then writes DuckDB
   output from those Arrow buffers without touching `SEXP`s or nanoarrow R
-  bindings. Other queued modes still have the main R thread write DuckDB output
-  before signalling. The stack request and callback-owned output vector still
-  require the UDF callback to stay alive until the main thread has consumed the
-  request and any worker-side writeback has completed.
+  bindings. With composite direct returns, the main R thread instead fills an
+  owned DuckDB result chunk and the waiting worker copies that vector to the
+  callback output. Other queued modes still have the main R thread write DuckDB
+  output before signalling. The stack request and callback-owned output vector
+  still require the UDF callback to stay alive until the main thread has consumed
+  the request and any worker-side writeback has completed.
 - `multiprocess_parallel`: out-of-process execution through the selected Arrow
   IPC worker provider (`ipc_future_pool` by default, experimental
   `ipc_mirai_pool` when requested). The scalar-UDF callback implementation

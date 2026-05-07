@@ -166,6 +166,7 @@ struct rducks_r_scalar_meta {
     uint64_t arrow_r_chunks;
     uint64_t arrow_c_chunks;
     uint64_t arrow_c_input_snapshot_chunks;
+    uint64_t arrow_c_owned_result_chunk_chunks;
     uint64_t arrow_ipc_chunks;
     uint64_t ripc_collect_batches;
     uint64_t ripc_collect_requests;

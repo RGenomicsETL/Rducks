@@ -121,8 +121,9 @@ static bool rducks_register_binary_varchar_surface(duckdb_connection con, rducks
 static bool rducks_register_udf_stat_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
     bool ok = rducks_register_binary_varchar_surface(con, runtime, "rducks_udf_stat", rducks_udf_stat_scalar);
     if (!ok) return false;
-    /* Optional diagnostics helper: R falls back to its compatibility field list
-     * if this helper is unavailable due to a user/session name collision. */
+    /* Optional diagnostics helper. If a user/session name collision prevents
+     * registration, R uses its documented compatibility field list instead of
+     * querying this native discovery surface. */
     (void)rducks_register_noarg_scalar_ex(con, runtime, "rducks_udf_stat_fields", DUCKDB_TYPE_VARCHAR,
                                           rducks_udf_stat_fields_scalar, false);
     return rducks_register_unary_varchar_bool_surface_ex(con, runtime, "rducks_reset_udf_stats",

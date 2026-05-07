@@ -3639,15 +3639,15 @@ typedef struct rducks_rc_execute_context {
     duckdb_vector output;
     char *err_msg;
     size_t err_cap;
-    const char *fallback_error;
+    const char *default_error;
     rducks_rc_execute_fn_t execute;
     int ok;
     int jumped;
 } rducks_rc_execute_context_t;
 
-static void rducks_rc_set_fallback_error(rducks_rc_execute_context_t *ctx) {
-    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->fallback_error) {
-        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->fallback_error);
+static void rducks_rc_set_default_error(rducks_rc_execute_context_t *ctx) {
+    if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->default_error) {
+        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
     }
 }
 
@@ -3664,7 +3664,7 @@ static void rducks_rc_execute_unwind_cleanup(void *data, Rboolean jump) {
     if (jump) {
         ctx->jumped = 1;
         ctx->ok = 0;
-        rducks_rc_set_fallback_error(ctx);
+        rducks_rc_set_default_error(ctx);
     }
 }
 
@@ -3680,7 +3680,7 @@ static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
     rducks_rc_execute_context_t *ctx = (rducks_rc_execute_context_t *)data;
     if (ctx) {
         ctx->ok = 0;
-        rducks_rc_set_fallback_error(ctx);
+        rducks_rc_set_default_error(ctx);
     }
     return R_NilValue;
 }
@@ -3695,11 +3695,11 @@ static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
  */
 static int rducks_rc_execute_with_error_boundary(rducks_rc_execute_context_t *ctx,
                                                  rducks_rc_execute_fn_t execute,
-                                                 const char *fallback_error) {
+                                                 const char *default_error) {
     ctx->ok = 0;
     ctx->jumped = 0;
     ctx->execute = execute;
-    ctx->fallback_error = fallback_error;
+    ctx->default_error = default_error;
     if (ctx->err_msg && ctx->err_cap > 0U) ctx->err_msg[0] = '\0';
     (void)R_tryCatchError(rducks_rc_execute_try_body, ctx,
                           rducks_rc_execute_error_handler, ctx);
@@ -3809,4 +3809,113 @@ static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_
     ctx.err_cap = err_cap;
     return rducks_rc_execute_with_error_boundary(&ctx, rducks_rc_vectorized_execute_impl,
                                                  "Rducks RC vectorized R function or marshal error");
+}
+
+static int rducks_rc_owned_result_chunk_supported(rducks_r_scalar_meta_t *meta) {
+    return meta && (meta->eval_mode == RDUCKS_EVAL_RC || meta->eval_mode == RDUCKS_EVAL_RCV) &&
+           !rducks_rc_owned_result_supported(meta) && rducks_rc_direct_supported(meta);
+}
+
+static int rducks_rc_owned_result_queue_supported(rducks_r_scalar_meta_t *meta) {
+    return rducks_rc_owned_result_supported(meta) || rducks_rc_owned_result_chunk_supported(meta);
+}
+
+static duckdb_data_chunk rducks_rc_owned_result_chunk_new(rducks_r_scalar_meta_t *meta,
+                                                          idx_t n,
+                                                          char *err_msg, size_t err_cap) {
+    duckdb_logical_type type;
+    duckdb_data_chunk chunk;
+    if (!meta || !meta->return_desc) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk metadata missing");
+        return NULL;
+    }
+    type = rducks_create_logical_type_for_desc(meta->return_desc);
+    if (!type) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result logical type");
+        return NULL;
+    }
+    chunk = duckdb_create_data_chunk(&type, 1);
+    duckdb_destroy_logical_type(&type);
+    if (!chunk) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result data chunk");
+        return NULL;
+    }
+    duckdb_data_chunk_set_size(chunk, n);
+    return chunk;
+}
+
+static int rducks_rc_owned_result_chunk_writeback(duckdb_data_chunk chunk,
+                                                  duckdb_vector output,
+                                                  char *err_msg, size_t err_cap) {
+    duckdb_selection_vector sel = NULL;
+    duckdb_vector src;
+    sel_t *sel_data;
+    idx_t n;
+    if (!chunk || !output) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk writeback is missing state");
+        return 0;
+    }
+    n = duckdb_data_chunk_get_size(chunk);
+    if (n == 0) return 1;
+    if (n > (idx_t)UINT32_MAX) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk is too large to write back");
+        return 0;
+    }
+    src = duckdb_data_chunk_get_vector(chunk, 0);
+    if (!src) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk has no result vector");
+        return 0;
+    }
+    sel = duckdb_create_selection_vector(n);
+    if (!sel) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result writeback selection vector");
+        return 0;
+    }
+    sel_data = duckdb_selection_vector_get_data_ptr(sel);
+    if (!sel_data) {
+        duckdb_destroy_selection_vector(sel);
+        snprintf(err_msg, err_cap, "failed to access Rducks RC owned result writeback selection vector");
+        return 0;
+    }
+    for (idx_t row = 0; row < n; row++) sel_data[row] = (sel_t)row;
+    duckdb_vector_copy_sel(src, output, sel, n, 0, 0);
+    duckdb_destroy_selection_vector(sel);
+    return 1;
+}
+
+static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtime,
+                                                   rducks_r_scalar_meta_t *meta,
+                                                   duckdb_data_chunk input,
+                                                   duckdb_vector output,
+                                                   duckdb_data_chunk *chunk_out,
+                                                   char *err_msg, size_t err_cap) {
+    duckdb_data_chunk chunk;
+    duckdb_vector chunk_output;
+    int ok;
+    (void)output;
+    if (chunk_out) *chunk_out = NULL;
+    if (!chunk_out || !rducks_rc_owned_result_chunk_supported(meta)) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk is not implemented for this return type");
+        return 0;
+    }
+    chunk = rducks_rc_owned_result_chunk_new(meta, duckdb_data_chunk_get_size(input), err_msg, err_cap);
+    if (!chunk) return 0;
+    chunk_output = duckdb_data_chunk_get_vector(chunk, 0);
+    if (!chunk_output) {
+        duckdb_destroy_data_chunk(&chunk);
+        snprintf(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
+        return 0;
+    }
+    if (meta->eval_mode == RDUCKS_EVAL_RCV) {
+        ok = rducks_rc_vectorized_execute(runtime, meta, input, chunk_output, err_msg, err_cap);
+    } else {
+        ok = rducks_rc_scalar_execute(runtime, meta, input, chunk_output, err_msg, err_cap);
+    }
+    if (!ok) {
+        duckdb_destroy_data_chunk(&chunk);
+        return 0;
+    }
+    rducks_udf_record_arrow_c_owned_result_chunk(meta);
+    *chunk_out = chunk;
+    return 1;
 }

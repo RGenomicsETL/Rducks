@@ -418,9 +418,9 @@ Still-open or blocked decisions:
 - [x] Discover native UDF stat fields instead of querying a hand-mirrored R
   vector.
   - Native `rducks_udf_stat_fields()` exposes the C stat field list and
-    `rducks_native_udf_stats()` uses it after validating it against the known
-    fallback list, with the old R vector retained for compatibility/name
-    collision fallback.
+    `rducks_native_udf_stats()` trusts it when available. The old R vector is
+    retained only as a documented compatibility list for cases where the native
+    discovery helper is unavailable because of a user/session name collision.
 
 ## P2/P3: Arrow IPC and worker execution
 
@@ -498,9 +498,11 @@ Still-open or blocked decisions:
 
 ## P3: owned same-process chunk boundaries
 
-The current in-process queue is synchronous and borrows DuckDB input/output
-pointers only for the duration of a scalar UDF callback. That is acceptable for
-current callbacks, but not for an asynchronous same-process design.
+The current in-process queue is synchronous. Queued direct `arrow_c` requests
+now own input snapshots, but the stack request object and callback-owned output
+vector still require the scalar UDF callback to remain active until execution and
+worker-side writeback finish. That is acceptable for current callbacks, but not
+for an asynchronous same-process design.
 
 - [x] Implement owned input snapshots for worker-originating queued direct
   `arrow_c` chunk requests.
@@ -520,19 +522,24 @@ current callbacks, but not for an asynchronous same-process design.
     Covered return families include `bool`, integer widths, floating point,
     date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID,
     HUGEINT/UHUGEINT, and INTERVAL.
-  - Still open for composite direct returns, Arrow/R helper returns, and RIPC
-    native decode/import from owned result bytes.
+  - Queued direct `arrow_c` scalar and vectorized UDFs with composite return
+    shapes now evaluate into an owned DuckDB result chunk on the recorded main R
+    thread; the waiting worker copies that owned vector into callback output with
+    DuckDB's vector-copy API. `rducks_explain_udf()` exposes
+    `arrow_c_owned_result_chunk_chunks` for this path.
+  - Still open for Arrow/R helper returns and RIPC native decode/import from
+    owned result bytes.
 - [x] Split current `arrow_c` code into explicit worker-safe/native and
   recorded-main-R-thread phases.
   - Scalar `arrow_c` still has a borrowed-view phase for direct serial calls,
     but queued off-main calls snapshot inputs into owned DuckDB chunks before
     main-thread R argument materialization/evaluation. Queued supported scalar
-    returns use the owned Arrow C Data result payload described above; composite
-    return shapes still use SEXP writeback on the main thread.
+    returns use the owned Arrow C Data result payload described above; queued
+    composite returns use the owned DuckDB result chunk described above.
   - Vectorized `arrow_c` now has named main-thread prepare/evaluate phases,
-    owned queued input snapshots, and the owned Arrow C Data result payload for
-    queued supported scalar returns. Composite direct returns still depend on
-    the remaining owned-result item above.
+    owned queued input snapshots, owned Arrow C Data writeback for queued
+    supported scalar returns, and owned DuckDB result-chunk writeback for queued
+    composite direct returns.
 
 ## Wasm / webR
 

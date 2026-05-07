@@ -74,10 +74,12 @@ R-side registry view has been detached.
   and INTERVAL), return values are copied into an owned Arrow C Data result chunk
   on the recorded main R thread and the waiting worker writes the DuckDB output
   vector from those Arrow buffers without touching `SEXP`s or nanoarrow R
-  external pointers. Other same-process return paths still write output on the
-  recorded main R thread. Running cancellation remains unsupported because the
-  stack request and callback-owned output vector must stay live until the main
-  thread and any worker-side writeback finish.
+  external pointers. Composite direct `arrow_c` returns are written into an owned
+  DuckDB result chunk on the recorded main R thread and copied into callback
+  output by the waiting worker. Other same-process return paths still write
+  output on the recorded main R thread. Running cancellation remains unsupported
+  because the stack request and callback-owned output vector must stay live until
+  the main thread and any worker-side writeback finish.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
   `SEXP` pointers as a hidden transport fallback.

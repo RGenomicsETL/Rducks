@@ -51,7 +51,10 @@ rducks_get_registration_record <- function(con, name) {
   get(name, envir = env, inherits = FALSE)
 }
 
-rducks_native_udf_stat_fields_fallback <- c(
+# Compatibility field list used only when the optional native discovery helper
+# is unavailable, e.g. because a user-defined SQL name collision prevented its
+# registration. When the helper exists, R trusts the native field list.
+rducks_native_udf_stat_fields_compat <- c(
   "name",
   "eval_mode",
   "marshalling",
@@ -64,6 +67,7 @@ rducks_native_udf_stat_fields_fallback <- c(
   "arrow_r_chunks",
   "arrow_c_chunks",
   "arrow_c_input_snapshot_chunks",
+  "arrow_c_owned_result_chunk_chunks",
   "arrow_ipc_chunks",
   "ripc_collect_batches",
   "ripc_collect_requests",
@@ -78,11 +82,9 @@ rducks_native_udf_stat_fields <- function(con) {
   fields <- tryCatch({
     raw <- DBI::dbGetQuery(con, "SELECT rducks_udf_stat_fields() AS fields")$fields[[1L]]
     strsplit(raw, "\n", fixed = TRUE)[[1L]]
-  }, error = function(e) rducks_native_udf_stat_fields_fallback)
+  }, error = function(e) rducks_native_udf_stat_fields_compat)
   fields <- fields[nzchar(fields)]
-  known <- rducks_native_udf_stat_fields_fallback
-  fields <- fields[fields %in% known]
-  if (length(fields)) fields else known
+  if (length(fields)) fields else rducks_native_udf_stat_fields_compat
 }
 
 rducks_native_udf_stats <- function(con, name) {
@@ -128,6 +130,7 @@ rducks_explain_udf_empty <- function() {
     arrow_r_chunks = numeric(),
     arrow_c_chunks = numeric(),
     arrow_c_input_snapshot_chunks = numeric(),
+    arrow_c_owned_result_chunk_chunks = numeric(),
     arrow_ipc_chunks = numeric(),
     ripc_collect_batches = numeric(),
     ripc_collect_requests = numeric(),
@@ -169,6 +172,7 @@ rducks_explain_udf_row <- function(con, name) {
     arrow_r_chunks = rducks_counter_value(stats, "arrow_r_chunks"),
     arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
     arrow_c_input_snapshot_chunks = rducks_counter_value(stats, "arrow_c_input_snapshot_chunks"),
+    arrow_c_owned_result_chunk_chunks = rducks_counter_value(stats, "arrow_c_owned_result_chunk_chunks"),
     arrow_ipc_chunks = rducks_counter_value(stats, "arrow_ipc_chunks"),
     ripc_collect_batches = rducks_counter_value(stats, "ripc_collect_batches"),
     ripc_collect_requests = rducks_counter_value(stats, "ripc_collect_requests"),
