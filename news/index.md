@@ -7,7 +7,10 @@
   The `ipc_mirai_pool` engine preloads evaluator/schema state in mirai
   daemons, submits owned Arrow IPC bytes per chunk, and bounds
   accepted-but-uncollected tasks with `ipc_max_pending`; it does not
-  fall back to Future or same-process execution.
+  fall back to Future or same-process execution. Native cooperative RIPC
+  groups use the provider’s optional `collect_any()` method when
+  available, so ready mirai chunk results are decoded and written back
+  without waiting for slower tasks in the same submitted group.
   `tools/benchmark_ipc_providers.R` compares this direct provider path
   with both
   [`future::multisession`](https://future.futureverse.org/reference/multisession.html)

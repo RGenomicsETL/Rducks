@@ -346,7 +346,8 @@
 <p><label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label></p>
 <ul><li>
 <code>ipc_mirai_pool</code> now has provider-level backpressure via <code>ipc_max_pending</code>, so persistent workers cannot accumulate unbounded accepted-but-uncollected tasks.</li>
-<li>The mirai provider now exposes tested <code>collect_any()</code> behavior so ready tasks can be collected without waiting for an earlier slow task; native callback writeback still waits for grouped collect results, so larger collect-any scheduling remains open.</li>
+<li>The mirai provider exposes tested <code>collect_any()</code> behavior so ready tasks can be collected without waiting for an earlier slow task.</li>
+<li>Native cooperative RIPC groups now use optional bundle-level <code>collect_any()</code> when the provider exposes it. Ready chunks are decoded and written back as they arrive, while the callback still remains active until all borrowed DuckDB output vectors in that submitted group have been filled. Larger physical-scan batching beyond simultaneously active callbacks remains open.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Specify a persistent worker/request envelope if generic <code>future</code> is not enough.</label></p>
