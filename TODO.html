@@ -378,13 +378,13 @@
 <ul class="task-list"><li><label><input type="checkbox">Implement owned input snapshots for worker-originating chunk requests.</label></li>
 <li>
 <label><input type="checkbox">Implement owned result payloads plus safe writeback.</label>
-<ul><li>Queued direct <code>arrow_c</code> scalar UDFs with supported scalar return types now evaluate into an owned Arrow C Data result chunk on the recorded main R thread; the waiting worker writes DuckDB output from those Arrow buffers without touching <code>SEXP</code>s or nanoarrow R external pointers. Covered return families include <code>bool</code>, integer widths, floating point, date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL.</li>
-<li>Still open for direct vectorized <code>arrow_c</code>, composite direct returns, Arrow/R helper returns, and RIPC native decode/import from owned result bytes.</li>
+<ul><li>Queued direct <code>arrow_c</code> scalar and vectorized UDFs with supported scalar return types now evaluate into an owned Arrow C Data result chunk on the recorded main R thread; the waiting worker writes DuckDB output from those Arrow buffers without touching <code>SEXP</code>s or nanoarrow R external pointers. Covered return families include <code>bool</code>, integer widths, floating point, date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL.</li>
+<li>Still open for composite direct returns, Arrow/R helper returns, and RIPC native decode/import from owned result bytes.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Split current <code>arrow_c</code> code into explicit worker-safe/native and recorded-main-R-thread phases.</label>
 <ul><li>Scalar <code>arrow_c</code> now snapshots borrowed DuckDB vector views in a no-R-API phase, then runs R argument materialization/evaluation in a named main-thread phase while the callback remains blocked. Queued supported scalar returns use the owned Arrow C Data result payload described above; composite return shapes still use SEXP writeback on the main thread.</li>
-<li>Vectorized <code>arrow_c</code> now has named main-thread prepare/evaluate/writeback phases. Fully worker-safe vectorized snapshots still depend on the owned input/result payload items above.</li>
+<li>Vectorized <code>arrow_c</code> now has named main-thread prepare/evaluate phases and uses the owned Arrow C Data result payload for queued supported scalar returns. Fully worker-safe vectorized input snapshots still depend on the owned input item above.</li>
 </ul></li>
 </ul></div>
 <div class="section level2">
