@@ -2421,18 +2421,37 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     }
 }
 
+/* Owned queued scalar results use the Arrow C Data layout as the transfer
+ * envelope: a one-column record-batch struct whose child owns validity and
+ * value buffers. The recorded main R thread fills those buffers from checked R
+ * return values; the waiting DuckDB worker reads the buffers directly into the
+ * callback-owned output vector without calling the R API, nanoarrow R bindings,
+ * or DuckDB connection-level Arrow import helpers on the worker thread.
+ */
 typedef struct rducks_rc_owned_result_payload {
     rducks_type_desc_t *desc;
     idx_t n;
     size_t element_size;
-    uint8_t *valid;
-    void *data;
+    struct ArrowSchema schema;
+    struct ArrowArray array;
 } rducks_rc_owned_result_payload_t;
+
+static size_t rducks_rc_owned_result_bit_bytes(idx_t n) {
+    uint64_t nn = (uint64_t)n;
+    return (size_t)(nn / 8U + (nn % 8U != 0U));
+}
+
+static void rducks_rc_arrow_bitmap_set(uint8_t *bitmap, idx_t row) {
+    bitmap[(size_t)row / 8U] |= (uint8_t)(1U << ((size_t)row % 8U));
+}
+
+static int rducks_rc_arrow_bitmap_get(const uint8_t *bitmap, idx_t row) {
+    return (bitmap[(size_t)row / 8U] & (uint8_t)(1U << ((size_t)row % 8U))) != 0;
+}
 
 static size_t rducks_rc_owned_result_element_size(const rducks_type_desc_t *desc) {
     if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0U;
     switch (desc->scalar) {
-    case RDUCKS_TYPE_BOOL: return sizeof(bool);
     case RDUCKS_TYPE_I8: return sizeof(int8_t);
     case RDUCKS_TYPE_U8: return sizeof(uint8_t);
     case RDUCKS_TYPE_I16: return sizeof(int16_t);
@@ -2443,93 +2462,188 @@ static size_t rducks_rc_owned_result_element_size(const rducks_type_desc_t *desc
     case RDUCKS_TYPE_U64: return sizeof(uint64_t);
     case RDUCKS_TYPE_F32: return sizeof(float);
     case RDUCKS_TYPE_F64: return sizeof(double);
-    case RDUCKS_TYPE_DATE: return sizeof(duckdb_date);
-    case RDUCKS_TYPE_TIME: return sizeof(duckdb_time);
-    case RDUCKS_TYPE_TIMESTAMP: return sizeof(duckdb_timestamp);
+    case RDUCKS_TYPE_DATE: return sizeof(int32_t);
+    case RDUCKS_TYPE_TIME: return sizeof(int64_t);
+    case RDUCKS_TYPE_TIMESTAMP: return sizeof(int64_t);
     default: return 0U;
     }
+}
+
+static int rducks_rc_owned_result_type_supported(const rducks_type_desc_t *desc) {
+    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    if (desc->scalar == RDUCKS_TYPE_BOOL) return 1;
+    return rducks_rc_owned_result_element_size(desc) > 0U;
 }
 
 static int rducks_rc_owned_result_supported(rducks_r_scalar_meta_t *meta) {
     return meta && meta->eval_mode == RDUCKS_EVAL_RC &&
            rducks_rc_direct_supported(meta) &&
-           rducks_rc_owned_result_element_size(meta->return_desc) > 0U;
+           rducks_rc_owned_result_type_supported(meta->return_desc);
+}
+
+static void rducks_rc_owned_arrow_child_release(struct ArrowArray *array) {
+    if (!array || !array->release) return;
+    if (array->buffers) {
+        for (int64_t i = 0; i < array->n_buffers; i++) {
+            free((void *)array->buffers[i]);
+        }
+        free((void *)array->buffers);
+    }
+    array->buffers = NULL;
+    array->release = NULL;
+}
+
+static void rducks_rc_owned_arrow_parent_release(struct ArrowArray *array) {
+    if (!array || !array->release) return;
+    if (array->children) {
+        for (int64_t i = 0; i < array->n_children; i++) {
+            if (array->children[i]) {
+                if (array->children[i]->release) array->children[i]->release(array->children[i]);
+                free(array->children[i]);
+            }
+        }
+        free(array->children);
+    }
+    if (array->buffers) free((void *)array->buffers);
+    array->children = NULL;
+    array->buffers = NULL;
+    array->release = NULL;
 }
 
 static void rducks_rc_owned_result_payload_free(rducks_rc_owned_result_payload_t *payload) {
     if (!payload) return;
-    free(payload->valid);
-    free(payload->data);
+    rducks_release_arrow_array_if_set(&payload->array);
+    rducks_release_arrow_schema_if_set(&payload->schema);
     free(payload);
 }
 
-static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rducks_type_desc_t *desc, idx_t n,
+static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rducks_runtime_entry_t *runtime,
+                                                                            rducks_r_scalar_meta_t *meta,
+                                                                            idx_t n,
                                                                             char *err_msg, size_t err_cap) {
     rducks_rc_owned_result_payload_t *payload;
-    size_t element_size = rducks_rc_owned_result_element_size(desc);
-    if (element_size == 0U) {
-        snprintf(err_msg, err_cap, "Rducks owned result payload does not support this return type");
+    struct ArrowArray *child = NULL;
+    size_t validity_bytes;
+    size_t value_bytes;
+    if (!runtime || !meta || !rducks_rc_owned_result_type_supported(meta->return_desc)) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return NULL;
     }
     payload = (rducks_rc_owned_result_payload_t *)calloc(1, sizeof(*payload));
     if (!payload) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned result payload");
+        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result payload");
         return NULL;
     }
-    payload->desc = desc;
+    payload->desc = meta->return_desc;
     payload->n = n;
-    payload->element_size = element_size;
-    if (n > 0) {
-        if ((uint64_t)n > SIZE_MAX / element_size) {
-            rducks_rc_owned_result_payload_free(payload);
-            snprintf(err_msg, err_cap, "Rducks owned result payload is too large");
-            return NULL;
-        }
-        payload->valid = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
-        payload->data = calloc((size_t)n, element_size);
-        if (!payload->valid || !payload->data) {
-            rducks_rc_owned_result_payload_free(payload);
-            snprintf(err_msg, err_cap, "failed to allocate Rducks owned result payload buffers");
-            return NULL;
-        }
+    payload->element_size = rducks_rc_owned_result_element_size(meta->return_desc);
+
+    if (!rducks_fill_output_arrow_schema_native(runtime, &payload->schema, meta, err_msg, err_cap)) {
+        rducks_rc_owned_result_payload_free(payload);
+        return NULL;
+    }
+
+    payload->array.length = (int64_t)n;
+    payload->array.null_count = 0;
+    payload->array.offset = 0;
+    payload->array.n_buffers = 1;
+    payload->array.n_children = 1;
+    payload->array.dictionary = NULL;
+    payload->array.release = rducks_rc_owned_arrow_parent_release;
+    payload->array.buffers = (const void **)calloc(1, sizeof(void *));
+    payload->array.children = (struct ArrowArray **)calloc(1, sizeof(struct ArrowArray *));
+    child = (struct ArrowArray *)calloc(1, sizeof(struct ArrowArray));
+    if (!payload->array.buffers || !payload->array.children || !child) {
+        free(child);
+        rducks_rc_owned_result_payload_free(payload);
+        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result array");
+        return NULL;
+    }
+    payload->array.buffers[0] = NULL;
+    payload->array.children[0] = child;
+
+    child->length = (int64_t)n;
+    child->null_count = 0;
+    child->offset = 0;
+    child->n_buffers = 2;
+    child->n_children = 0;
+    child->dictionary = NULL;
+    child->release = rducks_rc_owned_arrow_child_release;
+    child->buffers = (const void **)calloc(2, sizeof(void *));
+    if (!child->buffers) {
+        rducks_rc_owned_result_payload_free(payload);
+        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result buffers");
+        return NULL;
+    }
+
+    validity_bytes = rducks_rc_owned_result_bit_bytes(n);
+    if (n > 0 && payload->element_size > 0U && (uint64_t)n > SIZE_MAX / payload->element_size) {
+        rducks_rc_owned_result_payload_free(payload);
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload is too large");
+        return NULL;
+    }
+    value_bytes = meta->return_desc->scalar == RDUCKS_TYPE_BOOL ? validity_bytes : (size_t)n * payload->element_size;
+    if (validity_bytes > 0U) child->buffers[0] = calloc(validity_bytes, 1U);
+    if (value_bytes > 0U) child->buffers[1] = calloc(value_bytes, 1U);
+    if ((validity_bytes > 0U && !child->buffers[0]) || (value_bytes > 0U && !child->buffers[1])) {
+        rducks_rc_owned_result_payload_free(payload);
+        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
+        return NULL;
     }
     return payload;
+}
+
+static int rducks_rc_owned_result_payload_set_null(rducks_rc_owned_result_payload_t *payload, idx_t row,
+                                                   char *err_msg, size_t err_cap) {
+    struct ArrowArray *child;
+    if (!payload || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
+        return 0;
+    }
+    child = payload->array.children[0];
+    child->null_count++;
+    return 1;
 }
 
 static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_payload_t *payload, idx_t row,
                                                     SEXP value, char *err_msg, size_t err_cap) {
     rducks_type_desc_t *desc;
-    if (!payload || !payload->desc || row >= payload->n) {
-        snprintf(err_msg, err_cap, "Rducks owned result payload write is out of range");
+    struct ArrowArray *child;
+    uint8_t *validity;
+    uint8_t *data;
+    if (!payload || !payload->desc || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
         return 0;
     }
     desc = payload->desc;
+    child = payload->array.children[0];
+    validity = (uint8_t *)child->buffers[0];
+    data = (uint8_t *)child->buffers[1];
     if (rducks_rc_value_is_null_for_output(desc, value)) {
-        payload->valid[row] = 0U;
-        return 1;
+        return rducks_rc_owned_result_payload_set_null(payload, row, err_msg, err_cap);
     }
-    payload->valid[row] = 1U;
+    if (validity) rducks_rc_arrow_bitmap_set(validity, row);
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL:
-        ((bool *)payload->data)[row] = Rf_asLogical(value) == TRUE;
+        if (Rf_asLogical(value) == TRUE && data) rducks_rc_arrow_bitmap_set(data, row);
         return 1;
     case RDUCKS_TYPE_I8:
-        ((int8_t *)payload->data)[row] = (int8_t)Rf_asInteger(value);
+        ((int8_t *)data)[row] = (int8_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U8:
-        ((uint8_t *)payload->data)[row] = (uint8_t)Rf_asInteger(value);
+        ((uint8_t *)data)[row] = (uint8_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_I16:
-        ((int16_t *)payload->data)[row] = (int16_t)Rf_asInteger(value);
+        ((int16_t *)data)[row] = (int16_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U16:
-        ((uint16_t *)payload->data)[row] = (uint16_t)Rf_asInteger(value);
+        ((uint16_t *)data)[row] = (uint16_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_I32:
-        ((int32_t *)payload->data)[row] = (int32_t)Rf_asInteger(value);
+        ((int32_t *)data)[row] = (int32_t)Rf_asInteger(value);
         return 1;
     case RDUCKS_TYPE_U32:
-        ((uint32_t *)payload->data)[row] = (uint32_t)Rf_asReal(value);
+        ((uint32_t *)data)[row] = (uint32_t)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_I64: {
         uint8_t bytes[8];
@@ -2538,32 +2652,32 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 8, 1, bytes, err_msg, err_cap)) return 0;
         u = rducks_rc_le_bytes_to_u64(bytes);
         memcpy(&v, &u, sizeof(v));
-        ((int64_t *)payload->data)[row] = v;
+        ((int64_t *)data)[row] = v;
         return 1;
     }
     case RDUCKS_TYPE_U64: {
         uint8_t bytes[8];
         if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 8, 0, bytes, err_msg, err_cap)) return 0;
-        ((uint64_t *)payload->data)[row] = rducks_rc_le_bytes_to_u64(bytes);
+        ((uint64_t *)data)[row] = rducks_rc_le_bytes_to_u64(bytes);
         return 1;
     }
     case RDUCKS_TYPE_F32:
-        ((float *)payload->data)[row] = (float)Rf_asReal(value);
+        ((float *)data)[row] = (float)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_F64:
-        ((double *)payload->data)[row] = Rf_asReal(value);
+        ((double *)data)[row] = Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_DATE:
-        ((duckdb_date *)payload->data)[row].days = (int32_t)Rf_asReal(value);
+        ((int32_t *)data)[row] = (int32_t)Rf_asReal(value);
         return 1;
     case RDUCKS_TYPE_TIME:
-        ((duckdb_time *)payload->data)[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        ((int64_t *)data)[row] = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
     case RDUCKS_TYPE_TIMESTAMP:
-        ((duckdb_timestamp *)payload->data)[row].micros = (int64_t)llround(Rf_asReal(value) * 1000000.0);
+        ((int64_t *)data)[row] = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
     default:
-        snprintf(err_msg, err_cap, "Rducks owned result payload does not support this return type");
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return 0;
     }
 }
@@ -2572,69 +2686,82 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
                                                     duckdb_vector output,
                                                     char *err_msg, size_t err_cap) {
     rducks_rc_direct_vector_view_t output_view;
-    if (!payload || !output) {
-        snprintf(err_msg, err_cap, "Rducks owned result writeback is missing state");
+    struct ArrowArray *child;
+    const uint8_t *validity;
+    const uint8_t *data;
+    if (!payload || !payload->desc || !output || !payload->array.release ||
+        !payload->array.children || !payload->array.children[0]) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback is missing state");
         return 0;
     }
+    child = payload->array.children[0];
+    validity = (const uint8_t *)child->buffers[0];
+    data = (const uint8_t *)child->buffers[1];
+    if (!child->buffers || payload->n != (idx_t)child->length || (payload->n > 0 && !data)) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
+        return 0;
+    }
+
     rducks_rc_direct_output_view_init(&output_view, output);
     for (idx_t row = 0; row < payload->n; row++) {
-        if (!payload->valid[row]) {
+        if (validity && !rducks_rc_arrow_bitmap_get(validity, row)) {
             rducks_rc_output_set_null(&output_view, row);
-        } else {
-            rducks_rc_output_set_valid_if_needed(&output_view, row);
-            switch (payload->desc->scalar) {
-            case RDUCKS_TYPE_BOOL:
-                ((bool *)output_view.data)[row] = ((bool *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_I8:
-                ((int8_t *)output_view.data)[row] = ((int8_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_U8:
-                ((uint8_t *)output_view.data)[row] = ((uint8_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_I16:
-                ((int16_t *)output_view.data)[row] = ((int16_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_U16:
-                ((uint16_t *)output_view.data)[row] = ((uint16_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_I32:
-                ((int32_t *)output_view.data)[row] = ((int32_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_U32:
-                ((uint32_t *)output_view.data)[row] = ((uint32_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_I64:
-                ((int64_t *)output_view.data)[row] = ((int64_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_U64:
-                ((uint64_t *)output_view.data)[row] = ((uint64_t *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_F32:
-                ((float *)output_view.data)[row] = ((float *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_F64:
-                ((double *)output_view.data)[row] = ((double *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_DATE:
-                ((duckdb_date *)output_view.data)[row] = ((duckdb_date *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_TIME:
-                ((duckdb_time *)output_view.data)[row] = ((duckdb_time *)payload->data)[row];
-                break;
-            case RDUCKS_TYPE_TIMESTAMP:
-                ((duckdb_timestamp *)output_view.data)[row] = ((duckdb_timestamp *)payload->data)[row];
-                break;
-            default:
-                snprintf(err_msg, err_cap, "Rducks owned result payload writeback does not support this return type");
-                return 0;
-            }
+            continue;
+        }
+        rducks_rc_output_set_valid_if_needed(&output_view, row);
+        switch (payload->desc->scalar) {
+        case RDUCKS_TYPE_BOOL:
+            ((bool *)output_view.data)[row] = rducks_rc_arrow_bitmap_get(data, row);
+            break;
+        case RDUCKS_TYPE_I8:
+            ((int8_t *)output_view.data)[row] = ((const int8_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_U8:
+            ((uint8_t *)output_view.data)[row] = ((const uint8_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_I16:
+            ((int16_t *)output_view.data)[row] = ((const int16_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_U16:
+            ((uint16_t *)output_view.data)[row] = ((const uint16_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_I32:
+            ((int32_t *)output_view.data)[row] = ((const int32_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_U32:
+            ((uint32_t *)output_view.data)[row] = ((const uint32_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_I64:
+            ((int64_t *)output_view.data)[row] = ((const int64_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_U64:
+            ((uint64_t *)output_view.data)[row] = ((const uint64_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_F32:
+            ((float *)output_view.data)[row] = ((const float *)data)[row];
+            break;
+        case RDUCKS_TYPE_F64:
+            ((double *)output_view.data)[row] = ((const double *)data)[row];
+            break;
+        case RDUCKS_TYPE_DATE:
+            ((duckdb_date *)output_view.data)[row].days = ((const int32_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_TIME:
+            ((duckdb_time *)output_view.data)[row].micros = ((const int64_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_TIMESTAMP:
+            ((duckdb_timestamp *)output_view.data)[row].micros = ((const int64_t *)data)[row];
+            break;
+        default:
+            snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
+            return 0;
         }
     }
     return 1;
 }
 
-static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_r_scalar_meta_t *meta,
+static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_runtime_entry_t *runtime,
+                                                                     rducks_r_scalar_meta_t *meta,
                                                                      rducks_rc_direct_scalar_frame_t *frame,
                                                                      rducks_rc_owned_result_payload_t **payload_out,
                                                                      char *err_msg, size_t err_cap) {
@@ -2650,7 +2777,7 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_r_sc
         return 0;
     }
     *payload_out = NULL;
-    payload = rducks_rc_owned_result_payload_new(meta->return_desc, frame->n, err_msg, err_cap);
+    payload = rducks_rc_owned_result_payload_new(runtime, meta, frame->n, err_msg, err_cap);
     if (!payload) return 0;
     *payload_out = payload;
 
@@ -2663,6 +2790,11 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_r_sc
             }
         }
         if (meta->null_handling == RDUCKS_NULL_DEFAULT && has_null) {
+            if (!rducks_rc_owned_result_payload_set_null(payload, row, err_msg, err_cap)) {
+                rducks_rc_owned_result_payload_free(payload);
+                *payload_out = NULL;
+                return 0;
+            }
             continue;
         }
 
@@ -2680,6 +2812,11 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_r_sc
         if (r_err) {
             UNPROTECT(2);
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
+                if (!rducks_rc_owned_result_payload_set_null(payload, row, err_msg, err_cap)) {
+                    rducks_rc_owned_result_payload_free(payload);
+                    *payload_out = NULL;
+                    return 0;
+                }
                 continue;
             }
             rducks_rc_owned_result_payload_free(payload);
@@ -2710,6 +2847,7 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_r_sc
 }
 
 typedef struct rducks_rc_owned_payload_eval_context {
+    rducks_runtime_entry_t *runtime;
     rducks_r_scalar_meta_t *meta;
     rducks_rc_direct_scalar_frame_t *frame;
     rducks_rc_owned_result_payload_t **payload_out;
@@ -2720,8 +2858,8 @@ typedef struct rducks_rc_owned_payload_eval_context {
 
 static SEXP rducks_rc_owned_payload_eval_unwind_body(void *data) {
     rducks_rc_owned_payload_eval_context_t *ctx = (rducks_rc_owned_payload_eval_context_t *)data;
-    ctx->ok = rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(ctx->meta, ctx->frame,
-                                                                        ctx->payload_out,
+    ctx->ok = rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(ctx->runtime, ctx->meta,
+                                                                        ctx->frame, ctx->payload_out,
                                                                         ctx->err_msg, ctx->err_cap);
     return R_NilValue;
 }
@@ -2732,7 +2870,8 @@ static void rducks_rc_owned_payload_eval_unwind_cleanup(void *data, Rboolean jum
     if (ctx && ctx->frame) rducks_rc_direct_scalar_frame_cleanup(ctx->frame);
 }
 
-static int rducks_rc_direct_scalar_execute_to_owned_payload(rducks_r_scalar_meta_t *meta,
+static int rducks_rc_direct_scalar_execute_to_owned_payload(rducks_runtime_entry_t *runtime,
+                                                            rducks_r_scalar_meta_t *meta,
                                                             duckdb_data_chunk input,
                                                             duckdb_vector output,
                                                             rducks_rc_owned_result_payload_t **payload_out,
@@ -2745,6 +2884,7 @@ static int rducks_rc_direct_scalar_execute_to_owned_payload(rducks_r_scalar_meta
     if (!rducks_rc_direct_scalar_snapshot_input_views(meta, input, &frame, err_msg, err_cap)) {
         return 0;
     }
+    ctx.runtime = runtime;
     ctx.meta = meta;
     ctx.frame = &frame;
     ctx.payload_out = payload_out;
@@ -2962,7 +3102,6 @@ static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t
                                                           duckdb_data_chunk input, duckdb_vector output,
                                                           rducks_rc_owned_result_payload_t **payload_out,
                                                           char *err_msg, size_t err_cap) {
-    (void)runtime;
     if (payload_out) *payload_out = NULL;
     if (!meta || !meta->fun || meta->fun == R_NilValue || !payload_out) {
         snprintf(err_msg, err_cap, "Rducks RC scalar owned-result metadata missing");
@@ -2977,7 +3116,7 @@ static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t
         snprintf(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
         return 0;
     }
-    return rducks_rc_direct_scalar_execute_to_owned_payload(meta, input, output, payload_out, err_msg, err_cap);
+    return rducks_rc_direct_scalar_execute_to_owned_payload(runtime, meta, input, output, payload_out, err_msg, err_cap);
 }
 
 typedef int (*rducks_rc_execute_fn_t)(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,

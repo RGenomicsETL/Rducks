@@ -72,9 +72,10 @@ R-side registry view has been detached.
   vector views in a no-R-API phase, but the input views are still callback-frame
   borrows, not owned cross-thread payloads. For queued direct `arrow_c` scalar
   UDFs with primitive scalar returns, return values are copied into an owned
-  native payload on the recorded main R thread and the waiting worker writes the
-  DuckDB output vector from that payload. Other same-process return paths still
-  write output on the recorded main R thread.
+  Arrow C Data result chunk on the recorded main R thread and the waiting worker
+  writes the DuckDB output vector from those Arrow buffers without touching
+  `SEXP`s or nanoarrow R external pointers. Other same-process return paths
+  still write output on the recorded main R thread.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
   `SEXP` pointers as a hidden transport fallback.

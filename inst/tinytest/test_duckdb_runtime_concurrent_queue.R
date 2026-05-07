@@ -83,6 +83,11 @@ local({
   before <- rducks_inproc_stats(con)
   queued_c_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_result$x, sum((0:9) + 1))
+  queued_c_input_null_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_plus_one_c(CASE WHEN i = 1 THEN NULL::DOUBLE ELSE i::DOUBLE END) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_input_null_result$x, c(1, NA, 3))
   invisible(rducks_register(
     con, "rducks_queue_arrow_c_null_i32",
     function(x) if (identical(x, 1L)) NULL else x + 1L,
@@ -93,6 +98,16 @@ local({
     "SELECT rducks_queue_arrow_c_null_i32(i::INTEGER) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_null_result$x, c(1L, NA_integer_, 3L))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_bool",
+    function(x) x %% 2L == 0L,
+    INTEGER, BOOLEAN
+  ))
+  queued_c_bool_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_bool(i::INTEGER) AS x FROM rducks_parallel_range(4::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_bool_result$x, c(TRUE, FALSE, TRUE, FALSE))
   queued_c_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_vec_result$x, sum((0:9) + 1))
   invisible(rducks_register(
