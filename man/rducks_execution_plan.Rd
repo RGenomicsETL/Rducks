@@ -44,7 +44,10 @@ globals/packages once per provider registration.}
 \item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
 \code{"future"} is the portable default. \code{"mirai"} uses persistent mirai daemon
 workers and fails at registration if the \code{mirai} package is unavailable; it
-does not fall back to Future.}
+does not fall back to Future. The mirai provider broadcasts each registered
+UDF closure plus discovered globals/packages to every daemon in the shared
+database-runtime provider pool, so avoid capturing large objects in UDF
+environments unless that memory cost is intended.}
 
 \item{ipc_workers}{Number of persistent workers for \code{ipc_provider = "mirai"}.}
 

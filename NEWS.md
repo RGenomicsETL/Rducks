@@ -39,7 +39,9 @@
   the R-side field vector is only a documented compatibility list for sessions
   where that optional native discovery helper is unavailable.
 - `rducks_explain_udf()` and `rducks_list_udfs()` now include `r_side_record`
-  to make detached/missing R-side registry metadata explicit.
+  to make detached/missing R-side registry metadata explicit. Native per-UDF
+  hot-path counters are updated with atomics rather than the process-global
+  runtime registry lock.
 - Added `rducks_native_execution_backend()` to cross-check the native
   database-scoped execution backend against the R-side current/default execution
   plan.

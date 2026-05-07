@@ -94,6 +94,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         rducks_type_desc_destroy(return_desc);
         return false;
     }
+    rducks_udf_stats_init(meta);
     meta->fun = R_NilValue;
     meta->name = rducks_strdup(name);
     if (!meta->name) {

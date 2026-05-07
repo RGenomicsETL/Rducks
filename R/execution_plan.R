@@ -147,7 +147,10 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
 #'   `"future"` is the portable default. `"mirai"` uses persistent mirai daemon
 #'   workers and fails at registration if the `mirai` package is unavailable; it
-#'   does not fall back to Future.
+#'   does not fall back to Future. The mirai provider broadcasts each registered
+#'   UDF closure plus discovered globals/packages to every daemon in the shared
+#'   database-runtime provider pool, so avoid capturing large objects in UDF
+#'   environments unless that memory cost is intended.
 #' @param ipc_workers Number of persistent workers for `ipc_provider = "mirai"`.
 #' @param ipc_max_pending Maximum accepted but uncollected tasks for the
 #'   persistent provider. The default bounds provider memory/use of outstanding

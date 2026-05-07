@@ -52,6 +52,8 @@ what still needs doing.
   main-thread capability.
 - [x] Diagnostics: runtime accounting, preserved-release stats, pending/running
   queue pressure, timeout semantics, and main-thread drain counters are exposed.
+  Per-UDF hot-path counters use atomics rather than the process-global runtime
+  registry lock.
 - [x] Execution-plan simplification: valid plan pairs expose concrete
   `engine_id`s while preserving the readable marshalling/concurrency API.
 - [x] Persistent worker/provider architecture: generic Future remains the
@@ -118,6 +120,9 @@ Implemented behavior to preserve:
 - Zero-argument vectorized UDFs are not exposed.
 - `side_effects = TRUE` marks the DuckDB scalar function volatile; it does not
   alter R-thread or queue semantics.
+- For `ipc_provider = "mirai"`, UDF closures and discovered globals/packages are
+  broadcast once to every daemon in the shared database-runtime provider pool;
+  users should avoid accidentally capturing very large objects.
 
 ## Empirical notes from connection-object checks
 

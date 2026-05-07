@@ -54,7 +54,10 @@ provider$stats()
 `future` can implement this as an adapter even if each `submit()` still creates a
 Future. Persistent providers should load `fun`, globals, packages, type
 descriptors, and schema specs once in `register_udf()`, then send only task
-metadata and Arrow IPC bytes per chunk.
+metadata and Arrow IPC bytes per chunk. For mirai this means the UDF closure and
+its discovered globals are copied to every daemon in the shared pool and retained
+there until the pool stops; users should avoid accidental capture of large models,
+data frames, or live database handles.
 
 ## Registration envelope
 

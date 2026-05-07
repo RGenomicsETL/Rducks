@@ -64,5 +64,8 @@ unsupported plan/mode/type combinations fail instead of falling back. If a
 later call registers the same SQL name/signature, the callable implementation
 is replaced in the shared DuckDB database catalog rather than being tied to
 the registering DBI connection. After registration, use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}}
-to opt into queued same-process execution.
+to opt into queued same-process execution. For \code{arrow_ipc} plans with
+\code{ipc_provider = "mirai"}, the UDF closure and discovered globals are copied
+once to each daemon in the shared provider pool and retained for that pool's
+lifetime.
 }

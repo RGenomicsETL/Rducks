@@ -189,7 +189,9 @@ static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) 
     /* Used when a DuckDB extension reload invalidates catalog-owned function
      * metadata. Detach registry bookkeeping without calling R API. If DuckDB
      * later destroys those metadata objects off-main, their preserved R
-     * evaluators are queued for a safe recorded-main-thread release.
+     * evaluators are queued for a safe recorded-main-thread release. Runtime
+     * entries are retained for the process lifetime, so keep meta->runtime
+     * stable instead of racing a destructor/callback read with a NULL write.
      */
     rducks_r_scalar_meta_t *cur;
     if (!runtime) return;
@@ -199,120 +201,141 @@ static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) 
     while (cur) {
         rducks_r_scalar_meta_t *next = cur->registry_next;
         cur->registry_next = NULL;
-        cur->runtime = NULL;
         cur = next;
     }
     rducks_runtime_unlock();
 }
 
+static uint64_t rducks_udf_counter_load(atomic_uint_fast64_t *counter) {
+    return (uint64_t)atomic_load_explicit(counter, memory_order_relaxed);
+}
+
+static void rducks_udf_counter_store(atomic_uint_fast64_t *counter, uint64_t value) {
+    atomic_store_explicit(counter, (uint_fast64_t)value, memory_order_relaxed);
+}
+
+static uint64_t rducks_udf_counter_add(atomic_uint_fast64_t *counter, uint64_t value) {
+    return (uint64_t)(atomic_fetch_add_explicit(counter, (uint_fast64_t)value,
+                                               memory_order_relaxed) + (uint_fast64_t)value);
+}
+
+static void rducks_udf_counter_sub_saturating(atomic_uint_fast64_t *counter, uint64_t value) {
+    uint_fast64_t cur;
+    uint_fast64_t next;
+    if (value == 0U) return;
+    cur = atomic_load_explicit(counter, memory_order_relaxed);
+    do {
+        next = cur > (uint_fast64_t)value ? cur - (uint_fast64_t)value : 0U;
+    } while (!atomic_compare_exchange_weak_explicit(counter, &cur, next,
+                                                    memory_order_relaxed,
+                                                    memory_order_relaxed));
+}
+
+static void rducks_udf_counter_max(atomic_uint_fast64_t *counter, uint64_t value) {
+    uint_fast64_t cur = atomic_load_explicit(counter, memory_order_relaxed);
+    while (cur < (uint_fast64_t)value &&
+           !atomic_compare_exchange_weak_explicit(counter, &cur, (uint_fast64_t)value,
+                                                  memory_order_relaxed,
+                                                  memory_order_relaxed)) {
+    }
+}
+
+static void rducks_udf_stats_init(rducks_r_scalar_meta_t *meta) {
+    if (!meta) return;
+    atomic_init(&meta->dispatch_chunks, 0U);
+    atomic_init(&meta->dispatch_rows, 0U);
+    atomic_init(&meta->direct_chunks, 0U);
+    atomic_init(&meta->queued_chunks, 0U);
+    atomic_init(&meta->queue_pending_current, 0U);
+    atomic_init(&meta->queue_pending_max, 0U);
+    atomic_init(&meta->arrow_r_chunks, 0U);
+    atomic_init(&meta->arrow_c_chunks, 0U);
+    atomic_init(&meta->arrow_c_input_snapshot_chunks, 0U);
+    atomic_init(&meta->arrow_c_owned_result_chunk_chunks, 0U);
+    atomic_init(&meta->arrow_ipc_chunks, 0U);
+    atomic_init(&meta->ripc_collect_batches, 0U);
+    atomic_init(&meta->ripc_collect_requests, 0U);
+    atomic_init(&meta->ripc_collect_max_batch, 0U);
+    atomic_init(&meta->ripc_submit_wave_max, 0U);
+    atomic_init(&meta->ripc_collect_ready_max, 0U);
+    atomic_init(&meta->ripc_inflight_current, 0U);
+    atomic_init(&meta->ripc_inflight_max, 0U);
+}
+
 static void rducks_udf_record_dispatch(rducks_r_scalar_meta_t *meta, idx_t rows, int queued) {
     if (!meta || !meta->runtime) return;
-    rducks_runtime_lock();
-    meta->dispatch_chunks++;
-    meta->dispatch_rows += (uint64_t)rows;
+    rducks_udf_counter_add(&meta->dispatch_chunks, 1U);
+    rducks_udf_counter_add(&meta->dispatch_rows, (uint64_t)rows);
     if (queued) {
-        meta->queued_chunks++;
+        rducks_udf_counter_add(&meta->queued_chunks, 1U);
     } else {
-        meta->direct_chunks++;
+        rducks_udf_counter_add(&meta->direct_chunks, 1U);
     }
-    rducks_runtime_unlock();
 }
 
 static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows) {
     (void)rows;
     if (!meta || !meta->runtime) return;
-    rducks_runtime_lock();
     if (meta->eval_mode == RDUCKS_EVAL_R) {
-        meta->arrow_r_chunks++;
+        rducks_udf_counter_add(&meta->arrow_r_chunks, 1U);
     } else if (meta->eval_mode == RDUCKS_EVAL_RIPC) {
-        meta->arrow_ipc_chunks++;
+        rducks_udf_counter_add(&meta->arrow_ipc_chunks, 1U);
     } else {
-        meta->arrow_c_chunks++;
+        rducks_udf_counter_add(&meta->arrow_c_chunks, 1U);
     }
-    rducks_runtime_unlock();
 }
 
 static void rducks_udf_record_arrow_c_input_snapshot(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
     if (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV) return;
-    rducks_runtime_lock();
-    meta->arrow_c_input_snapshot_chunks++;
-    rducks_runtime_unlock();
+    rducks_udf_counter_add(&meta->arrow_c_input_snapshot_chunks, 1U);
 }
 
 static void rducks_udf_record_arrow_c_owned_result_chunk(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
     if (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV) return;
-    rducks_runtime_lock();
-    meta->arrow_c_owned_result_chunk_chunks++;
-    rducks_runtime_unlock();
+    rducks_udf_counter_add(&meta->arrow_c_owned_result_chunk_chunks, 1U);
 }
 
 static void rducks_udf_record_queue_pending_add(rducks_r_scalar_meta_t *meta) {
+    uint64_t current;
     if (!meta || !meta->runtime) return;
-    rducks_runtime_lock();
-    meta->queue_pending_current++;
-    if (meta->queue_pending_current > meta->queue_pending_max) {
-        meta->queue_pending_max = meta->queue_pending_current;
-    }
-    rducks_runtime_unlock();
+    current = rducks_udf_counter_add(&meta->queue_pending_current, 1U);
+    rducks_udf_counter_max(&meta->queue_pending_max, current);
 }
 
 static void rducks_udf_record_queue_pending_done(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
-    rducks_runtime_lock();
-    if (meta->queue_pending_current > 0U) meta->queue_pending_current--;
-    rducks_runtime_unlock();
+    rducks_udf_counter_sub_saturating(&meta->queue_pending_current, 1U);
 }
 
 static void rducks_udf_record_ripc_inflight_add(rducks_r_scalar_meta_t *meta) {
+    uint64_t current;
     if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC) return;
-    rducks_runtime_lock();
-    meta->ripc_inflight_current++;
-    if (meta->ripc_inflight_current > meta->ripc_inflight_max) {
-        meta->ripc_inflight_max = meta->ripc_inflight_current;
-    }
-    rducks_runtime_unlock();
+    current = rducks_udf_counter_add(&meta->ripc_inflight_current, 1U);
+    rducks_udf_counter_max(&meta->ripc_inflight_max, current);
 }
 
 static void rducks_udf_record_ripc_inflight_done(rducks_r_scalar_meta_t *meta, size_t count) {
     if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC || count == 0U) return;
-    rducks_runtime_lock();
-    if (meta->ripc_inflight_current >= (uint64_t)count) {
-        meta->ripc_inflight_current -= (uint64_t)count;
-    } else {
-        meta->ripc_inflight_current = 0U;
-    }
-    rducks_runtime_unlock();
+    rducks_udf_counter_sub_saturating(&meta->ripc_inflight_current, (uint64_t)count);
 }
 
 static void rducks_udf_record_ripc_batch(rducks_r_scalar_meta_t *meta, size_t batch_size) {
     if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC || batch_size == 0U) return;
-    rducks_runtime_lock();
-    meta->ripc_collect_batches++;
-    meta->ripc_collect_requests += (uint64_t)batch_size;
-    if ((uint64_t)batch_size > meta->ripc_collect_max_batch) {
-        meta->ripc_collect_max_batch = (uint64_t)batch_size;
-    }
-    rducks_runtime_unlock();
+    rducks_udf_counter_add(&meta->ripc_collect_batches, 1U);
+    rducks_udf_counter_add(&meta->ripc_collect_requests, (uint64_t)batch_size);
+    rducks_udf_counter_max(&meta->ripc_collect_max_batch, (uint64_t)batch_size);
 }
 
 static void rducks_udf_record_ripc_submit_wave(rducks_r_scalar_meta_t *meta, size_t wave_size) {
     if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC || wave_size == 0U) return;
-    rducks_runtime_lock();
-    if ((uint64_t)wave_size > meta->ripc_submit_wave_max) {
-        meta->ripc_submit_wave_max = (uint64_t)wave_size;
-    }
-    rducks_runtime_unlock();
+    rducks_udf_counter_max(&meta->ripc_submit_wave_max, (uint64_t)wave_size);
 }
 
 static void rducks_udf_record_ripc_collect_ready(rducks_r_scalar_meta_t *meta, size_t ready_size) {
     if (!meta || !meta->runtime || meta->eval_mode != RDUCKS_EVAL_RIPC || ready_size == 0U) return;
-    rducks_runtime_lock();
-    if ((uint64_t)ready_size > meta->ripc_collect_ready_max) {
-        meta->ripc_collect_ready_max = (uint64_t)ready_size;
-    }
-    rducks_runtime_unlock();
+    rducks_udf_counter_max(&meta->ripc_collect_ready_max, (uint64_t)ready_size);
 }
 
 static const char *rducks_udf_stat_fields_text(void) {
@@ -341,22 +364,24 @@ static const char *rducks_udf_stat_fields_text(void) {
 
 static void rducks_runtime_reset_udf_stats_locked(rducks_r_scalar_meta_t *meta) {
     if (!meta) return;
-    meta->dispatch_chunks = 0U;
-    meta->dispatch_rows = 0U;
-    meta->direct_chunks = 0U;
-    meta->queued_chunks = 0U;
-    meta->arrow_r_chunks = 0U;
-    meta->arrow_c_chunks = 0U;
-    meta->arrow_c_input_snapshot_chunks = 0U;
-    meta->arrow_c_owned_result_chunk_chunks = 0U;
-    meta->arrow_ipc_chunks = 0U;
-    meta->ripc_collect_batches = 0U;
-    meta->ripc_collect_requests = 0U;
-    meta->ripc_collect_max_batch = 0U;
-    meta->ripc_submit_wave_max = 0U;
-    meta->ripc_collect_ready_max = 0U;
-    meta->queue_pending_max = meta->queue_pending_current;
-    meta->ripc_inflight_max = meta->ripc_inflight_current;
+    rducks_udf_counter_store(&meta->dispatch_chunks, 0U);
+    rducks_udf_counter_store(&meta->dispatch_rows, 0U);
+    rducks_udf_counter_store(&meta->direct_chunks, 0U);
+    rducks_udf_counter_store(&meta->queued_chunks, 0U);
+    rducks_udf_counter_store(&meta->arrow_r_chunks, 0U);
+    rducks_udf_counter_store(&meta->arrow_c_chunks, 0U);
+    rducks_udf_counter_store(&meta->arrow_c_input_snapshot_chunks, 0U);
+    rducks_udf_counter_store(&meta->arrow_c_owned_result_chunk_chunks, 0U);
+    rducks_udf_counter_store(&meta->arrow_ipc_chunks, 0U);
+    rducks_udf_counter_store(&meta->ripc_collect_batches, 0U);
+    rducks_udf_counter_store(&meta->ripc_collect_requests, 0U);
+    rducks_udf_counter_store(&meta->ripc_collect_max_batch, 0U);
+    rducks_udf_counter_store(&meta->ripc_submit_wave_max, 0U);
+    rducks_udf_counter_store(&meta->ripc_collect_ready_max, 0U);
+    rducks_udf_counter_store(&meta->queue_pending_max,
+                             rducks_udf_counter_load(&meta->queue_pending_current));
+    rducks_udf_counter_store(&meta->ripc_inflight_max,
+                             rducks_udf_counter_load(&meta->ripc_inflight_current));
 }
 
 static int rducks_runtime_reset_udf_stats(rducks_runtime_entry_t *runtime, const char *name,
@@ -418,41 +443,41 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
         snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" :
                  (meta->eval_mode == RDUCKS_EVAL_RIPC ? "arrow_ipc" : "arrow_c"));
     } else if (strcmp(field, "dispatch_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->dispatch_chunks));
     } else if (strcmp(field, "dispatch_rows") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->dispatch_rows);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->dispatch_rows));
     } else if (strcmp(field, "direct_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->direct_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->direct_chunks));
     } else if (strcmp(field, "queued_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->queued_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queued_chunks));
     } else if (strcmp(field, "queue_pending_current") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->queue_pending_current);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queue_pending_current));
     } else if (strcmp(field, "queue_pending_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->queue_pending_max);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queue_pending_max));
     } else if (strcmp(field, "arrow_r_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_r_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_r_chunks));
     } else if (strcmp(field, "arrow_c_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_chunks));
     } else if (strcmp(field, "arrow_c_input_snapshot_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_input_snapshot_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_input_snapshot_chunks));
     } else if (strcmp(field, "arrow_c_owned_result_chunk_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_owned_result_chunk_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_owned_result_chunk_chunks));
     } else if (strcmp(field, "arrow_ipc_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_ipc_chunks);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_ipc_chunks));
     } else if (strcmp(field, "ripc_collect_batches") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_batches);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_batches));
     } else if (strcmp(field, "ripc_collect_requests") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_requests);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_requests));
     } else if (strcmp(field, "ripc_collect_max_batch") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_max_batch);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_max_batch));
     } else if (strcmp(field, "ripc_submit_wave_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_submit_wave_max);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_submit_wave_max));
     } else if (strcmp(field, "ripc_collect_ready_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_collect_ready_max);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_ready_max));
     } else if (strcmp(field, "ripc_inflight_current") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_inflight_current);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_inflight_current));
     } else if (strcmp(field, "ripc_inflight_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)meta->ripc_inflight_max);
+        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_inflight_max));
     } else {
         ok = 0;
     }
