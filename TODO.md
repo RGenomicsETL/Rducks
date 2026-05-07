@@ -504,16 +504,15 @@ current callbacks, but not for an asynchronous same-process design.
 
 - [ ] Implement owned input snapshots for worker-originating chunk requests.
 - [ ] Implement owned result payloads plus safe writeback.
-  - Queued direct `arrow_c` scalar UDFs with supported scalar return types now
-    evaluate into an owned Arrow C Data result chunk on the recorded main R
-    thread; the waiting worker writes DuckDB output from those Arrow buffers
-    without touching `SEXP`s or nanoarrow R external pointers. Covered return
-    families include `bool`, integer widths, floating point, date, time,
-    timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and
-    INTERVAL.
-  - Still open for direct vectorized `arrow_c`, composite direct returns,
-    Arrow/R helper returns, and RIPC native decode/import from owned result
-    bytes.
+  - Queued direct `arrow_c` scalar and vectorized UDFs with supported scalar
+    return types now evaluate into an owned Arrow C Data result chunk on the
+    recorded main R thread; the waiting worker writes DuckDB output from those
+    Arrow buffers without touching `SEXP`s or nanoarrow R external pointers.
+    Covered return families include `bool`, integer widths, floating point,
+    date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID,
+    HUGEINT/UHUGEINT, and INTERVAL.
+  - Still open for composite direct returns, Arrow/R helper returns, and RIPC
+    native decode/import from owned result bytes.
 - [x] Split current `arrow_c` code into explicit worker-safe/native and
   recorded-main-R-thread phases.
   - Scalar `arrow_c` now snapshots borrowed DuckDB vector views in a no-R-API
@@ -521,9 +520,10 @@ current callbacks, but not for an asynchronous same-process design.
     main-thread phase while the callback remains blocked. Queued supported
     scalar returns use the owned Arrow C Data result payload described above;
     composite return shapes still use SEXP writeback on the main thread.
-  - Vectorized `arrow_c` now has named main-thread prepare/evaluate/writeback
-    phases. Fully worker-safe vectorized snapshots still depend on the owned
-    input/result payload items above.
+  - Vectorized `arrow_c` now has named main-thread prepare/evaluate phases and
+    uses the owned Arrow C Data result payload for queued supported scalar
+    returns. Fully worker-safe vectorized input snapshots still depend on the
+    owned input item above.
 
 ## Wasm / webR
 

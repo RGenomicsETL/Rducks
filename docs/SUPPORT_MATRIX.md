@@ -71,8 +71,8 @@ R-side registry view has been detached.
   not supported. Direct `arrow_c` scalar execution now snapshots borrowed DuckDB
   vector views in a no-R-API phase, but the input views are still callback-frame
   borrows, not owned cross-thread payloads. For queued direct `arrow_c` scalar
-  UDFs with supported scalar returns (bool, integer widths, floating point,
-  date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID,
+  and vectorized UDFs with supported scalar returns (bool, integer widths,
+  floating point, date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID,
   HUGEINT/UHUGEINT, and INTERVAL), return values are copied into an owned Arrow
   C Data result chunk on the recorded main R thread and the waiting worker
   writes the DuckDB output vector from those Arrow buffers without touching

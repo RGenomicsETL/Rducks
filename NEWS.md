@@ -67,12 +67,13 @@
   accepted by the direct `arrow_c` type matrix. Chunk arguments are materialized
   from DuckDB vectors in C, return rows are written back through the direct
   writer, and generated marshalling coverage verifies the path does not fall
-  back to Arrow/R helpers. Queued direct `arrow_c` scalar UDFs with supported
-  scalar returns now evaluate on the recorded main R thread into an owned Arrow
-  C Data result chunk; the waiting worker writes DuckDB output from those Arrow
-  buffers without touching `SEXP`s or nanoarrow R external pointers. The owned
-  scalar return envelope covers primitive, temporal, VARCHAR/BLOB/BIT, DECIMAL,
-  ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL results.
+  back to Arrow/R helpers. Queued direct `arrow_c` scalar and vectorized UDFs
+  with supported scalar returns now evaluate on the recorded main R thread into
+  an owned Arrow C Data result chunk; the waiting worker writes DuckDB output
+  from those Arrow buffers without touching `SEXP`s or nanoarrow R external
+  pointers. The owned return envelope covers primitive, temporal,
+  VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL
+  results.
 - Added an internal `%||%` compatibility shim so the package works under the
   lowered R 4.3 dependency floor.
 - `arrow_c` is now a direct scalar and vectorized marshalling path. Unsupported

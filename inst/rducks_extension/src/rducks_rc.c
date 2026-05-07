@@ -2495,7 +2495,7 @@ static int rducks_rc_owned_result_type_supported(const rducks_type_desc_t *desc)
 }
 
 static int rducks_rc_owned_result_supported(rducks_r_scalar_meta_t *meta) {
-    return meta && meta->eval_mode == RDUCKS_EVAL_RC &&
+    return meta && (meta->eval_mode == RDUCKS_EVAL_RC || meta->eval_mode == RDUCKS_EVAL_RCV) &&
            rducks_rc_direct_supported(meta) &&
            rducks_rc_owned_result_type_supported(meta->return_desc);
 }
@@ -3058,6 +3058,23 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
     return 1;
 }
 
+
+static int rducks_rc_owned_result_payload_set_results(rducks_rc_owned_result_payload_t *payload,
+                                                      SEXP results, idx_t n,
+                                                      char *err_msg, size_t err_cap) {
+    if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
+        snprintf(err_msg, err_cap, "Rducks RC owned-result vectorized result is not a row list");
+        return 0;
+    }
+    for (idx_t row = 0; row < n; row++) {
+        if (!rducks_rc_owned_result_payload_set_value(payload, row, VECTOR_ELT(results, (R_xlen_t)row),
+                                                      err_msg, err_cap)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_runtime_entry_t *runtime,
                                                                      rducks_r_scalar_meta_t *meta,
                                                                      rducks_rc_direct_scalar_frame_t *frame,
@@ -3395,6 +3412,88 @@ static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks
     return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
 }
 
+static int rducks_rc_vectorized_execute_to_owned_payload(rducks_runtime_entry_t *runtime,
+                                                              rducks_r_scalar_meta_t *meta,
+                                                              duckdb_data_chunk input,
+                                                              duckdb_vector output,
+                                                              rducks_rc_owned_result_payload_t **payload_out,
+                                                              char *err_msg, size_t err_cap) {
+    (void)output;
+    idx_t n;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP bundle;
+    SEXP fun;
+    SEXP arg_types;
+    SEXP return_type;
+    SEXP eval_rows_fun;
+    SEXP prepared;
+    SEXP null_handling_sexp;
+    SEXP exception_handling_sexp;
+    SEXP results;
+    rducks_rc_owned_result_payload_t *payload;
+
+    if (!payload_out) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized owned-result payload output is missing");
+        return 0;
+    }
+    *payload_out = NULL;
+    if (!meta || !meta->fun || meta->fun == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized owned-result metadata missing");
+        return 0;
+    }
+    if (!rducks_rc_direct_supported(meta)) {
+        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        return 0;
+    }
+    if (!rducks_rc_owned_result_type_supported(meta->return_desc)) {
+        snprintf(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
+        return 0;
+    }
+    bundle = meta->fun;
+    if (!rducks_rc_bundle_valid(bundle)) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
+        return 0;
+    }
+
+    n = duckdb_data_chunk_get_size(input);
+    prepared = rducks_rc_vectorized_prepare_inputs_on_r_thread(meta, input, n, &protect_count, err_msg, err_cap);
+    if (prepared == R_NilValue) goto fail_vectorized_payload;
+
+    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
+    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
+    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
+    eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
+
+    null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
+    protect_count++;
+    exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
+    protect_count++;
+    results = rducks_rc_vectorized_eval_on_r_thread(eval_rows_fun, fun, arg_types, return_type, prepared,
+                                                    null_handling_sexp, exception_handling_sexp,
+                                                    &protect_count, &r_err);
+    if (r_err) {
+        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        goto fail_vectorized_payload;
+    }
+
+    payload = rducks_rc_owned_result_payload_new(runtime, meta, n, err_msg, err_cap);
+    if (!payload) goto fail_vectorized_payload;
+    *payload_out = payload;
+    if (!rducks_rc_owned_result_payload_set_results(payload, results, n, err_msg, err_cap)) {
+        rducks_rc_owned_result_payload_free(payload);
+        *payload_out = NULL;
+        goto fail_vectorized_payload;
+    }
+
+    UNPROTECT(protect_count);
+    return 1;
+
+fail_vectorized_payload:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
 static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t *runtime,
                                                           rducks_r_scalar_meta_t *meta,
                                                           duckdb_data_chunk input, duckdb_vector output,
@@ -3413,6 +3512,10 @@ static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t
     if (!rducks_rc_owned_result_supported(meta)) {
         snprintf(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
         return 0;
+    }
+    if (meta->eval_mode == RDUCKS_EVAL_RCV) {
+        return rducks_rc_vectorized_execute_to_owned_payload(runtime, meta, input, output,
+                                                            payload_out, err_msg, err_cap);
     }
     return rducks_rc_direct_scalar_execute_to_owned_payload(runtime, meta, input, output, payload_out, err_msg, err_cap);
 }
