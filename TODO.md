@@ -620,8 +620,16 @@ Implement owned input snapshots for worker-originating chunk requests.
 
 Implement owned result payloads plus safe writeback.
 
-Split `arrow_c` into worker-safe native phases and
+Split current `arrow_c` code into explicit worker-safe/native and
 recorded-main-R-thread phases.
+
+- Scalar `arrow_c` now snapshots borrowed DuckDB vector views in a
+  no-R-API phase, then runs R argument materialization/evaluation/SEXP
+  writeback in a named main-thread phase while the callback remains
+  blocked.
+- Vectorized `arrow_c` now has named main-thread
+  prepare/evaluate/writeback phases. Fully worker-safe vectorized
+  snapshots still depend on the owned input/result payload items above.
 
 ## Wasm / webR
 

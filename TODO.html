@@ -375,7 +375,11 @@
 <p>The current in-process queue is synchronous and borrows DuckDB input/output pointers only for the duration of a scalar UDF callback. That is acceptable for current callbacks, but not for an asynchronous same-process design.</p>
 <ul class="task-list"><li><label><input type="checkbox">Implement owned input snapshots for worker-originating chunk requests.</label></li>
 <li><label><input type="checkbox">Implement owned result payloads plus safe writeback.</label></li>
-<li><label><input type="checkbox">Split <code>arrow_c</code> into worker-safe native phases and recorded-main-R-thread phases.</label></li>
+<li>
+<label><input type="checkbox" checked>Split current <code>arrow_c</code> code into explicit worker-safe/native and recorded-main-R-thread phases.</label>
+<ul><li>Scalar <code>arrow_c</code> now snapshots borrowed DuckDB vector views in a no-R-API phase, then runs R argument materialization/evaluation/SEXP writeback in a named main-thread phase while the callback remains blocked.</li>
+<li>Vectorized <code>arrow_c</code> now has named main-thread prepare/evaluate/writeback phases. Fully worker-safe vectorized snapshots still depend on the owned input/result payload items above.</li>
+</ul></li>
 </ul></div>
 <div class="section level2">
 <h2 id="wasm--webr">Wasm / webR<a class="anchor" aria-label="anchor" href="#wasm--webr"></a></h2>
