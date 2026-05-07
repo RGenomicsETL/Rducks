@@ -68,7 +68,9 @@ R-side registry view has been detached.
   DuckDB-owned callback output storage.
 - Same-process queued requests borrow DuckDB callback-frame input/output storage
   only while the callback frame remains blocked; this is why running cancellation
-  is not supported.
+  is not supported. Direct `arrow_c` scalar execution now snapshots borrowed
+  DuckDB vector views in a no-R-API phase, but the views are still callback-frame
+  borrows, not owned cross-thread payloads.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
   `SEXP` pointers as a hidden transport fallback.

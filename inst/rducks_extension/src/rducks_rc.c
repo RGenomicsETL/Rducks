@@ -1,13 +1,15 @@
 /* Included by ../rducks_extension.c.
  *
  * The arrow_c direct evaluator is intentionally a recorded-main-R-thread
- * implementation today. This file mixes DuckDB vector access with R API calls because
- * rducks_r_scalar_udf() rejects non-calling-thread execution before entering the
- * evaluator. Do not treat these helpers as worker-thread safe.
+ * implementation today. The scalar path now has an explicit worker-safe borrowed
+ * DuckDB-vector view snapshot phase followed by main-R-thread evaluation and
+ * writeback. The vectorized path is split into named main-R-thread phases, but
+ * still materializes R objects directly from borrowed DuckDB vectors.
  *
- * Any future concurrent UDF implementation must split this path into explicit
- * phases:
- *   1. worker-safe DuckDB/vector snapshot or result import code with no R API;
+ * Do not treat current R/SEXP materialization or SEXP result writeback helpers as
+ * worker-thread safe. A future async implementation must complete the remaining
+ * split into:
+ *   1. worker-safe owned DuckDB/vector input snapshots with no R API;
  *   2. main-R-thread evaluation and R/nanoarrow external-pointer handling;
  *   3. worker-safe DuckDB output writes from owned, non-SEXP result memory.
  */
@@ -297,6 +299,57 @@ static void rducks_rc_direct_output_view_init(rducks_rc_direct_vector_view_t *vi
     view->vector = vector;
     view->data = duckdb_vector_get_data(vector);
     view->validity = duckdb_vector_get_validity(vector);
+}
+
+typedef struct rducks_rc_direct_scalar_frame {
+    idx_t n;
+    size_t arity;
+    rducks_rc_direct_vector_view_t *inputs;
+    rducks_rc_direct_vector_view_t output;
+} rducks_rc_direct_scalar_frame_t;
+
+static void rducks_rc_direct_scalar_frame_init(rducks_rc_direct_scalar_frame_t *frame) {
+    if (!frame) return;
+    memset(frame, 0, sizeof(*frame));
+}
+
+static void rducks_rc_direct_scalar_frame_cleanup(rducks_rc_direct_scalar_frame_t *frame) {
+    if (!frame) return;
+    free(frame->inputs);
+    frame->inputs = NULL;
+    frame->arity = 0U;
+    frame->n = 0;
+}
+
+/* Worker-safe phase: capture DuckDB vector views needed by arrow_c scalar
+ * execution. This phase must not allocate or touch SEXP objects and must not
+ * call any R API. The views remain borrowed from the active DuckDB callback
+ * frame, so the callback must stay blocked until later phases finish.
+ */
+static int rducks_rc_direct_scalar_snapshot_views(rducks_r_scalar_meta_t *meta,
+                                                  duckdb_data_chunk input,
+                                                  duckdb_vector output,
+                                                  rducks_rc_direct_scalar_frame_t *frame,
+                                                  char *err_msg, size_t err_cap) {
+    if (!meta || !frame) {
+        snprintf(err_msg, err_cap, "Rducks RC scalar snapshot is missing state");
+        return 0;
+    }
+    rducks_rc_direct_scalar_frame_init(frame);
+    frame->n = duckdb_data_chunk_get_size(input);
+    frame->arity = meta->arity;
+    if (meta->arity > 0U) {
+        frame->inputs = (rducks_rc_direct_vector_view_t *)calloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
+        if (!frame->inputs) {
+            snprintf(err_msg, err_cap, "failed to allocate Rducks RC scalar input views");
+            return 0;
+        }
+        for (size_t col = 0; col < meta->arity; col++) {
+            rducks_rc_direct_input_view_init(&frame->inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
+        }
+    }
+    rducks_rc_direct_output_view_init(&frame->output, output);
+    return 1;
 }
 
 static int rducks_rc_direct_view_valid_at(const rducks_rc_direct_vector_view_t *view, idx_t row) {
@@ -2358,26 +2411,21 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     }
 }
 
-static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
-                                           char *err_msg, size_t err_cap) {
-    idx_t n = duckdb_data_chunk_get_size(input);
+static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                    rducks_rc_direct_scalar_frame_t *frame,
+                                                    char *err_msg, size_t err_cap) {
     SEXP bundle = meta->fun;
     SEXP fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
     SEXP return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
     SEXP check_return_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_CHECK_RETURN);
-    rducks_rc_direct_vector_view_t *inputs = NULL;
-    rducks_rc_direct_vector_view_t output_view;
+    rducks_rc_direct_vector_view_t *inputs = frame->inputs;
+    rducks_rc_direct_vector_view_t *output_view = &frame->output;
 
-    if (meta->arity > 0) {
-        inputs = (rducks_rc_direct_vector_view_t *)R_alloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
-        memset(inputs, 0, meta->arity * sizeof(rducks_rc_direct_vector_view_t));
-        for (size_t col = 0; col < meta->arity; col++) {
-            rducks_rc_direct_input_view_init(&inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
-        }
-    }
-    rducks_rc_direct_output_view_init(&output_view, output);
-
-    for (idx_t row = 0; row < n; row++) {
+    /* Main-R-thread phase: materialize R arguments, call the R function,
+     * validate R returns, and write checked SEXP results back to the borrowed
+     * DuckDB output vector before the callback returns.
+     */
+    for (idx_t row = 0; row < frame->n; row++) {
         int has_null = 0;
         for (size_t col = 0; col < meta->arity; col++) {
             if (!rducks_rc_direct_view_valid_at(&inputs[col], row)) {
@@ -2386,7 +2434,7 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
             }
         }
         if (meta->null_handling == RDUCKS_NULL_DEFAULT && has_null) {
-            rducks_rc_output_set_null(&output_view, row);
+            rducks_rc_output_set_null(output_view, row);
             continue;
         }
 
@@ -2404,7 +2452,7 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
         if (r_err) {
             UNPROTECT(2); /* value, args */
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
-                rducks_rc_output_set_null(&output_view, row);
+                rducks_rc_output_set_null(output_view, row);
                 continue;
             }
             snprintf(err_msg, err_cap, "Rducks RC R function error");
@@ -2418,13 +2466,63 @@ static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_
             snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
             return 0;
         }
-        if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, checked, err_msg, err_cap)) {
+        if (!rducks_rc_write_direct_output(meta->return_desc, output_view, row, checked, err_msg, err_cap)) {
             UNPROTECT(3); /* checked, value, args */
             return 0;
         }
         UNPROTECT(3); /* checked, value, args */
     }
     return 1;
+}
+
+static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
+                                           char *err_msg, size_t err_cap) {
+    rducks_rc_direct_scalar_frame_t frame;
+    int ok = 0;
+    if (!rducks_rc_direct_scalar_snapshot_views(meta, input, output, &frame, err_msg, err_cap)) {
+        return 0;
+    }
+    ok = rducks_rc_direct_scalar_eval_on_r_thread(meta, &frame, err_msg, err_cap);
+    rducks_rc_direct_scalar_frame_cleanup(&frame);
+    return ok;
+}
+
+static SEXP rducks_rc_vectorized_prepare_inputs_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                            duckdb_data_chunk input,
+                                                            idx_t n,
+                                                            int *protect_count,
+                                                            char *err_msg, size_t err_cap) {
+    /* Main-R-thread phase for the current vectorized direct path. It
+     * materializes borrowed DuckDB vectors into R objects. A future async path
+     * must replace this with an owned, non-SEXP snapshot before crossing
+     * threads.
+     */
+    return rducks_rc_direct_prepare_inputs(meta, input, n, protect_count, err_msg, err_cap);
+}
+
+static SEXP rducks_rc_vectorized_eval_on_r_thread(SEXP eval_rows_fun, SEXP fun,
+                                                  SEXP arg_types, SEXP return_type,
+                                                  SEXP prepared,
+                                                  SEXP null_handling_sexp,
+                                                  SEXP exception_handling_sexp,
+                                                  int *protect_count, int *r_err) {
+    SEXP results = PROTECT(rducks_rc_call_vectorized_eval(eval_rows_fun, fun, arg_types, return_type,
+                                                         prepared, null_handling_sexp,
+                                                         exception_handling_sexp, r_err));
+    (*protect_count)++;
+    return results;
+}
+
+static int rducks_rc_vectorized_writeback_from_sexp_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                                SEXP results,
+                                                                duckdb_vector output,
+                                                                idx_t n,
+                                                                char *err_msg, size_t err_cap) {
+    /* Main-R-thread writeback for current R callback results. This is not the
+     * future worker-safe result phase; that requires owned non-SEXP result
+     * payloads before writing DuckDB output off the R thread.
+     */
+    return rducks_rc_write_direct_results(meta, results, output, n, err_msg, err_cap);
 }
 
 static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
@@ -2465,21 +2563,21 @@ static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rd
     return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
     eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
 
-    prepared = rducks_rc_direct_prepare_inputs(meta, input, n, &protect_count, err_msg, err_cap);
+    prepared = rducks_rc_vectorized_prepare_inputs_on_r_thread(meta, input, n, &protect_count, err_msg, err_cap);
     if (prepared == R_NilValue) goto fail_vectorized;
 
     null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
     protect_count++;
     exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
     protect_count++;
-    results = PROTECT(rducks_rc_call_vectorized_eval(eval_rows_fun, fun, arg_types, return_type, prepared,
-                                                     null_handling_sexp, exception_handling_sexp, &r_err));
-    protect_count++;
+    results = rducks_rc_vectorized_eval_on_r_thread(eval_rows_fun, fun, arg_types, return_type, prepared,
+                                                    null_handling_sexp, exception_handling_sexp,
+                                                    &protect_count, &r_err);
     if (r_err) {
         snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
         goto fail_vectorized;
     }
-    if (!rducks_rc_write_direct_results(meta, results, output, n, err_msg, err_cap)) {
+    if (!rducks_rc_vectorized_writeback_from_sexp_on_r_thread(meta, results, output, n, err_msg, err_cap)) {
         if (!err_msg[0]) snprintf(err_msg, err_cap, "Rducks RC vectorized result writeback failed");
         goto fail_vectorized;
     }

@@ -89,13 +89,17 @@ Keep the following layers separate when changing the native path:
    must not pass borrowed DuckDB vectors or transient `SEXP` objects across
    threads.
 
-The current `arrow_c` scalar execution helpers are deliberately main-thread
-helpers and therefore mix R API calls with direct DuckDB vector reads/writes in
-one callback-local loop. In the `serial` concurrency plan, DuckDB enters them
-directly on the recorded R thread. In the `inproc_concurrent` plan, an off-main
-callback must queue first; the main R thread drains the request and only then
-runs those helpers. Do not reuse `arrow_c` direct-buffer helpers as worker-safe
-building blocks without first splitting them along the boundaries above.
+The current `arrow_c` scalar execution path is split into a worker-safe borrowed
+DuckDB-vector view snapshot and a recorded-main-R-thread evaluation/writeback
+phase. The snapshot phase does not allocate or touch `SEXP`s, but it still
+borrows storage from the active DuckDB callback frame, so the callback must stay
+blocked until the main-thread phase finishes. In the `serial` concurrency plan,
+DuckDB enters the main-thread phase directly. In the `inproc_concurrent` plan, an
+off-main callback must queue first; the main R thread drains the request and only
+then runs R argument materialization, user evaluation, validation, and current
+SEXP-based writeback. Do not use the current SEXP materialization/writeback
+helpers as worker-safe building blocks without replacing them with owned native
+input/result payloads.
 
 ## Prepared scalar and vectorized execution plans
 
@@ -107,15 +111,15 @@ The `arrow_r` scalar row-loop code is split into explicit Arrow helper phases:
 4. build an Arrow C Data result chunk.
 
 `arrow_c` scalar execution is separate: for signatures accepted by the direct
-support predicate, C reads DuckDB vectors recursively, calls the R function
-row-by-row on the recorded main R thread, validates each return, and writes
-DuckDB output vectors recursively. It must fail rather than falling back to the
-Arrow helper engine. A future threaded native backend must split worker-safe
-DuckDB/vector work from any R API or `SEXP` work, then cross an owned-buffer
-transport boundary before R-thread evaluation, or be a genuinely pure-native
-evaluator with no R callback. Vectorized mode uses Arrow helper phases for
-`arrow_r`, direct DuckDB-vector materialization for `arrow_c`, and Arrow IPC for
-`arrow_ipc`.
+support predicate, C snapshots borrowed DuckDB vector views without R API calls,
+then calls the R function row-by-row on the recorded main R thread, validates
+each return, and writes DuckDB output vectors recursively before the callback
+returns. It must fail rather than falling back to the Arrow helper engine. A
+future threaded native backend must replace borrowed views and SEXP writeback
+with owned-buffer input/result payloads before crossing threads, or be a
+genuinely pure-native evaluator with no R callback. Vectorized mode uses Arrow
+helper phases for `arrow_r`, named main-thread prepare/evaluate/writeback phases
+for direct `arrow_c`, and Arrow IPC for `arrow_ipc`.
 With `null_handling = "default"`, only rows with no top-level SQL NULL inputs
 are evaluated and SQL NULL rows are scattered back into the DuckDB result; with
 `null_handling = "special"`, all rows are passed through with the same NA/NULL
