@@ -30,6 +30,7 @@ struct rducks_udf_request {
     SEXP ripc_output_schema_xptr;
     idx_t ripc_n;
     int ripc_submitted;
+    rducks_rc_owned_result_payload_t *rc_result_payload;
     rducks_udf_request_state_t state;
     int ok;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
@@ -168,6 +169,24 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
     }
     return rducks_r_scalar_execute(request->runtime, request->meta, request->input,
                                   request->output, err_msg, err_cap);
+}
+
+static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_t *request,
+                                                             char *err_msg, size_t err_cap) {
+    if (!request || !request->runtime || !request->meta) {
+        snprintf(err_msg, err_cap, "Rducks queued RC owned-result request is missing execution state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(request->runtime)) {
+        snprintf(err_msg, err_cap, "Rducks queued RC owned-result request reached a non-main thread");
+        return 0;
+    }
+    if (request->rc_result_payload) {
+        rducks_rc_owned_result_payload_free(request->rc_result_payload);
+        request->rc_result_payload = NULL;
+    }
+    return rducks_rc_scalar_execute_to_owned_payload(request->runtime, request->meta, request->input, request->output,
+                                                     &request->rc_result_payload, err_msg, err_cap);
 }
 
 static int rducks_queue_submit_ripc_request_on_main(rducks_udf_request_t *request,
@@ -689,20 +708,31 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap) {
     rducks_udf_request_t request;
+    int ok;
     if (!meta) {
         snprintf(err_msg, err_cap, "Rducks queued scalar metadata is missing");
         return 0;
     }
 
     memset(&request, 0, sizeof(request));
-    request.execute = rducks_queue_execute_scalar_on_main;
+    request.execute = rducks_rc_owned_result_supported(meta) ?
+        rducks_queue_execute_rc_scalar_to_payload_on_main :
+        rducks_queue_execute_scalar_on_main;
     request.meta = meta;
     request.input = input;
     request.output = output;
 
-    return rducks_queue_submit_request(runtime, &request,
+    ok = rducks_queue_submit_request(runtime, &request,
         "Rducks timed out waiting for the recorded main R thread to drain a queued scalar UDF request",
         err_msg, err_cap);
+    if (ok && request.rc_result_payload) {
+        ok = rducks_rc_owned_result_payload_writeback(request.rc_result_payload, output, err_msg, err_cap);
+    }
+    if (request.rc_result_payload) {
+        rducks_rc_owned_result_payload_free(request.rc_result_payload);
+        request.rc_result_payload = NULL;
+    }
+    return ok;
 }
 
 static int rducks_queue_sleep_ms(unsigned int ms) {

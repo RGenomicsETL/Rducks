@@ -504,11 +504,21 @@ current callbacks, but not for an asynchronous same-process design.
 
 - [ ] Implement owned input snapshots for worker-originating chunk requests.
 - [ ] Implement owned result payloads plus safe writeback.
+  - First slice complete for queued direct `arrow_c` scalar UDFs with primitive
+    scalar return types (`bool`, integer widths, floating point, date, time, and
+    timestamp): the main R thread now evaluates into an owned native result
+    payload and the waiting worker writes DuckDB output from that payload without
+    touching `SEXP`s.
+  - Still open for direct vectorized `arrow_c`, composite/string/blob/exotic
+    direct returns, Arrow/R helper returns, and RIPC native decode/import from
+    owned result bytes.
 - [x] Split current `arrow_c` code into explicit worker-safe/native and
   recorded-main-R-thread phases.
   - Scalar `arrow_c` now snapshots borrowed DuckDB vector views in a no-R-API
-    phase, then runs R argument materialization/evaluation/SEXP writeback in a
-    named main-thread phase while the callback remains blocked.
+    phase, then runs R argument materialization/evaluation in a named
+    main-thread phase while the callback remains blocked. Queued primitive
+    scalar returns use the owned result payload described above; other return
+    shapes still use SEXP writeback on the main thread.
   - Vectorized `arrow_c` now has named main-thread prepare/evaluate/writeback
     phases. Fully worker-safe vectorized snapshots still depend on the owned
     input/result payload items above.

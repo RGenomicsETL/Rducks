@@ -90,16 +90,19 @@ Keep the following layers separate when changing the native path:
    threads.
 
 The current `arrow_c` scalar execution path is split into a worker-safe borrowed
-DuckDB-vector view snapshot and a recorded-main-R-thread evaluation/writeback
-phase. The snapshot phase does not allocate or touch `SEXP`s, but it still
-borrows storage from the active DuckDB callback frame, so the callback must stay
-blocked until the main-thread phase finishes. In the `serial` concurrency plan,
-DuckDB enters the main-thread phase directly. In the `inproc_concurrent` plan, an
-off-main callback must queue first; the main R thread drains the request and only
-then runs R argument materialization, user evaluation, validation, and current
-SEXP-based writeback. Do not use the current SEXP materialization/writeback
-helpers as worker-safe building blocks without replacing them with owned native
-input/result payloads.
+DuckDB-vector view snapshot and a recorded-main-R-thread evaluation phase. The
+snapshot phase does not allocate or touch `SEXP`s, but it still borrows storage
+from the active DuckDB callback frame, so the callback must stay blocked until
+the main-thread phase finishes. In the `serial` concurrency plan, DuckDB enters
+the main-thread phase directly and writes the callback-owned output vector before
+returning. In the `inproc_concurrent` plan, off-main scalar callbacks for
+primitive scalar return types queue first; the main R thread evaluates and
+converts return values into an owned non-`SEXP` result payload, then the waiting
+worker writes that owned payload into DuckDB output. Other direct `arrow_c`
+returns and vectorized direct `arrow_c` still use main-thread SEXP-based
+writeback. Do not use the remaining SEXP materialization/writeback helpers as
+worker-safe building blocks without replacing them with owned native input/result
+payloads.
 
 ## Prepared scalar and vectorized execution plans
 
@@ -112,14 +115,18 @@ The `arrow_r` scalar row-loop code is split into explicit Arrow helper phases:
 
 `arrow_c` scalar execution is separate: for signatures accepted by the direct
 support predicate, C snapshots borrowed DuckDB vector views without R API calls,
-then calls the R function row-by-row on the recorded main R thread, validates
-each return, and writes DuckDB output vectors recursively before the callback
-returns. It must fail rather than falling back to the Arrow helper engine. A
-future threaded native backend must replace borrowed views and SEXP writeback
-with owned-buffer input/result payloads before crossing threads, or be a
-genuinely pure-native evaluator with no R callback. Vectorized mode uses Arrow
-helper phases for `arrow_r`, named main-thread prepare/evaluate/writeback phases
-for direct `arrow_c`, and Arrow IPC for `arrow_ipc`.
+then calls the R function row-by-row on the recorded main R thread and validates
+each return. For queued off-main scalar callbacks with primitive scalar returns,
+validated returns are copied into an owned C result payload and DuckDB output is
+written by the waiting worker thread. Serial scalar callbacks and unsupported
+owned-payload return shapes still write DuckDB output on the recorded main R
+thread before the callback returns. It must fail rather than falling back to the
+Arrow helper engine. A future threaded native backend must also replace borrowed
+input views and the remaining SEXP writeback cases with owned buffers before
+crossing threads, or be a genuinely pure-native evaluator with no R callback.
+Vectorized mode uses Arrow helper phases for `arrow_r`, named main-thread
+prepare/evaluate/writeback phases for direct `arrow_c`, and Arrow IPC for
+`arrow_ipc`.
 With `null_handling = "default"`, only rows with no top-level SQL NULL inputs
 are evaluated and SQL NULL rows are scattered back into the DuckDB result; with
 `null_handling = "special"`, all rows are passed through with the same NA/NULL
@@ -130,13 +137,14 @@ Internally the current concurrency backends are:
 - `serial`: default behavior; DuckDB calls the UDF on the recorded R thread and
   may use direct `arrow_c` vector reads/writes.
 - `inproc_concurrent`: same-address-space queued dispatch. A worker-side UDF
-  callback submits the current chunk request to the per-runtime queue and waits;
-  the main R thread drains the request, calls R, writes the DuckDB output vector,
-  and signals the waiter. This currently relies on the UDF callback staying
-  alive while the borrowed DuckDB chunk/output pointers are processed; workers
-  must not return before the main thread has consumed the request. Direct
-  `arrow_c` helpers remain main-thread-only unless split into pure native
-  worker-safe phases.
+  callback submits the current chunk request to the per-runtime queue and waits.
+  For direct `arrow_c` scalar UDFs with primitive scalar returns, the main R
+  thread drains the request, calls R, fills an owned native result payload, and
+  signals the waiter; the waiting worker then writes DuckDB output from that
+  payload without touching `SEXP`s. Other queued modes still have the main R
+  thread write DuckDB output before signalling. This currently relies on the UDF
+  callback staying alive while borrowed DuckDB input pointers are processed;
+  workers must not return before the main thread has consumed the request.
 - `multiprocess_parallel`: out-of-process execution through the selected Arrow
   IPC worker provider (`ipc_future_pool` by default, experimental
   `ipc_mirai_pool` when requested). The scalar-UDF callback implementation

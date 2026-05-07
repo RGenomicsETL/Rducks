@@ -66,11 +66,15 @@ R-side registry view has been detached.
 - Rducks does not expose a zero-copy return contract. Returned scalars, strings,
   nested values, and Arrow-imported result chunks are copied/materialized into
   DuckDB-owned callback output storage.
-- Same-process queued requests borrow DuckDB callback-frame input/output storage
-  only while the callback frame remains blocked; this is why running cancellation
-  is not supported. Direct `arrow_c` scalar execution now snapshots borrowed
-  DuckDB vector views in a no-R-API phase, but the views are still callback-frame
-  borrows, not owned cross-thread payloads.
+- Same-process queued requests borrow DuckDB callback-frame input storage only
+  while the callback frame remains blocked; this is why running cancellation is
+  not supported. Direct `arrow_c` scalar execution now snapshots borrowed DuckDB
+  vector views in a no-R-API phase, but the input views are still callback-frame
+  borrows, not owned cross-thread payloads. For queued direct `arrow_c` scalar
+  UDFs with primitive scalar returns, return values are copied into an owned
+  native payload on the recorded main R thread and the waiting worker writes the
+  DuckDB output vector from that payload. Other same-process return paths still
+  write output on the recorded main R thread.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
   `SEXP` pointers as a hidden transport fallback.
