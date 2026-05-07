@@ -78,7 +78,9 @@ provider contract/envelopes; `rducks_mirai_provider()` starts/stops
 persistent mirai daemons, preloads evaluator/schema state, submits only
 task metadata plus Arrow IPC bytes, and returns structured result
 envelopes. The experimental public `ipc_mirai_pool` engine is selected
-with `ipc_provider = "mirai"`.
+with `ipc_provider = "mirai"`. Mirai pools are shared by
+database-runtime token and provider shape rather than spawned once per
+registered UDF.
 
 No `rducks_unregister()` API: DuckDB reports extension-created functions
 as internal catalog entries that cannot be dropped through the ordinary
@@ -559,7 +561,8 @@ within the generic Future provider.
   character/named-list globals.
 - The experimental `ipc_mirai_pool` engine preloads evaluator state and
   schema once and submits only task id/UDF id/row count/IPC bytes per
-  chunk.
+  chunk. UDFs registered in the same database runtime with the same
+  provider shape share a mirai daemon pool.
 - `tools/benchmark_ipc_providers.R` compares
   [`future::multisession`](https://future.futureverse.org/reference/multisession.html),
   [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html),
@@ -609,10 +612,15 @@ propagation.
 - Internal `rducks_mirai_provider()` implements start/stop,
   register_udf, submit, collect_any, collect_many, cancel, and stats
   using persistent mirai daemons and preloaded UDF records.
+  Runtime-token keyed provider records are stopped when the last Rducks
+  runtime anchor is released for that database.
 - Focused tinytests cover successful Arrow IPC task execution,
-  structured worker errors, and provider counters. Provider/task
-  counters use numeric increments and formatted ids instead of R integer
-  `+ 1L` increments, avoiding `NA_integer_` wrap in long-lived sessions.
+  structured worker errors, provider counters, shared runtime-token
+  provider pools, and provider cleanup on
+  [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md).
+  Provider/task/UDF counters use numeric increments and formatted ids
+  instead of R integer `+ 1L` increments, avoiding `NA_integer_` wrap in
+  long-lived sessions.
 
 Wire a persistent worker provider into a public UDF engine with no
 hidden fallback.

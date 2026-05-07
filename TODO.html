@@ -65,7 +65,7 @@
 <li><label><input type="checkbox" checked>Production SQL surface: dev/test probes are gated by <code>RDUCKS_DEV_SURFACES=true</code>; production backend mutation requires the recorded main-thread capability.</label></li>
 <li><label><input type="checkbox" checked>Diagnostics: runtime accounting, preserved-release stats, pending/running queue pressure, timeout semantics, and main-thread drain counters are exposed.</label></li>
 <li><label><input type="checkbox" checked>Execution-plan simplification: valid plan pairs expose concrete <code>engine_id</code>s while preserving the readable marshalling/concurrency API.</label></li>
-<li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; <code>rducks_mirai_provider()</code> starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. The experimental public <code>ipc_mirai_pool</code> engine is selected with <code>ipc_provider = "mirai"</code>.</label></li>
+<li><label><input type="checkbox" checked>Persistent worker/provider architecture: generic Future remains the portable reference provider; <code>docs/PERSISTENT_PROVIDER.md</code> specifies the provider contract/envelopes; <code>rducks_mirai_provider()</code> starts/stops persistent mirai daemons, preloads evaluator/schema state, submits only task metadata plus Arrow IPC bytes, and returns structured result envelopes. The experimental public <code>ipc_mirai_pool</code> engine is selected with <code>ipc_provider = "mirai"</code>. Mirai pools are shared by database-runtime token and provider shape rather than spawned once per registered UDF.</label></li>
 <li><label><input type="checkbox" checked>No <code>rducks_unregister()</code> API: DuckDB reports extension-created functions as internal catalog entries that cannot be dropped through the ordinary <code>DROP FUNCTION</code> path, and destructive database-scoped removal is not planned for the current package surface. <code>docs/UNREGISTER.md</code> documents the no-unregister policy and intentional catalog/runtime-lifetime retention of preserved R closures.</label></li>
 <li>
 <label><input type="checkbox" checked><code>R/arrow_bridge.R</code> split: core split done.</label>
@@ -338,7 +338,7 @@
 <ul><li>Arrow IPC Future wrappers cache the output schema spec at registration wrapper scope after the first chunk, avoiding repeated schema-to-list conversion on every submission.</li>
 <li>
 <code>future_globals</code> now defaults to <code>"auto"</code>, so generic Future UDF globals are discovered once at wrapper creation and chunk submissions send explicit worker state instead of running automatic global discovery every time. Users can still opt into per-task discovery with <code>TRUE</code>, required-state only with <code>FALSE</code>, or explicit character/named-list globals.</li>
-<li>The experimental <code>ipc_mirai_pool</code> engine preloads evaluator state and schema once and submits only task id/UDF id/row count/IPC bytes per chunk.</li>
+<li>The experimental <code>ipc_mirai_pool</code> engine preloads evaluator state and schema once and submits only task id/UDF id/row count/IPC bytes per chunk. UDFs registered in the same database runtime with the same provider shape share a mirai daemon pool.</li>
 <li>
 <code>tools/benchmark_ipc_providers.R</code> compares <code><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">future::multisession</a></code>, <code><a href="https://future.mirai.futureverse.org/reference/mirai_multisession.html" class="external-link">future.mirai::mirai_multisession</a></code>, and direct <code>ipc_mirai_pool</code> paths using the same provider-level Arrow IPC payload.</li>
 </ul></li>
@@ -362,8 +362,8 @@
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Prototype persistent worker startup/shutdown, cancellation, and error propagation.</label></p>
-<ul><li>Internal <code>rducks_mirai_provider()</code> implements start/stop, register_udf, submit, collect_any, collect_many, cancel, and stats using persistent mirai daemons and preloaded UDF records.</li>
-<li>Focused tinytests cover successful Arrow IPC task execution, structured worker errors, and provider counters. Provider/task counters use numeric increments and formatted ids instead of R integer <code>+ 1L</code> increments, avoiding <code>NA_integer_</code> wrap in long-lived sessions.</li>
+<ul><li>Internal <code>rducks_mirai_provider()</code> implements start/stop, register_udf, submit, collect_any, collect_many, cancel, and stats using persistent mirai daemons and preloaded UDF records. Runtime-token keyed provider records are stopped when the last Rducks runtime anchor is released for that database.</li>
+<li>Focused tinytests cover successful Arrow IPC task execution, structured worker errors, provider counters, shared runtime-token provider pools, and provider cleanup on <code><a href="reference/rducks_release.html">rducks_release()</a></code>. Provider/task/UDF counters use numeric increments and formatted ids instead of R integer <code>+ 1L</code> increments, avoiding <code>NA_integer_</code> wrap in long-lived sessions.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Wire a persistent worker provider into a public UDF engine with no hidden fallback.</label></p>
