@@ -23,8 +23,20 @@
     const logNode = document.getElementById("log");
 
     function log(text) {
-      logNode.textContent += text + "\n";
-      console.log(text);
+      const line = typeof text === "string" ? text : safeText(text);
+      logNode.textContent += line + "\n";
+      console.log(line);
+    }
+
+    function safeText(value) {
+      if (value == null) return "";
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      try {
+        return JSON.stringify(value);
+      } catch (_err) {
+        return Object.prototype.toString.call(value);
+      }
     }
 
     async function parseVersion() {
@@ -39,7 +51,7 @@
     async function capture(shelter, code) {
       log(`> ${code.split("\n")[0]}${code.includes("\n") ? " ..." : ""}`);
       const result = await shelter.captureR(code, { withAutoprint: true, captureStreams: true, captureConditions: true });
-      for (const item of result.output) log(item.data ?? item.message ?? JSON.stringify(item));
+      for (const item of result.output) log(item.data ?? item.message ?? item);
       if (result.result?.type === "error") throw new Error(result.result.message);
       return result;
     }
