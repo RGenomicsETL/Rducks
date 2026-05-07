@@ -208,34 +208,61 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
   provider$collect_many <- function(task_ids, timeout = NULL) {
     rducks_mirai_require()
     task_ids <- as.character(task_ids)
+    if (anyDuplicated(task_ids)) {
+      stop("task_ids must not contain duplicates", call. = FALSE)
+    }
     deadline <- if (is.null(timeout)) Inf else unclass(Sys.time()) + as.numeric(timeout)
-    lapply(task_ids, function(task_id) {
+    tasks <- lapply(task_ids, function(task_id) {
       if (!exists(task_id, envir = state$tasks, inherits = FALSE)) {
         stop("unknown Rducks mirai task id: ", task_id, call. = FALSE)
       }
-      task <- get(task_id, envir = state$tasks, inherits = FALSE)
-      while (mirai::unresolved(task)) {
-        if (is.finite(deadline) && unclass(Sys.time()) >= deadline) {
-          try(mirai::stop_mirai(task), silent = TRUE)
-          if (exists(task_id, envir = state$tasks, inherits = FALSE)) {
-            rm(list = task_id, envir = state$tasks)
-          }
-          state$errors <- state$errors + 1L
-          stop("Rducks mirai provider timed out waiting for task ", task_id, call. = FALSE)
-        }
-        Sys.sleep(0.001)
+      get(task_id, envir = state$tasks, inherits = FALSE)
+    })
+    collect_one <- function(i) {
+      task_id <- task_ids[[i]]
+      value <- tryCatch(
+        mirai::call_mirai(tasks[[i]])$data,
+        error = function(e) structure(
+          list(message = conditionMessage(e)),
+          class = "rducks_mirai_collect_error"
+        )
+      )
+      if (exists(task_id, envir = state$tasks, inherits = FALSE)) {
+        rm(list = task_id, envir = state$tasks)
       }
-      value <- mirai::call_mirai(task)$data
-      rm(list = task_id, envir = state$tasks)
       state$completed <- state$completed + 1L
-      if (inherits(value, "errorValue")) {
+      if (inherits(value, "rducks_mirai_collect_error")) {
+        state$errors <- state$errors + 1L
+        list(task_id = task_id, status = "error", error_message = value$message)
+      } else if (inherits(value, "errorValue")) {
         state$errors <- state$errors + 1L
         list(task_id = task_id, status = "error", error_message = as.character(value))
       } else {
         if (identical(value$status, "error")) state$errors <- state$errors + 1L
         value
       }
-    })
+    }
+
+    repeat {
+      unresolved <- vapply(tasks, mirai::unresolved, logical(1))
+      if (!any(unresolved)) break
+      if (is.finite(deadline) && unclass(Sys.time()) >= deadline) {
+        ready <- which(!unresolved)
+        if (length(ready)) invisible(lapply(ready, collect_one))
+        for (i in which(unresolved)) {
+          task_id <- task_ids[[i]]
+          try(mirai::stop_mirai(tasks[[i]]), silent = TRUE)
+          if (exists(task_id, envir = state$tasks, inherits = FALSE)) {
+            rm(list = task_id, envir = state$tasks)
+          }
+        }
+        state$errors <- state$errors + sum(unresolved)
+        stop("Rducks mirai provider timed out waiting for task ", task_ids[[which(unresolved)[[1L]]]], call. = FALSE)
+      }
+      Sys.sleep(0.001)
+    }
+
+    lapply(seq_along(task_ids), collect_one)
   }
 
   provider$collect_any <- function(max_results = Inf, timeout = NULL) {
