@@ -2432,6 +2432,8 @@ typedef struct rducks_rc_owned_result_payload {
     rducks_type_desc_t *desc;
     idx_t n;
     size_t element_size;
+    size_t variable_size;
+    size_t variable_capacity;
     struct ArrowSchema schema;
     struct ArrowArray array;
 } rducks_rc_owned_result_payload_t;
@@ -2449,8 +2451,17 @@ static int rducks_rc_arrow_bitmap_get(const uint8_t *bitmap, idx_t row) {
     return (bitmap[(size_t)row / 8U] & (uint8_t)(1U << ((size_t)row % 8U))) != 0;
 }
 
+static int rducks_rc_owned_result_is_variable(const rducks_type_desc_t *desc) {
+    return desc && desc->kind == RDUCKS_KIND_SCALAR &&
+           (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_BLOB ||
+            desc->scalar == RDUCKS_TYPE_BIT);
+}
+
 static size_t rducks_rc_owned_result_element_size(const rducks_type_desc_t *desc) {
-    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0U;
+    if (!desc) return 0U;
+    if (desc->kind == RDUCKS_KIND_DECIMAL) return (size_t)rducks_rc_decimal_storage_width(desc);
+    if (desc->kind == RDUCKS_KIND_ENUM) return (size_t)rducks_rc_enum_storage_width(desc);
+    if (desc->kind != RDUCKS_KIND_SCALAR) return 0U;
     switch (desc->scalar) {
     case RDUCKS_TYPE_I8: return sizeof(int8_t);
     case RDUCKS_TYPE_U8: return sizeof(uint8_t);
@@ -2465,13 +2476,21 @@ static size_t rducks_rc_owned_result_element_size(const rducks_type_desc_t *desc
     case RDUCKS_TYPE_DATE: return sizeof(int32_t);
     case RDUCKS_TYPE_TIME: return sizeof(int64_t);
     case RDUCKS_TYPE_TIMESTAMP: return sizeof(int64_t);
+    case RDUCKS_TYPE_HUGEINT: return sizeof(duckdb_hugeint);
+    case RDUCKS_TYPE_UHUGEINT: return sizeof(duckdb_uhugeint);
+    case RDUCKS_TYPE_UUID: return sizeof(duckdb_hugeint);
+    case RDUCKS_TYPE_INTERVAL: return sizeof(duckdb_interval);
     default: return 0U;
     }
 }
 
 static int rducks_rc_owned_result_type_supported(const rducks_type_desc_t *desc) {
-    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0;
-    if (desc->scalar == RDUCKS_TYPE_BOOL) return 1;
+    if (!desc) return 0;
+    if (desc->kind == RDUCKS_KIND_DECIMAL) return rducks_rc_owned_result_element_size(desc) > 0U;
+    if (desc->kind == RDUCKS_KIND_ENUM) return rducks_rc_direct_enum_supported(desc) &&
+                                             rducks_rc_owned_result_element_size(desc) > 0U;
+    if (desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    if (desc->scalar == RDUCKS_TYPE_BOOL || rducks_rc_owned_result_is_variable(desc)) return 1;
     return rducks_rc_owned_result_element_size(desc) > 0U;
 }
 
@@ -2525,6 +2544,8 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     struct ArrowArray *child = NULL;
     size_t validity_bytes;
     size_t value_bytes;
+    size_t offset_bytes;
+    int variable;
     if (!runtime || !meta || !rducks_rc_owned_result_type_supported(meta->return_desc)) {
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return NULL;
@@ -2565,11 +2586,12 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     child->length = (int64_t)n;
     child->null_count = 0;
     child->offset = 0;
-    child->n_buffers = 2;
+    variable = rducks_rc_owned_result_is_variable(meta->return_desc);
+    child->n_buffers = variable ? 3 : 2;
     child->n_children = 0;
     child->dictionary = NULL;
     child->release = rducks_rc_owned_arrow_child_release;
-    child->buffers = (const void **)calloc(2, sizeof(void *));
+    child->buffers = (const void **)calloc((size_t)child->n_buffers, sizeof(void *));
     if (!child->buffers) {
         rducks_rc_owned_result_payload_free(payload);
         snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result buffers");
@@ -2582,25 +2604,130 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload is too large");
         return NULL;
     }
-    value_bytes = meta->return_desc->scalar == RDUCKS_TYPE_BOOL ? validity_bytes : (size_t)n * payload->element_size;
     if (validity_bytes > 0U) child->buffers[0] = calloc(validity_bytes, 1U);
-    if (value_bytes > 0U) child->buffers[1] = calloc(value_bytes, 1U);
-    if ((validity_bytes > 0U && !child->buffers[0]) || (value_bytes > 0U && !child->buffers[1])) {
+    if (variable) {
+        if ((uint64_t)n > (uint64_t)INT32_MAX - 1U || (uint64_t)n + 1U > SIZE_MAX / sizeof(int32_t)) {
+            rducks_rc_owned_result_payload_free(payload);
+            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
+            return NULL;
+        }
+        offset_bytes = ((size_t)n + 1U) * sizeof(int32_t);
+        child->buffers[1] = calloc(offset_bytes, 1U);
+        child->buffers[2] = NULL;
+        if (offset_bytes > 0U && !child->buffers[1]) {
+            rducks_rc_owned_result_payload_free(payload);
+            snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result offsets");
+            return NULL;
+        }
+    } else {
+        value_bytes = (meta->return_desc->kind == RDUCKS_KIND_SCALAR &&
+                       meta->return_desc->scalar == RDUCKS_TYPE_BOOL) ?
+            validity_bytes : (size_t)n * payload->element_size;
+        if (value_bytes > 0U) child->buffers[1] = calloc(value_bytes, 1U);
+        if (value_bytes > 0U && !child->buffers[1]) {
+            rducks_rc_owned_result_payload_free(payload);
+            snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
+            return NULL;
+        }
+    }
+    if (validity_bytes > 0U && !child->buffers[0]) {
         rducks_rc_owned_result_payload_free(payload);
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
+        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result validity buffer");
         return NULL;
     }
     return payload;
 }
 
+static int rducks_rc_owned_result_payload_append_bytes(rducks_rc_owned_result_payload_t *payload,
+                                                       const void *bytes, size_t len,
+                                                       char *err_msg, size_t err_cap) {
+    struct ArrowArray *child;
+    void *new_data;
+    size_t new_size;
+    size_t new_capacity;
+    if (!payload || !payload->array.children || !payload->array.children[0]) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing state");
+        return 0;
+    }
+    if (len == 0U) return 1;
+    if (!bytes) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload has missing bytes");
+        return 0;
+    }
+    if (payload->variable_size > (size_t)INT32_MAX || len > (size_t)INT32_MAX - payload->variable_size) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload exceeds 32-bit Arrow offsets");
+        return 0;
+    }
+    if (payload->variable_size > SIZE_MAX - len) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
+        return 0;
+    }
+    new_size = payload->variable_size + len;
+    if (new_size > payload->variable_capacity) {
+        new_capacity = payload->variable_capacity ? payload->variable_capacity : 64U;
+        while (new_capacity < new_size) {
+            if (new_capacity > SIZE_MAX / 2U) {
+                new_capacity = new_size;
+                break;
+            }
+            new_capacity *= 2U;
+        }
+        child = payload->array.children[0];
+        new_data = realloc((void *)child->buffers[2], new_capacity);
+        if (!new_data) {
+            snprintf(err_msg, err_cap, "failed to grow Rducks owned Arrow variable result buffer");
+            return 0;
+        }
+        child->buffers[2] = new_data;
+        payload->variable_capacity = new_capacity;
+    }
+    child = payload->array.children[0];
+    memcpy((uint8_t *)child->buffers[2] + payload->variable_size, bytes, len);
+    payload->variable_size = new_size;
+    return 1;
+}
+
+static int rducks_rc_owned_result_payload_set_variable(rducks_rc_owned_result_payload_t *payload, idx_t row,
+                                                       const void *bytes, size_t len,
+                                                       char *err_msg, size_t err_cap) {
+    struct ArrowArray *child;
+    int32_t *offsets;
+    if (!payload || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload write is out of range");
+        return 0;
+    }
+    child = payload->array.children[0];
+    if (child->n_buffers != 3 || !child->buffers || !child->buffers[1]) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
+        return 0;
+    }
+    offsets = (int32_t *)child->buffers[1];
+    if (offsets[row] != (int32_t)payload->variable_size) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result rows were filled out of order");
+        return 0;
+    }
+    if (!rducks_rc_owned_result_payload_append_bytes(payload, bytes, len, err_msg, err_cap)) return 0;
+    offsets[row + 1U] = (int32_t)payload->variable_size;
+    return 1;
+}
+
 static int rducks_rc_owned_result_payload_set_null(rducks_rc_owned_result_payload_t *payload, idx_t row,
                                                    char *err_msg, size_t err_cap) {
     struct ArrowArray *child;
+    int32_t *offsets;
     if (!payload || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
         return 0;
     }
     child = payload->array.children[0];
+    if (child->n_buffers == 3) {
+        if (!child->buffers || !child->buffers[1]) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
+            return 0;
+        }
+        offsets = (int32_t *)child->buffers[1];
+        offsets[row + 1U] = (int32_t)payload->variable_size;
+    }
     child->null_count++;
     return 1;
 }
@@ -2623,7 +2750,71 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         return rducks_rc_owned_result_payload_set_null(payload, row, err_msg, err_cap);
     }
     if (validity) rducks_rc_arrow_bitmap_set(validity, row);
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        uint32_t index = 0;
+        if (!rducks_rc_enum_value_index(desc, value, &index, err_msg, err_cap)) return 0;
+        if (!rducks_rc_enum_index_to_data(desc, data, row, index)) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow enum result storage type is unsupported");
+            return 0;
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        uint8_t bytes[16];
+        int storage_width = rducks_rc_decimal_storage_width(desc);
+        if (!rducks_rc_decimal_storage_string_to_le_bytes(value, storage_width, desc->decimal_scale,
+                                                          bytes, err_msg, err_cap)) {
+            return 0;
+        }
+        if (storage_width == 2) {
+            uint16_t u = (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));
+            int16_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int16_t *)data)[row] = v;
+        } else if (storage_width == 4) {
+            uint32_t u = 0;
+            for (int i = 3; i >= 0; i--) u = (u << 8) | (uint32_t)bytes[i];
+            int32_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int32_t *)data)[row] = v;
+        } else if (storage_width == 8) {
+            uint64_t u = rducks_rc_le_bytes_to_u64(bytes);
+            int64_t v;
+            memcpy(&v, &u, sizeof(v));
+            ((int64_t *)data)[row] = v;
+        } else {
+            rducks_rc_le_bytes_to_hugeint(bytes, &((duckdb_hugeint *)data)[row]);
+        }
+        return 1;
+    }
+    if (desc->kind != RDUCKS_KIND_SCALAR) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
+        return 0;
+    }
     switch (desc->scalar) {
+    case RDUCKS_TYPE_VARCHAR: {
+        if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow VARCHAR result is not a character scalar");
+            return 0;
+        }
+        SEXP ch = STRING_ELT(value, 0);
+        const char *ptr = Rf_translateCharUTF8(ch);
+        return rducks_rc_owned_result_payload_set_variable(payload, row, ptr, strlen(ptr), err_msg, err_cap);
+    }
+    case RDUCKS_TYPE_BLOB:
+        if (TYPEOF(value) != RAWSXP) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow BLOB result is not a raw vector");
+            return 0;
+        }
+        return rducks_rc_owned_result_payload_set_variable(payload, row, RAW(value), (size_t)XLENGTH(value),
+                                                          err_msg, err_cap);
+    case RDUCKS_TYPE_BIT: {
+        char *payload_bytes = NULL;
+        idx_t payload_len = 0;
+        if (!rducks_rc_payload_from_bits(value, &payload_bytes, &payload_len, err_msg, err_cap)) return 0;
+        return rducks_rc_owned_result_payload_set_variable(payload, row, payload_bytes, (size_t)payload_len,
+                                                          err_msg, err_cap);
+    }
     case RDUCKS_TYPE_BOOL:
         if (Rf_asLogical(value) == TRUE && data) rducks_rc_arrow_bitmap_set(data, row);
         return 1;
@@ -2676,6 +2867,30 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
     case RDUCKS_TYPE_TIMESTAMP:
         ((int64_t *)data)[row] = (int64_t)llround(Rf_asReal(value) * 1000000.0);
         return 1;
+    case RDUCKS_TYPE_HUGEINT: {
+        uint8_t bytes[16];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 16, 1, bytes, err_msg, err_cap)) return 0;
+        rducks_rc_le_bytes_to_hugeint(bytes, &((duckdb_hugeint *)data)[row]);
+        return 1;
+    }
+    case RDUCKS_TYPE_UHUGEINT: {
+        uint8_t bytes[16];
+        if (!rducks_rc_decimal_string_sexp_to_le_bytes(value, 16, 0, bytes, err_msg, err_cap)) return 0;
+        rducks_rc_le_bytes_to_uhugeint(bytes, &((duckdb_uhugeint *)data)[row]);
+        return 1;
+    }
+    case RDUCKS_TYPE_UUID: {
+        duckdb_hugeint uuid;
+        if (!rducks_rc_parse_uuid_string(value, &uuid, err_msg, err_cap)) return 0;
+        ((duckdb_hugeint *)data)[row] = uuid;
+        return 1;
+    }
+    case RDUCKS_TYPE_INTERVAL: {
+        duckdb_interval interval;
+        if (!rducks_rc_interval_from_object(value, &interval, err_msg, err_cap)) return 0;
+        ((duckdb_interval *)data)[row] = interval;
+        return 1;
+    }
     default:
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return 0;
@@ -2695,9 +2910,39 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
         return 0;
     }
     child = payload->array.children[0];
+    if (!child->buffers || payload->n != (idx_t)child->length) {
+        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
+        return 0;
+    }
     validity = (const uint8_t *)child->buffers[0];
+    if (child->n_buffers == 3) {
+        const int32_t *offsets = (const int32_t *)child->buffers[1];
+        const uint8_t *var_data = (const uint8_t *)child->buffers[2];
+        const char empty[] = "";
+        if (!offsets) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result writeback is missing offsets");
+            return 0;
+        }
+        rducks_rc_direct_output_view_init(&output_view, output);
+        for (idx_t row = 0; row < payload->n; row++) {
+            if (validity && !rducks_rc_arrow_bitmap_get(validity, row)) {
+                rducks_rc_output_set_null(&output_view, row);
+                continue;
+            }
+            int32_t start = offsets[row];
+            int32_t end = offsets[row + 1U];
+            if (start < 0 || end < start || (size_t)end > payload->variable_size) {
+                snprintf(err_msg, err_cap, "Rducks owned Arrow variable result writeback has invalid offsets");
+                return 0;
+            }
+            rducks_rc_output_set_valid_if_needed(&output_view, row);
+            const char *ptr = (end > start && var_data) ? (const char *)var_data + start : empty;
+            duckdb_vector_assign_string_element_len(output_view.vector, row, ptr, (idx_t)(end - start));
+        }
+        return 1;
+    }
     data = (const uint8_t *)child->buffers[1];
-    if (!child->buffers || payload->n != (idx_t)child->length || (payload->n > 0 && !data)) {
+    if (payload->n > 0 && !data) {
         snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
         return 0;
     }
@@ -2709,6 +2954,47 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
             continue;
         }
         rducks_rc_output_set_valid_if_needed(&output_view, row);
+        if (payload->desc->kind == RDUCKS_KIND_ENUM) {
+            switch (rducks_rc_enum_storage_width(payload->desc)) {
+            case 1:
+                ((uint8_t *)output_view.data)[row] = ((const uint8_t *)data)[row];
+                break;
+            case 2:
+                ((uint16_t *)output_view.data)[row] = ((const uint16_t *)data)[row];
+                break;
+            case 4:
+                ((uint32_t *)output_view.data)[row] = ((const uint32_t *)data)[row];
+                break;
+            default:
+                snprintf(err_msg, err_cap, "Rducks owned Arrow enum result writeback has unsupported storage");
+                return 0;
+            }
+            continue;
+        }
+        if (payload->desc->kind == RDUCKS_KIND_DECIMAL) {
+            switch (rducks_rc_decimal_storage_width(payload->desc)) {
+            case 2:
+                ((int16_t *)output_view.data)[row] = ((const int16_t *)data)[row];
+                break;
+            case 4:
+                ((int32_t *)output_view.data)[row] = ((const int32_t *)data)[row];
+                break;
+            case 8:
+                ((int64_t *)output_view.data)[row] = ((const int64_t *)data)[row];
+                break;
+            case 16:
+                ((duckdb_hugeint *)output_view.data)[row] = ((const duckdb_hugeint *)data)[row];
+                break;
+            default:
+                snprintf(err_msg, err_cap, "Rducks owned Arrow decimal result writeback has unsupported storage");
+                return 0;
+            }
+            continue;
+        }
+        if (payload->desc->kind != RDUCKS_KIND_SCALAR) {
+            snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
+            return 0;
+        }
         switch (payload->desc->scalar) {
         case RDUCKS_TYPE_BOOL:
             ((bool *)output_view.data)[row] = rducks_rc_arrow_bitmap_get(data, row);
@@ -2751,6 +3037,18 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
             break;
         case RDUCKS_TYPE_TIMESTAMP:
             ((duckdb_timestamp *)output_view.data)[row].micros = ((const int64_t *)data)[row];
+            break;
+        case RDUCKS_TYPE_HUGEINT:
+            ((duckdb_hugeint *)output_view.data)[row] = ((const duckdb_hugeint *)data)[row];
+            break;
+        case RDUCKS_TYPE_UHUGEINT:
+            ((duckdb_uhugeint *)output_view.data)[row] = ((const duckdb_uhugeint *)data)[row];
+            break;
+        case RDUCKS_TYPE_UUID:
+            ((duckdb_hugeint *)output_view.data)[row] = ((const duckdb_hugeint *)data)[row];
+            break;
+        case RDUCKS_TYPE_INTERVAL:
+            ((duckdb_interval *)output_view.data)[row] = ((const duckdb_interval *)data)[row];
             break;
         default:
             snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");

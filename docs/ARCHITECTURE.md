@@ -96,11 +96,14 @@ from the active DuckDB callback frame, so the callback must stay blocked until
 the main-thread phase finishes. In the `serial` concurrency plan, DuckDB enters
 the main-thread phase directly and writes the callback-owned output vector before
 returning. In the `inproc_concurrent` plan, off-main scalar callbacks for
-primitive scalar return types queue first; the main R thread evaluates and
+supported scalar return types queue first; the main R thread evaluates and
 converts return values into an owned Arrow C Data result chunk, then the waiting
 worker reads those Arrow buffers and writes DuckDB output without touching
-`SEXP`s or nanoarrow R external pointers. Other direct `arrow_c` returns and
-vectorized direct `arrow_c` still use main-thread SEXP-based writeback. Do not use the remaining SEXP materialization/writeback helpers as
+`SEXP`s or nanoarrow R external pointers. This owned scalar result envelope now
+covers bool, integer widths, floating point, date/time/timestamp,
+VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL returns.
+Composite direct `arrow_c` returns and vectorized direct `arrow_c` still use
+main-thread SEXP-based writeback. Do not use the remaining SEXP materialization/writeback helpers as
 worker-safe building blocks without replacing them with owned native input/result
 payloads.
 
@@ -116,7 +119,7 @@ The `arrow_r` scalar row-loop code is split into explicit Arrow helper phases:
 `arrow_c` scalar execution is separate: for signatures accepted by the direct
 support predicate, C snapshots borrowed DuckDB vector views without R API calls,
 then calls the R function row-by-row on the recorded main R thread and validates
-each return. For queued off-main scalar callbacks with primitive scalar returns,
+each return. For queued off-main scalar callbacks with supported scalar returns,
 validated returns are copied into an owned Arrow C Data result chunk and DuckDB
 output is written by the waiting worker thread from those Arrow buffers. Serial scalar callbacks and unsupported
 owned-payload return shapes still write DuckDB output on the recorded main R
@@ -138,7 +141,7 @@ Internally the current concurrency backends are:
   may use direct `arrow_c` vector reads/writes.
 - `inproc_concurrent`: same-address-space queued dispatch. A worker-side UDF
   callback submits the current chunk request to the per-runtime queue and waits.
-  For direct `arrow_c` scalar UDFs with primitive scalar returns, the main R
+  For direct `arrow_c` scalar UDFs with supported scalar returns, the main R
   thread drains the request, calls R, fills an owned Arrow C Data result chunk,
   and signals the waiter; the waiting worker then writes DuckDB output from
   those Arrow buffers without touching `SEXP`s or nanoarrow R bindings. Other queued modes still have the main R

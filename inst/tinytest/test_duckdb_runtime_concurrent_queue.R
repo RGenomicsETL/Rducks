@@ -108,6 +108,86 @@ local({
     "SELECT rducks_queue_arrow_c_bool(i::INTEGER) AS x FROM rducks_parallel_range(4::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_bool_result$x, c(TRUE, FALSE, TRUE, FALSE))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_varchar",
+    function(x) if (identical(x, 1L)) NA_character_ else if (identical(x, 0L)) "" else paste0("v", x),
+    INTEGER, VARCHAR
+  ))
+  queued_c_varchar_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_varchar(i::INTEGER) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_varchar_result$x, c("", NA_character_, "v2"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_blob",
+    function(x) as.raw(c(x, 255L)),
+    INTEGER, BLOB
+  ))
+  queued_c_blob_result <- DBI::dbGetQuery(
+    con,
+    "SELECT hex(rducks_queue_arrow_c_blob(i::INTEGER)) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_blob_result$x, c("00FF", "01FF", "02FF"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_bit",
+    function(x) if (x %% 2L == 0L) rducks_bits(as.raw(0x80), length = 1L) else rducks_bits(as.raw(0x00), length = 1L),
+    INTEGER, BIT
+  ))
+  queued_c_bit_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_bit(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_bit_result$x, c("1", "0", "1"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_decimal",
+    function(x) rducks_decimal(sprintf("%d.25", x), 10, 2),
+    INTEGER, DECIMAL(10, 2)
+  ))
+  queued_c_decimal_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_decimal(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_decimal_result$x, c("0.25", "1.25", "2.25"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_enum",
+    function(x) if (x %% 2L == 0L) "red" else "blue",
+    INTEGER, ENUM(c("red", "blue"))
+  ))
+  queued_c_enum_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_enum(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_enum_result$x, c("red", "blue", "red"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_uuid",
+    function(x) rducks_uuid(if (x == 0L) "00000000-0000-0000-0000-000000000001" else "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
+    INTEGER, UUID
+  ))
+  queued_c_uuid_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_uuid(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(2::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_uuid_result$x, c("00000000-0000-0000-0000-000000000001", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_hugeint",
+    function(x) rducks_hugeint(if (x == 0L) "170141183460469231731687303715884105720" else "170141183460469231731687303715884105721"),
+    INTEGER, HUGEINT
+  ))
+  queued_c_hugeint_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_hugeint(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(2::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_hugeint_result$x, c("170141183460469231731687303715884105720", "170141183460469231731687303715884105721"))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_interval",
+    function(x) rducks_interval(months = x, days = x + 1L, micros = as.character(x + 2L)),
+    INTEGER, INTERVAL
+  ))
+  queued_c_interval_result <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_queue_arrow_c_interval(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(2::UBIGINT) AS t(i) ORDER BY i"
+  )
+  expect_equal(queued_c_interval_result$x, c("1 day 00:00:00.000002", "1 month 2 days 00:00:00.000003"))
   queued_c_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_vec_result$x, sum((0:9) + 1))
   invisible(rducks_register(
