@@ -7,6 +7,8 @@
 #define RDUCKS_RIPC_COALESCE_WAIT_MS 2U
 #define RDUCKS_RIPC_MAIN_WAVE_MAX 64U
 
+static int rducks_queue_sleep_ms(unsigned int ms);
+
 typedef enum rducks_udf_request_state {
     RDUCKS_REQUEST_PENDING = 0,
     RDUCKS_REQUEST_RUNNING = 1,
@@ -201,6 +203,200 @@ static int rducks_queue_collect_ripc_request_on_main(rducks_udf_request_t *reque
     return ok;
 }
 
+static void rducks_queue_cancel_remaining_ripc_on_main(rducks_r_scalar_meta_t *meta,
+                                                       rducks_udf_request_t **requests,
+                                                       int *done, size_t count) {
+    size_t remaining = 0;
+    size_t pos = 0;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP futures;
+    SEXP result;
+    if (!meta || !requests || !done || !rducks_ripc_bundle_has_cancel(meta->fun)) return;
+    for (size_t i = 0; i < count; i++) {
+        if (!done[i] && requests[i] && requests[i]->ripc_submitted &&
+            requests[i]->ripc_future && requests[i]->ripc_future != R_NilValue) {
+            remaining++;
+        }
+    }
+    if (remaining == 0U) return;
+    futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
+    protect_count++;
+    for (size_t i = 0; i < count; i++) {
+        if (!done[i] && requests[i] && requests[i]->ripc_submitted &&
+            requests[i]->ripc_future && requests[i]->ripc_future != R_NilValue) {
+            SET_VECTOR_ELT(futures, (R_xlen_t)pos, requests[i]->ripc_future);
+            pos++;
+        }
+    }
+    result = rducks_ripc_call_cancel_on_r_thread(meta, futures, &protect_count, &r_err);
+    (void)result;
+    UNPROTECT(protect_count);
+}
+
+static int rducks_queue_collect_ripc_group_any_on_main_impl(rducks_udf_request_t *head, size_t count,
+                                                            char *err_msg, size_t err_cap) {
+    rducks_udf_request_t *request;
+    rducks_r_scalar_meta_t *meta;
+    rducks_udf_request_t **requests;
+    size_t *remaining_map;
+    int *done;
+    size_t i = 0;
+    size_t remaining;
+    int ok = 0;
+
+    if (!head || count == 0U || !head->runtime || !head->meta) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group is missing state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(head->runtime)) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group reached a non-main thread");
+        return 0;
+    }
+    meta = head->meta;
+    requests = (rducks_udf_request_t **)R_alloc(count, sizeof(*requests));
+    remaining_map = (size_t *)R_alloc(count, sizeof(*remaining_map));
+    done = (int *)R_alloc(count, sizeof(*done));
+    memset(requests, 0, count * sizeof(*requests));
+    memset(done, 0, count * sizeof(*done));
+
+    for (request = head; request && i < count; request = request->next, i++) {
+        if (!request->runtime || request->meta != meta || !request->ripc_submitted ||
+            !request->ripc_future || request->ripc_future == R_NilValue ||
+            !request->ripc_output_schema_xptr || request->ripc_output_schema_xptr == R_NilValue) {
+            snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group contains an invalid request");
+            goto done_any;
+        }
+        requests[i] = request;
+    }
+    if (i != count) {
+        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group length mismatch");
+        goto done_any;
+    }
+
+    remaining = count;
+    while (remaining > 0U) {
+        int protect_count = 0;
+        int r_err = 0;
+        SEXP futures = R_NilValue;
+        SEXP schemas = R_NilValue;
+        SEXP ns = R_NilValue;
+        SEXP results = R_NilValue;
+        SEXP indices = R_NilValue;
+        SEXP arrays = R_NilValue;
+        R_xlen_t ready_count = 0;
+        size_t pos = 0;
+
+        futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
+        protect_count++;
+        schemas = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
+        protect_count++;
+        ns = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)remaining));
+        protect_count++;
+
+        for (i = 0; i < count; i++) {
+            if (done[i]) continue;
+            remaining_map[pos] = i;
+            SET_VECTOR_ELT(futures, (R_xlen_t)pos, requests[i]->ripc_future);
+            SET_VECTOR_ELT(schemas, (R_xlen_t)pos, requests[i]->ripc_output_schema_xptr);
+            REAL(ns)[pos] = (double)requests[i]->ripc_n;
+            pos++;
+        }
+        if (pos != remaining) {
+            UNPROTECT(protect_count);
+            snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any remaining-count mismatch");
+            goto done_any;
+        }
+
+        results = rducks_ripc_call_collect_any_on_r_thread(meta, futures, schemas, ns, remaining,
+                                                           &protect_count, &r_err);
+        if (r_err) {
+            UNPROTECT(protect_count);
+            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any failed");
+            goto done_any;
+        }
+        if (rducks_r_scalar_result_is_error(results, err_msg, err_cap)) {
+            UNPROTECT(protect_count);
+            goto done_any;
+        }
+        if (TYPEOF(results) != VECSXP) {
+            UNPROTECT(protect_count);
+            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned a non-list result");
+            goto done_any;
+        }
+        indices = rducks_named_list_get(results, "indices");
+        arrays = rducks_named_list_get(results, "arrays");
+        if (indices == R_NilValue && XLENGTH(results) >= 1) indices = VECTOR_ELT(results, 0);
+        if (arrays == R_NilValue && XLENGTH(results) >= 2) arrays = VECTOR_ELT(results, 1);
+        if ((TYPEOF(indices) != INTSXP && TYPEOF(indices) != REALSXP) || TYPEOF(arrays) != VECSXP) {
+            UNPROTECT(protect_count);
+            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned invalid indices/arrays");
+            goto done_any;
+        }
+        ready_count = XLENGTH(indices);
+        if (XLENGTH(arrays) != ready_count) {
+            UNPROTECT(protect_count);
+            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any result length mismatch");
+            goto done_any;
+        }
+        if (ready_count == 0) {
+            UNPROTECT(protect_count);
+            (void)rducks_queue_sleep_ms(1U);
+            continue;
+        }
+        rducks_udf_record_ripc_batch(meta, (size_t)ready_count);
+        rducks_udf_record_ripc_collect_ready(meta, (size_t)ready_count);
+
+        for (R_xlen_t j = 0; j < ready_count; j++) {
+            double raw_index = TYPEOF(indices) == INTSXP ? (double)INTEGER(indices)[j] : REAL(indices)[j];
+            size_t remaining_index;
+            size_t request_index;
+            rducks_udf_request_t *ready_request;
+            if (!R_FINITE(raw_index) || floor(raw_index) != raw_index ||
+                raw_index < 1.0 || raw_index > (double)remaining) {
+                UNPROTECT(protect_count);
+                snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned an invalid index");
+                goto done_any;
+            }
+            remaining_index = (size_t)(raw_index - 1.0);
+            request_index = remaining_map[remaining_index];
+            if (request_index >= count || done[request_index]) {
+                UNPROTECT(protect_count);
+                snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned a duplicate index");
+                goto done_any;
+            }
+            ready_request = requests[request_index];
+            if (!rducks_r_scalar_emit_arrow_result(ready_request->runtime, ready_request->meta,
+                                                  VECTOR_ELT(arrays, j), ready_request->ripc_output_schema_xptr,
+                                                  ready_request->ripc_n, ready_request->output,
+                                                  err_msg, err_cap)) {
+                UNPROTECT(protect_count);
+                goto done_any;
+            }
+            done[request_index] = 1;
+            remaining--;
+            rducks_udf_record_ripc_inflight_done(meta, 1U);
+            rducks_ripc_release_preserved(&ready_request->ripc_future, &ready_request->ripc_output_schema_xptr);
+            ready_request->ripc_submitted = 0;
+        }
+        UNPROTECT(protect_count);
+    }
+    ok = 1;
+
+done_any:
+    if (!ok) {
+        rducks_queue_cancel_remaining_ripc_on_main(meta, requests, done, count);
+        for (i = 0; i < count; i++) {
+            if (!done[i] && requests[i] && requests[i]->ripc_submitted) {
+                rducks_udf_record_ripc_inflight_done(requests[i]->meta, 1U);
+                rducks_ripc_release_preserved(&requests[i]->ripc_future, &requests[i]->ripc_output_schema_xptr);
+                requests[i]->ripc_submitted = 0;
+            }
+        }
+    }
+    return ok;
+}
+
 static int rducks_queue_collect_ripc_group_on_main_impl(rducks_udf_request_t *head, size_t count,
                                                         char *err_msg, size_t err_cap) {
     rducks_udf_request_t *request;
@@ -223,6 +419,9 @@ static int rducks_queue_collect_ripc_group_on_main_impl(rducks_udf_request_t *he
         return 0;
     }
     meta = head->meta;
+    if (rducks_ripc_bundle_has_collect_any(meta->fun)) {
+        return rducks_queue_collect_ripc_group_any_on_main_impl(head, count, err_msg, err_cap);
+    }
     rducks_udf_record_ripc_batch(meta, count);
 
     futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));

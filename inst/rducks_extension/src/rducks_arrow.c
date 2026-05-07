@@ -416,6 +416,14 @@ static int rducks_ripc_bundle_valid(SEXP bundle) {
            Rf_isFunction(rducks_named_list_get(bundle, "collect_many"));
 }
 
+static int rducks_ripc_bundle_has_collect_any(SEXP bundle) {
+    return TYPEOF(bundle) == VECSXP && Rf_isFunction(rducks_named_list_get(bundle, "collect_any"));
+}
+
+static int rducks_ripc_bundle_has_cancel(SEXP bundle) {
+    return TYPEOF(bundle) == VECSXP && Rf_isFunction(rducks_named_list_get(bundle, "cancel"));
+}
+
 static SEXP rducks_ripc_call_submit_on_r_thread(rducks_r_scalar_meta_t *meta,
                                                 SEXP input_array_xptr, SEXP input_schema_xptr,
                                                 SEXP output_schema_xptr, idx_t n,
@@ -448,6 +456,31 @@ static SEXP rducks_ripc_call_collect_many_on_r_thread(rducks_r_scalar_meta_t *me
                                                       int *protect_count, int *r_err) {
     SEXP collect_many = rducks_named_list_get(meta->fun, "collect_many");
     SEXP call = PROTECT(Rf_lang4(collect_many, futures, output_schemas, ns));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static SEXP rducks_ripc_call_collect_any_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                     SEXP futures, SEXP output_schemas, SEXP ns,
+                                                     size_t max_results,
+                                                     int *protect_count, int *r_err) {
+    SEXP collect_any = rducks_named_list_get(meta->fun, "collect_any");
+    SEXP max_results_sexp = PROTECT(Rf_ScalarReal((double)max_results));
+    (*protect_count)++;
+    SEXP call = PROTECT(Rf_lang5(collect_any, futures, output_schemas, ns, max_results_sexp));
+    (*protect_count)++;
+    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
+    (*protect_count)++;
+    return result;
+}
+
+static SEXP rducks_ripc_call_cancel_on_r_thread(rducks_r_scalar_meta_t *meta,
+                                                SEXP futures,
+                                                int *protect_count, int *r_err) {
+    SEXP cancel = rducks_named_list_get(meta->fun, "cancel");
+    SEXP call = PROTECT(Rf_lang2(cancel, futures));
     (*protect_count)++;
     SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
     (*protect_count)++;

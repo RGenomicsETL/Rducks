@@ -61,6 +61,44 @@ rducks_arrow_ipc_mirai_collect_many_arrow_chunks <- function(engine, provider, t
   lapply(payloads, function(payload) rducks_arrow_ipc_decode_array(payload)$array)
 }
 
+rducks_arrow_ipc_mirai_collect_any_arrow_chunks <- function(engine, provider, task_ids, output_schemas, ns,
+                                                           max_results = Inf) {
+  task_ids <- unlist(task_ids, use.names = FALSE)
+  if (!is.list(output_schemas) || length(output_schemas) != length(task_ids)) {
+    stop("output_schemas must be a list with one schema per task", call. = FALSE)
+  }
+  if (length(ns) != length(task_ids)) {
+    stop("ns must have one row count per task", call. = FALSE)
+  }
+  for (schema in output_schemas) {
+    if (!rducks_nanoarrow_pointer_is_valid(schema)) {
+      stop("output nanoarrow schema pointer is not valid", call. = FALSE)
+    }
+  }
+  results <- provider$collect_any(
+    max_results = max_results,
+    timeout = 0.001,
+    task_ids = task_ids
+  )
+  if (!length(results)) {
+    return(list(indices = integer(), arrays = list()))
+  }
+  ids <- vapply(results, function(result) result$task_id %||% NA_character_, character(1))
+  indices <- match(ids, task_ids)
+  if (anyNA(indices)) {
+    stop("Rducks mirai collect-any returned an unknown task id", call. = FALSE)
+  }
+  arrays <- vector("list", length(results))
+  for (i in seq_along(results)) {
+    result <- results[[i]]
+    if (!identical(result$status, "ok")) {
+      stop("Rducks mirai worker failed: ", result$error_message %||% "unknown error", call. = FALSE)
+    }
+    arrays[[i]] <- rducks_arrow_ipc_decode_array(result$output_ipc_payload)$array
+  }
+  list(indices = as.integer(indices), arrays = arrays)
+}
+
 rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                 mode = c("scalar", "vectorized"),
                                                 plan = rducks_execution_plan()) {
@@ -171,6 +209,28 @@ rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, except
           rducks_arrow_error(msg)
         }
       )
+    },
+    collect_any = function(task_ids, output_schemas, ns, max_results = Inf) {
+      tryCatch(
+        rducks_arrow_ipc_mirai_collect_any_arrow_chunks(
+          engine, provider, task_ids, output_schemas, ns, max_results = max_results
+        ),
+        error = function(e) {
+          msg <- paste0("Rducks mirai Arrow IPC collect-any error: ", conditionMessage(e))
+          .rducks_state$last_arrow_error <- msg
+          rducks_arrow_error(msg)
+        }
+      )
+    },
+    cancel = function(task_ids) {
+      tryCatch({
+        if (!is.null(provider)) provider$cancel(unlist(task_ids, use.names = FALSE))
+        TRUE
+      }, error = function(e) {
+        msg <- paste0("Rducks mirai Arrow IPC cancel error: ", conditionMessage(e))
+        .rducks_state$last_arrow_error <- msg
+        rducks_arrow_error(msg)
+      })
     },
     .finalizer = finalizer_env
   )

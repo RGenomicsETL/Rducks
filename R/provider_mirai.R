@@ -265,12 +265,16 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
     lapply(seq_along(task_ids), collect_one)
   }
 
-  provider$collect_any <- function(max_results = Inf, timeout = NULL) {
+  provider$collect_any <- function(max_results = Inf, timeout = NULL, task_ids = NULL) {
+    selected <- if (is.null(task_ids)) NULL else unique(as.character(task_ids))
     pending <- ls(state$tasks, all.names = TRUE)
+    if (!is.null(selected)) pending <- pending[pending %in% selected]
     if (!length(pending)) return(list())
     deadline <- if (is.null(timeout)) Inf else unclass(Sys.time()) + as.numeric(timeout)
     repeat {
       pending <- ls(state$tasks, all.names = TRUE)
+      if (!is.null(selected)) pending <- pending[pending %in% selected]
+      if (!length(pending)) return(list())
       ready <- pending[!vapply(pending, function(id) mirai::unresolved(get(id, envir = state$tasks)), logical(1))]
       if (length(ready)) {
         ready <- utils::head(ready, max_results)

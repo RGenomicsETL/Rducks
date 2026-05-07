@@ -130,9 +130,12 @@ Scalar UDF callbacks borrow DuckDB callback-frame storage until the callback
 returns. Therefore, the first persistent implementation should support:
 
 - bounded submit queue size (`ipc_mirai_pool` enforces `ipc_max_pending`);
-- collect-any to release blocked callbacks as soon as results arrive (`mirai_provider`
-  can collect ready tasks independently through `collect_any()`; native callback
-  writeback still waits for the current grouped collect result);
+- collect-any to release blocked callbacks as soon as results arrive
+  (`mirai_provider` can collect ready tasks independently through
+  `collect_any()`, and native cooperative RIPC groups use the optional
+  bundle-level `collect_any()` method when available; the callback still remains
+  active until every borrowed DuckDB output vector in that submitted group is
+  filled);
 - pending cancellation before a worker starts a task;
 - deterministic query errors for worker failure or provider shutdown.
 
