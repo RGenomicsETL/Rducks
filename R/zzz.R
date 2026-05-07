@@ -15,7 +15,26 @@ rducks_main_thread_token <- function() {
   token
 }
 
+rducks_cache_nanoarrow_dll_path <- function() {
+  path <- .rducks_state$nanoarrow_dll_path
+  if (is.character(path) && length(path) == 1L && !is.na(path) && nzchar(path)) {
+    return(path)
+  }
+  getNamespace("nanoarrow")
+  dll <- getLoadedDLLs()[["nanoarrow"]]
+  if (is.null(dll) || is.null(dll[["path"]])) {
+    stop("nanoarrow shared library is not loaded", call. = FALSE)
+  }
+  path <- dll[["path"]]
+  .rducks_state$nanoarrow_dll_path <- path
+  path
+}
+
 .onLoad <- function(libname, pkgname) {
   .rducks_state$main_thread_token <- .Call(RDUCKS_current_thread_token)
+  .rducks_state$nanoarrow_dll_path <- tryCatch(
+    rducks_cache_nanoarrow_dll_path(),
+    error = function(e) NULL
+  )
   S7::methods_register()
 }

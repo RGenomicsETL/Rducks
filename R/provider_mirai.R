@@ -13,6 +13,25 @@ rducks_mirai_collect_map <- function(x) {
   out
 }
 
+rducks_mirai_counter_next <- function(value) {
+  value <- suppressWarnings(as.numeric(value %||% 0))
+  if (length(value) != 1L || is.na(value) || !is.finite(value) || value < 0) {
+    value <- 0
+  }
+  value + 1
+}
+
+rducks_mirai_counter_label <- function(value) {
+  format(value, scientific = FALSE, trim = TRUE)
+}
+
+rducks_mirai_sleep_until_deadline <- function(deadline, max_sleep = 0.01) {
+  remaining <- deadline - unclass(Sys.time())
+  if (is.finite(remaining) && remaining <= 0) return(invisible(FALSE))
+  Sys.sleep(if (is.finite(remaining)) min(max_sleep, max(remaining, 0)) else max_sleep)
+  invisible(TRUE)
+}
+
 rducks_mirai_worker_globals <- function(fun, globals) {
   if (identical(globals, "auto") || isTRUE(globals)) {
     return(rducks_future_precompute_worker_globals(fun, "auto"))
@@ -41,10 +60,9 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
     stop("max_pending must be NULL or a positive numeric scalar", call. = FALSE)
   }
   if (is.null(compute)) {
-    counter <- .rducks_state$mirai_provider_counter %||% 0L
-    counter <- counter + 1L
+    counter <- rducks_mirai_counter_next(.rducks_state$mirai_provider_counter)
     .rducks_state$mirai_provider_counter <- counter
-    compute <- paste("rducks", Sys.getpid(), counter, sep = "-")
+    compute <- paste("rducks", Sys.getpid(), rducks_mirai_counter_label(counter), sep = "-")
   }
   if (!is.character(compute) || length(compute) != 1L || is.na(compute) || !nzchar(compute)) {
     stop("compute must be a non-empty character scalar", call. = FALSE)
@@ -60,11 +78,11 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
   state$dispatcher <- dispatcher
   state$max_pending <- max_pending
   state$tasks <- new.env(parent = emptyenv())
-  state$submitted <- 0L
-  state$completed <- 0L
-  state$cancelled <- 0L
-  state$errors <- 0L
-  state$next_task <- 0L
+  state$submitted <- 0
+  state$completed <- 0
+  state$cancelled <- 0
+  state$errors <- 0
+  state$next_task <- 0
 
   provider <- list()
 
@@ -151,8 +169,8 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
     if (length(ls(state$tasks, all.names = TRUE)) >= state$max_pending) {
       stop("Rducks mirai provider pending task limit reached", call. = FALSE)
     }
-    state$next_task <- state$next_task + 1L
-    task_id <- paste("mirai-task", state$next_task, sep = "-")
+    state$next_task <- rducks_mirai_counter_next(state$next_task)
+    task_id <- paste("mirai-task", rducks_mirai_counter_label(state$next_task), sep = "-")
     task <- mirai::mirai({
       tryCatch({
         if (!exists(".rducks_mirai_registry", envir = .GlobalEnv, inherits = FALSE)) {
@@ -201,7 +219,7 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
       input_ipc_payload = input_ipc_payload
     ), .timeout = timeout_ms, .compute = state$compute)
     assign(task_id, task, envir = state$tasks)
-    state$submitted <- state$submitted + 1L
+    state$submitted <- rducks_mirai_counter_next(state$submitted)
     task_id
   }
 
@@ -230,17 +248,21 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
       if (exists(task_id, envir = state$tasks, inherits = FALSE)) {
         rm(list = task_id, envir = state$tasks)
       }
-      state$completed <- state$completed + 1L
+      state$completed <- rducks_mirai_counter_next(state$completed)
       if (inherits(value, "rducks_mirai_collect_error")) {
-        state$errors <- state$errors + 1L
+        state$errors <- rducks_mirai_counter_next(state$errors)
         list(task_id = task_id, status = "error", error_message = value$message)
       } else if (inherits(value, "errorValue")) {
-        state$errors <- state$errors + 1L
+        state$errors <- rducks_mirai_counter_next(state$errors)
         list(task_id = task_id, status = "error", error_message = as.character(value))
       } else {
-        if (identical(value$status, "error")) state$errors <- state$errors + 1L
+        if (identical(value$status, "error")) state$errors <- rducks_mirai_counter_next(state$errors)
         value
       }
+    }
+
+    if (is.null(timeout)) {
+      return(lapply(seq_along(task_ids), collect_one))
     }
 
     repeat {
@@ -256,21 +278,34 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
             rm(list = task_id, envir = state$tasks)
           }
         }
-        state$errors <- state$errors + sum(unresolved)
+        state$errors <- state$errors + as.numeric(sum(unresolved))
         stop("Rducks mirai provider timed out waiting for task ", task_ids[[which(unresolved)[[1L]]]], call. = FALSE)
       }
-      Sys.sleep(0.001)
+      rducks_mirai_sleep_until_deadline(deadline)
     }
 
     lapply(seq_along(task_ids), collect_one)
   }
 
   provider$collect_any <- function(max_results = Inf, timeout = NULL, task_ids = NULL) {
+    rducks_mirai_require()
     selected <- if (is.null(task_ids)) NULL else unique(as.character(task_ids))
     pending <- ls(state$tasks, all.names = TRUE)
     if (!is.null(selected)) pending <- pending[pending %in% selected]
     if (!length(pending)) return(list())
-    deadline <- if (is.null(timeout)) Inf else unclass(Sys.time()) + as.numeric(timeout)
+    if (is.null(timeout)) {
+      tasks <- lapply(pending, function(id) get(id, envir = state$tasks, inherits = FALSE))
+      first <- mirai::race_mirai(tasks, .compute = state$compute)
+      if (!length(first) || is.na(first)) return(list())
+      ready <- pending[first]
+      ready <- unique(c(
+        ready,
+        pending[!vapply(pending, function(id) mirai::unresolved(get(id, envir = state$tasks)), logical(1))]
+      ))
+      ready <- utils::head(ready, max_results)
+      return(provider$collect_many(ready, timeout = 0))
+    }
+    deadline <- unclass(Sys.time()) + as.numeric(timeout)
     repeat {
       pending <- ls(state$tasks, all.names = TRUE)
       if (!is.null(selected)) pending <- pending[pending %in% selected]
@@ -280,8 +315,8 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
         ready <- utils::head(ready, max_results)
         return(provider$collect_many(ready, timeout = 0))
       }
-      if (is.finite(deadline) && unclass(Sys.time()) >= deadline) return(list())
-      Sys.sleep(0.001)
+      if (unclass(Sys.time()) >= deadline) return(list())
+      rducks_mirai_sleep_until_deadline(deadline)
     }
   }
 
@@ -291,7 +326,7 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
       if (exists(task_id, envir = state$tasks, inherits = FALSE)) {
         try(mirai::stop_mirai(get(task_id, envir = state$tasks)), silent = TRUE)
         rm(list = task_id, envir = state$tasks)
-        state$cancelled <- state$cancelled + 1L
+        state$cancelled <- rducks_mirai_counter_next(state$cancelled)
       }
     }
     invisible(provider)

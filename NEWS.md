@@ -9,7 +9,10 @@
   `collect_any()` method when available, so ready mirai chunk results are decoded
   and written back without waiting for slower tasks in the same submitted group.
   `tools/benchmark_ipc_providers.R` compares this direct provider path with both
-  `future::multisession` and `future.mirai::mirai_multisession`.
+  `future::multisession` and `future.mirai::mirai_multisession`. The mirai
+  provider now uses wrap-resistant numeric task/provider counters and uses
+  mirai's blocking wait primitives for no-deadline `collect_many()` /
+  `collect_any()` calls instead of scanning tasks with a 1 ms sleep loop.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
   rows inside the worker, vectorized registrations call once per chunk, and the
@@ -21,7 +24,9 @@
   `arrow_c` owned-result-chunk, RIPC-in-flight, and RIPC submit/collect wave
   counters for diagnosing whether chunks are actually overlapping. Arrow IPC
   encoding for nanoarrow arrays now uses a native buffer
-  writer instead of an R `rawConnection`, avoiding large transient allocations.
+  writer instead of an R `rawConnection`, avoiding large transient allocations;
+  the nanoarrow shared-library path is cached at package load/first use rather
+  than rediscovered for every encoded chunk.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
 - Added `rducks_reset_udf_counters()` to reset one UDF's diagnostic counters or

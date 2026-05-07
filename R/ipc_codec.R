@@ -2,12 +2,7 @@ rducks_arrow_ipc_encode <- function(data) {
   if (!inherits(data, "nanoarrow_array")) {
     stop("Arrow IPC native path requires a nanoarrow_array", call. = FALSE)
   }
-  getNamespace("nanoarrow")
-  dll <- getLoadedDLLs()[["nanoarrow"]]
-  if (is.null(dll) || is.null(dll[["path"]])) {
-    stop("nanoarrow shared library is not loaded", call. = FALSE)
-  }
-  .Call(RDUCKS_arrow_ipc_encode_array, data, dll[["path"]])
+  .Call(RDUCKS_arrow_ipc_encode_array, data, rducks_cache_nanoarrow_dll_path())
 }
 
 rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {

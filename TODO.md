@@ -460,7 +460,11 @@ Still-open or blocked decisions:
     so persistent workers cannot accumulate unbounded accepted-but-uncollected
     tasks.
   - The mirai provider exposes tested `collect_any()` behavior so ready tasks can
-    be collected without waiting for an earlier slow task.
+    be collected without waiting for an earlier slow task. No-deadline
+    `collect_many()` and `collect_any()` calls now use mirai blocking wait
+    primitives instead of a 1 ms scan/sleep loop; finite-deadline collect-any
+    remains a bounded poll until a timeout-aware mirai race primitive is
+    available.
   - Native cooperative RIPC groups now use optional bundle-level `collect_any()`
     when the provider exposes it. Ready chunks are decoded and written back as
     they arrive, while the callback still remains active until all borrowed
@@ -486,7 +490,9 @@ Still-open or blocked decisions:
     submit, collect_any, collect_many, cancel, and stats using persistent mirai
     daemons and preloaded UDF records.
   - Focused tinytests cover successful Arrow IPC task execution, structured
-    worker errors, and provider counters.
+    worker errors, and provider counters. Provider/task counters use numeric
+    increments and formatted ids instead of R integer `+ 1L` increments, avoiding
+    `NA_integer_` wrap in long-lived sessions.
 
 - [x] Wire a persistent worker provider into a public UDF engine with no hidden
   fallback.
