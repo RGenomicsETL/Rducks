@@ -10,6 +10,7 @@
 *.tar.gz
 *.tgz
 *.Rcheck
+.webr-local-artifacts/
 build/
 .DS_Store
 inst/rducks_extension/build/

@@ -39,17 +39,17 @@ DuckDB
       -> mode = "scalar", plan marshalling = "arrow_c": native C row-loop adapter, with direct DuckDB vector reads/writes where implemented
       -> mode = "vectorized", plan marshalling = "arrow_r": DuckDB chunk -> Arrow C Data -> one R call over vectors/list-columns
       -> mode = "vectorized", plan marshalling = "arrow_c": native C chunk materialization/writeback -> one R call over vectors/list-columns
-      -> mode = "scalar", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker row loop -> Arrow IPC result
-      -> mode = "vectorized", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> Future worker chunk call -> Arrow IPC result
+      -> mode = "scalar", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> worker row loop -> Arrow IPC result
+      -> mode = "vectorized", plan marshalling = "arrow_ipc": DuckDB chunk -> Arrow IPC -> worker chunk call -> Arrow IPC result
 ```
 
 All scalar evaluators call the R function once per logical row. `arrow_c` moves
 row iteration, call construction, NULL handling, return checking, and direct
 DuckDB vector reads/writes into C for supported scalar storage; the user function
 itself is still evaluated by R, so S3/S7 dispatch, RNG, lexical scoping, and side
-effects keep ordinary R semantics. `arrow_ipc` loops rows inside a Future worker.
-Vectorized mode calls the R function once per DuckDB chunk and supports
-`arrow_r`, direct `arrow_c`, and Future-backed `arrow_ipc` plans. The `arrow_c +
+effects keep ordinary R semantics. `arrow_ipc` loops rows inside the selected
+worker provider. Vectorized mode calls the R function once per DuckDB chunk and
+supports `arrow_r`, direct `arrow_c`, and worker-provider `arrow_ipc` plans. The `arrow_c +
 vectorized` path materializes supported DuckDB vectors directly in native C and
 writes returned rows back through the same direct-vector writer; it does not use
 the Arrow/R helper bridge.
@@ -133,16 +133,17 @@ Internally the current concurrency backends are:
   must not return before the main thread has consumed the request. Direct
   `arrow_c` helpers remain main-thread-only unless split into pure native
   worker-safe phases.
-- `multiprocess_parallel`: out-of-process execution through the current generic
-  Future backend. The scalar-UDF callback implementation serializes chunk
-  payloads with Arrow IPC so workers receive raw task/result payloads rather
-  than DuckDB-owned pointers or session-bound R objects. This path is
-  implemented in the native extension (`rducks_arrow.c` and
-  `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects Future
-  results, and imports returned Arrow IPC into the
-  DuckDB output vector. When a RIPC callback runs on the recorded main R thread,
-  it cooperatively drains queued worker callbacks into the same submit/collect
-  wave so parallel DuckDB execution does not depend on an external query pump.
+- `multiprocess_parallel`: out-of-process execution through the selected Arrow
+  IPC worker provider (`ipc_future_pool` by default, experimental
+  `ipc_mirai_pool` when requested). The scalar-UDF callback implementation
+  serializes chunk payloads with Arrow IPC so workers receive raw task/result
+  payloads rather than DuckDB-owned pointers or session-bound R objects. This
+  path is implemented in the native extension (`rducks_arrow.c` and
+  `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects provider
+  results, and imports returned Arrow IPC into the DuckDB output vector. When a
+  RIPC callback runs on the recorded main R thread, it cooperatively drains
+  queued worker callbacks into the same submit/collect wave so parallel DuckDB
+  execution does not depend on an external query pump.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

@@ -12,7 +12,8 @@ place.
 | `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | supported | supported | DuckDB worker callbacks queue work; R evaluation runs on the recorded main R thread. |
 | `arrow_c_direct_serial` | `arrow_c + serial` | supported | supported | Direct native DuckDB-vector marshalling only; unsupported signatures fail. |
 | `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | supported | supported | Same direct marshalling as serial, with queued main-thread R evaluation. |
-| `ipc_future_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Native Arrow IPC request/result bytes with generic `future` workers; correctness path, not the expected performance backend. |
+| `ipc_future_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Native Arrow IPC request/result bytes with generic `future` workers; portable correctness path. |
+| `ipc_mirai_pool` | `arrow_ipc + multiprocess_parallel` with `ipc_provider = "mirai"` | implemented/experimental | implemented/experimental | Persistent mirai workers preload evaluator/schema state and use the same owned Arrow IPC payload contract. |
 
 Invalid combinations are intentionally rejected rather than mapped to another
 engine.
@@ -31,7 +32,7 @@ engine.
 | Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes | experimental yes | Direct UNION support depends on the pinned DuckDB C-vector layout and is covered by generated matrix tests. |
 
 The generated marshalling matrix is the operational truth for claimed type
-coverage; the latest full run passed 945 cases across scalar/vectorized modes,
+coverage; the latest full run passed 1213 cases across scalar/vectorized modes,
 `arrow_r`, direct `arrow_c`, and supported `arrow_ipc` mappings. Unsupported
 signatures must fail at registration/plan validation time where possible.
 

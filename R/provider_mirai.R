@@ -13,8 +13,33 @@ rducks_mirai_collect_map <- function(x) {
   out
 }
 
-rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRUE) {
+rducks_mirai_worker_globals <- function(fun, globals) {
+  if (identical(globals, "auto") || isTRUE(globals)) {
+    return(rducks_future_precompute_worker_globals(fun, "auto"))
+  }
+  if (identical(globals, FALSE) || is.null(globals)) {
+    return(list(globals = list(), packages = character()))
+  }
+  if (is.character(globals)) {
+    env <- environment(fun) %||% parent.frame()
+    return(list(globals = mget(globals, envir = env, inherits = TRUE), packages = character()))
+  }
+  if (is.list(globals)) {
+    if (length(globals) && (is.null(names(globals)) || any(!nzchar(names(globals))))) {
+      stop("future_globals supplied as a list must be named", call. = FALSE)
+    }
+    return(list(globals = globals, packages = character()))
+  }
+  stop("future_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
+}
+
+rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRUE,
+                                  max_pending = 64L) {
   workers <- rducks_validate_thread_count(workers, "workers")
+  if (is.null(max_pending)) max_pending <- Inf
+  if (!is.numeric(max_pending) || length(max_pending) != 1L || is.na(max_pending) || max_pending <= 0) {
+    stop("max_pending must be NULL or a positive numeric scalar", call. = FALSE)
+  }
   if (is.null(compute)) {
     counter <- .rducks_state$mirai_provider_counter %||% 0L
     counter <- counter + 1L
@@ -33,6 +58,7 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
   state$compute <- compute
   state$workers <- workers
   state$dispatcher <- dispatcher
+  state$max_pending <- max_pending
   state$tasks <- new.env(parent = emptyenv())
   state$submitted <- 0L
   state$completed <- 0L
@@ -122,6 +148,9 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
     rducks_mirai_require()
     if (!isTRUE(state$started)) stop("mirai provider is not started", call. = FALSE)
     if (!is.raw(input_ipc_payload)) stop("input_ipc_payload must be raw Arrow IPC bytes", call. = FALSE)
+    if (length(ls(state$tasks, all.names = TRUE)) >= state$max_pending) {
+      stop("Rducks mirai provider pending task limit reached", call. = FALSE)
+    }
     state$next_task <- state$next_task + 1L
     task_id <- paste("mirai-task", state$next_task, sep = "-")
     task <- mirai::mirai({
@@ -242,6 +271,7 @@ rducks_mirai_provider <- function(workers = 1L, compute = NULL, dispatcher = TRU
       provider = "mirai",
       compute = state$compute,
       workers = state$workers,
+      max_pending = state$max_pending,
       started = isTRUE(state$started),
       submitted = state$submitted,
       completed = state$completed,

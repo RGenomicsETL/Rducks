@@ -57,8 +57,10 @@ mechanism used to make it happen.
   isolated R worker processes. Worker lifecycle may be implemented with
   mirai-style machinery, but the plan name does not expose that mechanism.
 
-Avoid public plan names such as `main_thread_loop`, `queue`, `pump`, `mirai`,
-or `sockets`; those describe mechanisms, not concurrency semantics.
+Avoid public plan names such as `main_thread_loop`, `queue`, `pump`, or
+`sockets`; those describe mechanisms, not concurrency semantics. Provider names
+may appear only where provider selection is explicit, e.g. `ipc_future_pool`
+versus experimental `ipc_mirai_pool`.
 
 ## Reference implementation contract
 
@@ -120,6 +122,7 @@ observable plan remains one named plan with one declared support matrix.
 | `arrow_c_direct_serial` | `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`); no Arrow/R bridge fallback. |
 | `arrow_c_direct_main_queue` | `arrow_c` | `inproc_concurrent` | implemented | implemented | Same direct marshalling semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded main R thread. |
 | `ipc_future_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, cooperatively draining queued worker callbacks when execution reaches the main R thread, collecting Future results, and copying returned Arrow results into the DuckDB output vector. |
+| `ipc_mirai_pool` | `arrow_ipc` | `multiprocess_parallel` | experimental | experimental | Persistent mirai workers preload evaluator/schema state once per UDF, then receive task id, UDF id, row count, and Arrow IPC bytes per chunk. Accepted-but-uncollected tasks are bounded by `ipc_max_pending`. It uses the same native RIPC callback/writeback path and must not fall back to Future or same-process execution. |
 
 Current API direction:
 
@@ -241,8 +244,11 @@ Additional multiprocess cases:
       tests.
 - [x] Treat `arrow_r + serial + vectorized` as the vectorized reference in
       generated tests.
-- [ ] Expand the generated matrix until it covers every claimed public type and
-      every NULL/error semantic option.
+- [x] Expand the generated matrix until it covers every claimed public type and
+      every NULL/error semantic option. The current run covers default/special
+      NULL handling, scalar/vectorized conformance, no-fallback counters, and
+      `exception_handling = "return_null"` smoke cases across the supported
+      generated type surface.
 - [x] Add negative generated cases for unsupported plan/type combinations.
 - [x] Run the generated matrix in CI, not only manually.
 
@@ -299,13 +305,13 @@ not the old Arrow/R helper bridge.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
-- [x] Define request envelope: the persistent-provider contract and internal
-      mirai prototype use UDF id, task id, chunk id, row count, optional timeout,
-      and Arrow IPC bytes. The generic Future adapter still carries more worker
-      state per task for portability.
-- [x] Define response envelope: the persistent-provider contract and internal
-      mirai prototype return task id, UDF id, chunk id, status, Arrow IPC result
-      bytes, and structured error text.
+- [x] Define request envelope: the persistent-provider contract and mirai engine
+      use UDF id, task id, chunk id, row count, optional timeout, and Arrow IPC
+      bytes. The generic Future adapter still carries more worker state per task
+      for portability.
+- [x] Define response envelope: the persistent-provider contract and mirai engine
+      return task id, UDF id, chunk id, status, Arrow IPC result bytes, and
+      structured error text.
 - [x] Encode DuckDB input chunks to Arrow IPC bytes in the DuckDB process for
       the current synchronous UDF callback implementation.
 - [x] Decode input IPC in worker R processes.
@@ -313,8 +319,8 @@ not the old Arrow/R helper bridge.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
-- [x] Add worker lifecycle/shutdown/cancellation tests for the internal mirai
-      provider prototype.
+- [x] Add worker lifecycle/shutdown/cancellation tests for the mirai provider and
+      a public `ipc_mirai_pool` UDF smoke test.
 - [x] Add tests proving provider worker chunk input/output payloads are raw
       Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a

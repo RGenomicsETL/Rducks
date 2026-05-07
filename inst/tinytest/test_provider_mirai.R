@@ -96,6 +96,39 @@ if (requireNamespace("mirai", quietly = TRUE)) {
     provider$stop()
     expect_false(provider$stats()$started)
   })
+
+  local({
+    provider <- Rducks:::rducks_mirai_provider(workers = 1L, max_pending = 1L)
+    provider$start()
+    on.exit(provider$stop(), add = TRUE)
+
+    input_array <- nanoarrow::as_nanoarrow_array(data.frame(arg1 = 1:4))
+    input_payload <- Rducks:::rducks_arrow_ipc_encode(input_array)
+    output_schema_spec <- Rducks:::rducks_arrow_schema_to_spec(
+      nanoarrow::infer_nanoarrow_schema(data.frame(result = integer()))
+    )
+    provider$register_udf(
+      udf_id = "slow_limit",
+      udf_name = "slow_limit",
+      fun = function(x) {
+        Sys.sleep(0.25)
+        x
+      },
+      arg_types = list(INTEGER),
+      return_type = INTEGER,
+      mode = "vectorized",
+      null_handling = "default",
+      exception_handling = "rethrow",
+      output_schema_spec = output_schema_spec
+    )
+    task_id <- provider$submit("slow_limit", "chunk-one", 4L, input_payload)
+    expect_error(
+      provider$submit("slow_limit", "chunk-two", 4L, input_payload),
+      "pending task limit"
+    )
+    provider$cancel(task_id)
+    expect_equal(provider$stats()$max_pending, 1)
+  })
 } else {
   expect_true(TRUE)
 }

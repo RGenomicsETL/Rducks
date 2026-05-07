@@ -12,6 +12,7 @@
 ^TODO\.md$
 ^AGENTS\.md$
 ^claude_review\.md$
+^scripts$
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$
 ^docs$

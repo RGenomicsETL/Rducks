@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rducks webR smoke test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    pre { background: #f6f8fa; padding: 1rem; overflow: auto; white-space: pre-wrap; }
+    button { padding: 0.6rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Rducks webR smoke test</h1>
+  <p>Installs the locally built Rducks wasm package, loads it in webR, runs public native/type helpers, and attempts a minimal DuckDB extension UDF smoke when the webR DuckDB runtime supports it.</p>
+  <button id="run">Run smoke test</button>
+  <pre id="log">Idle</pre>
+
+  <script type="module">
+    import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
+
+    const button = document.getElementById("run");
+    const logNode = document.getElementById("log");
+
+    function log(text) {
+      logNode.textContent += text + "\n";
+      console.log(text);
+    }
+
+    async function parseVersion() {
+      const response = await fetch("/r/Rducks/DESCRIPTION", { cache: "no-store" });
+      if (!response.ok) throw new Error(`Failed to fetch DESCRIPTION: ${response.status}`);
+      const text = await response.text();
+      const match = text.match(/^Version:\s*(.+)$/m);
+      if (!match) throw new Error("Could not parse Rducks version");
+      return match[1].trim();
+    }
+
+    async function capture(shelter, code) {
+      log(`> ${code.split("\n")[0]}${code.includes("\n") ? " ..." : ""}`);
+      const result = await shelter.captureR(code, { withAutoprint: true, captureStreams: true, captureConditions: true });
+      for (const item of result.output) log(item.data ?? item.message ?? JSON.stringify(item));
+      if (result.result?.type === "error") throw new Error(result.result.message);
+      return result;
+    }
+
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      logNode.textContent = "";
+      try {
+        const version = await parseVersion();
+        log(`Rducks version ${version}`);
+        const webR = new WebR();
+        await webR.init();
+        const shelter = await new webR.Shelter();
+        const repo = `${location.origin}/r/Rducks/webr-repo`;
+
+        await capture(shelter, `options(repos = c(RducksLocal = '${repo}', CRAN = 'https://repo.r-wasm.org/'))`);
+        await capture(shelter, "install.packages('Rducks')");
+        await capture(shelter, `
+          library(Rducks)
+          stopifnot(identical(rducks_type_sql(INTEGER), 'INTEGER'))
+          stopifnot(isTRUE(rducks_is_type(STRUCT(x = INTEGER))))
+          stopifnot(NROW(rducks_mode_semantics()) >= 2L)
+          cat('Rducks package smoke: ok\\n')
+        `);
+        await capture(shelter, `
+          duckdb_available <- requireNamespace('duckdb', quietly = TRUE) && requireNamespace('DBI', quietly = TRUE)
+          if (!duckdb_available) {
+            cat('DuckDB package unavailable in this webR runtime; extension smoke skipped\\n')
+          } else {
+            con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = 'true')), dbdir = ':memory:')
+            on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+            rducks_enable(con, threads = 'single')
+            rducks_register(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
+            out <- DBI::dbGetQuery(con, 'SELECT r_webr_plus_one(41::INTEGER) AS x')
+            stopifnot(identical(out$x[[1]], 42L))
+            cat('DuckDB extension smoke: ok\\n')
+          }
+        `);
+        log("PASS");
+      } catch (err) {
+        log(`FAIL: ${err.message ?? String(err)}`);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

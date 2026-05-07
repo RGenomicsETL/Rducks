@@ -20,14 +20,26 @@ rducks_plan_serialization <- function(marshalling) {
   if (identical(marshalling, "arrow_ipc")) "arrow_ipc" else "none"
 }
 
-rducks_plan_engine_id <- function(marshalling, concurrency) {
+rducks_plan_ipc_provider <- function(x) {
+  match.arg(x, c("future", "mirai"))
+}
+
+rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "future") {
+  key <- paste(marshalling, concurrency, sep = "+")
+  if (identical(key, "arrow_ipc+multiprocess_parallel")) {
+    return(switch(
+      ipc_provider,
+      future = "ipc_future_pool",
+      mirai = "ipc_mirai_pool",
+      NA_character_
+    ))
+  }
   switch(
-    paste(marshalling, concurrency, sep = "+"),
+    key,
     `arrow_r+serial` = "arrow_r_serial",
     `arrow_r+inproc_concurrent` = "arrow_r_main_queue",
     `arrow_c+serial` = "arrow_c_direct_serial",
     `arrow_c+inproc_concurrent` = "arrow_c_direct_main_queue",
-    `arrow_ipc+multiprocess_parallel` = "ipc_future_pool",
     NA_character_
   )
 }
@@ -129,7 +141,17 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   discovery. Use `future_packages` for packages that workers should attach,
 #'   `future_globals = TRUE` for Future's per-task discovery, `FALSE` for only
 #'   Rducks' required task state, or a character vector/named list for explicit
-#'   extra globals.
+#'   extra globals. `future_timeout` is also used as the Arrow IPC provider wait
+#'   timeout. The persistent mirai provider preloads the same discovered
+#'   globals/packages once per provider registration.
+#' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
+#'   `"future"` is the portable default. `"mirai"` uses persistent mirai daemon
+#'   workers and fails at registration if the `mirai` package is unavailable; it
+#'   does not fall back to Future.
+#' @param ipc_workers Number of persistent workers for `ipc_provider = "mirai"`.
+#' @param ipc_max_pending Maximum accepted but uncollected tasks for the
+#'   persistent provider. The default bounds provider memory/use of outstanding
+#'   callback work; `NULL` disables this provider-level limit.
 #' @return An object of class `rducks_execution_plan`.
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
@@ -139,14 +161,26 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
                                   future_seed = FALSE,
                                   future_stdout = FALSE,
                                   future_conditions = "condition",
-                                  future_timeout = NULL) {
+                                  future_timeout = NULL,
+                                  ipc_provider = c("future", "mirai"),
+                                  ipc_workers = 1L,
+                                  ipc_max_pending = 64L) {
   marshalling <- rducks_plan_marshalling(marshalling)
   concurrency <- rducks_plan_concurrency(concurrency)
+  ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
+  ipc_workers <- rducks_validate_thread_count(ipc_workers, "ipc_workers")
+  if (!is.null(ipc_max_pending) &&
+      (!is.numeric(ipc_max_pending) || length(ipc_max_pending) != 1L || is.na(ipc_max_pending) || ipc_max_pending <= 0)) {
+    stop("ipc_max_pending must be NULL or a positive numeric scalar", call. = FALSE)
+  }
   rducks_validate_execution_plan_values(marshalling, concurrency)
+  if (!identical(marshalling, "arrow_ipc") && !identical(ipc_provider, "future")) {
+    stop("ipc_provider only applies to marshalling = 'arrow_ipc'", call. = FALSE)
+  }
   backend <- rducks_plan_backend(concurrency)
   serialization <- rducks_plan_serialization(marshalling)
   implemented <- rducks_plan_implemented(marshalling, concurrency)
-  engine_id <- rducks_plan_engine_id(marshalling, concurrency)
+  engine_id <- rducks_plan_engine_id(marshalling, concurrency, ipc_provider = ipc_provider)
   supported_call_shapes <- rducks_plan_supported_call_shapes(marshalling, concurrency)
   future_options <- if (identical(marshalling, "arrow_ipc")) {
     rducks_future_options(
@@ -172,6 +206,9 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       backend = backend,
       serialization = serialization,
       future_options = future_options,
+      ipc_provider = if (identical(marshalling, "arrow_ipc")) ipc_provider else "none",
+      ipc_workers = if (identical(marshalling, "arrow_ipc")) ipc_workers else NA_integer_,
+      ipc_max_pending = if (identical(marshalling, "arrow_ipc")) ipc_max_pending else NA_real_,
       in_process = !identical(concurrency, "multiprocess_parallel"),
       uses_r_thread = TRUE
     ),
@@ -186,6 +223,9 @@ print.rducks_execution_plan <- function(x, ...) {
   cat("  engine_id:   ", x$engine_id %||% "<unknown>", "\n", sep = "")
   cat("  marshalling: ", x$marshalling, "\n", sep = "")
   cat("  concurrency: ", x$concurrency, "\n", sep = "")
+  if (identical(x$marshalling, "arrow_ipc")) {
+    cat("  ipc provider: ", x$ipc_provider %||% "future", "\n", sep = "")
+  }
   cat("  reference:   ", if (isTRUE(x$reference)) "yes" else "no", "\n", sep = "")
   cat("  implemented: ", if (isTRUE(x$implemented)) "yes" else "no", "\n", sep = "")
   cat("  call shapes: ", paste(x$supported_call_shapes, collapse = ", "), "\n", sep = "")
@@ -209,6 +249,7 @@ rducks_as_execution_plan <- function(plan) {
       arrow_c_direct_serial = rducks_execution_plan("arrow_c", "serial"),
       arrow_c_direct_main_queue = rducks_execution_plan("arrow_c", "inproc_concurrent"),
       ipc_future_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel"),
+      ipc_mirai_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai"),
       stop("unknown Rducks execution plan shortcut: ", plan, call. = FALSE)
     ))
   }

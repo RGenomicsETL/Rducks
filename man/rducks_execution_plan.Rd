@@ -12,7 +12,10 @@ rducks_execution_plan(
   future_seed = FALSE,
   future_stdout = FALSE,
   future_conditions = "condition",
-  future_timeout = NULL
+  future_timeout = NULL,
+  ipc_provider = c("future", "mirai"),
+  ipc_workers = 1L,
+  ipc_max_pending = 64L
 )
 }
 \arguments{
@@ -34,7 +37,20 @@ sends explicit worker state per chunk, avoiding per-chunk automatic global
 discovery. Use \code{future_packages} for packages that workers should attach,
 \code{future_globals = TRUE} for Future's per-task discovery, \code{FALSE} for only
 Rducks' required task state, or a character vector/named list for explicit
-extra globals.}
+extra globals. \code{future_timeout} is also used as the Arrow IPC provider wait
+timeout. The persistent mirai provider preloads the same discovered
+globals/packages once per provider registration.}
+
+\item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
+\code{"future"} is the portable default. \code{"mirai"} uses persistent mirai daemon
+workers and fails at registration if the \code{mirai} package is unavailable; it
+does not fall back to Future.}
+
+\item{ipc_workers}{Number of persistent workers for \code{ipc_provider = "mirai"}.}
+
+\item{ipc_max_pending}{Maximum accepted but uncollected tasks for the
+persistent provider. The default bounds provider memory/use of outstanding
+callback work; \code{NULL} disables this provider-level limit.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.

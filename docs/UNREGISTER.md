@@ -1,10 +1,11 @@
-# Rducks Unregister / Drop Design
+# Rducks No-Unregister Policy
 
 DuckDB function catalog entries registered by the Rducks extension are
 **database-scoped**. A UDF registered through one DBI connection can be visible to
-sibling connections that use the same in-process DuckDB database. Therefore,
-unregistering must be explicit, destructive, and database-scoped; it must never
-be an implicit side effect of `rducks_release(con)` or `DBI::dbDisconnect(con)`.
+sibling connections that use the same in-process DuckDB database. Rducks
+therefore does not expose `rducks_unregister()`: removing a function would be a
+destructive database-catalog operation with process-wide R-closure lifetime
+consequences, not ordinary connection cleanup.
 
 ## Current blocker
 
@@ -17,7 +18,9 @@ Catalog Error: Cannot drop internal catalog entry "drop_me"!
 
 Because the extension uses the DuckDB C API/C extension surface only, Rducks does
 not currently have a supported public C API path to remove those catalog entries
-safely after registration.
+safely after registration. Even if such a path appears, unregister is not planned
+for the current package surface because the safer default is to keep catalog UDF
+metadata and preserved R closures alive for the database/runtime lifetime.
 
 ## Current behavior
 
@@ -26,54 +29,27 @@ safely after registration.
   registry views.
 - Registered database-catalog functions remain callable while their DuckDB
   catalog metadata exists.
-- Preserved R closures remain owned by native catalog metadata and are released
-  only when that metadata is destroyed or enqueued for main-thread release.
+- Preserved R closures remain owned by native catalog metadata and may live until
+  the DuckDB catalog metadata is destroyed or the R process exits. This
+  catalog-lifetime retention is intentional; it avoids releasing a closure while
+  sibling connections can still call the database-scoped UDF.
+- Re-registering the same SQL name/signature replaces the callable
+  implementation. Use replacement or a new function name instead of expecting a
+  destructive unregister API.
 
-## Required semantics for a future `rducks_unregister()`
+## Why not unregister?
 
-A future unregister API must be explicit about blast radius. The placeholder
-shape below is not sufficient by itself; the final API must either accept an
-exact Rducks registration id or derive one unambiguously from database-scoped
-metadata:
+A safe unregister would need to identify an exact database-catalog entry by
+schema, function name, argument type vector, return type, and generation; update
+native and R-side database-runtime metadata atomically; and release preserved R
+objects only through the recorded main-thread release path. DuckDB's current C
+extension API does not provide the required removal/close hooks, and name-only
+removal would be ambiguous in the presence of overloads or replacement.
 
-```r
-rducks_unregister(con, name, signature = NULL, schema = NULL, generation = NULL)
-```
-
-Required contract before exposing any implementation:
-
-1. Destructive and database-scoped: all sibling connections to the same database
-   lose the function/overload.
-2. Never called implicitly by `rducks_release()` or connection finalizers.
-3. Must identify the exact catalog entry by schema, function name, argument type
-   vector, return type, and registration generation. Name-only removal may
-   succeed only when exactly one database-scoped Rducks catalog entry matches;
-   otherwise it must fail as ambiguous.
-4. Must update native UDF metadata and R-side database-runtime registry metadata
-   together or fail before partial removal. If DuckDB does not provide an atomic
-   removal path, Rducks must not expose unregister as a supported operation.
-5. Must release preserved evaluator objects only through the recorded main-thread
-   release path; off-main destructors must enqueue release work.
-6. Must produce ordinary Rducks/DuckDB errors for missing functions, ambiguous
-   overloads, or unsupported DuckDB versions.
-
-## Open design gaps
-
-These are intentionally unresolved until a supported DuckDB C API removal path
-exists:
-
-- How callers obtain an exact registration id after `rducks_release()` has
-  detached a connection-local R registry view.
-- Where durable database-runtime metadata for schema, argument types, return
-  type, and generation is retained when all R-side connection anchors are gone
-  but native catalog metadata still exists.
-- The native/R-side state machine for removal, including rollback or tombstone
-  behavior if one side succeeds and the other fails.
-- Version-specific DuckDB behavior for schemas, overloads, and replacement of
-  extension-created scalar functions.
-
-Because these gaps affect destructive database-scoped behavior, they are blockers
-for implementation, not details to resolve after exposing an API.
+Keeping the preserved closure for catalog/runtime lifetime is simpler and safer
+than trying to drop a database-scoped function from one connection's cleanup
+path. This is a bounded process-lifetime tradeoff for an embedded R/DuckDB UDF
+bridge, not a connection-local resource ownership model.
 
 ## Non-goals
 
@@ -84,6 +60,4 @@ for implementation, not details to resolve after exposing an API.
 - Do not expose raw native pointers or preserved `SEXP` addresses as unregister
   handles.
 
-Until DuckDB exposes a suitable C API or Rducks adopts a different registration
-surface with removable indirection, `rducks_unregister()` remains intentionally
-unimplemented.
+`rducks_unregister()` is intentionally not part of the supported Rducks API.

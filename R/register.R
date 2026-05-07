@@ -159,12 +159,16 @@ rducks_register <- function(con, name, fun, args, returns,
     rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
     rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
+  } else if (identical(spec$mode, "vectorized") && identical(plan$engine_id, "ipc_mirai_pool")) {
+    rducks_make_arrow_ipc_mirai_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
     rducks_make_arrow_ipc_future_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_r")) {
     rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_c")) {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling, plan = plan)
+  } else if (identical(plan$engine_id, "ipc_mirai_pool")) {
+    rducks_make_arrow_ipc_mirai_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_ipc")) {
     rducks_make_arrow_ipc_future_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else {

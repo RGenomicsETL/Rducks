@@ -154,6 +154,18 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
     )
     assert_marshalling_counter(vec_special_name, marshalling, special_label)
   }
+
+  maybe_stop_for_limit()
+  vec_error_name <- next_name(paste0(marshalling, "_vec_return_null"))
+  invisible(rducks_register(con, vec_error_name, function(x) stop("boom"), type, type,
+                            mode = "vectorized", exception_handling = "return_null",
+                            side_effects = TRUE))
+  error_label <- paste0(marshalling, " vectorized/return_null ", label)
+  sql_ok(
+    sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s(x) IS NULL) AS ok FROM data", values_sql, vec_error_name),
+    error_label
+  )
+  assert_marshalling_counter(vec_error_name, marshalling, error_label)
 }
 
 run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
@@ -163,6 +175,43 @@ run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null
   marshallers <- c("arrow_r", if (include_arrow_c_for_type) "arrow_c", if (include_ipc_for_type) "arrow_ipc")
   for (marshalling in marshallers) {
     run_vectorized_row_conformance_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
+  }
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+}
+
+run_scalar_return_null_one_plan <- function(marshalling, type, sql1, sql2, label, include_null = TRUE) {
+  plan <- if (identical(marshalling, "arrow_ipc")) {
+    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_timeout = 60)
+  } else {
+    rducks_execution_plan(marshalling, "serial")
+  }
+  rducks_set_execution_plan(con, plan)
+  type_sql <- rducks_type_sql(type)
+  values_sql <- if (include_null) {
+    sprintf("(%s), (NULL::%s), (%s)", sql1, type_sql, sql2)
+  } else {
+    sprintf("(%s), (%s)", sql1, sql2)
+  }
+
+  maybe_stop_for_limit()
+  error_name <- next_name(paste0(marshalling, "_scalar_return_null"))
+  invisible(rducks_register(con, error_name, function(x) stop("boom"), type, type,
+                            exception_handling = "return_null", side_effects = TRUE))
+  error_label <- paste0(marshalling, " scalar/return_null ", label)
+  sql_ok(
+    sprintf("WITH data(x) AS (VALUES %s) SELECT bool_and(%s(x) IS NULL) AS ok FROM data", values_sql, error_name),
+    error_label
+  )
+  assert_marshalling_counter(error_name, marshalling, error_label)
+}
+
+run_scalar_return_null_conformance <- function(type, sql1, sql2, label, include_null = TRUE) {
+  include_ipc_for_type <- isTRUE(include_ipc) &&
+    Rducks:::rducks_arrow_ipc_mapping_supported(type)
+  include_arrow_c_for_type <- isTRUE(Rducks:::rducks_arrow_c_direct_mapping_supported(type))
+  marshallers <- c("arrow_r", if (include_arrow_c_for_type) "arrow_c", if (include_ipc_for_type) "arrow_ipc")
+  for (marshalling in marshallers) {
+    run_scalar_return_null_one_plan(marshalling, type, sql1, sql2, label, include_null = include_null)
   }
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
 }
@@ -377,6 +426,7 @@ tryCatch({
     run_identity(case)
     run_return(case)
     run_arrow_c_scalar_no_fallback(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
+    run_scalar_return_null_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
     run_vectorized_row_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
   }
 

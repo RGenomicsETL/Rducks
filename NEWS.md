@@ -1,5 +1,12 @@
 # Rducks 0.0.1
 
+- Added experimental persistent mirai workers for Arrow IPC UDFs via
+  `rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai")`.
+  The `ipc_mirai_pool` engine preloads evaluator/schema state in mirai daemons,
+  submits owned Arrow IPC bytes per chunk, and bounds accepted-but-uncollected
+  tasks with `ipc_max_pending`; it does not fall back to Future or same-process
+  execution. `tools/benchmark_ipc_providers.R` compares this direct provider
+  path with both `future::multisession` and `future.mirai::mirai_multisession`.
 - Added an `arrow_ipc + multiprocess_parallel` UDF path using generic `future`
   backends with Arrow IPC task/result payloads. Scalar registrations loop over
   rows inside the worker, vectorized registrations call once per chunk, and the
@@ -74,7 +81,8 @@
   floor to R 4.3.
 - Added wasm/webR build detection in `configure`, including the DuckDB wasm
   metadata platform and explicit Emscripten export for the extension entrypoint,
-  plus a `Dockerfile.webr-test` helper for local rwasm builds.
+  plus a `Dockerfile.webr-test` helper for local rwasm builds and a local browser
+  smoke harness under `scripts/`.
 - Added explicit execution-plan helpers `rducks_execution_plan()`,
   `rducks_set_execution_plan()`, and `rducks_current_execution_plan()` to
   separate UDF semantics from connection-level marshalling/concurrency policy.

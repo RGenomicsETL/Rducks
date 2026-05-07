@@ -1,10 +1,12 @@
 # Persistent Worker Provider Design
 
-The current `ipc_future_pool` engine is the portable correctness provider for
-`arrow_ipc + multiprocess_parallel`. It now discovers UDF globals once at
-registration/wrapper creation time, but it still constructs generic Future tasks
-per DuckDB chunk. This document specifies the provider boundary for a later
-persistent worker implementation without changing the no-hidden-fallback rule.
+`ipc_future_pool` is the portable correctness provider for `arrow_ipc +
+multiprocess_parallel`. It discovers UDF globals once at registration/wrapper
+creation time, but still constructs generic Future tasks per DuckDB chunk.
+`ipc_mirai_pool` is the first public experimental persistent-provider engine: it
+starts mirai daemon workers, registers evaluator/schema state once per UDF, then
+submits owned Arrow IPC bytes per chunk. The no-hidden-fallback rule applies to
+both engines.
 
 ## Non-goals
 
@@ -71,10 +73,13 @@ register_udf
   packages
 ```
 
-The provider must acknowledge registration before SQL UDF registration succeeds
-for engines that require preloaded workers. For the generic Future adapter, this
-acknowledgement can be local because workers receive the precomputed globals in
-each task.
+The provider must acknowledge registration before query execution can use the
+UDF. The current mirai engine starts and registers lazily on the first callback,
+when DuckDB provides the output schema; registration still fails immediately if
+`mirai` is unavailable. Its accepted-but-uncollected task count is bounded by the
+plan's `ipc_max_pending` setting. For the generic Future adapter,
+acknowledgement is local because workers receive the precomputed globals in each
+task.
 
 ## Task envelope
 
@@ -124,7 +129,7 @@ are Arrow IPC bytes and are copied/imported into DuckDB-owned output vectors.
 Scalar UDF callbacks borrow DuckDB callback-frame storage until the callback
 returns. Therefore, the first persistent implementation should support:
 
-- bounded submit queue size;
+- bounded submit queue size (`ipc_mirai_pool` enforces `ipc_max_pending`);
 - collect-any to release blocked callbacks as soon as results arrive;
 - pending cancellation before a worker starts a task;
 - deterministic query errors for worker failure or provider shutdown.
@@ -137,11 +142,11 @@ snapshot and owned result/writeback design. That is a separate architecture item
 The transport order is:
 
 1. Keep `future_provider` as the portable correctness/reference adapter.
-2. Implement `mirai_provider` first for persistent workers, because mirai daemon
-   processes can preload evaluator/schema state and fit the provider contract
-   without linking against private native symbols. An internal R-side prototype,
-   `rducks_mirai_provider()`, now exercises this boundary outside the public UDF
-   engine.
+2. Use `mirai_provider` as the first persistent worker engine, because mirai
+   daemon processes can preload evaluator/schema state and fit the provider
+   contract without linking against private native symbols. The public
+   `ipc_mirai_pool` engine is selected with
+   `rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai")`.
 3. Consider `nanonext_provider` only after the mirai path proves that lower-level
    collect-any, backpressure, or notification control is necessary.
 
@@ -149,14 +154,35 @@ Do not link against uninstalled `nanonext.so` internals or any private package
 symbols. If nanonext is used later, use its public R/native API surface and keep
 all transport code behind the provider boundary.
 
+## `future.mirai` versus `ipc_mirai_pool`
+
+`future.mirai` is useful and should remain supported indirectly: users can set
+`future::plan(future.mirai::mirai_multisession, workers = n)` and continue using
+`ipc_future_pool`. That path is the lowest-risk way to get mirai daemon workers
+behind the generic Future API.
+
+The hand-rolled `ipc_mirai_pool` provider exists only for behavior the Future
+API intentionally abstracts away:
+
+- pre-register evaluator/type/schema state once per UDF in persistent workers;
+- submit the hot chunk path as `{task_id, udf_id, row_count, Arrow IPC bytes}`;
+- return structured result envelopes with task/chunk identity;
+- collect many/any ready tasks for DuckDB callback batching and future
+  backpressure work;
+- keep provider cancellation/stats/error accounting under Rducks' control.
+
+If benchmarks or maintenance experience show that these controls do not matter,
+`ipc_mirai_pool` should stay experimental or be removed; it should not duplicate
+`future.mirai` just for novelty.
+
 ## Candidate providers
 
 - `future_provider`: portable reference adapter; correctness first; per-task
-  Future overhead remains.
-- `mirai_provider`: internal prototype present. It starts persistent daemons,
-  preloads evaluator/schema state with `mirai::everywhere()`, submits only task
-  ids, UDF ids, row counts, and Arrow IPC bytes per chunk, and returns structured
-  result envelopes. It is not yet exposed as a public UDF engine.
+  Future overhead remains. It can use `future.mirai` as its Future backend.
+- `mirai_provider`: public experimental UDF engine via `ipc_mirai_pool`. It
+  starts persistent daemons, preloads evaluator/schema state with
+  `mirai::everywhere()`, submits only task ids, UDF ids, row counts, and Arrow
+  IPC bytes per chunk, and returns structured result envelopes.
 - `nanonext_provider`: lower-level request/reply or pipeline transport when the
   provider needs explicit collect-any, backpressure, and notification primitives.
 

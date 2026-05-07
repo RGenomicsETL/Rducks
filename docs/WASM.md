@@ -7,15 +7,29 @@ loaded from the local filesystem.
 Current status:
 
 - WebAssembly builds are **experimental**.
-- There is no committed webR runtime smoke test yet.
+- A local browser webR runtime smoke harness is committed in
+  `scripts/start_webr_local_test.sh` and `scripts/webr-local-test.html`.
 - Same-process queued execution relies on native thread/condition-variable
   primitives and a recorded main R thread; browser/webR runtimes may not provide
   equivalent threading or blocking semantics.
 - `arrow_ipc + multiprocess_parallel` relies on R worker processes via the
   generic `future` path and should not be assumed to work in webR.
-- The package should not claim browser/webR runtime support until a CI smoke test
-  loads the extension, enables Rducks, registers at least one UDF, and executes a
-  query inside the target runtime.
+- The package should not claim browser/webR runtime support until the smoke test
+  is also run in CI and proves extension load, UDF registration, and query
+  execution inside the target runtime.
+
+Local smoke workflow:
+
+```sh
+scripts/start_webr_local_test.sh
+```
+
+Then open the printed browser URL and click **Run smoke test**. The page installs
+the locally built `.tgz` from a tiny local webR repository, loads Rducks in webR,
+runs public type/mode helpers, and attempts a minimal `rducks_enable()` +
+`rducks_register()` + SQL query when the webR DuckDB runtime supports extension
+loading. If DuckDB is unavailable in that runtime, the page reports an explicit
+skip instead of treating package-load success as extension support.
 
 Checklist before changing this status:
 
@@ -24,5 +38,6 @@ Checklist before changing this status:
    runtime.
 3. Run a minimal `rducks_enable()` + `rducks_register()` + SQL query smoke test.
 4. Run at least one no-hidden-fallback check for the claimed execution plan.
-5. Document unsupported plans explicitly, especially same-process queued and
+5. Add the smoke test to CI instead of relying only on the local browser harness.
+6. Document unsupported plans explicitly, especially same-process queued and
    multiprocess worker modes.
