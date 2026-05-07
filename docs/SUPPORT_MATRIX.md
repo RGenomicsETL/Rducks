@@ -42,7 +42,7 @@ signatures must fail at registration/plan validation time where possible.
 | --- | --- | --- |
 | `null_handling` | `"default"`, `"special"` | Default skips rows with NULL arguments where possible; special passes the declared R-side NULL/NA shapes to the UDF. |
 | `exception_handling` | `"rethrow"`, `"return_null"` | R errors are caught inside callback fences and converted to DuckDB errors or NULL results according to policy. |
-| Running queued timeout | not supported | Once a queued same-process request is running, borrowed DuckDB callback-frame storage prevents safe cancellation. Diagnostics report `running_timeout_supported = FALSE`. |
+| Running queued timeout | not supported | Once a queued same-process request is running, the stack request and callback-owned output vector prevent safe cancellation. Queued direct `arrow_c` inputs are now snapshotted, but diagnostics still report `running_timeout_supported = FALSE`. |
 
 ## Scope and lifetime
 
@@ -66,18 +66,18 @@ R-side registry view has been detached.
 - Rducks does not expose a zero-copy return contract. Returned scalars, strings,
   nested values, and Arrow-imported result chunks are copied/materialized into
   DuckDB-owned callback output storage.
-- Same-process queued requests borrow DuckDB callback-frame input storage only
-  while the callback frame remains blocked; this is why running cancellation is
-  not supported. Direct `arrow_c` scalar execution now snapshots borrowed DuckDB
-  vector views in a no-R-API phase, but the input views are still callback-frame
-  borrows, not owned cross-thread payloads. For queued direct `arrow_c` scalar
-  and vectorized UDFs with supported scalar returns (bool, integer widths,
-  floating point, date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID,
-  HUGEINT/UHUGEINT, and INTERVAL), return values are copied into an owned Arrow
-  C Data result chunk on the recorded main R thread and the waiting worker
-  writes the DuckDB output vector from those Arrow buffers without touching
-  `SEXP`s or nanoarrow R external pointers. Other same-process return paths
-  still write output on the recorded main R thread.
+- Same-process queued direct `arrow_c` scalar/vectorized requests copy input
+  vectors into an owned DuckDB data chunk on the worker before the request is
+  submitted to the recorded main R thread. For queued direct `arrow_c` UDFs with
+  supported scalar returns (bool, integer widths, floating point,
+  date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT,
+  and INTERVAL), return values are copied into an owned Arrow C Data result chunk
+  on the recorded main R thread and the waiting worker writes the DuckDB output
+  vector from those Arrow buffers without touching `SEXP`s or nanoarrow R
+  external pointers. Other same-process return paths still write output on the
+  recorded main R thread. Running cancellation remains unsupported because the
+  stack request and callback-owned output vector must stay live until the main
+  thread and any worker-side writeback finish.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
   `SEXP` pointers as a hidden transport fallback.

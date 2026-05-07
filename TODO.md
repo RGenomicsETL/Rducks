@@ -502,7 +502,16 @@ The current in-process queue is synchronous and borrows DuckDB input/output
 pointers only for the duration of a scalar UDF callback. That is acceptable for
 current callbacks, but not for an asynchronous same-process design.
 
-- [ ] Implement owned input snapshots for worker-originating chunk requests.
+- [x] Implement owned input snapshots for worker-originating queued direct
+  `arrow_c` chunk requests.
+  - Off-main queued `RC`/`RCV` callbacks now copy supported direct inputs into
+    an owned DuckDB data chunk with no R API calls before submitting the request
+    to the recorded main R thread. The main thread materializes R arguments from
+    snapshot-owned vector storage. `rducks_explain_udf()` exposes
+    `arrow_c_input_snapshot_chunks` to prove this path was used.
+  - This covers direct scalar, temporal, enum/decimal, variable-width, and
+    composite input vectors through DuckDB's vector-copy API. Arrow/R and RIPC
+    queued requests still use their existing Arrow/IPC payload paths.
 - [ ] Implement owned result payloads plus safe writeback.
   - Queued direct `arrow_c` scalar and vectorized UDFs with supported scalar
     return types now evaluate into an owned Arrow C Data result chunk on the
@@ -515,15 +524,15 @@ current callbacks, but not for an asynchronous same-process design.
     native decode/import from owned result bytes.
 - [x] Split current `arrow_c` code into explicit worker-safe/native and
   recorded-main-R-thread phases.
-  - Scalar `arrow_c` now snapshots borrowed DuckDB vector views in a no-R-API
-    phase, then runs R argument materialization/evaluation in a named
-    main-thread phase while the callback remains blocked. Queued supported
-    scalar returns use the owned Arrow C Data result payload described above;
-    composite return shapes still use SEXP writeback on the main thread.
-  - Vectorized `arrow_c` now has named main-thread prepare/evaluate phases and
-    uses the owned Arrow C Data result payload for queued supported scalar
-    returns. Fully worker-safe vectorized input snapshots still depend on the
-    owned input item above.
+  - Scalar `arrow_c` still has a borrowed-view phase for direct serial calls,
+    but queued off-main calls snapshot inputs into owned DuckDB chunks before
+    main-thread R argument materialization/evaluation. Queued supported scalar
+    returns use the owned Arrow C Data result payload described above; composite
+    return shapes still use SEXP writeback on the main thread.
+  - Vectorized `arrow_c` now has named main-thread prepare/evaluate phases,
+    owned queued input snapshots, and the owned Arrow C Data result payload for
+    queued supported scalar returns. Composite direct returns still depend on
+    the remaining owned-result item above.
 
 ## Wasm / webR
 

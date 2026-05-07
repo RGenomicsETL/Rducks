@@ -232,6 +232,14 @@ static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows
     rducks_runtime_unlock();
 }
 
+static void rducks_udf_record_arrow_c_input_snapshot(rducks_r_scalar_meta_t *meta) {
+    if (!meta || !meta->runtime) return;
+    if (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV) return;
+    rducks_runtime_lock();
+    meta->arrow_c_input_snapshot_chunks++;
+    rducks_runtime_unlock();
+}
+
 static void rducks_udf_record_queue_pending_add(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
     rducks_runtime_lock();
@@ -311,6 +319,7 @@ static const char *rducks_udf_stat_fields_text(void) {
            "queue_pending_max\n"
            "arrow_r_chunks\n"
            "arrow_c_chunks\n"
+           "arrow_c_input_snapshot_chunks\n"
            "arrow_ipc_chunks\n"
            "ripc_collect_batches\n"
            "ripc_collect_requests\n"
@@ -329,6 +338,7 @@ static void rducks_runtime_reset_udf_stats_locked(rducks_r_scalar_meta_t *meta) 
     meta->queued_chunks = 0U;
     meta->arrow_r_chunks = 0U;
     meta->arrow_c_chunks = 0U;
+    meta->arrow_c_input_snapshot_chunks = 0U;
     meta->arrow_ipc_chunks = 0U;
     meta->ripc_collect_batches = 0U;
     meta->ripc_collect_requests = 0U;
@@ -413,6 +423,8 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_r_chunks);
     } else if (strcmp(field, "arrow_c_chunks") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_chunks);
+    } else if (strcmp(field, "arrow_c_input_snapshot_chunks") == 0) {
+        snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_c_input_snapshot_chunks);
     } else if (strcmp(field, "arrow_ipc_chunks") == 0) {
         snprintf(out, out_cap, "%llu", (unsigned long long)meta->arrow_ipc_chunks);
     } else if (strcmp(field, "ripc_collect_batches") == 0) {

@@ -708,6 +708,7 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap) {
     rducks_udf_request_t request;
+    duckdb_data_chunk owned_input = NULL;
     int ok;
     if (!meta) {
         snprintf(err_msg, err_cap, "Rducks queued scalar metadata is missing");
@@ -722,6 +723,16 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     request.input = input;
     request.output = output;
 
+    if (rducks_rc_direct_input_snapshot_supported(meta)) {
+        if (!rducks_rc_direct_input_snapshot_chunk(meta, input, &owned_input, err_msg, err_cap)) {
+            return 0;
+        }
+        if (owned_input) {
+            request.input = owned_input;
+            rducks_udf_record_arrow_c_input_snapshot(meta);
+        }
+    }
+
     ok = rducks_queue_submit_request(runtime, &request,
         "Rducks timed out waiting for the recorded main R thread to drain a queued scalar UDF request",
         err_msg, err_cap);
@@ -731,6 +742,10 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     if (request.rc_result_payload) {
         rducks_rc_owned_result_payload_free(request.rc_result_payload);
         request.rc_result_payload = NULL;
+    }
+    if (owned_input) {
+        duckdb_destroy_data_chunk(&owned_input);
+        request.input = NULL;
     }
     return ok;
 }

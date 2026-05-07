@@ -63,6 +63,7 @@ rducks_native_udf_stat_fields_fallback <- c(
   "queue_pending_max",
   "arrow_r_chunks",
   "arrow_c_chunks",
+  "arrow_c_input_snapshot_chunks",
   "arrow_ipc_chunks",
   "ripc_collect_batches",
   "ripc_collect_requests",
@@ -79,7 +80,9 @@ rducks_native_udf_stat_fields <- function(con) {
     strsplit(raw, "\n", fixed = TRUE)[[1L]]
   }, error = function(e) rducks_native_udf_stat_fields_fallback)
   fields <- fields[nzchar(fields)]
-  if (identical(fields, rducks_native_udf_stat_fields_fallback)) fields else rducks_native_udf_stat_fields_fallback
+  known <- rducks_native_udf_stat_fields_fallback
+  fields <- fields[fields %in% known]
+  if (length(fields)) fields else known
 }
 
 rducks_native_udf_stats <- function(con, name) {
@@ -124,6 +127,7 @@ rducks_explain_udf_empty <- function() {
     queue_pending_max = numeric(),
     arrow_r_chunks = numeric(),
     arrow_c_chunks = numeric(),
+    arrow_c_input_snapshot_chunks = numeric(),
     arrow_ipc_chunks = numeric(),
     ripc_collect_batches = numeric(),
     ripc_collect_requests = numeric(),
@@ -164,6 +168,7 @@ rducks_explain_udf_row <- function(con, name) {
     queue_pending_max = rducks_counter_value(stats, "queue_pending_max"),
     arrow_r_chunks = rducks_counter_value(stats, "arrow_r_chunks"),
     arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
+    arrow_c_input_snapshot_chunks = rducks_counter_value(stats, "arrow_c_input_snapshot_chunks"),
     arrow_ipc_chunks = rducks_counter_value(stats, "arrow_ipc_chunks"),
     ripc_collect_batches = rducks_counter_value(stats, "ripc_collect_batches"),
     ripc_collect_requests = rducks_counter_value(stats, "ripc_collect_requests"),

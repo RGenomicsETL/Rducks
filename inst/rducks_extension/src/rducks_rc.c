@@ -321,6 +321,114 @@ static void rducks_rc_direct_scalar_frame_cleanup(rducks_rc_direct_scalar_frame_
     frame->n = 0;
 }
 
+static int rducks_rc_direct_input_snapshot_supported(rducks_r_scalar_meta_t *meta) {
+    if (!meta || (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV)) return 0;
+    for (size_t i = 0; i < meta->arity; i++) {
+        if (!rducks_rc_direct_type_supported(meta->args[i])) return 0;
+    }
+    return 1;
+}
+
+/* Worker-safe phase: copy queued arrow_c inputs into an owned DuckDB data
+ * chunk before handing the request to the recorded main R thread. The main
+ * thread may then materialize R arguments from snapshot-owned vector storage
+ * instead of borrowing the waiting DuckDB worker callback frame. The output
+ * vector is still owned by the active callback unless the owned-result payload
+ * path is also selected.
+ */
+static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
+                                                 duckdb_data_chunk input,
+                                                 duckdb_data_chunk *snapshot_out,
+                                                 char *err_msg, size_t err_cap) {
+    duckdb_logical_type *types = NULL;
+    duckdb_data_chunk snapshot = NULL;
+    duckdb_selection_vector sel = NULL;
+    idx_t n;
+    int ok = 0;
+
+    if (snapshot_out) *snapshot_out = NULL;
+    if (!meta || !input || !snapshot_out) {
+        snprintf(err_msg, err_cap, "Rducks RC input snapshot is missing state");
+        return 0;
+    }
+    if (!rducks_rc_direct_input_snapshot_supported(meta)) {
+        snprintf(err_msg, err_cap, "Rducks RC input snapshot is not supported for this UDF signature");
+        return 0;
+    }
+    if (meta->arity == 0U) return 1;
+    if (meta->arity > (SIZE_MAX / sizeof(duckdb_logical_type))) {
+        snprintf(err_msg, err_cap, "Rducks RC input snapshot arity is too large");
+        return 0;
+    }
+
+    n = duckdb_data_chunk_get_size(input);
+    if (n > (idx_t)UINT32_MAX) {
+        snprintf(err_msg, err_cap, "Rducks RC input snapshot chunk is too large");
+        return 0;
+    }
+
+    types = (duckdb_logical_type *)calloc(meta->arity, sizeof(duckdb_logical_type));
+    if (!types) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot types");
+        return 0;
+    }
+    for (size_t col = 0; col < meta->arity; col++) {
+        types[col] = rducks_create_logical_type_for_desc(meta->args[col]);
+        if (!types[col]) {
+            snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot logical type");
+            goto cleanup;
+        }
+    }
+
+    snapshot = duckdb_create_data_chunk(types, (idx_t)meta->arity);
+    if (!snapshot) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot data chunk");
+        goto cleanup;
+    }
+    duckdb_data_chunk_set_size(snapshot, n);
+
+    if (n > 0) {
+        sel_t *sel_data;
+        sel = duckdb_create_selection_vector(n);
+        if (!sel) {
+            snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot selection vector");
+            goto cleanup;
+        }
+        sel_data = duckdb_selection_vector_get_data_ptr(sel);
+        if (!sel_data) {
+            snprintf(err_msg, err_cap, "failed to access Rducks RC input snapshot selection vector");
+            goto cleanup;
+        }
+        for (idx_t row = 0; row < n; row++) sel_data[row] = (sel_t)row;
+
+        for (size_t col = 0; col < meta->arity; col++) {
+            duckdb_vector src = duckdb_data_chunk_get_vector(input, (idx_t)col);
+            duckdb_vector dst = duckdb_data_chunk_get_vector(snapshot, (idx_t)col);
+            if (!src || !dst) {
+                snprintf(err_msg, err_cap, "failed to access Rducks RC input snapshot vector");
+                goto cleanup;
+            }
+            duckdb_vector_copy_sel(src, dst, sel, n, 0, 0);
+        }
+        duckdb_data_chunk_set_size(snapshot, n);
+    }
+
+    *snapshot_out = snapshot;
+    snapshot = NULL;
+    ok = 1;
+
+cleanup:
+    if (sel) duckdb_destroy_selection_vector(sel);
+    if (snapshot) duckdb_destroy_data_chunk(&snapshot);
+    if (types) {
+        for (size_t col = 0; col < meta->arity; col++) {
+            if (types[col]) duckdb_destroy_logical_type(&types[col]);
+        }
+        free(types);
+    }
+    return ok;
+}
+
 /* Worker-safe phase: capture DuckDB vector views needed by arrow_c scalar
  * execution. This phase must not allocate or touch SEXP objects and must not
  * call any R API. The views remain borrowed from the active DuckDB callback

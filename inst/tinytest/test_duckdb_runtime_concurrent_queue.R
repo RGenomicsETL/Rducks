@@ -233,6 +233,74 @@ local({
   expect_equal(final$timeouts, 0)
 })
 
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "inproc_concurrent"))
+
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_snapshot_varchar_input",
+    function(x) if (is.na(x)) NA_integer_ else nchar(x, type = "bytes"),
+    VARCHAR, INTEGER
+  ))
+  invisible(rducks_register(
+    con, "rducks_queue_arrow_c_snapshot_vec_varchar_input",
+    function(x) as.integer(nchar(x, type = "bytes")),
+    VARCHAR, INTEGER,
+    mode = "vectorized", side_effects = TRUE
+  ))
+
+  snapshot_n <- 4096L
+  snapshot_expected <- sum(c(
+    0L,
+    nchar(paste0(strrep("x", 32L), 2:(snapshot_n - 1L)), type = "bytes")
+  ))
+  before <- rducks_inproc_stats(con)
+  rducks_enable_inproc(con, threads = 4L, external_threads = 1L)
+
+  scalar_result <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      paste(
+        "SELECT sum(rducks_queue_arrow_c_snapshot_varchar_input(",
+        "CASE WHEN i = 0 THEN '' WHEN i = 1 THEN NULL::VARCHAR ELSE repeat('x', 32) || i::VARCHAR END",
+        ")) AS x FROM rducks_parallel_range(%d::UBIGINT) AS t(i)"
+      ),
+      snapshot_n
+    )
+  )
+  expect_equal(as.numeric(scalar_result$x), as.numeric(snapshot_expected))
+  scalar_explain <- rducks_explain_udf(con, "rducks_queue_arrow_c_snapshot_varchar_input")
+  expect_equal(scalar_explain$evaluator, "RC")
+  expect_true(scalar_explain$queued_chunks >= 1)
+  expect_true(scalar_explain$arrow_c_input_snapshot_chunks >= 1)
+  expect_equal(scalar_explain$arrow_r_chunks, 0)
+
+  vectorized_result <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      paste(
+        "SELECT sum(rducks_queue_arrow_c_snapshot_vec_varchar_input(",
+        "CASE WHEN i = 0 THEN '' WHEN i = 1 THEN NULL::VARCHAR ELSE repeat('y', 32) || i::VARCHAR END",
+        ")) AS x FROM rducks_parallel_range(%d::UBIGINT) AS t(i)"
+      ),
+      snapshot_n
+    )
+  )
+  expect_equal(as.numeric(vectorized_result$x), as.numeric(snapshot_expected))
+  vectorized_explain <- rducks_explain_udf(con, "rducks_queue_arrow_c_snapshot_vec_varchar_input")
+  expect_equal(vectorized_explain$evaluator, "RCV")
+  expect_true(vectorized_explain$queued_chunks >= 1)
+  expect_true(vectorized_explain$arrow_c_input_snapshot_chunks >= 1)
+  expect_equal(vectorized_explain$arrow_r_chunks, 0)
+
+  final <- rducks_inproc_stats(con)
+  expect_true(final$submitted[[1L]] > before$submitted[[1L]])
+  expect_equal(final$submitted, final$executed)
+  expect_equal(final$timeouts, 0)
+})
+
 if (rducks_test_stress_concurrency()) local({
   threads <- rducks_test_duckdb_threads()
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
