@@ -319,10 +319,10 @@ measured:
 
 | provider path | median seconds | relative to [`future::multisession`](https://future.futureverse.org/reference/multisession.html) |
 |----|---:|---:|
-| [`future::multisession`](https://future.futureverse.org/reference/multisession.html) through `ipc_future_pool` | 0.222 | 1.00x |
-| [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html) through `ipc_future_pool` | 0.219 | 1.01x |
-| `ipc_mirai_pool`, sequential submit/collect | 0.193 | 1.15x |
-| `ipc_mirai_pool`, batched submit/collect | 0.152 | 1.46x |
+| [`future::multisession`](https://future.futureverse.org/reference/multisession.html) through `ipc_future_pool` | 0.217 | 1.00x |
+| [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html) through `ipc_future_pool` | 0.219 | 0.99x |
+| `ipc_mirai_pool`, sequential submit/collect | 0.193 | 1.12x |
+| `ipc_mirai_pool`, batched submit/collect | 0.158 | 1.37x |
 
 Those numbers are diagnostics for this machine, not a portable promise.
 `future.mirai` is a useful drop-in Future backend for `ipc_future_pool`.
