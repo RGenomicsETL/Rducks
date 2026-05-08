@@ -17,7 +17,18 @@ local({
   expect_true(enabled)
   expect_true(DBI::dbGetQuery(con, "SELECT rducks_nng_self_test() AS ok")$ok[[1L]])
 
-  transports <- c("abstract", "ipc", "unix", "tcp", "ws")
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  expect_true(all(c("ipc", "tcp", "ws") %in% transports))
+  if (identical(Sys.info()[["sysname"]], "Linux")) {
+    expect_true("abstract" %in% transports)
+  } else {
+    expect_false("abstract" %in% transports)
+  }
+  if (identical(Sys.info()[["sysname"]], "Windows")) {
+    expect_false("unix" %in% transports)
+  } else {
+    expect_true("unix" %in% transports)
+  }
   ipc_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_TEST_IPC_WORKERS", "1")))
   if (length(ipc_workers) != 1L || is.na(ipc_workers) || ipc_workers < 1L) ipc_workers <- 1L
 

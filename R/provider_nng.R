@@ -12,6 +12,17 @@ rducks_nng_supported_transports <- function() {
   c("abstract", "ipc", "unix", "tcp", "ws")
 }
 
+rducks_nng_runtime_transports <- function() {
+  sysname <- Sys.info()[["sysname"]]
+  transports <- c("ipc", "tcp", "ws")
+  if (identical(sysname, "Linux")) {
+    transports <- c("abstract", transports, "unix")
+  } else if (!identical(sysname, "Windows")) {
+    transports <- c(transports, "unix")
+  }
+  transports
+}
+
 rducks_nng_default_transport <- function() {
   if (identical(Sys.info()[["sysname"]], "Linux")) "abstract" else "ipc"
 }
@@ -38,16 +49,28 @@ rducks_nng_random_port <- function(n) {
   20000L + (values %% 45536L)
 }
 
+rducks_nng_socket_paths <- function(token, indexes) {
+  names <- paste0(token, "-", indexes, ".sock")
+  dirs <- unique(c(tempdir(), "/tmp"))
+  for (dir in dirs) {
+    if (!dir.exists(dir) || file.access(dir, 2L) != 0L) next
+    paths <- file.path(dir, names)
+    if (max(nchar(paths, type = "bytes"), 0L) <= 100L) {
+      unlink(paths, force = TRUE)
+      return(paths)
+    }
+  }
+  paths <- file.path(tempdir(), names)
+  unlink(paths, force = TRUE)
+  paths
+}
+
 rducks_nng_endpoint_bundle <- function(workers, transport = NULL) {
   transport <- rducks_nng_normalize_transport(transport)
   token <- paste("rdn", Sys.getpid(), substr(rducks_nng_random_token(), 1L, 8L), sep = "-")
   indexes <- seq_len(workers)
   cleanup_paths <- character()
-  short_socket_paths <- function() {
-    paths <- file.path(tempdir(), paste0(token, "-", indexes, ".sock"))
-    unlink(paths, force = TRUE)
-    paths
-  }
+  short_socket_paths <- function() rducks_nng_socket_paths(token, indexes)
   endpoints <- switch(
     transport,
     abstract = paste0("abstract://", token, "-", indexes),
@@ -74,7 +97,10 @@ rducks_nng_worker_loop <- function(endpoint) {
   registry <- new.env(parent = emptyenv())
   sock <- nanonext::socket("rep", listen = endpoint)
   ctx <- nanonext::context(sock)
-  on.exit(try(close(sock), silent = TRUE), add = TRUE)
+  on.exit({
+    try(close(ctx), silent = TRUE)
+    try(close(sock), silent = TRUE)
+  }, add = TRUE)
   repeat {
     req_raw <- nanonext::recv(ctx, mode = "raw", block = TRUE)
     response <- tryCatch({
@@ -134,6 +160,7 @@ rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L,
     if (remaining <= 0) break
     timeout_ms <- as.integer(max(1L, ceiling(min(remaining, per_attempt_timeout) * 1000)))
     sock <- NULL
+    ctx <- NULL
     out <- tryCatch({
       sock <- nanonext::socket("req", dial = endpoint)
       ctx <- nanonext::context(sock)
@@ -146,6 +173,7 @@ rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L,
       last_error <<- conditionMessage(e)
       NULL
     }, finally = {
+      if (!is.null(ctx)) try(close(ctx), silent = TRUE)
       if (!is.null(sock)) try(close(sock), silent = TRUE)
     })
     if (!is.null(out)) return(out)
@@ -238,26 +266,38 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
   provider <- list()
   provider$start <- function(plan = NULL) {
     if (isTRUE(state$started)) return(invisible(provider))
-    if (!isTRUE(state$external_endpoints)) {
-      mirai::daemons(state$workers, dispatcher = FALSE, .compute = state$compute)
-      setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = state$compute)
-      setup_value <- mirai::collect_mirai(setup)
-      if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
-      bundle <- rducks_nng_endpoint_bundle(state$workers, state$transport)
-      tasks <- vector("list", length(bundle$endpoints))
-      worker_loop <- rducks_nng_worker_loop
-      for (i in seq_along(bundle$endpoints)) {
-        endpoint <- bundle$endpoints[[i]]
-        tasks[[i]] <- mirai::mirai({
-          worker_loop(endpoint)
-        }, endpoint = endpoint, worker_loop = worker_loop, .compute = state$compute)
+    tryCatch({
+      if (!isTRUE(state$external_endpoints)) {
+        mirai::daemons(state$workers, dispatcher = FALSE, .compute = state$compute)
+        setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = state$compute)
+        setup_value <- mirai::collect_mirai(setup)
+        if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
+        bundle <- rducks_nng_endpoint_bundle(state$workers, state$transport)
+        tasks <- vector("list", length(bundle$endpoints))
+        worker_loop <- rducks_nng_worker_loop
+        for (i in seq_along(bundle$endpoints)) {
+          endpoint <- bundle$endpoints[[i]]
+          tasks[[i]] <- mirai::mirai({
+            worker_loop(endpoint)
+          }, endpoint = endpoint, worker_loop = worker_loop, .compute = state$compute)
+        }
+        state$endpoints <- bundle$endpoints
+        state$cleanup_paths <- bundle$cleanup_paths
+        state$tasks <- tasks
       }
-      state$endpoints <- bundle$endpoints
-      state$cleanup_paths <- bundle$cleanup_paths
-      state$tasks <- tasks
-    }
-    state$started <- TRUE
-    invisible(provider)
+      state$started <- TRUE
+      invisible(provider)
+    }, error = function(e) {
+      if (!isTRUE(state$external_endpoints)) {
+        try(mirai::daemons(0L, .compute = state$compute), silent = TRUE)
+        unlink(state$cleanup_paths %||% character(), force = TRUE)
+        state$cleanup_paths <- character()
+        state$tasks <- list()
+        state$endpoints <- character()
+      }
+      state$started <- FALSE
+      stop(e)
+    })
   }
   provider$stop <- function() {
     if (isTRUE(state$started) && !isTRUE(state$external_endpoints)) {
@@ -344,8 +384,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
   udf_id <- rducks_next_nng_udf_id()
   runtime_token <- runtime_token %||% paste("process", Sys.getpid(), sep = "-")
 
-  configure <- function(output_schema) {
-    output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
+  ensure_provider_started <- function() {
     if (is.null(provider)) {
       provider <<- rducks_nng_provider_for_runtime(
         runtime_token = runtime_token,
@@ -356,6 +395,12 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
       )
       provider$start(engine$plan)
     }
+    invisible(provider)
+  }
+
+  configure <- function(output_schema) {
+    output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
+    ensure_provider_started()
     if (!isTRUE(provider_registered)) {
       provider$register_udf(
         udf_id = udf_id,
@@ -381,7 +426,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
     )
   }
 
-  list(provider = "nng", configure = configure)
+  list(provider = "nng", prepare = ensure_provider_started, configure = configure)
 }
 
 rducks_make_arrow_ipc_nng_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
