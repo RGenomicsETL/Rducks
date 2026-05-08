@@ -194,7 +194,7 @@
 <td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; <code>ipc_transport</code> supports abstract/ipc/unix/tcp/ws endpoints; optional explicit <code>ipc_endpoints</code>; strict plan</td>
+<td>native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; <code>ipc_transport</code> generates <code>abstract</code> (Linux abstract IPC), <code>ipc</code> (NNG IPC), <code>unix</code> (POSIX Unix-domain alias), <code>tcp</code>, or <code>ws</code> endpoints; optional explicit <code>ipc_endpoints</code>; strict plan</td>
 </tr>
 </tbody>
 </table>
@@ -242,7 +242,7 @@
 <div class="section level2">
 <h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
 </h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> uses the native NNG/Arrow IPC path. The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code, sends owned request bytes over native NNG, and imports owned Arrow IPC result bytes back into DuckDB callback output. By default Rducks launches local worker loops with mirai daemons and Rducks-generated nanonext endpoint URLs; <code>ipc_transport</code> selects <code>abstract</code>, <code>ipc</code>, <code>unix</code>, <code>tcp</code>, or <code>ws</code> for those generated endpoints. <code>ipc_endpoints</code> may instead point at externally managed NNG worker loops using endpoint URLs directly. The plan errors rather than changing to same-process execution, generic process backends, R serialization, or path-loaded symbols from another R package shared library.</p>
+<p><code>arrow_ipc + multiprocess_parallel</code> uses the native NNG/Arrow IPC path. The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code, sends owned request bytes over native NNG, and imports owned Arrow IPC result bytes back into DuckDB callback output. By default Rducks launches local worker loops with mirai daemons and Rducks-generated nanonext endpoint URLs; <code>ipc_transport</code> selects the generated endpoint transport: <code>abstract</code> is Linux abstract IPC, <code>ipc</code> is NNG IPC, <code>unix</code> is the POSIX Unix-domain alias, and <code>tcp</code> / <code>ws</code> use loopback TCP / WebSocket endpoints. <code>ipc_endpoints</code> may instead point at externally managed NNG worker loops using endpoint URLs directly. The plan errors rather than changing to same-process execution, generic process backends, R serialization, or path-loaded symbols from another R package shared library.</p>
 <p>The example below registers the same vectorized R function three ways and then runs a small chunk-level comparison over several CSV files. Multiple input files make DuckDB’s scanner eligible for threaded work; the IPC row reports <code>ripc_inflight_max = 2</code> when two chunks were concurrently in flight to the worker processes. <code>ipc_workers</code> is the number of persistent R worker processes. <code>threads</code> is DuckDB’s query execution thread count: keep it at <code>1</code> while registering so catalog setup and R-owned evaluator configuration happen on the recorded main R thread, then raise it for the IPC query phase so DuckDB can fan chunks out to the IPC workers. <code>external_threads = 1</code> keeps DuckDB’s external-thread budget conservative; the IPC R workers are separate processes, not DuckDB external threads. The in-process queue row is kept single-threaded because that plan serializes R API work on the recorded main R thread; it is a same-process safety path, not the multiprocess throughput path.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
@@ -973,6 +973,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <h2 data-toc-skip>Developers</h2>
 <ul class="list-unstyled">
 <li>Sounkou Mahamane Toure <br><small class="roles"> Author, maintainer </small>   </li>
+<li><a href="authors.html">More about authors...</a></li>
 </ul>
 </div>
 

@@ -22,3 +22,11 @@ Useful links:
 ## Author
 
 **Maintainer**: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
+
+Other contributors:
+
+- Staysail Systems, Inc. and Capitar IT Group BV (NNG copyright holders
+  for bundled vendored NNG) \[copyright holder\]
+
+- The Mbed TLS Contributors (Mbed TLS copyright holders for bundled
+  vendored Mbed TLS) \[copyright holder\]

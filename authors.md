@@ -4,6 +4,13 @@
 
 - **Sounkou Mahamane Toure**. Author, maintainer.
 
+- **Staysail Systems, Inc. and Capitar IT Group BV**. Copyright
+  holder.  
+  NNG copyright holders for bundled vendored NNG
+
+- **The Mbed TLS Contributors**. Copyright holder.  
+  Mbed TLS copyright holders for bundled vendored Mbed TLS
+
 ## Citation
 
 Source:
