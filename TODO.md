@@ -586,10 +586,10 @@ Improve batching beyond small waves for typical DuckDB physical scans.
   finite-deadline collect-any remains a bounded poll until a
   timeout-aware mirai race primitive is available.
 - Native cooperative RIPC groups now use optional bundle-level
-  `collect_any()` when the provider exposes it. Ready chunks are decoded
-  and written back as they arrive, while the callback still remains
-  active until all borrowed DuckDB output vectors in that submitted
-  group have been filled. Larger physical-scan batching beyond
+  `collect_any()` when the provider exposes it. Ready result payloads
+  are imported and written back as they arrive, while the callback still
+  remains active until all borrowed DuckDB output vectors in that
+  submitted group have been filled. Larger physical-scan batching beyond
   simultaneously active callbacks remains open.
 
 Specify a persistent worker/request envelope if generic `future` is not
@@ -673,8 +673,11 @@ Implement owned result payloads plus safe writeback.
   into callback output with DuckDB’s vector-copy API.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   exposes `arrow_c_owned_result_chunk_chunks` for this path.
-- Still open for Arrow/R helper returns and RIPC native decode/import
-  from owned result bytes.
+- RIPC provider collection now returns owned raw Arrow IPC result bytes
+  to the native extension, which decodes/imports them into DuckDB output
+  vectors without first materializing nanoarrow R result arrays in the
+  main process.
+- Still open for Arrow/R helper returns.
 
 Split current `arrow_c` code into explicit worker-safe/native and
 recorded-main-R-thread phases.

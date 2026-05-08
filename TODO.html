@@ -348,7 +348,7 @@
 <ul><li>
 <code>ipc_mirai_pool</code> now has provider-level backpressure via <code>ipc_max_pending</code>, so persistent workers cannot accumulate unbounded accepted-but-uncollected tasks.</li>
 <li>The mirai provider exposes tested <code>collect_any()</code> behavior so ready tasks can be collected without waiting for an earlier slow task. No-deadline <code>collect_many()</code> and <code>collect_any()</code> calls now use mirai blocking wait primitives instead of a 1 ms scan/sleep loop; finite-deadline collect-any remains a bounded poll until a timeout-aware mirai race primitive is available.</li>
-<li>Native cooperative RIPC groups now use optional bundle-level <code>collect_any()</code> when the provider exposes it. Ready chunks are decoded and written back as they arrive, while the callback still remains active until all borrowed DuckDB output vectors in that submitted group have been filled. Larger physical-scan batching beyond simultaneously active callbacks remains open.</li>
+<li>Native cooperative RIPC groups now use optional bundle-level <code>collect_any()</code> when the provider exposes it. Ready result payloads are imported and written back as they arrive, while the callback still remains active until all borrowed DuckDB output vectors in that submitted group have been filled. Larger physical-scan batching beyond simultaneously active callbacks remains open.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Specify a persistent worker/request envelope if generic <code>future</code> is not enough.</label></p>
@@ -385,7 +385,8 @@
 <label><input type="checkbox">Implement owned result payloads plus safe writeback.</label>
 <ul><li>Queued direct <code>arrow_c</code> scalar and vectorized UDFs with supported scalar return types now evaluate into an owned Arrow C Data result chunk on the recorded main R thread; the waiting worker writes DuckDB output from those Arrow buffers without touching <code>SEXP</code>s or nanoarrow R external pointers. Covered return families include <code>bool</code>, integer widths, floating point, date, time, timestamp, VARCHAR, BLOB, BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, and INTERVAL.</li>
 <li>Queued direct <code>arrow_c</code> scalar and vectorized UDFs with composite return shapes now evaluate into an owned DuckDB result chunk on the recorded main R thread; the waiting worker copies that owned vector into callback output with DuckDB’s vector-copy API. <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> exposes <code>arrow_c_owned_result_chunk_chunks</code> for this path.</li>
-<li>Still open for Arrow/R helper returns and RIPC native decode/import from owned result bytes.</li>
+<li>RIPC provider collection now returns owned raw Arrow IPC result bytes to the native extension, which decodes/imports them into DuckDB output vectors without first materializing nanoarrow R result arrays in the main process.</li>
+<li>Still open for Arrow/R helper returns.</li>
 </ul></li>
 <li>
 <label><input type="checkbox" checked>Split current <code>arrow_c</code> code into explicit worker-safe/native and recorded-main-R-thread phases.</label>
