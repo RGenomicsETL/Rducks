@@ -62,6 +62,25 @@ local({
   queued_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_vec_result$x, sum((0:9) + 1))
 
+  invisible(rducks_register(con, "rducks_queue_arrow_r_list", function(x) c(x, x + 1L), INTEGER, INTEGER[]))
+  invisible(rducks_register(con, "rducks_queue_arrow_r_struct", function(x) list(a = x, b = x + 1L), INTEGER, STRUCT(a = INTEGER, b = INTEGER)))
+  queued_r_list_result <- DBI::dbGetQuery(
+    con,
+    "SELECT sum(list_sum(rducks_queue_arrow_r_list(i::INTEGER))) AS x FROM rducks_parallel_range(5::UBIGINT) AS t(i)"
+  )
+  expect_equal(queued_r_list_result$x, sum((0:4) + (1:5)))
+  queued_r_struct_result <- DBI::dbGetQuery(
+    con,
+    "SELECT sum((rducks_queue_arrow_r_struct(i::INTEGER)).b) AS x FROM rducks_parallel_range(5::UBIGINT) AS t(i)"
+  )
+  expect_equal(queued_r_struct_result$x, sum(1:5))
+  arrow_r_list_explain <- rducks_explain_udf(con, "rducks_queue_arrow_r_list")
+  expect_equal(arrow_r_list_explain$evaluator, "R")
+  expect_true(arrow_r_list_explain$arrow_r_chunks >= 1)
+  arrow_r_struct_explain <- rducks_explain_udf(con, "rducks_queue_arrow_r_struct")
+  expect_equal(arrow_r_struct_explain$evaluator, "R")
+  expect_true(arrow_r_struct_explain$arrow_r_chunks >= 1)
+
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] >= after$submitted[[1L]])
   expect_equal(final$submitted, final$executed)
