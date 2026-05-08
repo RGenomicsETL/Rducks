@@ -144,8 +144,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        291ms      3.44    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    231ms      4.34    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        288ms      3.46    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    230ms      4.34    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -923,7 +923,63 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <h2 id="duckdb-c-extension-abi-surface">DuckDB C extension ABI surface<a class="anchor" aria-label="anchor" href="#duckdb-c-extension-abi-surface"></a>
 </h2>
 <p>The extension entrypoint receives the DuckDB database handle from DuckDB’s extension access struct, stores it in a per-database runtime record, and opens an extension-owned DuckDB connection for native callback support. On extension reload, Rducks verifies that the active connection has the SQL surface registered and re-registers it when needed.</p>
-<p>The unstable DuckDB C extension ABI entries are tracked by <code>tools/used_duckdb_unstable_api.R</code> and documented in <code>docs/BUILD.md</code>. The README intentionally does not source repository helper scripts while rendering.</p>
+<p>The unstable DuckDB C extension ABI entries are tracked by <code>tools/used_duckdb_unstable_api.R</code> and documented in <code>docs/BUILD.md</code>. The README intentionally does not source repository helper scripts while rendering. The current output of <code>source("tools/used_duckdb_unstable_api.R"); cat(rducks_used_duckdb_unstable_api_markdown("."))</code> is:</p>
+<table class="table">
+<colgroup>
+<col width="13%">
+<col width="84%">
+<col width="2%">
+</colgroup>
+<thead><tr>
+<th>ABI group</th>
+<th>Functions used</th>
+<th align="right">Count</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>unstable_new_arrow_functions</code></td>
+<td>
+<code>duckdb_data_chunk_from_arrow</code>, <code>duckdb_data_chunk_to_arrow</code>, <code>duckdb_destroy_arrow_converted_schema</code>, <code>duckdb_schema_from_arrow</code>, <code>duckdb_to_arrow_schema</code>
+</td>
+<td align="right">5</td>
+</tr>
+<tr>
+<td><code>unstable_new_error_data_functions</code></td>
+<td>
+<code>duckdb_destroy_error_data</code>, <code>duckdb_error_data_has_error</code>, <code>duckdb_error_data_message</code>
+</td>
+<td align="right">3</td>
+</tr>
+<tr>
+<td><code>unstable_new_open_connect_functions</code></td>
+<td>
+<code>duckdb_client_context_get_connection_id</code>, <code>duckdb_connection_get_arrow_options</code>, <code>duckdb_destroy_arrow_options</code>, <code>duckdb_destroy_client_context</code>
+</td>
+<td align="right">4</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_functions</code></td>
+<td>
+<code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_get_client_context</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>
+</td>
+<td align="right">6</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_state_functions</code></td>
+<td>
+<code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_client_context</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_init</code>
+</td>
+<td align="right">7</td>
+</tr>
+<tr>
+<td><code>unstable_new_vector_functions</code></td>
+<td>
+<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_vector_copy_sel</code>
+</td>
+<td align="right">4</td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

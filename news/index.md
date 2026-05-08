@@ -54,6 +54,10 @@
   `rducks_udf_stat_fields()`; the R-side field vector is only a
   documented compatibility list for sessions where that optional native
   discovery helper is unavailable.
+- Queued `arrow_r` helper returns now import into an owned DuckDB result
+  chunk on the recorded main R thread; the waiting worker copies that
+  owned vector into callback output instead of having the main thread
+  write directly into the callback-owned output vector.
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)

@@ -150,8 +150,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        291ms      3.44    1.97MB
-#> 2 vectorized    231ms      4.34    2.34MB
+#> 1 scalar        288ms      3.46    1.97MB
+#> 2 vectorized    230ms      4.34    2.34MB
 ```
 
 ## Execution plans
@@ -671,4 +671,15 @@ needed.
 The unstable DuckDB C extension ABI entries are tracked by
 `tools/used_duckdb_unstable_api.R` and documented in `docs/BUILD.md`.
 The README intentionally does not source repository helper scripts while
-rendering.
+rendering. The current output of
+`source("tools/used_duckdb_unstable_api.R"); cat(rducks_used_duckdb_unstable_api_markdown("."))`
+is:
+
+| ABI group | Functions used | Count |
+|----|----|---:|
+| `unstable_new_arrow_functions` | `duckdb_data_chunk_from_arrow`, `duckdb_data_chunk_to_arrow`, `duckdb_destroy_arrow_converted_schema`, `duckdb_schema_from_arrow`, `duckdb_to_arrow_schema` | 5 |
+| `unstable_new_error_data_functions` | `duckdb_destroy_error_data`, `duckdb_error_data_has_error`, `duckdb_error_data_message` | 3 |
+| `unstable_new_open_connect_functions` | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_arrow_options`, `duckdb_destroy_arrow_options`, `duckdb_destroy_client_context` | 4 |
+| `unstable_new_scalar_function_functions` | `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` | 6 |
+| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_client_context`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init` | 7 |
+| `unstable_new_vector_functions` | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel` | 4 |
