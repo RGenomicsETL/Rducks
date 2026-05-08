@@ -147,8 +147,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.46    1.97MB
-#> 2 vectorized    230ms      4.34    2.34MB
+#> 1 scalar        311ms      3.18    1.97MB
+#> 2 vectorized    247ms      4.04    2.34MB
 ```
 
 ## Execution plans

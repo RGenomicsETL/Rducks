@@ -168,8 +168,10 @@ Internally the current concurrency backends are:
   `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects provider
   results, and imports returned Arrow IPC into the DuckDB output vector. When a
   RIPC callback runs on the recorded main R thread, it cooperatively drains
-  queued worker callbacks into the same submit/collect wave so parallel DuckDB
-  execution does not depend on an external query pump.
+  queued worker callbacks into the same submit/collect wave and, after its own
+  output is filled, opportunistically drains any additional worker callbacks that
+  became pending during collection. This keeps active callbacks moving without an
+  external query pump.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

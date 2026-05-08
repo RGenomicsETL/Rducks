@@ -664,6 +664,15 @@ static void rducks_queue_append_local(rducks_udf_request_t **head, rducks_udf_re
     *tail = request;
 }
 
+static int rducks_queue_has_pending(rducks_runtime_entry_t *runtime) {
+    int has_pending;
+    if (!runtime || !runtime->queue_initialized) return 0;
+    rducks_queue_lock(runtime);
+    has_pending = runtime->queue_head != NULL;
+    rducks_queue_unlock(runtime);
+    return has_pending;
+}
+
 static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *runtime) {
     rducks_udf_request_t *request;
     rducks_queue_lock(runtime);
@@ -957,6 +966,17 @@ static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *
     {
         int ok = rducks_queue_collect_ripc_groups_on_main(runtime, ripc_head, &local_request, err_msg, err_cap);
         rducks_queue_record_local_finish(runtime);
+        if (ok && rducks_queue_has_pending(runtime)) {
+            /* After the local callback-owned output has been filled, keep the
+             * recorded main R thread in the extension-owned scheduler long
+             * enough to service any worker callbacks that arrived during the
+             * submit/collect wave. This does not enqueue work for chunks whose
+             * DuckDB callbacks have not started yet, but it avoids returning to
+             * DuckDB with already-active worker callbacks stranded until a later
+             * main-thread callback happens to drain the queue.
+             */
+            (void)rducks_queue_drain_on_main(runtime, 0);
+        }
         return ok;
     }
 }
