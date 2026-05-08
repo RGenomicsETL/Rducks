@@ -29,14 +29,14 @@ expect_false(ipc$in_process)
 expect_false(ipc$uses_r_thread)
 expect_equal(ipc$ipc_options$packages, "Rducks")
 expect_equal(ipc$ipc_options$globals, "auto")
-expect_true(ipc$ipc_options$transport %in% Rducks:::rducks_nng_supported_transports())
+expect_true(ipc$ipc_options$transport %in% c("abstract", "ipc", "unix", "tcp", "ws"))
 expect_equal(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "tcp")$ipc_options$transport,
   "tcp"
 )
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "bogus"),
-  "arg"
+  "ipc_transport"
 )
 expect_equal(ipc$ipc_provider, "nng")
 expect_equal(ipc$engine_id, "ipc_nng_pool")

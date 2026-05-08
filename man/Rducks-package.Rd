@@ -26,5 +26,11 @@ Useful links:
 \author{
 \strong{Maintainer}: Sounkou Mahamane Toure \email{sounkoutoure@gmail.com}
 
+Other contributors:
+\itemize{
+  \item Staysail Systems, Inc. and Capitar IT Group BV (NNG copyright holders for bundled vendored NNG) [copyright holder]
+  \item The Mbed TLS Contributors (Mbed TLS copyright holders for bundled vendored Mbed TLS) [copyright holder]
+}
+
 }
 \keyword{internal}

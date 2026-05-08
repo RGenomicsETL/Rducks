@@ -12,7 +12,7 @@ place.
 | `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | supported | supported | DuckDB worker callbacks queue work; R evaluation runs on the recorded main R thread. |
 | `arrow_c_direct_serial` | `arrow_c + serial` | supported | supported | Direct native DuckDB-vector marshalling only; unsupported signatures fail. |
 | `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | supported | supported | Same direct marshalling as serial, with queued main-thread R evaluation. |
-| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state and use owned Arrow IPC request/result bytes. Rducks starts local mirai daemons by default; `ipc_transport` covers abstract/ipc/unix/tcp/ws endpoint generation, and explicit endpoints are passed through as NNG URLs. |
+| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state and use owned Arrow IPC request/result bytes. Rducks starts local mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoints are passed through as NNG URLs. |
 
 Invalid combinations are intentionally rejected rather than mapped to another
 engine.

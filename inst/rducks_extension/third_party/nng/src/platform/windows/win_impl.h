@@ -51,7 +51,8 @@ struct nni_rwlock {
 
 #define NNI_RWLOCK_INITIALIZER \
 	{                      \
-		SRWLOCK_INIT   \
+		SRWLOCK_INIT,  \
+		FALSE          \
 	}
 
 struct nni_plat_cv {

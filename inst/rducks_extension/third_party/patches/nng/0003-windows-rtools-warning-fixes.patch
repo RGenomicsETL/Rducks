@@ -1,0 +1,22 @@
+diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/win_impl.h b/inst/rducks_extension/third_party/nng/src/platform/windows/win_impl.h
+index 1354709..65b4cac 100644
+--- a/inst/rducks_extension/third_party/nng/src/platform/windows/win_impl.h
++++ b/inst/rducks_extension/third_party/nng/src/platform/windows/win_impl.h
+@@ -54 +54,2 @@ struct nni_rwlock {
+-		SRWLOCK_INIT   \
++		SRWLOCK_INIT,  \
++		FALSE          \
+diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/win_thread.c b/inst/rducks_extension/third_party/nng/src/platform/windows/win_thread.c
+index 67ff60b..7b1ad21 100644
+--- a/inst/rducks_extension/third_party/nng/src/platform/windows/win_thread.c
++++ b/inst/rducks_extension/third_party/nng/src/platform/windows/win_thread.c
+@@ -35,0 +36 @@ static pfnSetThreadDescription set_thread_desc;
++#include <string.h>
+@@ -64,0 +66 @@ nni_plat_mtx_fini(nni_plat_mtx *mtx)
++	NNI_ARG_UNUSED(mtx);
+@@ -446,3 +448,2 @@ nni_plat_init(int (*helper)(void))
+-			set_thread_desc =
+-			    (pfnSetThreadDescription) GetProcAddress(
+-			        hKernel32, "SetThreadDescription");
++			FARPROC proc = GetProcAddress(hKernel32, "SetThreadDescription");
++			memcpy(&set_thread_desc, &proc, sizeof(set_thread_desc));

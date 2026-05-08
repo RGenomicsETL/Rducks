@@ -3,7 +3,12 @@ Title: Register R User-Defined Functions in DuckDB
 Version: 0.0.1
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
-    email = "sounkoutoure@gmail.com", role = c("aut", "cre"))
+    email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
+    person(given = "Staysail Systems, Inc. and Capitar IT Group BV",
+    role = c("cph"),
+    comment = "NNG copyright holders for bundled vendored NNG"),
+    person(given = "The Mbed TLS Contributors", role = c("cph"),
+    comment = "Mbed TLS copyright holders for bundled vendored Mbed TLS")
   )
 Description: R package and DuckDB extension bridge for registering R functions
     as DuckDB user-defined functions. The package is designed around
@@ -11,6 +16,8 @@ Description: R package and DuckDB extension bridge for registering R functions
     marshalling over DuckDB Arrow C Data, and a calling-R-thread execution
     discipline for safe interaction with R from DuckDB execution.
 License: GPL (>= 3)
+Copyright: See inst/LICENSE.note for bundled third-party copyright and
+    licensing details.
 SystemRequirements: cmake for optional vendored NNG/Mbed TLS support
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

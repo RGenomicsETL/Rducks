@@ -1,8 +1,16 @@
 library(Rducks)
 
 local({
+  old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
+  Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+  on.exit({
+    if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
+  }, add = TRUE)
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  on.exit({
+    try(Rducks:::rducks_nng_stop_all_providers(), silent = TRUE)
+    DBI::dbDisconnect(con, shutdown = TRUE)
+  }, add = TRUE)
   rducks_enable(con, threads = "single")
 
   current <- rducks_current_execution_plan(con)
@@ -60,6 +68,9 @@ local({
   rducks_set_execution_plan(con, ipc_plan, threads = 2L, external_threads = 1L)
   expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
   expect_equal(Rducks:::rducks_connection_threads(con), 2L)
+
+  nng_enabled <- DBI::dbGetQuery(con, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
+  expect_true(nng_enabled)
   rducks_set_execution_plan(con, ipc_plan, threads = 1L, external_threads = 1L)
   reg_ipc <- rducks_register(
     con, "plan_ipc_vec", function(x) x + 1L,

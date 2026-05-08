@@ -159,6 +159,76 @@ patch_nng_windows_rtools_clock <- function(dest) {
   writeLines(strsplit(sub(clock_old_text, paste(clock_new, collapse = "\n"), clock_text, fixed = TRUE), "\n", fixed = TRUE)[[1L]], clock_file, useBytes = TRUE)
 }
 
+patch_nng_windows_warning_fixes <- function(dest) {
+  thread_file <- file.path(dest, "src", "platform", "windows", "win_thread.c")
+  thread_text <- paste(readLines(thread_file, warn = FALSE), collapse = "\n")
+  replacements <- list(
+    c(
+      "#include <stdlib.h>",
+      paste("#include <stdlib.h>", "#include <string.h>", sep = "\n")
+    ),
+    c(
+      paste(c(
+        "void",
+        "nni_plat_mtx_fini(nni_plat_mtx *mtx)",
+        "{",
+        "}"
+      ), collapse = "\n"),
+      paste(c(
+        "void",
+        "nni_plat_mtx_fini(nni_plat_mtx *mtx)",
+        "{",
+        "\tNNI_ARG_UNUSED(mtx);",
+        "}"
+      ), collapse = "\n")
+    ),
+    c(
+      paste(c(
+        "\t\thKernel32 = LoadLibrary(TEXT(\"kernel32.dll\"));",
+        "\t\tif (hKernel32 != NULL) {",
+        "\t\t\tset_thread_desc =",
+        "\t\t\t    (pfnSetThreadDescription) GetProcAddress(",
+        "\t\t\t        hKernel32, \"SetThreadDescription\");",
+        "\t\t}"
+      ), collapse = "\n"),
+      paste(c(
+        "\t\thKernel32 = LoadLibrary(TEXT(\"kernel32.dll\"));",
+        "\t\tif (hKernel32 != NULL) {",
+        "\t\t\tFARPROC proc = GetProcAddress(hKernel32, \"SetThreadDescription\");",
+        "\t\t\tmemcpy(&set_thread_desc, &proc, sizeof(set_thread_desc));",
+        "\t\t}"
+      ), collapse = "\n")
+    )
+  )
+  for (pair in replacements) {
+    if (!grepl(pair[[1L]], thread_text, fixed = TRUE)) {
+      stop("expected NNG Windows warning-fix block in ", thread_file, call. = FALSE)
+    }
+    thread_text <- sub(pair[[1L]], pair[[2L]], thread_text, fixed = TRUE)
+  }
+  writeLines(strsplit(thread_text, "\n", fixed = TRUE)[[1L]], thread_file, useBytes = TRUE)
+
+  impl_file <- file.path(dest, "src", "platform", "windows", "win_impl.h")
+  impl_text <- paste(readLines(impl_file, warn = FALSE), collapse = "\n")
+  impl_old <- paste(c(
+    "#define NNI_RWLOCK_INITIALIZER \\",
+    "\t{                      \\",
+    "\t\tSRWLOCK_INIT   \\",
+    "\t}"
+  ), collapse = "\n")
+  impl_new <- paste(c(
+    "#define NNI_RWLOCK_INITIALIZER \\",
+    "\t{                      \\",
+    "\t\tSRWLOCK_INIT,  \\",
+    "\t\tFALSE          \\",
+    "\t}"
+  ), collapse = "\n")
+  if (!grepl(impl_old, impl_text, fixed = TRUE)) {
+    stop("expected NNG Windows rwlock initializer in ", impl_file, call. = FALSE)
+  }
+  writeLines(strsplit(sub(impl_old, impl_new, impl_text, fixed = TRUE), "\n", fixed = TRUE)[[1L]], impl_file, useBytes = TRUE)
+}
+
 sha256 <- function(path) {
   unname(tools::sha256sum(path))
 }
@@ -190,6 +260,7 @@ vendor_one <- function(id, spec, tmp) {
   if (identical(id, "nng")) {
     patch_nng_cmake(dest)
     patch_nng_windows_rtools_clock(dest)
+    patch_nng_windows_warning_fixes(dest)
   }
   list(id = id, spec = spec, archive_sha256 = sha256(archive))
 }
@@ -240,7 +311,8 @@ write_metadata <- function(records) {
     "included in the R source package; the vendored NNG `CMakeLists.txt` is patched",
     "to build manpages only when that optional snapshot is present. The Windows",
     "platform files carry the same Rtools MinGW `timespec_get()` fallback used by",
-    "`ducknng` so CI builds the vendored NNG instead of depending on any host NNG.",
+    "`ducknng`, plus small source fixes for Rtools warning-clean builds, so CI",
+    "builds the vendored NNG instead of depending on any host NNG.",
     "Mbed TLS is vendored for the planned TLS transport, but TLS/WSS are not enabled",
     "until certificate and client-auth policy is explicit. Rducks does not use a",
     "system `libnng` or nanonext's private binary layout.",

@@ -19,7 +19,8 @@ enabled for the native worker path. Its documentation/manpage snapshot is not
 included in the R source package; the vendored NNG `CMakeLists.txt` is patched
 to build manpages only when that optional snapshot is present. The Windows
 platform files carry the same Rtools MinGW `timespec_get()` fallback used by
-`ducknng` so CI builds the vendored NNG instead of depending on any host NNG.
+`ducknng`, plus small source fixes for Rtools warning-clean builds, so CI
+builds the vendored NNG instead of depending on any host NNG.
 Mbed TLS is vendored for the planned TLS transport, but TLS/WSS are not enabled
 until certificate and client-auth policy is explicit. Rducks does not use a
 system `libnng` or nanonext's private binary layout.

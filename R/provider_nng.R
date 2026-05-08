@@ -18,7 +18,14 @@ rducks_nng_default_transport <- function() {
 
 rducks_nng_normalize_transport <- function(transport = NULL) {
   if (is.null(transport)) transport <- rducks_nng_default_transport()
-  match.arg(transport, rducks_nng_supported_transports())
+  supported <- rducks_nng_supported_transports()
+  if (!is.character(transport) || length(transport) != 1L || is.na(transport) || !(transport %in% supported)) {
+    stop(
+      "ipc_transport must be one of: ", paste(supported, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  transport
 }
 
 rducks_nng_random_token <- function() {
@@ -33,20 +40,27 @@ rducks_nng_random_port <- function(n) {
 
 rducks_nng_endpoint_bundle <- function(workers, transport = NULL) {
   transport <- rducks_nng_normalize_transport(transport)
-  token <- paste("rducks", Sys.getpid(), rducks_nng_random_token(), sep = "-")
+  token <- paste("rdn", Sys.getpid(), substr(rducks_nng_random_token(), 1L, 8L), sep = "-")
   indexes <- seq_len(workers)
   cleanup_paths <- character()
+  short_socket_paths <- function() {
+    paths <- file.path(tempdir(), paste0(token, "-", indexes, ".sock"))
+    unlink(paths, force = TRUE)
+    paths
+  }
   endpoints <- switch(
     transport,
     abstract = paste0("abstract://", token, "-", indexes),
     ipc = {
-      cleanup_paths <- file.path(tempdir(), paste0(token, "-", indexes, ".sock"))
-      unlink(cleanup_paths, force = TRUE)
-      paste0("ipc://", cleanup_paths)
+      if (identical(Sys.info()[["sysname"]], "Windows")) {
+        paste0("ipc://", token, "-", indexes)
+      } else {
+        cleanup_paths <- short_socket_paths()
+        paste0("ipc://", cleanup_paths)
+      }
     },
     unix = {
-      cleanup_paths <- file.path(tempdir(), paste0(token, "-", indexes, ".sock"))
-      unlink(cleanup_paths, force = TRUE)
+      cleanup_paths <- short_socket_paths()
       paste0("unix://", cleanup_paths)
     },
     tcp = paste0("tcp://127.0.0.1:", rducks_nng_random_port(workers)),
@@ -109,10 +123,16 @@ rducks_nng_worker_loop <- function(endpoint) {
   TRUE
 }
 
-rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L, retry_sleep = 0.01) {
-  timeout_ms <- if (is.null(timeout)) NULL else as.integer(ceiling(as.numeric(timeout) * 1000))
+rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L,
+                                 retry_sleep = 0.01, per_attempt_timeout = 0.25) {
+  timeout <- if (is.null(timeout)) 5 else as.numeric(timeout)
+  if (!is.finite(timeout) || timeout <= 0) timeout <- 5
+  deadline <- unname(proc.time()[["elapsed"]]) + timeout
   last_error <- NULL
   for (i in seq_len(retries)) {
+    remaining <- deadline - unname(proc.time()[["elapsed"]])
+    if (remaining <= 0) break
+    timeout_ms <- as.integer(max(1L, ceiling(min(remaining, per_attempt_timeout) * 1000)))
     sock <- NULL
     out <- tryCatch({
       sock <- nanonext::socket("req", dial = endpoint)
@@ -129,7 +149,8 @@ rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L, 
       if (!is.null(sock)) try(close(sock), silent = TRUE)
     })
     if (!is.null(out)) return(out)
-    Sys.sleep(retry_sleep)
+    if (deadline - unname(proc.time()[["elapsed"]]) <= 0) break
+    Sys.sleep(min(retry_sleep, max(0, deadline - unname(proc.time()[["elapsed"]]))))
   }
   stop("Rducks NNG request failed for endpoint ", endpoint, ": ", last_error %||% "unknown error", call. = FALSE)
 }
@@ -255,7 +276,7 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
   }
   provider$register_udf <- function(udf_id, udf_name, fun, arg_types, return_type, mode,
                                     null_handling, exception_handling, output_schema_spec,
-                                    globals = NULL, packages = character()) {
+                                    globals = NULL, packages = character(), timeout = 5) {
     if (!isTRUE(state$started)) stop("NNG provider is not started", call. = FALSE)
     mode <- rducks_match_mode(mode)
     packages <- unique(c("Rducks", packages %||% character()))
@@ -273,7 +294,11 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
     )
     payload <- serialize(rec, NULL, xdr = FALSE)
     for (endpoint in state$endpoints) {
-      resp <- rducks_nng_transact(endpoint, rducks_nng_wire_encode_request(rducks_nng_wire_type_register, udf_id, payload = payload))
+      resp <- rducks_nng_transact(
+        endpoint,
+        rducks_nng_wire_encode_request(rducks_nng_wire_type_register, udf_id, payload = payload),
+        timeout = timeout
+      )
       decoded <- rducks_nng_wire_decode_response(resp)
       if (!identical(decoded$status, "ok")) stop(decoded$error, call. = FALSE)
     }
@@ -343,7 +368,8 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
         exception_handling = engine$exception_handling,
         output_schema_spec = output_schema_spec,
         globals = worker_state$globals,
-        packages = unique(c(opts$packages, worker_state$packages))
+        packages = unique(c(opts$packages, worker_state$packages)),
+        timeout = opts$timeout %||% 5
       )
       provider_registered <<- TRUE
     }

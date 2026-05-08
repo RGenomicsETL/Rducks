@@ -165,7 +165,7 @@ already-registered UDFs.
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
 | `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
 | `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
-| `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` supports abstract/ipc/unix/tcp/ws endpoints; optional explicit `ipc_endpoints`; strict plan |
+| `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` generates `abstract` (Linux abstract IPC), `ipc` (NNG IPC), `unix` (POSIX Unix-domain alias), `tcp`, or `ws` endpoints; optional explicit `ipc_endpoints`; strict plan |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans are tested
 against it and use exactly their selected marshalling path. Use
@@ -208,7 +208,9 @@ extension encodes DuckDB chunks with vendored nanoarrow C/IPC code, sends owned
 request bytes over native NNG, and imports owned Arrow IPC result bytes back
 into DuckDB callback output. By default Rducks launches local worker loops with
 mirai daemons and Rducks-generated nanonext endpoint URLs; `ipc_transport`
-selects `abstract`, `ipc`, `unix`, `tcp`, or `ws` for those generated endpoints.
+selects the generated endpoint transport: `abstract` is Linux abstract IPC,
+`ipc` is NNG IPC, `unix` is the POSIX Unix-domain alias, and `tcp` / `ws` use
+loopback TCP / WebSocket endpoints.
 `ipc_endpoints` may instead point at externally managed NNG worker loops using
 endpoint URLs directly. The plan errors rather than changing to same-process
 execution, generic process backends, R serialization, or path-loaded symbols

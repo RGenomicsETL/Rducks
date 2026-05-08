@@ -1,0 +1,49 @@
+Rducks bundles third-party native components as private vendored source
+snapshots for the DuckDB extension build.
+
+Bundled component: NNG
+Upstream repository: https://github.com/nanomsg/nng
+Bundled version: 1.11.0
+Bundled path: inst/rducks_extension/third_party/nng
+Copyright:
+- Staysail Systems, Inc. <info@staysail.tech>
+- Capitar IT Group BV <info@capitar.com>
+License:
+- MIT License
+- See inst/rducks_extension/third_party/nng/LICENSE.txt for the complete
+  bundled license text.
+
+Bundled component: Mbed TLS
+Upstream repository: https://github.com/Mbed-TLS/mbedtls
+Bundled version: 3.6.5
+Bundled path: inst/rducks_extension/third_party/mbedtls
+Copyright:
+- The Mbed TLS Contributors
+License:
+- Apache License 2.0 OR GNU General Public License 2.0 or later
+- See inst/rducks_extension/third_party/mbedtls/LICENSE for the complete
+  bundled license text.
+
+Bundled component: Apache Arrow nanoarrow C/IPC
+Upstream repository: https://github.com/apache/arrow-nanoarrow
+Bundled version: 0.9.0.dev-4639910
+Bundled path: inst/rducks_extension/tp/na
+Copyright:
+- Apache Arrow nanoarrow contributors and copyright holders
+License:
+- Apache License 2.0
+- See inst/rducks_extension/tp/na/LICENSE.txt for the complete bundled
+  license text.
+
+Bundled component: flatcc runtime
+Upstream repository: https://github.com/dvidelabs/flatcc
+Bundled path: inst/rducks_extension/tp/na/thirdparty/flatcc
+Copyright:
+- flatcc contributors and copyright holders
+License:
+- Apache License 2.0
+- See inst/rducks_extension/tp/na/thirdparty/flatcc/LICENSE for the complete
+  bundled license text.
+
+This notice documents bundled third-party components and does not modify the
+license terms of Rducks itself.

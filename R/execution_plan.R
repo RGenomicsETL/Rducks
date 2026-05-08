@@ -135,8 +135,11 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   managed worker processes running the Rducks NNG worker loop; any NNG URL
 #'   transport supported by both endpoints is allowed. When endpoints are not
 #'   supplied, `ipc_transport` selects the transport used for the mirai-launched
-#'   local worker endpoints (`"abstract"`, `"ipc"`, `"unix"`, `"tcp"`, or
-#'   `"ws"`; the default is `"abstract"` on Linux and `"ipc"` elsewhere).
+#'   local worker endpoints. `"abstract"` means Linux abstract IPC, `"ipc"`
+#'   means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
+#'   `"unix"` means the POSIX Unix-domain alias, and `"tcp"` / `"ws"` use
+#'   loopback TCP / WebSocket endpoints. The default is `"abstract"` on Linux
+#'   and `"ipc"` elsewhere.
 #' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
 #'   Only `"nng"` is supported. The NNG provider broadcasts each registered UDF
 #'   closure plus discovered globals/packages to every worker in the shared

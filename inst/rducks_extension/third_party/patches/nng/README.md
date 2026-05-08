@@ -9,6 +9,8 @@ snapshot under `inst/rducks_extension/third_party/nng/`.
 - `0002-windows-rtools42-timespec-fallback.patch` carries the Rtools MinGW
   `timespec_get()` fallback used by `ducknng` so Windows CI builds the bundled
   NNG library.
+- `0003-windows-rtools-warning-fixes.patch` fixes Rtools/GCC warnings in the
+  Windows platform layer without compiler-wide suppression.
 
 When editing vendored NNG files, refresh the matching patch file before
 committing so the ledger stays synchronized with `third_party/nng/`. These are

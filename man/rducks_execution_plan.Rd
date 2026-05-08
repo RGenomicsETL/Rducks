@@ -43,8 +43,11 @@ timeout. \code{ipc_endpoints} optionally supplies NNG endpoint URLs for external
 managed worker processes running the Rducks NNG worker loop; any NNG URL
 transport supported by both endpoints is allowed. When endpoints are not
 supplied, \code{ipc_transport} selects the transport used for the mirai-launched
-local worker endpoints (\code{"abstract"}, \code{"ipc"}, \code{"unix"}, \code{"tcp"}, or
-\code{"ws"}; the default is \code{"abstract"} on Linux and \code{"ipc"} elsewhere).}
+local worker endpoints. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}
+means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
+\code{"unix"} means the POSIX Unix-domain alias, and \code{"tcp"} / \code{"ws"} use
+loopback TCP / WebSocket endpoints. The default is \code{"abstract"} on Linux
+and \code{"ipc"} elsewhere.}
 
 \item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
 Only \code{"nng"} is supported. The NNG provider broadcasts each registered UDF

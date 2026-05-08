@@ -33,6 +33,7 @@ static pfnSetThreadDescription set_thread_desc;
 #endif
 
 #include <stdlib.h>
+#include <string.h>
 
 void *
 nni_alloc(size_t sz)
@@ -62,6 +63,7 @@ nni_plat_mtx_init(nni_plat_mtx *mtx)
 void
 nni_plat_mtx_fini(nni_plat_mtx *mtx)
 {
+	NNI_ARG_UNUSED(mtx);
 }
 
 void
@@ -443,9 +445,8 @@ nni_plat_init(int (*helper)(void))
 		// Let's look up the function to set thread descriptions.
 		hKernel32 = LoadLibrary(TEXT("kernel32.dll"));
 		if (hKernel32 != NULL) {
-			set_thread_desc =
-			    (pfnSetThreadDescription) GetProcAddress(
-			        hKernel32, "SetThreadDescription");
+			FARPROC proc = GetProcAddress(hKernel32, "SetThreadDescription");
+			memcpy(&set_thread_desc, &proc, sizeof(set_thread_desc));
 		}
 
 		if (((rv = nni_win_io_sysinit()) != 0) ||

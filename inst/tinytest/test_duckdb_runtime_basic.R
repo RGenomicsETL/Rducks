@@ -14,9 +14,13 @@ local({
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_set_execution_backend('single') AS ok"), "main-thread capability")
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_set_main_thread_token('posix-pthread-ptr:1') AS ok"), "invalid Rducks main thread token")
 })
-Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 
 local({
+  old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
+  Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+  on.exit({
+    if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
+  }, add = TRUE)
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
