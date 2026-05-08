@@ -15,13 +15,12 @@ types, NULL handling, error handling, and side effects.
 rducks_execution_plan(
   marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-  future_globals = "auto",
-  future_packages = NULL,
-  future_seed = FALSE,
-  future_stdout = FALSE,
-  future_conditions = "condition",
-  future_timeout = NULL,
-  ipc_provider = c("future", "mirai"),
+  ipc_globals = "auto",
+  ipc_packages = NULL,
+  ipc_timeout = NULL,
+  ipc_endpoints = NULL,
+  ipc_transport = NULL,
+  ipc_provider = "nng",
   ipc_workers = 1L,
   ipc_max_pending = 64L
 )
@@ -35,48 +34,48 @@ rducks_execution_plan(
   nanoarrow/R materialization and is the reference implementation.
   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
   scalar and vectorized registrations. `"arrow_ipc"` uses Arrow IPC
-  bytes as the explicit task/result payload for the Future-based
-  multiprocess path.
+  bytes as the explicit task/result payload for the NNG multiprocess
+  path.
 
 - concurrency:
 
   Concurrency contract. `"serial"` evaluates one chunk at a time in the
   calling process. `"inproc_concurrent"` allows in-process DuckDB
   callback concurrency while keeping R API work serialized on the
-  recorded main R thread. `"multiprocess_parallel"` uses the current
-  `future` backend for process-isolated chunk work and requires
-  `marshalling = "arrow_ipc"`.
+  recorded main R thread. `"multiprocess_parallel"` uses persistent
+  NNG/nanonext workers for process-isolated chunk work and requires
+  `marshalling = "arrow_ipc"`. When `ipc_endpoints` is `NULL`, Rducks
+  starts local worker loops with mirai daemons; otherwise the endpoint
+  URLs are passed through unchanged.
 
-- future_globals, future_packages, future_seed, future_stdout,
-  future_conditions, future_timeout:
+- ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport:
 
-  Options forwarded to
-  [`future::future()`](https://future.futureverse.org/reference/future.html)
-  for `arrow_ipc + multiprocess_parallel` registrations. By default
-  (`future_globals = "auto"`), Rducks discovers UDF globals once at
-  registration-wrapper creation and then sends explicit worker state per
-  chunk, avoiding per-chunk automatic global discovery. Use
-  `future_packages` for packages that workers should attach,
-  `future_globals = TRUE` for Future's per-task discovery, `FALSE` for
-  only Rducks' required task state, or a character vector/named list for
-  explicit extra globals. `future_timeout` is also used as the Arrow IPC
-  provider wait timeout. The persistent mirai provider preloads the same
-  discovered globals/packages once per provider registration.
+  Arrow IPC worker options. By default (`ipc_globals = "auto"`), Rducks
+  discovers UDF globals once at registration-wrapper creation and
+  broadcasts them to each NNG worker when the UDF is registered with the
+  shared provider pool. Use `ipc_packages` for packages that workers
+  should attach, `ipc_globals = FALSE` to rely only on the serialized
+  UDF closure and explicit task state, or a character vector / named
+  list for explicit extra globals. `ipc_timeout` is the provider wait
+  timeout. `ipc_endpoints` optionally supplies NNG endpoint URLs for
+  externally managed worker processes running the Rducks NNG worker
+  loop; any NNG URL transport supported by both endpoints is allowed.
+  When endpoints are not supplied, `ipc_transport` selects the transport
+  used for the mirai-launched local worker endpoints (`"abstract"`,
+  `"ipc"`, `"unix"`, `"tcp"`, or `"ws"`; the default is `"abstract"` on
+  Linux and `"ipc"` elsewhere).
 
 - ipc_provider:
 
-  Worker provider for `arrow_ipc + multiprocess_parallel`. `"future"` is
-  the portable default. `"mirai"` uses persistent mirai daemon workers
-  and fails at registration if the `mirai` package is unavailable; it
-  does not fall back to Future. The mirai provider broadcasts each
-  registered UDF closure plus discovered globals/packages to every
-  daemon in the shared database-runtime provider pool, so avoid
-  capturing large objects in UDF environments unless that memory cost is
-  intended.
+  Worker provider for `arrow_ipc + multiprocess_parallel`. Only `"nng"`
+  is supported. The NNG provider broadcasts each registered UDF closure
+  plus discovered globals/packages to every worker in the shared
+  database-runtime provider pool, so avoid capturing large objects in
+  UDF environments unless that memory cost is intended.
 
 - ipc_workers:
 
-  Number of persistent workers for `ipc_provider = "mirai"`.
+  Number of persistent NNG workers.
 
 - ipc_max_pending:
 
@@ -92,7 +91,8 @@ An object of class `rducks_execution_plan`.
 
 `arrow_r + serial` is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently fall back from one plan to another.
-Each valid pair maps to a concrete internal `engine_id` such as
-`"arrow_c_direct_serial"` or `"ipc_future_pool"`; the older
-`marshalling + concurrency` fields remain for user-facing readability.
+reference; Rducks does not silently switch from one plan to another.
+`arrow_ipc + multiprocess_parallel` uses the native NNG path with
+vendored nanoarrow C/IPC encoding. Each valid pair maps to a concrete
+internal `engine_id` such as `"arrow_c_direct_serial"` or
+`"ipc_nng_pool"`.

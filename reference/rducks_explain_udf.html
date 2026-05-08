@@ -5,14 +5,14 @@ column is FALSE when native catalog metadata is still present but the
 connection-local R registry view was detached or is otherwise unavailable.
 The native counters are
 useful for checking that a plan executed through its requested evaluator
-instead of silently falling back: for example, an arrow_c scalar UDF should
+instead of silently switching engines: for example, an arrow_c scalar UDF should
 increment arrow_c_chunks and leave arrow_r_chunks unchanged."><meta property="og:description" content="Returns the R-side registration metadata together with native execution
 counters for a UDF registered by rducks_register(). The r_side_record
 column is FALSE when native catalog metadata is still present but the
 connection-local R registry view was detached or is otherwise unavailable.
 The native counters are
 useful for checking that a plan executed through its requested evaluator
-instead of silently falling back: for example, an arrow_c scalar UDF should
+instead of silently switching engines: for example, an arrow_c scalar UDF should
 increment arrow_c_chunks and leave arrow_r_chunks unchanged."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
@@ -54,7 +54,7 @@ column is <code>FALSE</code> when native catalog metadata is still present but t
 connection-local R registry view was detached or is otherwise unavailable.
 The native counters are
 useful for checking that a plan executed through its requested evaluator
-instead of silently falling back: for example, an <code>arrow_c</code> scalar UDF should
+instead of silently switching engines: for example, an <code>arrow_c</code> scalar UDF should
 increment <code>arrow_c_chunks</code> and leave <code>arrow_r_chunks</code> unchanged.</p>
     </div>
 

@@ -7,7 +7,7 @@ The `r_side_record` column is `FALSE` when native catalog metadata is
 still present but the connection-local R registry view was detached or
 is otherwise unavailable. The native counters are useful for checking
 that a plan executed through its requested evaluator instead of silently
-falling back: for example, an `arrow_c` scalar UDF should increment
+switching engines: for example, an `arrow_c` scalar UDF should increment
 `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
 
 ## Usage

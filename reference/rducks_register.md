@@ -7,15 +7,14 @@ execution path stay on the calling R thread. The active
 [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
 selects and freezes the marshalling implementation for this
 registration; unsupported plan/mode/type combinations fail instead of
-falling back. If a later call registers the same SQL name/signature, the
-callable implementation is replaced in the shared DuckDB database
-catalog rather than being tied to the registering DBI connection. After
-registration, use
+switching engines. If a later call registers the same SQL
+name/signature, the callable implementation is replaced in the shared
+DuckDB database catalog rather than being tied to the registering DBI
+connection. After registration, use
 [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to opt into queued same-process execution. For `arrow_ipc` plans with
-`ipc_provider = "mirai"`, the UDF closure and discovered globals are
-copied once to each daemon in the shared provider pool and retained for
-that pool's lifetime.
+to opt into queued same-process execution. For `arrow_ipc` plans, the
+UDF closure and discovered globals are copied once to each NNG worker in
+the shared provider pool and retained for that pool's lifetime.
 
 ## Usage
 

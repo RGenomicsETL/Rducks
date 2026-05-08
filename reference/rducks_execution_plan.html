@@ -57,13 +57,12 @@ argument/return types, NULL handling, error handling, and side effects.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rducks_execution_plan</span><span class="op">(</span></span>
 <span>  marshalling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"arrow_c"</span>, <span class="st">"arrow_ipc"</span><span class="op">)</span>,</span>
 <span>  concurrency <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"serial"</span>, <span class="st">"inproc_concurrent"</span>, <span class="st">"multiprocess_parallel"</span><span class="op">)</span>,</span>
-<span>  future_globals <span class="op">=</span> <span class="st">"auto"</span>,</span>
-<span>  future_packages <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  future_seed <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  future_stdout <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  future_conditions <span class="op">=</span> <span class="st">"condition"</span>,</span>
-<span>  future_timeout <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  ipc_provider <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"future"</span>, <span class="st">"mirai"</span><span class="op">)</span>,</span>
+<span>  ipc_globals <span class="op">=</span> <span class="st">"auto"</span>,</span>
+<span>  ipc_packages <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ipc_timeout <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ipc_endpoints <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ipc_transport <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ipc_provider <span class="op">=</span> <span class="st">"nng"</span>,</span>
 <span>  ipc_workers <span class="op">=</span> <span class="fl">1L</span>,</span>
 <span>  ipc_max_pending <span class="op">=</span> <span class="fl">64L</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -78,41 +77,45 @@ argument/return types, NULL handling, error handling, and side effects.</p>
 Data plus nanoarrow/R materialization and is the reference implementation.
 <code>"arrow_c"</code> uses native C/DuckDB-vector materialization for supported
 scalar and vectorized registrations. <code>"arrow_ipc"</code> uses Arrow IPC bytes as
-the explicit task/result payload for the Future-based multiprocess path.</p></dd>
+the explicit task/result payload for the NNG multiprocess path.</p></dd>
 
 
 <dt id="arg-concurrency">concurrency<a class="anchor" aria-label="anchor" href="#arg-concurrency"></a></dt>
 <dd><p>Concurrency contract. <code>"serial"</code> evaluates one chunk at a
 time in the calling process. <code>"inproc_concurrent"</code> allows in-process DuckDB
 callback concurrency while keeping R API work serialized on the recorded
-main R thread. <code>"multiprocess_parallel"</code> uses the current <code>future</code> backend
-for process-isolated chunk work and requires <code>marshalling = "arrow_ipc"</code>.</p></dd>
+main R thread. <code>"multiprocess_parallel"</code> uses persistent NNG/nanonext
+workers for process-isolated chunk work and requires <code>marshalling = "arrow_ipc"</code>.
+When <code>ipc_endpoints</code> is <code>NULL</code>, Rducks starts local worker loops with
+mirai daemons; otherwise the endpoint URLs are passed through unchanged.</p></dd>
 
 
-<dt id="arg-future-globals-future-packages-future-seed-future-stdout-future-conditions-future-timeout">future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout<a class="anchor" aria-label="anchor" href="#arg-future-globals-future-packages-future-seed-future-stdout-future-conditions-future-timeout"></a></dt>
-<dd><p>Options forwarded to <code><a href="https://future.futureverse.org/reference/future.html" class="external-link">future::future()</a></code> for <code>arrow_ipc + multiprocess_parallel</code> registrations. By default (<code>future_globals = "auto"</code>),
-Rducks discovers UDF globals once at registration-wrapper creation and then
-sends explicit worker state per chunk, avoiding per-chunk automatic global
-discovery. Use <code>future_packages</code> for packages that workers should attach,
-<code>future_globals = TRUE</code> for Future's per-task discovery, <code>FALSE</code> for only
-Rducks' required task state, or a character vector/named list for explicit
-extra globals. <code>future_timeout</code> is also used as the Arrow IPC provider wait
-timeout. The persistent mirai provider preloads the same discovered
-globals/packages once per provider registration.</p></dd>
+<dt id="arg-ipc-globals-ipc-packages-ipc-timeout-ipc-endpoints-ipc-transport">ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport<a class="anchor" aria-label="anchor" href="#arg-ipc-globals-ipc-packages-ipc-timeout-ipc-endpoints-ipc-transport"></a></dt>
+<dd><p>Arrow IPC worker options.
+By default (<code>ipc_globals = "auto"</code>), Rducks discovers UDF globals once at
+registration-wrapper creation and broadcasts them to each NNG worker when
+the UDF is registered with the shared provider pool. Use <code>ipc_packages</code> for
+packages that workers should attach, <code>ipc_globals = FALSE</code> to rely only on
+the serialized UDF closure and explicit task state, or a character vector /
+named list for explicit extra globals. <code>ipc_timeout</code> is the provider wait
+timeout. <code>ipc_endpoints</code> optionally supplies NNG endpoint URLs for externally
+managed worker processes running the Rducks NNG worker loop; any NNG URL
+transport supported by both endpoints is allowed. When endpoints are not
+supplied, <code>ipc_transport</code> selects the transport used for the mirai-launched
+local worker endpoints (<code>"abstract"</code>, <code>"ipc"</code>, <code>"unix"</code>, <code>"tcp"</code>, or
+<code>"ws"</code>; the default is <code>"abstract"</code> on Linux and <code>"ipc"</code> elsewhere).</p></dd>
 
 
 <dt id="arg-ipc-provider">ipc_provider<a class="anchor" aria-label="anchor" href="#arg-ipc-provider"></a></dt>
 <dd><p>Worker provider for <code>arrow_ipc + multiprocess_parallel</code>.
-<code>"future"</code> is the portable default. <code>"mirai"</code> uses persistent mirai daemon
-workers and fails at registration if the <code>mirai</code> package is unavailable; it
-does not fall back to Future. The mirai provider broadcasts each registered
-UDF closure plus discovered globals/packages to every daemon in the shared
+Only <code>"nng"</code> is supported. The NNG provider broadcasts each registered UDF
+closure plus discovered globals/packages to every worker in the shared
 database-runtime provider pool, so avoid capturing large objects in UDF
 environments unless that memory cost is intended.</p></dd>
 
 
 <dt id="arg-ipc-workers">ipc_workers<a class="anchor" aria-label="anchor" href="#arg-ipc-workers"></a></dt>
-<dd><p>Number of persistent workers for <code>ipc_provider = "mirai"</code>.</p></dd>
+<dd><p>Number of persistent NNG workers.</p></dd>
 
 
 <dt id="arg-ipc-max-pending">ipc_max_pending<a class="anchor" aria-label="anchor" href="#arg-ipc-max-pending"></a></dt>
@@ -129,10 +132,10 @@ callback work; <code>NULL</code> disables this provider-level limit.</p></dd>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p><code>arrow_r + serial</code> is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently fall back from one plan to another.
-Each valid pair maps to a concrete internal <code>engine_id</code> such as
-<code>"arrow_c_direct_serial"</code> or <code>"ipc_future_pool"</code>; the older
-<code>marshalling + concurrency</code> fields remain for user-facing readability.</p>
+reference; Rducks does not silently switch from one plan to another.
+<code>arrow_ipc + multiprocess_parallel</code> uses the native NNG path with vendored
+nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal <code>engine_id</code> such as
+<code>"arrow_c_direct_serial"</code> or <code>"ipc_nng_pool"</code>.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

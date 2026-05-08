@@ -48,12 +48,3 @@ rducks_set_execution_plan(
 ## Value
 
 `con`, invisibly.
-
-## Details
-
-Compatibility note: the older
-[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-and
-[`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md)
-helpers now set the `inproc_concurrent` and `serial` concurrency parts
-of this plan while preserving the current marshalling choice.

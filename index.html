@@ -57,7 +57,7 @@
 <li>
 <code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization. The vectorized <code>RCV</code> evaluator uses direct native chunk materialization/writeback, not the old Arrow/R helper bridge.</li>
 <li>
-<code>arrow_ipc</code>: process-isolated R execution using Arrow IPC request/result payloads through generic Future or experimental persistent mirai workers.</li>
+<code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport and explicit <code>ipc_endpoints</code> can target externally managed workers.</li>
 </ul>
 <p>The user-facing UDF semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row; <code>mode = "vectorized"</code> means one R call per DuckDB chunk.</p>
 <div class="section level2">
@@ -144,8 +144,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        311ms      3.18    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    247ms      4.04    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        302ms      3.28    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    246ms      4.11    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -153,10 +153,10 @@
 <p>Execution plans choose the default marshalling implementation and concurrency contract for future registrations through a connection. Registration remains semantic: name, function, mode, types, NULL handling, exception handling, and side-effect flag. The plan active at <code><a href="reference/rducks_register.html">rducks_register()</a></code> freezes the UDF’s native evaluator/marshalling metadata; later plan changes do not retarget already-registered UDFs.</p>
 <table class="table">
 <colgroup>
-<col width="20%">
-<col width="7%">
-<col width="7%">
-<col width="65%">
+<col width="14%">
+<col width="5%">
+<col width="5%">
+<col width="75%">
 </colgroup>
 <thead><tr>
 <th>Plan</th>
@@ -194,12 +194,11 @@
 <td><code>arrow_ipc + multiprocess_parallel</code></td>
 <td>implemented</td>
 <td>implemented</td>
-<td>Arrow IPC request/result payloads through <code>ipc_future_pool</code> or experimental <code>ipc_mirai_pool</code>; evaluator token <code>RIPC</code>
-</td>
+<td>native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; <code>ipc_transport</code> supports abstract/ipc/unix/tcp/ws endpoints; optional explicit <code>ipc_endpoints</code>; strict plan</td>
 </tr>
 </tbody>
 </table>
-<p><code>arrow_r + serial</code> is the semantic reference. Other implemented plans are tested against it and do not silently fall back to another marshalling path. Use <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> to inspect the plan and native counters for a registered UDF.</p>
+<p><code>arrow_r + serial</code> is the semantic reference. Other implemented plans are tested against it and use exactly their selected marshalling path. Use <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> to inspect the plan and native counters for a registered UDF.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_vec_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"native_marshalling"</span>,</span>
@@ -243,126 +242,91 @@
 <div class="section level2">
 <h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
 </h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> uses Arrow IPC bytes for chunk tasks and results. Scalar mode loops over rows inside the worker process; vectorized mode calls the R function once per chunk inside the worker process. The default provider is generic Future; <code>ipc_provider = "mirai"</code> uses persistent mirai workers.</p>
+<p><code>arrow_ipc + multiprocess_parallel</code> uses the native NNG/Arrow IPC path. The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code, sends owned request bytes over native NNG, and imports owned Arrow IPC result bytes back into DuckDB callback output. By default Rducks launches local worker loops with mirai daemons and Rducks-generated nanonext endpoint URLs; <code>ipc_transport</code> selects <code>abstract</code>, <code>ipc</code>, <code>unix</code>, <code>tcp</code>, or <code>ws</code> for those generated endpoints. <code>ipc_endpoints</code> may instead point at externally managed NNG worker loops using endpoint URLs directly. The plan errors rather than changing to same-process execution, generic process backends, R serialization, or path-loaded symbols from another R package shared library.</p>
+<p>The example below registers the same vectorized R function three ways and then runs a small chunk-level comparison over several CSV files. Multiple input files make DuckDB’s scanner eligible for threaded work; the IPC row reports <code>ripc_inflight_max = 2</code> when two chunks were concurrently in flight to the worker processes. <code>ipc_workers</code> is the number of persistent R worker processes. <code>threads</code> is DuckDB’s query execution thread count: keep it at <code>1</code> while registering so catalog setup and R-owned evaluator configuration happen on the recorded main R thread, then raise it for the IPC query phase so DuckDB can fan chunks out to the IPC workers. <code>external_threads = 1</code> keeps DuckDB’s external-thread budget conservative; the IPC R workers are separate processes, not DuckDB external threads. The in-process queue row is kept single-threaded because that plan serializes R API work on the recorded main R thread; it is a same-process safety path, not the multiprocess throughput path.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="va"><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">multisession</a></span>, workers <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span> <span class="co"># visible chunk work for the comparison, not required by Rducks</span></span>
+<span>  <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
+<span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
+<span><span class="va">csv_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"rducks-ipc-csv-"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Sys.getpid.html" class="external-link">Sys.getpid</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.create</a></span><span class="op">(</span><span class="va">csv_dir</span>, showWarnings <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">rows_per_file</span> <span class="op">&lt;-</span> <span class="fl">4096L</span></span>
+<span><span class="va">parts</span> <span class="op">&lt;-</span> <span class="fl">8L</span></span>
+<span><span class="kw">for</span> <span class="op">(</span><span class="va">part</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">parts</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">values</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq.int</a></span><span class="op">(</span><span class="op">(</span><span class="va">part</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span> <span class="op">*</span> <span class="va">rows_per_file</span>, <span class="va">part</span> <span class="op">*</span> <span class="va">rows_per_file</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"i"</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">values</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">csv_dir</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"part-%02d.csv"</span>, <span class="va">part</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">csv_glob</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">csv_dir</span>, <span class="st">"part-*.csv"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">serial_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span></span>
+<span><span class="va">inproc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"inproc_concurrent"</span><span class="op">)</span></span>
+<span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
+<span><span class="va">ipc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span>,</span>
-<span>  future_packages <span class="op">=</span> <span class="st">"stats"</span>,</span>
-<span>  future_timeout <span class="op">=</span> <span class="fl">30</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_ipc_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_ipc_plus_one"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  ipc_transport <span class="op">=</span> <span class="st">"tcp"</span>,</span>
+<span>  ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
+<span>  ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;          x</span></span>
-<span><span class="co">#&gt; 1 50005000</span></span>
-<span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  <span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"evaluator"</span>,</span>
-<span>  <span class="st">"arrow_ipc_chunks"</span>, <span class="st">"ripc_collect_batches"</span>, <span class="st">"ripc_collect_requests"</span>,</span>
-<span>  <span class="st">"ripc_collect_max_batch"</span>, <span class="st">"ripc_submit_wave_max"</span>,</span>
-<span>  <span class="st">"ripc_collect_ready_max"</span></span>
-<span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;             name       mode                         plan_id evaluator</span></span>
-<span><span class="co">#&gt; 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC</span></span>
-<span><span class="co">#&gt;   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests</span></span>
-<span><span class="co">#&gt; 1                5                    5                     5</span></span>
-<span><span class="co">#&gt;   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max</span></span>
-<span><span class="co">#&gt; 1                      1                    1                      1</span></span></code></pre></div>
-<p>For <code>arrow_ipc + multiprocess_parallel</code>, the native extension submits Arrow IPC chunk work through the RIPC provider path and imports the returned Arrow IPC result into DuckDB. When a RIPC callback runs on the recorded main R thread, it can submit its own chunk and queued worker chunks before grouped collection. The <code>ripc_collect_max_batch</code>, <code>ripc_submit_wave_max</code>, and <code>ripc_collect_ready_max</code> counters report native queue batch/wave sizes.</p>
-<div class="section level3">
-<h3 id="persistent-mirai-workers">Persistent mirai workers<a class="anchor" aria-label="anchor" href="#persistent-mirai-workers"></a>
-</h3>
-<p>The experimental <code>ipc_mirai_pool</code> engine keeps worker processes alive and preloads UDF state once per worker.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">mirai_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>  <span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span>,</span>
-<span>  ipc_provider <span class="op">=</span> <span class="st">"mirai"</span>,</span>
-<span>  ipc_workers <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>  ipc_max_pending <span class="op">=</span> <span class="fl">64</span>,</span>
-<span>  future_timeout <span class="op">=</span> <span class="fl">30</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">mirai_plan</span><span class="op">)</span></span>
+<span><span class="va">register_for_plan</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">name</span>, <span class="va">plan</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    name <span class="op">=</span> <span class="va">name</span>,</span>
+<span>    fun <span class="op">=</span> <span class="va">chunk_plus_one</span>,</span>
+<span>    args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>    returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>    mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
+<span>    side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  <span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">reg_mirai_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_mirai_plus_one"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span>
+<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_serial"</span>, <span class="va">serial_plan</span><span class="op">)</span></span>
+<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_inproc"</span>, <span class="va">inproc_plan</span><span class="op">)</span></span>
+<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_ipc"</span>, <span class="va">ipc_plan</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_mirai_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;          x</span></span>
-<span><span class="co">#&gt; 1 50005000</span></span>
-<span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_mirai_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"engine_id"</span>, <span class="st">"evaluator"</span>, <span class="st">"arrow_ipc_chunks"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;        engine_id evaluator arrow_ipc_chunks</span></span>
-<span><span class="co">#&gt; 1 ipc_mirai_pool      RIPC                5</span></span></code></pre></div>
-<p>A local provider-level run (<code>tools/benchmark_ipc_providers.R</code>) with one worker, 50 tasks, three iterations, and 64 rows per Arrow IPC task measured:</p>
-<table class="table">
-<colgroup>
-<col width="54%">
-<col width="14%">
-<col width="31%">
-</colgroup>
-<thead><tr>
-<th>provider path</th>
-<th align="right">median seconds</th>
-<th align="right">relative to <code><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">future::multisession</a></code>
-</th>
-</tr></thead>
-<tbody>
-<tr>
-<td>
-<code><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">future::multisession</a></code> through <code>ipc_future_pool</code>
-</td>
-<td align="right">0.217</td>
-<td align="right">1.00x</td>
-</tr>
-<tr>
-<td>
-<code><a href="https://future.mirai.futureverse.org/reference/mirai_multisession.html" class="external-link">future.mirai::mirai_multisession</a></code> through <code>ipc_future_pool</code>
-</td>
-<td align="right">0.219</td>
-<td align="right">0.99x</td>
-</tr>
-<tr>
-<td>
-<code>ipc_mirai_pool</code>, sequential submit/collect</td>
-<td align="right">0.193</td>
-<td align="right">1.12x</td>
-</tr>
-<tr>
-<td>
-<code>ipc_mirai_pool</code>, batched submit/collect</td>
-<td align="right">0.158</td>
-<td align="right">1.37x</td>
-</tr>
-</tbody>
-</table>
-<p>Those numbers are diagnostics for this machine, not a portable promise. <code>future.mirai</code> is a useful drop-in Future backend for <code>ipc_future_pool</code>. The separate <code>ipc_mirai_pool</code> engine exists to use Rducks’ provider envelope directly: preload evaluator/schema state once, submit only task metadata plus Arrow IPC bytes, return structured task results, and support collect-many/collect-any style scheduling without routing every chunk through the generic Future API. It remains experimental while backpressure and cancellation semantics are hardened.</p>
-</div>
-<div class="section level3">
-<h3 id="performance-diagnostics">Performance diagnostics<a class="anchor" aria-label="anchor" href="#performance-diagnostics"></a>
-</h3>
-<p>Long-running benchmarks and provider-level diagnostics live under <code>tools/</code> rather than in the README. For cheap UDFs, <code>multiprocess_parallel</code> is often slower than serial execution because Arrow IPC and scheduler overhead dominate the R work. Use it when the R function is expensive enough, or when process isolation matters.</p>
-<p>Switch back to the reference serial plan for the remaining examples.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="va"><a href="https://future.futureverse.org/reference/sequential.html" class="external-link">sequential</a></span><span class="op">)</span></span></code></pre></div>
-</div>
+<span><span class="va">run_comparison</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">label</span>, <span class="va">name</span>, <span class="va">plan</span>, <span class="va">threads</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="va">threads</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span>  <span class="va">elapsed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
+<span>      <span class="st">"SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)"</span>,</span>
+<span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteIdentifier.html" class="external-link">dbQuoteIdentifier</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">name</span><span class="op">)</span>,</span>
+<span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteString.html" class="external-link">dbQuoteString</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">csv_glob</span><span class="op">)</span></span>
+<span>    <span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
+<span>  <span class="va">info</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">name</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>    plan <span class="op">=</span> <span class="va">label</span>,</span>
+<span>    threads <span class="op">=</span> <span class="va">threads</span>,</span>
+<span>    total <span class="op">=</span> <span class="va">result</span><span class="op">$</span><span class="va">total</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    elapsed_sec <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">elapsed</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>    evaluator <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">evaluator</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    arrow_r_chunks <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">arrow_r_chunks</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    arrow_ipc_chunks <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">arrow_ipc_chunks</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    ripc_inflight_max <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">ripc_inflight_max</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    stringsAsFactors <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">comparison</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
+<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"sequential arrow_r"</span>, <span class="st">"r_cmp_serial"</span>, <span class="va">serial_plan</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
+<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"in-process queue"</span>, <span class="st">"r_cmp_inproc"</span>, <span class="va">inproc_plan</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
+<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"2-process Arrow IPC"</span>, <span class="st">"r_cmp_ipc"</span>, <span class="va">ipc_plan</span>, threads <span class="op">=</span> <span class="va">ipc_workers</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">comparison</span></span>
+<span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.813         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.755         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0</span></span>
+<span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
+<span><span class="co">#&gt; 1                0                 0</span></span>
+<span><span class="co">#&gt; 2                0                 0</span></span>
+<span><span class="co">#&gt; 3               16                 2</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">csv_dir</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">serial_plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="current-scope">Current scope<a class="anchor" aria-label="anchor" href="#current-scope"></a>
@@ -436,7 +400,7 @@
 <div class="section level2">
 <h2 id="type-descriptors">Type descriptors<a class="anchor" aria-label="anchor" href="#type-descriptors"></a>
 </h2>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nested_type</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span></span>
 <span>  payload <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, label <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  amount <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span>,</span>
@@ -771,7 +735,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <h2 id="composite-input-examples">Composite input examples<a class="anchor" aria-label="anchor" href="#composite-input-examples"></a>
 </h2>
 <p>Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL <code>NULL</code> elements represented as typed <code>NA</code> values. Structs are passed as named lists, and maps are passed as <code>list(keys = ..., values = ...)</code>.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_list_len</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_list_len"</span>,</span>
@@ -837,7 +801,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 </h2>
 <p>By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL <code>NULL</code>, the R function is not called and the SQL result is <code>NULL</code>.</p>
 <p>Use <code>null_handling = "special"</code> to pass the type-specific missing value shown in <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> to the R function for SQL <code>NULL</code> inputs. For ordinary scalar types this is usually a typed <code>NA</code>; for exact/exotic, binary, and composite inputs it is R <code>NULL</code>.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_null_special</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_null_special"</span>,</span>
@@ -855,7 +819,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <h2 id="exceptions-and-side-effects">Exceptions and side effects<a class="anchor" aria-label="anchor" href="#exceptions-and-side-effects"></a>
 </h2>
 <p>Set <code>exception_handling = "return_null"</code> to turn errors thrown by the user R function into SQL <code>NULL</code>. Return type-checking and marshalling errors still abort the query so type bugs are not hidden as NULLs.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_error_null</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_error_null"</span>,</span>
@@ -869,7 +833,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 NA</span></span></code></pre></div>
 <p>Set <code>side_effects = TRUE</code> for functions with counters, randomness, I/O, or mutation so DuckDB reruns the function for each row.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">i</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
 <span>  <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="op">{</span></span>
@@ -916,7 +880,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 </h2>
 <p>The package builds its DuckDB extension during installation using <code>configure</code> or <code>configure.win</code>. The extension metadata footer is appended by <code>tools/append_extension_metadata.R</code>.</p>
 <p>DuckDB C API headers are refreshed explicitly with:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
 <p>The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
 </div>
 <div class="section level2">

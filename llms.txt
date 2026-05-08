@@ -15,9 +15,11 @@ plans:
   calls with direct DuckDB-vector materialization. The vectorized `RCV`
   evaluator uses direct native chunk materialization/writeback, not the
   old Arrow/R helper bridge.
-- `arrow_ipc`: process-isolated R execution using Arrow IPC
-  request/result payloads through generic Future or experimental
-  persistent mirai workers.
+- `arrow_ipc`: process-isolated R execution using native NNG plus owned
+  Arrow IPC request/result bytes. By default Rducks launches worker
+  loops with mirai daemons and Rducks-generated NNG endpoint URLs;
+  `ipc_transport` selects the generated transport and explicit
+  `ipc_endpoints` can target externally managed workers.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
@@ -150,8 +152,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        311ms      3.18    1.97MB
-#> 2 vectorized    247ms      4.04    2.34MB
+#> 1 scalar        302ms      3.28    1.97MB
+#> 2 vectorized    246ms      4.11    2.34MB
 ```
 
 ## Execution plans
@@ -170,11 +172,11 @@ changes do not retarget already-registered UDFs.
 | `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
 | `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
 | `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
-| `arrow_ipc + multiprocess_parallel` | implemented | implemented | Arrow IPC request/result payloads through `ipc_future_pool` or experimental `ipc_mirai_pool`; evaluator token `RIPC` |
+| `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` supports abstract/ipc/unix/tcp/ws endpoints; optional explicit `ipc_endpoints`; strict plan |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans
-are tested against it and do not silently fall back to another
-marshalling path. Use
+are tested against it and use exactly their selected marshalling path.
+Use
 [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
 to inspect the plan and native counters for a registered UDF.
 
@@ -227,126 +229,118 @@ rducks_disable_inproc(con, threads = 1)
 
 ## Multiprocess Arrow IPC execution
 
-`arrow_ipc + multiprocess_parallel` uses Arrow IPC bytes for chunk tasks
-and results. Scalar mode loops over rows inside the worker process;
-vectorized mode calls the R function once per chunk inside the worker
-process. The default provider is generic Future;
-`ipc_provider = "mirai"` uses persistent mirai workers.
+`arrow_ipc + multiprocess_parallel` uses the native NNG/Arrow IPC path.
+The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code,
+sends owned request bytes over native NNG, and imports owned Arrow IPC
+result bytes back into DuckDB callback output. By default Rducks
+launches local worker loops with mirai daemons and Rducks-generated
+nanonext endpoint URLs; `ipc_transport` selects `abstract`, `ipc`,
+`unix`, `tcp`, or `ws` for those generated endpoints. `ipc_endpoints`
+may instead point at externally managed NNG worker loops using endpoint
+URLs directly. The plan errors rather than changing to same-process
+execution, generic process backends, R serialization, or path-loaded
+symbols from another R package shared library.
+
+The example below registers the same vectorized R function three ways
+and then runs a small chunk-level comparison over several CSV files.
+Multiple input files make DuckDB’s scanner eligible for threaded work;
+the IPC row reports `ripc_inflight_max = 2` when two chunks were
+concurrently in flight to the worker processes. `ipc_workers` is the
+number of persistent R worker processes. `threads` is DuckDB’s query
+execution thread count: keep it at `1` while registering so catalog
+setup and R-owned evaluator configuration happen on the recorded main R
+thread, then raise it for the IPC query phase so DuckDB can fan chunks
+out to the IPC workers. `external_threads = 1` keeps DuckDB’s
+external-thread budget conservative; the IPC R workers are separate
+processes, not DuckDB external threads. The in-process queue row is kept
+single-threaded because that plan serializes R API work on the recorded
+main R thread; it is a same-process safety path, not the multiprocess
+throughput path.
 
 ``` r
 
-future::plan(future::multisession, workers = 2)
+chunk_plus_one <- function(x) {
+  Sys.sleep(0.05) # visible chunk work for the comparison, not required by Rducks
+  x + 1L
+}
 
-plan <- rducks_execution_plan(
+csv_dir <- file.path(tempdir(), paste0("rducks-ipc-csv-", Sys.getpid()))
+dir.create(csv_dir, showWarnings = FALSE)
+rows_per_file <- 4096L
+parts <- 8L
+for (part in seq_len(parts)) {
+  values <- seq.int((part - 1L) * rows_per_file, part * rows_per_file - 1L)
+  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
+}
+csv_glob <- file.path(csv_dir, "part-*.csv")
+
+serial_plan <- rducks_execution_plan("arrow_r", "serial")
+inproc_plan <- rducks_execution_plan("arrow_r", "inproc_concurrent")
+ipc_workers <- 2L
+ipc_plan <- rducks_execution_plan(
   "arrow_ipc", "multiprocess_parallel",
-  future_packages = "stats",
-  future_timeout = 30
-)
-rducks_set_execution_plan(con, plan)
-
-reg_ipc_plus_one <- rducks_register(
-  con,
-  name = "r_ipc_plus_one",
-  fun = function(x) x + 1L,
-  args = INTEGER,
-  returns = INTEGER,
-  mode = "vectorized",
-  side_effects = TRUE
+  ipc_transport = "tcp",
+  ipc_workers = ipc_workers,
+  ipc_timeout = 30
 )
 
-dbGetQuery(con, "SELECT sum(r_ipc_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)")
-#>          x
-#> 1 50005000
-rducks_explain_udf(con, "r_ipc_plus_one")[, c(
-  "name", "mode", "plan_id", "evaluator",
-  "arrow_ipc_chunks", "ripc_collect_batches", "ripc_collect_requests",
-  "ripc_collect_max_batch", "ripc_submit_wave_max",
-  "ripc_collect_ready_max"
-)]
-#>             name       mode                         plan_id evaluator
-#> 1 r_ipc_plus_one vectorized arrow_ipc+multiprocess_parallel      RIPC
-#>   arrow_ipc_chunks ripc_collect_batches ripc_collect_requests
-#> 1                5                    5                     5
-#>   ripc_collect_max_batch ripc_submit_wave_max ripc_collect_ready_max
-#> 1                      1                    1                      1
-```
+register_for_plan <- function(name, plan) {
+  rducks_set_execution_plan(con, plan, threads = 1, external_threads = 1)
+  invisible(rducks_register(
+    con,
+    name = name,
+    fun = chunk_plus_one,
+    args = INTEGER,
+    returns = INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+}
 
-For `arrow_ipc + multiprocess_parallel`, the native extension submits
-Arrow IPC chunk work through the RIPC provider path and imports the
-returned Arrow IPC result into DuckDB. When a RIPC callback runs on the
-recorded main R thread, it can submit its own chunk and queued worker
-chunks before grouped collection. The `ripc_collect_max_batch`,
-`ripc_submit_wave_max`, and `ripc_collect_ready_max` counters report
-native queue batch/wave sizes.
+register_for_plan("r_cmp_serial", serial_plan)
+register_for_plan("r_cmp_inproc", inproc_plan)
+register_for_plan("r_cmp_ipc", ipc_plan)
 
-### Persistent mirai workers
+run_comparison <- function(label, name, plan, threads) {
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
+  elapsed <- system.time({
+    result <- dbGetQuery(con, sprintf(
+      "SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)",
+      DBI::dbQuoteIdentifier(con, name),
+      DBI::dbQuoteString(con, csv_glob)
+    ))
+  })[["elapsed"]]
+  info <- rducks_explain_udf(con, name)
+  data.frame(
+    plan = label,
+    threads = threads,
+    total = result$total[[1]],
+    elapsed_sec = round(unname(elapsed), 3),
+    evaluator = info$evaluator[[1]],
+    arrow_r_chunks = info$arrow_r_chunks[[1]],
+    arrow_ipc_chunks = info$arrow_ipc_chunks[[1]],
+    ripc_inflight_max = info$ripc_inflight_max[[1]],
+    stringsAsFactors = FALSE
+  )
+}
 
-The experimental `ipc_mirai_pool` engine keeps worker processes alive
-and preloads UDF state once per worker.
-
-``` r
-
-mirai_plan <- rducks_execution_plan(
-  "arrow_ipc", "multiprocess_parallel",
-  ipc_provider = "mirai",
-  ipc_workers = 1,
-  ipc_max_pending = 64,
-  future_timeout = 30
+comparison <- rbind(
+  run_comparison("sequential arrow_r", "r_cmp_serial", serial_plan, threads = 1),
+  run_comparison("in-process queue", "r_cmp_inproc", inproc_plan, threads = 1),
+  run_comparison("2-process Arrow IPC", "r_cmp_ipc", ipc_plan, threads = ipc_workers)
 )
-rducks_set_execution_plan(con, mirai_plan)
+comparison
+#>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
+#> 1  sequential arrow_r       1 536887296       1.813         R             16
+#> 2    in-process queue       1 536887296       1.755         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0
+#>   arrow_ipc_chunks ripc_inflight_max
+#> 1                0                 0
+#> 2                0                 0
+#> 3               16                 2
 
-reg_mirai_plus_one <- rducks_register(
-  con,
-  name = "r_mirai_plus_one",
-  fun = function(x) x + 1L,
-  args = INTEGER,
-  returns = INTEGER,
-  mode = "vectorized",
-  side_effects = TRUE
-)
-
-dbGetQuery(con, "SELECT sum(r_mirai_plus_one(i::INTEGER)) AS x FROM range(10000) AS t(i)")
-#>          x
-#> 1 50005000
-rducks_explain_udf(con, "r_mirai_plus_one")[, c("engine_id", "evaluator", "arrow_ipc_chunks")]
-#>        engine_id evaluator arrow_ipc_chunks
-#> 1 ipc_mirai_pool      RIPC                5
-```
-
-A local provider-level run (`tools/benchmark_ipc_providers.R`) with one
-worker, 50 tasks, three iterations, and 64 rows per Arrow IPC task
-measured:
-
-| provider path | median seconds | relative to [`future::multisession`](https://future.futureverse.org/reference/multisession.html) |
-|----|---:|---:|
-| [`future::multisession`](https://future.futureverse.org/reference/multisession.html) through `ipc_future_pool` | 0.217 | 1.00x |
-| [`future.mirai::mirai_multisession`](https://future.mirai.futureverse.org/reference/mirai_multisession.html) through `ipc_future_pool` | 0.219 | 0.99x |
-| `ipc_mirai_pool`, sequential submit/collect | 0.193 | 1.12x |
-| `ipc_mirai_pool`, batched submit/collect | 0.158 | 1.37x |
-
-Those numbers are diagnostics for this machine, not a portable promise.
-`future.mirai` is a useful drop-in Future backend for `ipc_future_pool`.
-The separate `ipc_mirai_pool` engine exists to use Rducks’ provider
-envelope directly: preload evaluator/schema state once, submit only task
-metadata plus Arrow IPC bytes, return structured task results, and
-support collect-many/collect-any style scheduling without routing every
-chunk through the generic Future API. It remains experimental while
-backpressure and cancellation semantics are hardened.
-
-### Performance diagnostics
-
-Long-running benchmarks and provider-level diagnostics live under
-`tools/` rather than in the README. For cheap UDFs,
-`multiprocess_parallel` is often slower than serial execution because
-Arrow IPC and scheduler overhead dominate the R work. Use it when the R
-function is expensive enough, or when process isolation matters.
-
-Switch back to the reference serial plan for the remaining examples.
-
-``` r
-
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
-future::plan(future::sequential)
+unlink(csv_dir, recursive = TRUE, force = TRUE)
+rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 ```
 
 ## Current scope
