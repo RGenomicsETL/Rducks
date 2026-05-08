@@ -149,8 +149,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        318ms      3.14    1.97MB
-#> 2 vectorized    251ms      3.99    2.34MB
+#> 1 scalar        302ms      3.28    1.97MB
+#> 2 vectorized    246ms      4.11    2.34MB
 ```
 
 ## Execution plans
@@ -234,44 +234,105 @@ URLs directly. The plan errors rather than changing to same-process
 execution, generic process backends, R serialization, or path-loaded
 symbols from another R package shared library.
 
+The example below registers the same vectorized R function three ways
+and then runs a small chunk-level comparison over several CSV files.
+Multiple input files make DuckDB’s scanner eligible for threaded work;
+the IPC row reports `ripc_inflight_max = 2` when two chunks were
+concurrently in flight to the worker processes. `ipc_workers` is the
+number of persistent R worker processes. `threads` is DuckDB’s query
+execution thread count: keep it at `1` while registering so catalog
+setup and R-owned evaluator configuration happen on the recorded main R
+thread, then raise it for the IPC query phase so DuckDB can fan chunks
+out to the IPC workers. `external_threads = 1` keeps DuckDB’s
+external-thread budget conservative; the IPC R workers are separate
+processes, not DuckDB external threads. The in-process queue row is kept
+single-threaded because that plan serializes R API work on the recorded
+main R thread; it is a same-process safety path, not the multiprocess
+throughput path.
+
 ``` r
+chunk_plus_one <- function(x) {
+  Sys.sleep(0.05) # visible chunk work for the comparison, not required by Rducks
+  x + 1L
+}
+
+csv_dir <- file.path(tempdir(), paste0("rducks-ipc-csv-", Sys.getpid()))
+dir.create(csv_dir, showWarnings = FALSE)
+rows_per_file <- 4096L
+parts <- 8L
+for (part in seq_len(parts)) {
+  values <- seq.int((part - 1L) * rows_per_file, part * rows_per_file - 1L)
+  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
+}
+csv_glob <- file.path(csv_dir, "part-*.csv")
+
+serial_plan <- rducks_execution_plan("arrow_r", "serial")
+inproc_plan <- rducks_execution_plan("arrow_r", "inproc_concurrent")
+ipc_workers <- 2L
 ipc_plan <- rducks_execution_plan(
   "arrow_ipc", "multiprocess_parallel",
   ipc_transport = "tcp",
-  ipc_workers = 1,
+  ipc_workers = ipc_workers,
   ipc_timeout = 30
 )
-rducks_set_execution_plan(con, ipc_plan, threads = 1, external_threads = 1)
 
-rducks_register(
-  con,
-  name = "r_ipc_plus_one",
-  fun = function(x) x + 1L,
-  args = INTEGER,
-  returns = INTEGER,
-  mode = "vectorized",
-  side_effects = TRUE
+register_for_plan <- function(name, plan) {
+  rducks_set_execution_plan(con, plan, threads = 1, external_threads = 1)
+  invisible(rducks_register(
+    con,
+    name = name,
+    fun = chunk_plus_one,
+    args = INTEGER,
+    returns = INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+}
+
+register_for_plan("r_cmp_serial", serial_plan)
+register_for_plan("r_cmp_inproc", inproc_plan)
+register_for_plan("r_cmp_ipc", ipc_plan)
+
+run_comparison <- function(label, name, plan, threads) {
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
+  elapsed <- system.time({
+    result <- dbGetQuery(con, sprintf(
+      "SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)",
+      DBI::dbQuoteIdentifier(con, name),
+      DBI::dbQuoteString(con, csv_glob)
+    ))
+  })[["elapsed"]]
+  info <- rducks_explain_udf(con, name)
+  data.frame(
+    plan = label,
+    threads = threads,
+    total = result$total[[1]],
+    elapsed_sec = round(unname(elapsed), 3),
+    evaluator = info$evaluator[[1]],
+    arrow_r_chunks = info$arrow_r_chunks[[1]],
+    arrow_ipc_chunks = info$arrow_ipc_chunks[[1]],
+    ripc_inflight_max = info$ripc_inflight_max[[1]],
+    stringsAsFactors = FALSE
+  )
+}
+
+comparison <- rbind(
+  run_comparison("sequential arrow_r", "r_cmp_serial", serial_plan, threads = 1),
+  run_comparison("in-process queue", "r_cmp_inproc", inproc_plan, threads = 1),
+  run_comparison("2-process Arrow IPC", "r_cmp_ipc", ipc_plan, threads = ipc_workers)
 )
-#> <rducks_registration>
-#>   registered: yes
-#>   name:       r_ipc_plus_one
-#>   mode:       vectorized
-#>   plan:       arrow_ipc+multiprocess_parallel
-#>   signature:  r_ipc_plus_one(INTEGER) -> INTEGER
+comparison
+#>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
+#> 1  sequential arrow_r       1 536887296       1.813         R             16
+#> 2    in-process queue       1 536887296       1.755         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0
+#>   arrow_ipc_chunks ripc_inflight_max
+#> 1                0                 0
+#> 2                0                 0
+#> 3               16                 2
 
-dbGetQuery(con, "SELECT r_ipc_plus_one(i::INTEGER) AS x FROM range(4) AS t(i)")
-#>   x
-#> 1 1
-#> 2 2
-#> 3 3
-#> 4 4
-rducks_explain_udf(con, "r_ipc_plus_one")[, c(
-  "plan_id", "native_marshalling", "evaluator", "arrow_ipc_chunks"
-)]
-#>                           plan_id native_marshalling evaluator arrow_ipc_chunks
-#> 1 arrow_ipc+multiprocess_parallel          arrow_ipc      RIPC                1
-
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1, external_threads = 1)
+unlink(csv_dir, recursive = TRUE, force = TRUE)
+rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 ```
 
 ## Current scope

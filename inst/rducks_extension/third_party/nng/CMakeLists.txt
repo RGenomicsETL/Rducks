@@ -291,9 +291,12 @@ if (NNG_TESTS)
     add_subdirectory(tests)
 endif ()
 
-#  Build the tools
-
-add_subdirectory(docs/man)
+# Build bundled documentation only when the optional docs snapshot is present.
+# Rducks vendors NNG as a private static implementation detail and does not
+# need NNG manpages in the R source package.
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs/man/CMakeLists.txt")
+    add_subdirectory(docs/man)
+endif ()
 
 set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
 set(CPACK_PACKAGE_VERSION ${NNG_PACKAGE_VERSION})

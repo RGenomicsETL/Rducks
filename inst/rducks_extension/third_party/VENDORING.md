@@ -15,10 +15,12 @@ system `libnng`, or the nanoarrow R package shared-library symbol table.
   the portable 100-byte limit.
 
 NNG is built with inproc, IPC/Unix-domain, TCP, and WebSocket transports
-enabled for the native worker path. Mbed TLS is vendored for the planned TLS
-transport, but TLS/WSS are not enabled until certificate and client-auth policy
-is explicit. Rducks does not use a system `libnng` or nanonext's private binary
-layout.
+enabled for the native worker path. Its documentation/manpage snapshot is not
+included in the R source package; the vendored NNG `CMakeLists.txt` is patched
+to build manpages only when that optional snapshot is present. Mbed TLS is
+vendored for the planned TLS transport, but TLS/WSS are not enabled until
+certificate and client-auth policy is explicit. Rducks does not use a system
+`libnng` or nanonext's private binary layout.
 
 ## Namespace and symbol collision discipline
 

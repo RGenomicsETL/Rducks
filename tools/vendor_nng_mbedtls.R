@@ -22,7 +22,7 @@ pins <- list(
     tag = "v1.11",
     url = "https://github.com/nanomsg/nng/archive/refs/tags/v1.11.tar.gz",
     dir = "nng",
-    keep = c("CMakeLists.txt", "LICENSE.txt", "README.adoc", "include", "src", "cmake", "docs/man")
+    keep = c("CMakeLists.txt", "LICENSE.txt", "README.adoc", "include", "src", "cmake")
   ),
   mbedtls = list(
     name = "Mbed TLS",
@@ -53,6 +53,26 @@ copy_keep <- function(from, to, keep) {
   if (length(makefiles)) unlink(makefiles, force = TRUE)
 }
 
+patch_nng_cmake <- function(dest) {
+  cmake_file <- file.path(dest, "CMakeLists.txt")
+  lines <- readLines(cmake_file, warn = FALSE)
+  old <- "add_subdirectory(docs/man)"
+  at <- which(lines == old)
+  if (length(at) != 1L) {
+    stop("expected one NNG docs/man CMake entry in ", cmake_file, call. = FALSE)
+  }
+  replacement <- c(
+    "# Build bundled documentation only when the optional docs snapshot is present.",
+    "# Rducks vendors NNG as a private static implementation detail and does not",
+    "# need NNG manpages in the R source package.",
+    "if (EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/docs/man/CMakeLists.txt\")",
+    "    add_subdirectory(docs/man)",
+    "endif ()"
+  )
+  lines <- c(lines[seq_len(at - 1L)], replacement, lines[(at + 1L):length(lines)])
+  writeLines(lines, cmake_file, useBytes = TRUE)
+}
+
 sha256 <- function(path) {
   unname(tools::sha256sum(path))
 }
@@ -81,6 +101,7 @@ vendor_one <- function(id, spec, tmp) {
     stop("expected exactly one extracted directory for ", spec$name, call. = FALSE)
   }
   copy_keep(dirs[[1L]], dest, spec$keep)
+  if (identical(id, "nng")) patch_nng_cmake(dest)
   list(id = id, spec = spec, archive_sha256 = sha256(archive))
 }
 
@@ -122,10 +143,12 @@ write_metadata <- function(records) {
     sprintf("- Mbed TLS `%s` (`%s`): %s", pins$mbedtls$version, pins$mbedtls$tag, pins$mbedtls$url),
     "",
     "NNG is built with inproc, IPC/Unix-domain, TCP, and WebSocket transports",
-    "enabled for the native worker path. Mbed TLS is vendored for the planned TLS",
-    "transport, but TLS/WSS are not enabled until certificate and client-auth policy",
-    "is explicit. Rducks does not use a system `libnng` or nanonext's private binary",
-    "layout.",
+    "enabled for the native worker path. Its documentation/manpage snapshot is not",
+    "included in the R source package; the vendored NNG `CMakeLists.txt` is patched",
+    "to build manpages only when that optional snapshot is present. Mbed TLS is",
+    "vendored for the planned TLS transport, but TLS/WSS are not enabled until",
+    "certificate and client-auth policy is explicit. Rducks does not use a system",
+    "`libnng` or nanonext's private binary layout.",
     "",
     "## Update procedure",
     "",

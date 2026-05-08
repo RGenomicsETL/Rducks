@@ -7,10 +7,10 @@ on:
         description: "DuckDB/external thread count for stress tests"
         required: false
         default: "8"
-      future_workers:
-        description: "Future worker count for multiprocess tests"
+      ipc_workers:
+        description: "NNG worker count for multiprocess tests"
         required: false
-        default: "8"
+        default: "2"
   schedule:
     - cron: "41 4 * * 2"
 
@@ -24,7 +24,7 @@ jobs:
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_STRESS_CONCURRENCY: "true"
       RDUCKS_TEST_DUCKDB_THREADS: ${{ github.event.inputs.duckdb_threads || '8' }}
-      RDUCKS_TEST_FUTURE_WORKERS: ${{ github.event.inputs.future_workers || '8' }}
+      RDUCKS_TEST_IPC_WORKERS: ${{ github.event.inputs.ipc_workers || '2' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
 
       - name: Install R dependencies
         run: |
-          install.packages(c("DBI", "duckdb", "future", "nanoarrow", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks
@@ -49,5 +49,5 @@ jobs:
       - name: Run focused concurrency stress tests
         run: |
           tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_concurrent_queue.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_future_ipc.R")
+          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_transports.R")
         shell: Rscript {0}

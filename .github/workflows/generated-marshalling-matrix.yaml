@@ -14,8 +14,8 @@ on:
         description: "Also include arrow_ipc + multiprocess_parallel generated cases"
         required: false
         default: "false"
-      future_workers:
-        description: "Future worker count when include_ipc is true"
+      ipc_workers:
+        description: "NNG worker count when include_ipc is true"
         required: false
         default: "1"
   schedule:
@@ -35,7 +35,7 @@ jobs:
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
       RDUCKS_MATRIX_INCLUDE_IPC: ${{ github.event.inputs.include_ipc || 'false' }}
-      RDUCKS_MATRIX_FUTURE_WORKERS: ${{ github.event.inputs.future_workers || '1' }}
+      RDUCKS_MATRIX_IPC_WORKERS: ${{ github.event.inputs.ipc_workers || '1' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +53,7 @@ jobs:
         env:
           GITHUB_PAT: ${{ github.token }}
         run: |
-          install.packages(c("DBI", "duckdb", "future", "nanoarrow", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks

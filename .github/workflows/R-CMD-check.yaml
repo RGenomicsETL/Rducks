@@ -34,10 +34,14 @@ jobs:
       USE_UNSTABLE_C_API: "1"
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
-      RDUCKS_TEST_FUTURE_WORKERS: "1"
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore script execute bits on Windows
+        if: runner.os == 'Windows'
+        run: chmod +x configure cleanup configure.win cleanup.win
+        shell: bash
 
       - uses: r-lib/actions/setup-pandoc@v2
 
