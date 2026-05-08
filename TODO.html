@@ -348,7 +348,8 @@
 <ul><li>
 <code>ipc_mirai_pool</code> now has provider-level backpressure via <code>ipc_max_pending</code>, so persistent workers cannot accumulate unbounded accepted-but-uncollected tasks.</li>
 <li>The mirai provider exposes tested <code>collect_any()</code> behavior so ready tasks can be collected without waiting for an earlier slow task. No-deadline <code>collect_many()</code> and <code>collect_any()</code> calls now use mirai blocking wait primitives instead of a 1 ms scan/sleep loop; finite-deadline collect-any remains a bounded poll until a timeout-aware mirai race primitive is available.</li>
-<li>Native cooperative RIPC groups now use optional bundle-level <code>collect_any()</code> when the provider exposes it. Ready result payloads are imported and written back as they arrive, while the callback still remains active until all borrowed DuckDB output vectors in that submitted group have been filled. Larger physical-scan batching beyond simultaneously active callbacks remains open.</li>
+<li>Native cooperative RIPC groups now use optional bundle-level <code>collect_any()</code> when the provider exposes it. Ready result payloads are imported and written back as they arrive, while the callback still remains active until all borrowed DuckDB output vectors in that submitted group have been filled.</li>
+<li>After a main-thread RIPC callback fills its own output, it now performs an opportunistic post-collect drain of the extension-owned queue if more worker callbacks became pending during the submit/collect wave. This prevents already-active worker callbacks from being stranded until a later main-thread callback. Larger physical-scan batching beyond simultaneously active callbacks remains open.</li>
 </ul></li>
 <li>
 <p><label><input type="checkbox" checked>Specify a persistent worker/request envelope if generic <code>future</code> is not enough.</label></p>

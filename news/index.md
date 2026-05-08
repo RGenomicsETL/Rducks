@@ -31,8 +31,10 @@
   submit and collect phases so queued chunk tasks can be submitted
   before grouped result collection. Main-thread RIPC callbacks now
   cooperatively drain queued worker callbacks into the same
-  submit/collect wave, avoiding the single-request timeout path for
-  parallel DuckDB UDF execution.
+  submit/collect wave, and opportunistically drain any worker callbacks
+  that became pending during collection after the local callback output
+  is filled. This avoids the single-request timeout path for parallel
+  DuckDB UDF execution.
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   now reports queue-pending, `arrow_c` input-snapshot, `arrow_c`
   owned-result-chunk, RIPC-in-flight, and RIPC submit/collect wave

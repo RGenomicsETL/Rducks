@@ -589,8 +589,14 @@ Improve batching beyond small waves for typical DuckDB physical scans.
   `collect_any()` when the provider exposes it. Ready result payloads
   are imported and written back as they arrive, while the callback still
   remains active until all borrowed DuckDB output vectors in that
-  submitted group have been filled. Larger physical-scan batching beyond
-  simultaneously active callbacks remains open.
+  submitted group have been filled.
+- After a main-thread RIPC callback fills its own output, it now
+  performs an opportunistic post-collect drain of the extension-owned
+  queue if more worker callbacks became pending during the
+  submit/collect wave. This prevents already-active worker callbacks
+  from being stranded until a later main-thread callback. Larger
+  physical-scan batching beyond simultaneously active callbacks remains
+  open.
 
 Specify a persistent worker/request envelope if generic `future` is not
 enough.
