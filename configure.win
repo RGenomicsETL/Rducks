@@ -10,6 +10,8 @@ SRC_FILE="${EXT_DIR}/rducks_extension.c"
 BUILD_DIR="${EXT_DIR}/build"
 RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
 FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
+VENDOR_DIR="${EXT_DIR}/vendor"
+VENDOR_NNG_DIR="${EXT_DIR}/third_party/nng"
 VENDOR_NANOARROW_DIR="${EXT_DIR}/tp/na"
 
 if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
@@ -30,11 +32,14 @@ fi
 
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
 RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
-RDUCKS_WITH_NNG="${RDUCKS_WITH_NNG:-0}"
-if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
-  echo "ERROR: vendored NNG support is not wired for configure.win yet"
-  exit 1
-fi
+RDUCKS_WITH_NNG="${RDUCKS_WITH_NNG:-1}"
+case "${RDUCKS_WITH_NNG}" in
+  0|1) ;;
+  *)
+    echo "ERROR: RDUCKS_WITH_NNG must be 0 or 1 (got '${RDUCKS_WITH_NNG}')"
+    exit 1
+    ;;
+esac
 if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
   echo "ERROR: USE_UNSTABLE_C_API must be 0 or 1 (got '${USE_UNSTABLE_C_API}')"
   exit 1
@@ -115,15 +120,39 @@ if [ -z "${DUCKDB_PLATFORM}" ]; then
 fi
 
 mkdir -p "${BUILD_DIR}"
+
+VENDOR_NNG_CPPFLAGS=""
+VENDOR_NNG_LIBS=""
+if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
+  if ! command -v cmake >/dev/null 2>&1; then
+    echo "ERROR: RDUCKS_WITH_NNG=1 requires cmake to build vendored NNG"
+    exit 1
+  fi
+  if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ]; then
+    echo "ERROR: vendored NNG sources are missing. Run tools/vendor_nng_mbedtls.R."
+    exit 1
+  fi
+  VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
+  cmake -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER="${CC}"
+  cmake --build "${VENDOR_BUILD_DIR}" --target nng --parallel
+  VENDOR_NNG_CPPFLAGS="-DRDUCKS_WITH_NNG=1 -DNNG_STATIC_LIB -I${VENDOR_NNG_DIR}/include"
+  VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
+fi
+
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
 SHARED_FLAGS="-shared"
 
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
 echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
-echo "Vendored NNG support: 0"
-${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${R_LD_FLAGS}
+echo "Vendored NNG support: ${RDUCKS_WITH_NNG}"
+${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LD_FLAGS}
+if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
+  rm -rf "${VENDOR_BUILD_DIR}"
+fi
 
 echo "Appending DuckDB extension metadata..."
 "${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \

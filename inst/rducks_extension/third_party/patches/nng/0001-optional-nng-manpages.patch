@@ -1,0 +1,14 @@
+diff --git a/inst/rducks_extension/third_party/nng/CMakeLists.txt b/inst/rducks_extension/third_party/nng/CMakeLists.txt
+index 1dca028..cf39400 100644
+--- a/inst/rducks_extension/third_party/nng/CMakeLists.txt
++++ b/inst/rducks_extension/third_party/nng/CMakeLists.txt
+@@ -294,3 +294,6 @@ endif ()
+-#  Build the tools
+-
+-add_subdirectory(docs/man)
++# Build bundled documentation only when the optional docs snapshot is present.
++# Rducks vendors NNG as a private static implementation detail and does not
++# need NNG manpages in the R source package.
++if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs/man/CMakeLists.txt")
++    add_subdirectory(docs/man)
++endif ()

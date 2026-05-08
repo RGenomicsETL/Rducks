@@ -73,6 +73,92 @@ patch_nng_cmake <- function(dest) {
   writeLines(lines, cmake_file, useBytes = TRUE)
 }
 
+patch_nng_windows_rtools_clock <- function(dest) {
+  cmake_file <- file.path(dest, "src", "platform", "windows", "CMakeLists.txt")
+  cmake <- readLines(cmake_file, warn = FALSE)
+  cmake_old <- c(
+    "    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF OR NOT NNG_HAVE_TIMESPEC_GET)",
+    "        message(FATAL_ERROR",
+    "                \"Modern Windows API support is missing. \",",
+    "                \"Versions of Windows prior to Vista are not supported.  \",",
+    "                \"Further, the legacy MinGW environments are not supported. \",",
+    "                \"Ensure you have at least Windows Vista or newer, and are \",",
+    "                \"using either Visual Studio 2013 or compatible compiler, \",",
+    "                \"and are also using the universal C runtime (UCRT).\")",
+    "    endif ()"
+  )
+  cmake_new <- c(
+    "    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF)",
+    "        message(FATAL_ERROR",
+    "                \"Modern Windows API support is missing. \",",
+    "                \"Versions of Windows prior to Vista are not supported.  \",",
+    "                \"Ensure you have at least Windows Vista or newer, and are \",",
+    "                \"using either Visual Studio 2013 or compatible compiler, \",",
+    "                \"and are also using a runtime that provides snprintf() and condition variables.\")",
+    "    endif ()"
+  )
+  cmake_text <- paste(cmake, collapse = "\n")
+  cmake_old_text <- paste(cmake_old, collapse = "\n")
+  if (!grepl(cmake_old_text, cmake_text, fixed = TRUE)) {
+    stop("expected NNG Windows CMake timespec_get gate in ", cmake_file, call. = FALSE)
+  }
+  writeLines(strsplit(sub(cmake_old_text, paste(cmake_new, collapse = "\n"), cmake_text, fixed = TRUE), "\n", fixed = TRUE)[[1L]], cmake_file, useBytes = TRUE)
+
+  clock_file <- file.path(dest, "src", "platform", "windows", "win_clock.c")
+  clock <- readLines(clock_file, warn = FALSE)
+  clock_old <- c(
+    "int",
+    "nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)",
+    "{",
+    "\tstruct timespec ts;",
+    "\tif (timespec_get(&ts, TIME_UTC) == TIME_UTC) {",
+    "\t\t*seconds     = ts.tv_sec;",
+    "\t\t*nanoseconds = ts.tv_nsec;",
+    "\t\treturn (0);",
+    "\t}",
+    "\treturn (nni_win_error(GetLastError()));",
+    "}"
+  )
+  clock_new <- c(
+    "int",
+    "nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)",
+    "{",
+    "\tstruct timespec ts;",
+    "#if defined(NNG_HAVE_TIMESPEC_GET)",
+    "\tif (timespec_get(&ts, TIME_UTC) == TIME_UTC) {",
+    "\t\t*seconds     = ts.tv_sec;",
+    "\t\t*nanoseconds = ts.tv_nsec;",
+    "\t\treturn (0);",
+    "\t}",
+    "\treturn (nni_win_error(GetLastError()));",
+    "#else",
+    "\tFILETIME       ft;",
+    "\tULARGE_INTEGER uli;",
+    "\tuint64_t       ns100;",
+    "\tuint64_t       ns;",
+    "",
+    "\tGetSystemTimeAsFileTime(&ft);",
+    "\tuli.LowPart  = ft.dwLowDateTime;",
+    "\tuli.HighPart = ft.dwHighDateTime;",
+    "",
+    "\t// FILETIME counts 100 ns ticks since 1601-01-01 UTC.",
+    "\tns100 = uli.QuadPart - 116444736000000000ULL;",
+    "\tns    = ns100 * 100ULL;",
+    "",
+    "\t*seconds     = ns / 1000000000ULL;",
+    "\t*nanoseconds = (uint32_t) (ns % 1000000000ULL);",
+    "\treturn (0);",
+    "#endif",
+    "}"
+  )
+  clock_text <- paste(clock, collapse = "\n")
+  clock_old_text <- paste(clock_old, collapse = "\n")
+  if (!grepl(clock_old_text, clock_text, fixed = TRUE)) {
+    stop("expected NNG Windows clock implementation in ", clock_file, call. = FALSE)
+  }
+  writeLines(strsplit(sub(clock_old_text, paste(clock_new, collapse = "\n"), clock_text, fixed = TRUE), "\n", fixed = TRUE)[[1L]], clock_file, useBytes = TRUE)
+}
+
 sha256 <- function(path) {
   unname(tools::sha256sum(path))
 }
@@ -101,7 +187,10 @@ vendor_one <- function(id, spec, tmp) {
     stop("expected exactly one extracted directory for ", spec$name, call. = FALSE)
   }
   copy_keep(dirs[[1L]], dest, spec$keep)
-  if (identical(id, "nng")) patch_nng_cmake(dest)
+  if (identical(id, "nng")) {
+    patch_nng_cmake(dest)
+    patch_nng_windows_rtools_clock(dest)
+  }
   list(id = id, spec = spec, archive_sha256 = sha256(archive))
 }
 
@@ -132,23 +221,42 @@ write_metadata <- function(records) {
   md <- c(
     "# Vendored native dependencies",
     "",
-    "This directory contains source snapshots used by the experimental native",
-    "NNG worker-provider sidequest. They are vendored so the Rducks DuckDB",
-    "extension can statically link a hidden NNG client shim instead of depending",
-    "on nanonext's private binary layout or any system `libnng` installation.",
+    "This directory records source snapshots used by the native Rducks DuckDB",
+    "extension. Dependencies are vendored so the extension can statically compile",
+    "private C shims instead of depending on nanonext's private binary layout,",
+    "system `libnng`, or the nanoarrow R package shared-library symbol table.",
     "",
     "## Pins",
     "",
     sprintf("- NNG `%s` (`%s`): %s", pins$nng$version, pins$nng$tag, pins$nng$url),
     sprintf("- Mbed TLS `%s` (`%s`): %s", pins$mbedtls$version, pins$mbedtls$tag, pins$mbedtls$url),
+    "- Apache Arrow nanoarrow C/IPC `0.9.0.dev-4639910`",
+    "  (`apache-arrow-nanoarrow-0.9.0.dev-23-g4639910`, commit `4639910`), stored",
+    "  under `inst/rducks_extension/tp/na` to keep source-package tar paths below",
+    "  the portable 100-byte limit.",
     "",
     "NNG is built with inproc, IPC/Unix-domain, TCP, and WebSocket transports",
     "enabled for the native worker path. Its documentation/manpage snapshot is not",
     "included in the R source package; the vendored NNG `CMakeLists.txt` is patched",
-    "to build manpages only when that optional snapshot is present. Mbed TLS is",
-    "vendored for the planned TLS transport, but TLS/WSS are not enabled until",
-    "certificate and client-auth policy is explicit. Rducks does not use a system",
-    "`libnng` or nanonext's private binary layout.",
+    "to build manpages only when that optional snapshot is present. The Windows",
+    "platform files carry the same Rtools MinGW `timespec_get()` fallback used by",
+    "`ducknng` so CI builds the vendored NNG instead of depending on any host NNG.",
+    "Mbed TLS is vendored for the planned TLS transport, but TLS/WSS are not enabled",
+    "until certificate and client-auth policy is explicit. Rducks does not use a",
+    "system `libnng` or nanonext's private binary layout.",
+    "",
+    "## Namespace and symbol collision discipline",
+    "",
+    "- Vendored nanoarrow is compiled with `-DNANOARROW_NAMESPACE=RducksNanoarrow`.",
+    "  This prefixes nanoarrow C/IPC symbols such as `ArrowIpcWriterInit` to",
+    "  `RducksNanoarrowArrowIpcWriterInit`, avoiding collisions with the nanoarrow R",
+    "  package DLL/shared object when both are loaded into the same R process.",
+    "- Vendored flatcc runtime symbols are prefixed in",
+    "  `src/rducks_vendor_nanoarrow_prefix.h` (for example",
+    "  `flatcc_builder_init` becomes `rducks_flatcc_builder_init`).",
+    "- Rducks code should call vendored nanoarrow IPC through Rducks-owned helpers in",
+    "  `src/rducks_vendor_ipc_helpers.h`, not by dynamically loading symbols from",
+    "  another package.",
     "",
     "## Update procedure",
     "",
@@ -158,14 +266,21 @@ write_metadata <- function(records) {
     "Rscript tools/vendor_nng_mbedtls.R --force",
     "```",
     "",
+    "Nanoarrow is currently refreshed from a local Apache Arrow nanoarrow checkout by",
+    "copying the C/IPC sources and flatcc runtime recorded in `versions.json`; keep",
+    "that pin updated when refreshing the snapshot.",
+    "",
+    "Local NNG patch ledgers are stored under `patches/nng/` in this directory. Keep",
+    "those patch files synchronized with any edited files in `third_party/nng/`.",
+    "",
     "Then rebuild the package and run at least:",
     "",
     "```sh",
     "RDUCKS_DEV_SURFACES=true make test",
     "```",
     "",
-    "Keep raw NNG/MbedTLS calls behind `src/rducks_nng.c`; the rest of Rducks",
-    "should talk to Rducks-owned provider/shim functions.",
+    "Keep raw NNG calls behind `src/rducks_nng.c`; the rest of Rducks should talk to",
+    "Rducks-owned provider/shim functions.",
     ""
   )
   writeLines(md, file.path(third_party, "VENDORING.md"), useBytes = TRUE)

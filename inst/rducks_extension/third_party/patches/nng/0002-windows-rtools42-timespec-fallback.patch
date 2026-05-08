@@ -1,0 +1,37 @@
+diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt b/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
+index 10c3113..06ac4c2 100644
+--- a/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
++++ b/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
+@@ -18 +18 @@ if (NNG_PLATFORM_WINDOWS)
+-    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF OR NOT NNG_HAVE_TIMESPEC_GET)
++    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF)
+@@ -22 +21,0 @@ if (NNG_PLATFORM_WINDOWS)
+-                "Further, the legacy MinGW environments are not supported. "
+@@ -25 +24 @@ if (NNG_PLATFORM_WINDOWS)
+-                "and are also using the universal C runtime (UCRT).")
++                "and are also using a runtime that provides snprintf() and condition variables.")
+diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c b/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
+index a51738e..f5a014f 100644
+--- a/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
++++ b/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
+@@ -27,0 +28 @@ nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)
++#if defined(NNG_HAVE_TIMESPEC_GET)
+@@ -33,0 +35,18 @@ nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)
++#else
++	FILETIME       ft;
++	ULARGE_INTEGER uli;
++	uint64_t       ns100;
++	uint64_t       ns;
++
++	GetSystemTimeAsFileTime(&ft);
++	uli.LowPart  = ft.dwLowDateTime;
++	uli.HighPart = ft.dwHighDateTime;
++
++	// FILETIME counts 100 ns ticks since 1601-01-01 UTC.
++	ns100 = uli.QuadPart - 116444736000000000ULL;
++	ns    = ns100 * 100ULL;
++
++	*seconds     = ns / 1000000000ULL;
++	*nanoseconds = (uint32_t) (ns % 1000000000ULL);
++	return (0);
++#endif

@@ -15,14 +15,13 @@ if (NNG_PLATFORM_WINDOWS)
     nng_check_sym(InitializeConditionVariable windows.h NNG_HAVE_CONDVAR)
     nng_check_sym(timespec_get time.h NNG_HAVE_TIMESPEC_GET)
     nng_check_sym(snprintf stdio.h NNG_HAVE_SNPRINTF)
-    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF OR NOT NNG_HAVE_TIMESPEC_GET)
+    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF)
         message(FATAL_ERROR
                 "Modern Windows API support is missing. "
                 "Versions of Windows prior to Vista are not supported.  "
-                "Further, the legacy MinGW environments are not supported. "
                 "Ensure you have at least Windows Vista or newer, and are "
                 "using either Visual Studio 2013 or compatible compiler, "
-                "and are also using the universal C runtime (UCRT).")
+                "and are also using a runtime that provides snprintf() and condition variables.")
     endif ()
     nng_link_libraries(ws2_32 mswsock advapi32)
 

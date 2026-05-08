@@ -17,10 +17,12 @@ system `libnng`, or the nanoarrow R package shared-library symbol table.
 NNG is built with inproc, IPC/Unix-domain, TCP, and WebSocket transports
 enabled for the native worker path. Its documentation/manpage snapshot is not
 included in the R source package; the vendored NNG `CMakeLists.txt` is patched
-to build manpages only when that optional snapshot is present. Mbed TLS is
-vendored for the planned TLS transport, but TLS/WSS are not enabled until
-certificate and client-auth policy is explicit. Rducks does not use a system
-`libnng` or nanonext's private binary layout.
+to build manpages only when that optional snapshot is present. The Windows
+platform files carry the same Rtools MinGW `timespec_get()` fallback used by
+`ducknng` so CI builds the vendored NNG instead of depending on any host NNG.
+Mbed TLS is vendored for the planned TLS transport, but TLS/WSS are not enabled
+until certificate and client-auth policy is explicit. Rducks does not use a
+system `libnng` or nanonext's private binary layout.
 
 ## Namespace and symbol collision discipline
 
@@ -46,6 +48,9 @@ Rscript tools/vendor_nng_mbedtls.R --force
 Nanoarrow is currently refreshed from a local Apache Arrow nanoarrow checkout by
 copying the C/IPC sources and flatcc runtime recorded in `versions.json`; keep
 that pin updated when refreshing the snapshot.
+
+Local NNG patch ledgers are stored under `patches/nng/` in this directory. Keep
+those patch files synchronized with any edited files in `third_party/nng/`.
 
 Then rebuild the package and run at least:
 

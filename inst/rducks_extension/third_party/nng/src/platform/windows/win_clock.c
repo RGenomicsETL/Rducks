@@ -25,12 +25,31 @@ int
 nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)
 {
 	struct timespec ts;
+#if defined(NNG_HAVE_TIMESPEC_GET)
 	if (timespec_get(&ts, TIME_UTC) == TIME_UTC) {
 		*seconds     = ts.tv_sec;
 		*nanoseconds = ts.tv_nsec;
 		return (0);
 	}
 	return (nni_win_error(GetLastError()));
+#else
+	FILETIME       ft;
+	ULARGE_INTEGER uli;
+	uint64_t       ns100;
+	uint64_t       ns;
+
+	GetSystemTimeAsFileTime(&ft);
+	uli.LowPart  = ft.dwLowDateTime;
+	uli.HighPart = ft.dwHighDateTime;
+
+	// FILETIME counts 100 ns ticks since 1601-01-01 UTC.
+	ns100 = uli.QuadPart - 116444736000000000ULL;
+	ns    = ns100 * 100ULL;
+
+	*seconds     = ns / 1000000000ULL;
+	*nanoseconds = (uint32_t) (ns % 1000000000ULL);
+	return (0);
+#endif
 }
 
 void
