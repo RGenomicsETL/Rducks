@@ -170,6 +170,7 @@ rducks_make_arrow_ipc_future_wrapper <- function(fun, spec, null_handling, excep
     output_schema_spec_cache
   }
   list(
+    nanoarrow_dll_path = rducks_cache_nanoarrow_dll_path(),
     execute = function(input_array, input_schema, output_schema, n) {
       rducks_arrow_ipc_future_evaluate_arrow_chunk(
         engine, input_array, input_schema, output_schema, n,

@@ -1,5 +1,9 @@
 /* Included by ../rducks_extension.c. */
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
 static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const char *default_msg,
                                          char *err_msg, size_t err_cap) {
     const char *msg = NULL;
@@ -342,6 +346,239 @@ static int rducks_import_arrow_result(rducks_runtime_entry_t *runtime, SEXP resu
                                             err_msg, err_cap);
 }
 
+#define RDUCKS_NANOARROW_OK 0
+
+typedef int ArrowErrorCode;
+
+struct ArrowError {
+    char message[1024];
+};
+
+struct ArrowBufferAllocator {
+    uint8_t *(*reallocate)(struct ArrowBufferAllocator *allocator, uint8_t *ptr,
+                           int64_t old_size, int64_t new_size);
+    void (*free)(struct ArrowBufferAllocator *allocator, uint8_t *ptr, int64_t size);
+    void *private_data;
+};
+
+struct ArrowBuffer {
+    uint8_t *data;
+    int64_t size_bytes;
+    int64_t capacity_bytes;
+    struct ArrowBufferAllocator allocator;
+};
+
+struct ArrowIpcInputStream {
+    ArrowErrorCode (*read)(struct ArrowIpcInputStream *stream, uint8_t *buf,
+                           int64_t buf_size_bytes, int64_t *size_read_out,
+                           struct ArrowError *error);
+    void (*release)(struct ArrowIpcInputStream *stream);
+    void *private_data;
+};
+
+typedef ArrowErrorCode (*rducks_arrow_ipc_input_stream_init_buffer_fn)(
+    struct ArrowIpcInputStream *stream, struct ArrowBuffer *input);
+typedef ArrowErrorCode (*rducks_arrow_ipc_array_stream_reader_init_fn)(
+    struct ArrowArrayStream *out, struct ArrowIpcInputStream *input_stream, void *options);
+
+typedef struct rducks_arrow_ipc_symbols {
+    rducks_arrow_ipc_input_stream_init_buffer_fn input_stream_init_buffer;
+    rducks_arrow_ipc_array_stream_reader_init_fn array_stream_reader_init;
+} rducks_arrow_ipc_symbols_t;
+
+static SEXP rducks_named_list_get(SEXP x, const char *name);
+
+static uint8_t *rducks_arrow_ipc_buffer_reallocate(struct ArrowBufferAllocator *allocator,
+                                                   uint8_t *ptr, int64_t old_size,
+                                                   int64_t new_size) {
+    (void)allocator;
+    (void)old_size;
+    if (new_size <= 0) {
+        free(ptr);
+        return NULL;
+    }
+    return (uint8_t *)realloc(ptr, (size_t)new_size);
+}
+
+static void rducks_arrow_ipc_buffer_free(struct ArrowBufferAllocator *allocator,
+                                         uint8_t *ptr, int64_t size) {
+    (void)allocator;
+    (void)size;
+    free(ptr);
+}
+
+static void rducks_arrow_ipc_buffer_init(struct ArrowBuffer *buffer) {
+    memset(buffer, 0, sizeof(*buffer));
+    buffer->allocator.reallocate = rducks_arrow_ipc_buffer_reallocate;
+    buffer->allocator.free = rducks_arrow_ipc_buffer_free;
+    buffer->allocator.private_data = NULL;
+}
+
+static void rducks_arrow_ipc_buffer_reset(struct ArrowBuffer *buffer) {
+    if (!buffer) return;
+    if (buffer->data && buffer->allocator.free) {
+        buffer->allocator.free(&buffer->allocator, buffer->data, buffer->capacity_bytes);
+    }
+    memset(buffer, 0, sizeof(*buffer));
+}
+
+static int rducks_arrow_ipc_buffer_init_copy(struct ArrowBuffer *buffer, const uint8_t *data,
+                                             R_xlen_t size, char *err_msg, size_t err_cap) {
+    rducks_arrow_ipc_buffer_init(buffer);
+    if (size < 0 || (uint64_t)size > (uint64_t)INT64_MAX) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC result payload is too large");
+        return 0;
+    }
+    if (size == 0) return 1;
+    buffer->data = (uint8_t *)malloc((size_t)size);
+    if (!buffer->data) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks Arrow IPC result buffer");
+        return 0;
+    }
+    memcpy(buffer->data, data, (size_t)size);
+    buffer->size_bytes = (int64_t)size;
+    buffer->capacity_bytes = (int64_t)size;
+    return 1;
+}
+
+static void *rducks_arrow_ipc_dynamic_symbol(const char *path, const char *name,
+                                             char *err_msg, size_t err_cap) {
+#ifdef _WIN32
+    static HMODULE handle = NULL;
+    void *ptr;
+    if (!handle) {
+        handle = LoadLibraryA(path);
+        if (!handle) {
+            snprintf(err_msg, err_cap, "failed to load nanoarrow DLL for Arrow IPC result import");
+            return NULL;
+        }
+    }
+    ptr = (void *)GetProcAddress(handle, name);
+#else
+    static void *handle = NULL;
+    void *ptr;
+    if (!handle) {
+        handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+        if (!handle) {
+            const char *msg = dlerror();
+            snprintf(err_msg, err_cap, "failed to load nanoarrow shared library for Arrow IPC result import: %s",
+                     msg ? msg : "unknown error");
+            return NULL;
+        }
+    }
+    ptr = dlsym(handle, name);
+#endif
+    if (!ptr) {
+        snprintf(err_msg, err_cap, "nanoarrow native symbol not available for Arrow IPC result import: %s", name);
+        return NULL;
+    }
+    return ptr;
+}
+
+static int rducks_arrow_ipc_load_symbols(SEXP nanoarrow_dll_path_sexp,
+                                         rducks_arrow_ipc_symbols_t *symbols,
+                                         char *err_msg, size_t err_cap) {
+    const char *path;
+    if (!symbols) return 0;
+    memset(symbols, 0, sizeof(*symbols));
+    if (!Rf_isString(nanoarrow_dll_path_sexp) || XLENGTH(nanoarrow_dll_path_sexp) != 1 ||
+        STRING_ELT(nanoarrow_dll_path_sexp, 0) == NA_STRING) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC metadata is missing the nanoarrow shared-library path");
+        return 0;
+    }
+    path = CHAR(STRING_ELT(nanoarrow_dll_path_sexp, 0));
+    if (!path || !path[0]) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC metadata has an empty nanoarrow shared-library path");
+        return 0;
+    }
+    symbols->input_stream_init_buffer =
+        (rducks_arrow_ipc_input_stream_init_buffer_fn)rducks_arrow_ipc_dynamic_symbol(
+            path, "RPkgArrowIpcInputStreamInitBuffer", err_msg, err_cap);
+    if (!symbols->input_stream_init_buffer) return 0;
+    symbols->array_stream_reader_init =
+        (rducks_arrow_ipc_array_stream_reader_init_fn)rducks_arrow_ipc_dynamic_symbol(
+            path, "RPkgArrowIpcArrayStreamReaderInit", err_msg, err_cap);
+    return symbols->array_stream_reader_init != NULL;
+}
+
+static const char *rducks_arrow_ipc_stream_error(struct ArrowArrayStream *stream) {
+    const char *msg = NULL;
+    if (stream && stream->get_last_error) msg = stream->get_last_error(stream);
+    return (msg && msg[0]) ? msg : "unknown Arrow IPC stream error";
+}
+
+static int rducks_import_arrow_ipc_result(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                          SEXP result_payload, idx_t expected_size,
+                                          duckdb_vector output, char *err_msg, size_t err_cap) {
+    rducks_arrow_ipc_symbols_t symbols;
+    struct ArrowBuffer buffer;
+    struct ArrowIpcInputStream input_stream;
+    struct ArrowArrayStream stream;
+    struct ArrowSchema schema;
+    struct ArrowArray array;
+    SEXP nanoarrow_dll_path;
+    int code;
+    int ok = 0;
+
+    memset(&buffer, 0, sizeof(buffer));
+    memset(&input_stream, 0, sizeof(input_stream));
+    memset(&stream, 0, sizeof(stream));
+    memset(&schema, 0, sizeof(schema));
+    memset(&array, 0, sizeof(array));
+
+    if (!runtime || !meta || !output) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC result import is missing state");
+        return 0;
+    }
+    if (TYPEOF(result_payload) != RAWSXP) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC collect must return raw IPC result bytes");
+        return 0;
+    }
+    nanoarrow_dll_path = rducks_named_list_get(meta->fun, "nanoarrow_dll_path");
+    if (!rducks_arrow_ipc_load_symbols(nanoarrow_dll_path, &symbols, err_msg, err_cap)) return 0;
+    if (!rducks_arrow_ipc_buffer_init_copy(&buffer, RAW(result_payload), XLENGTH(result_payload), err_msg, err_cap)) {
+        return 0;
+    }
+
+    code = symbols.input_stream_init_buffer(&input_stream, &buffer);
+    if (code != RDUCKS_NANOARROW_OK) {
+        snprintf(err_msg, err_cap, "ArrowIpcInputStreamInitBuffer() failed for Rducks result IPC payload");
+        goto cleanup;
+    }
+    code = symbols.array_stream_reader_init(&stream, &input_stream, NULL);
+    if (code != RDUCKS_NANOARROW_OK) {
+        snprintf(err_msg, err_cap, "ArrowIpcArrayStreamReaderInit() failed for Rducks result IPC payload");
+        goto cleanup;
+    }
+    code = stream.get_schema ? stream.get_schema(&stream, &schema) : EINVAL;
+    if (code != 0) {
+        snprintf(err_msg, err_cap, "failed to decode Rducks result IPC schema: %s",
+                 rducks_arrow_ipc_stream_error(&stream));
+        goto cleanup;
+    }
+    code = stream.get_next ? stream.get_next(&stream, &array) : EINVAL;
+    if (code != 0) {
+        snprintf(err_msg, err_cap, "failed to decode Rducks result IPC record batch: %s",
+                 rducks_arrow_ipc_stream_error(&stream));
+        goto cleanup;
+    }
+    if (!array.release) {
+        snprintf(err_msg, err_cap, "Rducks Arrow IPC result payload did not contain a record batch");
+        goto cleanup;
+    }
+
+    ok = rducks_import_arrow_result_native(runtime, &array, &schema, meta->return_desc,
+                                           expected_size, output, err_msg, err_cap);
+
+cleanup:
+    if (array.release) array.release(&array);
+    if (schema.release) schema.release(&schema);
+    if (stream.release) stream.release(&stream);
+    if (input_stream.release) input_stream.release(&input_stream);
+    rducks_arrow_ipc_buffer_reset(&buffer);
+    return ok;
+}
+
 /* In-process single-thread R evaluator phases. These still use R/nanoarrow
  * external pointers and therefore must run on the recorded R thread. Future
  * concurrent_inproc or serialized backends should replace the prepare/evaluate
@@ -396,6 +633,9 @@ static int rducks_r_scalar_emit_arrow_result(rducks_runtime_entry_t *runtime, rd
                                              SEXP output_schema_xptr, idx_t n,
                                              duckdb_vector output, char *err_msg, size_t err_cap) {
     if (rducks_r_scalar_result_is_error(result, err_msg, err_cap)) return 0;
+    if (meta && meta->eval_mode == RDUCKS_EVAL_RIPC && TYPEOF(result) == RAWSXP) {
+        return rducks_import_arrow_ipc_result(runtime, meta, result, n, output, err_msg, err_cap);
+    }
     return rducks_import_arrow_result(runtime, result, output_schema_xptr, meta->return_desc, n, output, err_msg, err_cap);
 }
 

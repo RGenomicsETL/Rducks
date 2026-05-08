@@ -41,7 +41,10 @@ rducks_arrow_ipc_mirai_collect_arrow_chunk <- function(engine, provider, task_id
     stop("output nanoarrow schema pointer is not valid", call. = FALSE)
   }
   payload <- rducks_arrow_ipc_mirai_collect_payloads(engine, provider, task_id)[[1L]]
-  rducks_arrow_ipc_decode_array(payload)$array
+  if (!is.raw(payload)) {
+    stop("mirai Arrow IPC worker returned a non-raw result payload", call. = FALSE)
+  }
+  payload
 }
 
 rducks_arrow_ipc_mirai_collect_many_arrow_chunks <- function(engine, provider, task_ids, output_schemas, ns) {
@@ -57,7 +60,12 @@ rducks_arrow_ipc_mirai_collect_many_arrow_chunks <- function(engine, provider, t
     }
   }
   payloads <- rducks_arrow_ipc_mirai_collect_payloads(engine, provider, task_ids)
-  lapply(payloads, function(payload) rducks_arrow_ipc_decode_array(payload)$array)
+  lapply(payloads, function(payload) {
+    if (!is.raw(payload)) {
+      stop("mirai Arrow IPC worker returned a non-raw result payload", call. = FALSE)
+    }
+    payload
+  })
 }
 
 rducks_arrow_ipc_mirai_collect_any_arrow_chunks <- function(engine, provider, task_ids, output_schemas, ns,
@@ -80,22 +88,25 @@ rducks_arrow_ipc_mirai_collect_any_arrow_chunks <- function(engine, provider, ta
     task_ids = task_ids
   )
   if (!length(results)) {
-    return(list(indices = integer(), arrays = list()))
+    return(list(indices = integer(), payloads = list()))
   }
   ids <- vapply(results, function(result) result$task_id %||% NA_character_, character(1))
   indices <- match(ids, task_ids)
   if (anyNA(indices)) {
     stop("Rducks mirai collect-any returned an unknown task id", call. = FALSE)
   }
-  arrays <- vector("list", length(results))
+  payloads <- vector("list", length(results))
   for (i in seq_along(results)) {
     result <- results[[i]]
     if (!identical(result$status, "ok")) {
       stop("Rducks mirai worker failed: ", result$error_message %||% "unknown error", call. = FALSE)
     }
-    arrays[[i]] <- rducks_arrow_ipc_decode_array(result$output_ipc_payload)$array
+    if (!is.raw(result$output_ipc_payload)) {
+      stop("mirai Arrow IPC worker returned a non-raw result payload", call. = FALSE)
+    }
+    payloads[[i]] <- result$output_ipc_payload
   }
-  list(indices = as.integer(indices), arrays = arrays)
+  list(indices = as.integer(indices), payloads = payloads)
 }
 
 rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, exception_handling,
@@ -155,6 +166,7 @@ rducks_make_arrow_ipc_mirai_wrapper <- function(fun, spec, null_handling, except
   }
 
   list(
+    nanoarrow_dll_path = rducks_cache_nanoarrow_dll_path(),
     execute = function(input_array, input_schema, output_schema, n) {
       tryCatch({
         active_provider <- ensure_provider(output_schema)

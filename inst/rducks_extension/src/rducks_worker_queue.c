@@ -311,7 +311,7 @@ static int rducks_queue_collect_ripc_group_any_on_main_impl(rducks_udf_request_t
         SEXP ns = R_NilValue;
         SEXP results = R_NilValue;
         SEXP indices = R_NilValue;
-        SEXP arrays = R_NilValue;
+        SEXP payloads = R_NilValue;
         R_xlen_t ready_count = 0;
         size_t pos = 0;
 
@@ -353,16 +353,17 @@ static int rducks_queue_collect_ripc_group_any_on_main_impl(rducks_udf_request_t
             goto done_any;
         }
         indices = rducks_named_list_get(results, "indices");
-        arrays = rducks_named_list_get(results, "arrays");
+        payloads = rducks_named_list_get(results, "payloads");
+        if (payloads == R_NilValue) payloads = rducks_named_list_get(results, "arrays");
         if (indices == R_NilValue && XLENGTH(results) >= 1) indices = VECTOR_ELT(results, 0);
-        if (arrays == R_NilValue && XLENGTH(results) >= 2) arrays = VECTOR_ELT(results, 1);
-        if ((TYPEOF(indices) != INTSXP && TYPEOF(indices) != REALSXP) || TYPEOF(arrays) != VECSXP) {
+        if (payloads == R_NilValue && XLENGTH(results) >= 2) payloads = VECTOR_ELT(results, 1);
+        if ((TYPEOF(indices) != INTSXP && TYPEOF(indices) != REALSXP) || TYPEOF(payloads) != VECSXP) {
             UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned invalid indices/arrays");
+            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned invalid indices/payloads");
             goto done_any;
         }
         ready_count = XLENGTH(indices);
-        if (XLENGTH(arrays) != ready_count) {
+        if (XLENGTH(payloads) != ready_count) {
             UNPROTECT(protect_count);
             snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any result length mismatch");
             goto done_any;
@@ -395,7 +396,7 @@ static int rducks_queue_collect_ripc_group_any_on_main_impl(rducks_udf_request_t
             }
             ready_request = requests[request_index];
             if (!rducks_r_scalar_emit_arrow_result(ready_request->runtime, ready_request->meta,
-                                                  VECTOR_ELT(arrays, j), ready_request->ripc_output_schema_xptr,
+                                                  VECTOR_ELT(payloads, j), ready_request->ripc_output_schema_xptr,
                                                   ready_request->ripc_n, ready_request->output,
                                                   err_msg, err_cap)) {
                 UNPROTECT(protect_count);

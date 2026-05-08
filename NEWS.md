@@ -6,8 +6,8 @@
   submits owned Arrow IPC bytes per chunk, and bounds accepted-but-uncollected
   tasks with `ipc_max_pending`; it does not fall back to Future or same-process
   execution. Native cooperative RIPC groups use the provider's optional
-  `collect_any()` method when available, so ready mirai chunk results are decoded
-  and written back without waiting for slower tasks in the same submitted group.
+  `collect_any()` method when available, so ready mirai chunk result payloads are
+  imported and written back without waiting for slower tasks in the same submitted group.
   `tools/benchmark_ipc_providers.R` compares this direct provider path with both
   `future::multisession` and `future.mirai::mirai_multisession`. The mirai
   provider now reuses one daemon pool for registrations with the same database
@@ -29,7 +29,10 @@
   encoding for nanoarrow arrays now uses a native buffer
   writer instead of an R `rawConnection`, avoiding large transient allocations;
   the nanoarrow shared-library path is cached at package load/first use rather
-  than rediscovered for every encoded chunk.
+  than rediscovered for every encoded chunk. Main-process RIPC collection now
+  returns raw Arrow IPC result bytes to the native extension, which decodes and
+  imports them directly into DuckDB output instead of materializing nanoarrow R
+  result arrays first.
   Enum arguments and returns are supported through an explicit Rducks
   enum-storage IPC convention.
 - Added `rducks_reset_udf_counters()` to reset one UDF's diagnostic counters or

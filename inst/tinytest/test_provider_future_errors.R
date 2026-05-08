@@ -78,6 +78,23 @@ local({
   expect_true(is.raw(output_payload))
   decoded_output <- Rducks:::rducks_arrow_ipc_decode_array(output_payload)
   expect_equal(as.data.frame(decoded_output$array)$result, 2:4)
+
+  old_plan <- future::plan()
+  on.exit(future::plan(old_plan), add = TRUE)
+  future::plan(future::sequential)
+  engine <- list(plan = rducks_execution_plan("arrow_ipc", "multiprocess_parallel"))
+  output_schema <- nanoarrow::infer_nanoarrow_schema(data.frame(result = integer()))
+  collected_payload <- Rducks:::rducks_arrow_ipc_future_collect_arrow_chunk(
+    engine, future::future(output_payload), output_schema, 3L
+  )
+  expect_true(is.raw(collected_payload))
+  expect_equal(collected_payload, output_payload)
+  collected_many <- Rducks:::rducks_arrow_ipc_future_collect_many_arrow_chunks(
+    engine, list(future::future(output_payload)), list(output_schema), 3L
+  )
+  expect_true(is.list(collected_many))
+  expect_true(is.raw(collected_many[[1L]]))
+  expect_equal(collected_many[[1L]], output_payload)
 })
 
 local({

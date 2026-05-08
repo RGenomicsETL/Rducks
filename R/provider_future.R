@@ -221,8 +221,10 @@ rducks_arrow_ipc_future_collect_arrow_chunk <- function(engine, fut, output_sche
     stop("output nanoarrow schema pointer is not valid", call. = FALSE)
   }
   result_payload <- rducks_future_collect_vectorized_chunk(engine, fut)
-  decoded_result <- rducks_arrow_ipc_decode_array(result_payload)
-  decoded_result$array
+  if (!is.raw(result_payload)) {
+    stop("Future Arrow IPC worker returned a non-raw result payload", call. = FALSE)
+  }
+  result_payload
 }
 
 rducks_arrow_ipc_future_collect_many_arrow_chunks <- function(engine, futs, output_schemas, ns) {
@@ -241,7 +243,12 @@ rducks_arrow_ipc_future_collect_many_arrow_chunks <- function(engine, futs, outp
     }
   }
   result_payloads <- rducks_future_collect_vectorized_chunks(engine, futs)
-  lapply(result_payloads, function(payload) rducks_arrow_ipc_decode_array(payload)$array)
+  lapply(result_payloads, function(payload) {
+    if (!is.raw(payload)) {
+      stop("Future Arrow IPC worker returned a non-raw result payload", call. = FALSE)
+    }
+    payload
+  })
 }
 
 rducks_arrow_ipc_future_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,
