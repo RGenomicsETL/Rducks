@@ -179,7 +179,7 @@ rducks_enum_level_token <- function(levels) {
 
 #' Rducks DuckDB type objects and constructors
 #'
-#' Use these objects and constructors in [rducks_register()] to avoid string type
+#' Use these objects and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid string type
 #' specifications. Examples include `args = INTEGER`, `args = c(INTEGER,
 #' DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
 #' `args = STRUCT(a = INTEGER, b = VARCHAR)`, and

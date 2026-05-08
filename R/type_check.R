@@ -187,7 +187,7 @@ rducks_check_union_value <- function(type, x, what) {
 #'
 #' @param type A `rducks_type` object such as `INTEGER`, `INTEGER[]`,
 #'   `STRUCT(a = INTEGER)`, or a character type token accepted by
-#'   [rducks_type_normalize()].
+#'   \code{\link[=rducks_type_normalize]{rducks_type_normalize()}}.
 #' @param x R value to check.
 #' @param size Optional exact length for scalar/vector checks.
 #' @param what Label used in error messages.

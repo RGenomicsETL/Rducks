@@ -188,7 +188,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' Explain a registered Rducks UDF
 #'
 #' Returns the R-side registration metadata together with native execution
-#' counters for a UDF registered by [rducks_register()]. The `r_side_record`
+#' counters for a UDF registered by \code{\link[=rducks_register]{rducks_register()}}. The `r_side_record`
 #' column is `FALSE` when native catalog metadata is still present but the
 #' connection-local R registry view was detached or is otherwise unavailable.
 #' The native counters are
@@ -197,7 +197,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
-#' @param name SQL function name registered with [rducks_register()].
+#' @param name SQL function name registered with \code{\link[=rducks_register]{rducks_register()}}.
 #' @return A one-row data frame with registration metadata and native counters.
 #' @export
 rducks_explain_udf <- function(con, name) {
@@ -216,7 +216,7 @@ rducks_explain_udf <- function(con, name) {
 #' preserved; their max fields are reset to the current values.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
-#' @param name Optional SQL function name registered with [rducks_register()]. If
+#' @param name Optional SQL function name registered with \code{\link[=rducks_register]{rducks_register()}}. If
 #'   `NULL`, reset counters for all native Rducks UDFs in the database runtime.
 #' @return Invisibly `TRUE` on success.
 #' @export
@@ -237,9 +237,9 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
 
 #' List registered Rducks UDFs
 #'
-#' Returns one row per UDF registered through [rducks_register()] in the current
+#' Returns one row per UDF registered through \code{\link[=rducks_register]{rducks_register()}} in the current
 #' DuckDB database runtime, including the same registration metadata and native
-#' counters as [rducks_explain_udf()]. This is an Rducks registry view, not a
+#' counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}. This is an Rducks registry view, not a
 #' complete DuckDB catalog listing: functions registered by other extensions or
 #' raw SQL are not included. Because DuckDB's function catalog is database
 #' scoped, sibling DBI connections to the same database runtime share this view.
