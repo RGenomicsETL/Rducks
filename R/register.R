@@ -102,14 +102,13 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' `PRAGMA threads=1` so native registration and the default scalar execution
 #' path stay on the calling R thread. The active \code{\link[=rducks_execution_plan]{rducks_execution_plan()}}
 #' selects and freezes the marshalling implementation for this registration;
-#' unsupported plan/mode/type combinations fail instead of falling back. If a
+#' unsupported plan/mode/type combinations fail instead of switching engines. If a
 #' later call registers the same SQL name/signature, the callable implementation
 #' is replaced in the shared DuckDB database catalog rather than being tied to
 #' the registering DBI connection. After registration, use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}}
-#' to opt into queued same-process execution. For `arrow_ipc` plans with
-#' `ipc_provider = "mirai"`, the UDF closure and discovered globals are copied
-#' once to each daemon in the shared provider pool and retained for that pool's
-#' lifetime.
+#' to opt into queued same-process execution. For `arrow_ipc` plans, the UDF
+#' closure and discovered globals are copied once to each NNG worker in the
+#' shared provider pool and retained for that pool's lifetime.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -163,22 +162,18 @@ rducks_register <- function(con, name, fun, args, returns,
     rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
     rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(spec$mode, "vectorized") && identical(plan$engine_id, "ipc_mirai_pool")) {
-    rducks_make_arrow_ipc_mirai_vectorized_wrapper(
+  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
+    rducks_make_arrow_ipc_nng_vectorized_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
-  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_future_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_r")) {
     rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else if (identical(plan$marshalling, "arrow_c")) {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(plan$engine_id, "ipc_mirai_pool")) {
-    rducks_make_arrow_ipc_mirai_scalar_wrapper(
+  } else if (identical(plan$marshalling, "arrow_ipc")) {
+    rducks_make_arrow_ipc_nng_scalar_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
-  } else if (identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_future_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
   } else {
     stop("Rducks execution plan ", plan$plan_id, " is not implemented for local registration", call. = FALSE)
   }

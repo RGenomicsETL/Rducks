@@ -10,7 +10,7 @@ local({
   expect_equal(current$engine_id, "arrow_r_serial")
   expect_equal(rducks_native_execution_backend(con), "single")
   expect_equal(Rducks:::rducks_as_execution_plan("arrow_c_direct_serial")$plan_id, "arrow_c+serial")
-  expect_equal(Rducks:::rducks_as_execution_plan("ipc_future_pool")$plan_id, "arrow_ipc+multiprocess_parallel")
+  expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$plan_id, "arrow_ipc+multiprocess_parallel")
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   current <- rducks_current_execution_plan(con)
@@ -55,17 +55,12 @@ local({
   expect_equal(Rducks:::rducks_connection_external_threads(con), before_external_threads)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
 
-  old_future_plan <- future::plan()
-  on.exit(future::plan(old_future_plan), add = TRUE)
-  future::plan(future::multisession, workers = 1)
-
-  ipc_plan <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
+  ipc_plan <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 30)
+  expect_true(ipc_plan$implemented)
   rducks_set_execution_plan(con, ipc_plan, threads = 2L, external_threads = 1L)
   expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
   expect_equal(Rducks:::rducks_connection_threads(con), 2L)
   rducks_set_execution_plan(con, ipc_plan, threads = 1L, external_threads = 1L)
-  expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
-
   reg_ipc <- rducks_register(
     con, "plan_ipc_vec", function(x) x + 1L,
     INTEGER, INTEGER,

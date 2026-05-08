@@ -12,8 +12,7 @@ place.
 | `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | supported | supported | DuckDB worker callbacks queue work; R evaluation runs on the recorded main R thread. |
 | `arrow_c_direct_serial` | `arrow_c + serial` | supported | supported | Direct native DuckDB-vector marshalling only; unsupported signatures fail. |
 | `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | supported | supported | Same direct marshalling as serial, with queued main-thread R evaluation. |
-| `ipc_future_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Native Arrow IPC request/result bytes with generic `future` workers; portable correctness path. |
-| `ipc_mirai_pool` | `arrow_ipc + multiprocess_parallel` with `ipc_provider = "mirai"` | implemented/experimental | implemented/experimental | Persistent mirai workers preload evaluator/schema state and use the same owned Arrow IPC payload contract. |
+| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state and use owned Arrow IPC request/result bytes. Rducks starts local mirai daemons by default; `ipc_transport` covers abstract/ipc/unix/tcp/ws endpoint generation, and explicit endpoints are passed through as NNG URLs. |
 
 Invalid combinations are intentionally rejected rather than mapped to another
 engine.
@@ -82,6 +81,6 @@ R-side registry view has been detached.
   the main thread and any worker-side writeback finish.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
   boundaries. The implementation must not use R `serialize()` or raw external
-  `SEXP` pointers as a hidden transport fallback.
+  `SEXP` pointers as a hidden transport alternate path.
 - `arrow_c` means direct native conversion. Any Arrow/R bridge or helper path
   must be a separately named plan if reintroduced.

@@ -21,18 +21,14 @@ rducks_plan_serialization <- function(marshalling) {
 }
 
 rducks_plan_ipc_provider <- function(x) {
-  match.arg(x, c("future", "mirai"))
+  match.arg(x, "nng")
 }
 
-rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "future") {
+rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng") {
   key <- paste(marshalling, concurrency, sep = "+")
   if (identical(key, "arrow_ipc+multiprocess_parallel")) {
-    return(switch(
-      ipc_provider,
-      future = "ipc_future_pool",
-      mirai = "ipc_mirai_pool",
-      NA_character_
-    ))
+    ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
+    return("ipc_nng_pool")
   }
   switch(
     key,
@@ -63,37 +59,30 @@ rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
   )
 }
 
-rducks_future_options <- function(globals = "auto",
-                                  packages = NULL,
-                                  seed = FALSE,
-                                  stdout = FALSE,
-                                  conditions = "condition",
-                                  timeout = NULL) {
+rducks_ipc_options <- function(globals = "auto",
+                                packages = NULL,
+                                timeout = NULL,
+                                endpoints = NULL,
+                                transport = NULL) {
   if (!(isTRUE(globals) || identical(globals, FALSE) || is.character(globals) || is.list(globals))) {
-    stop("future_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
+    stop("ipc_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
   }
   if (!is.null(packages) && !is.character(packages)) {
-    stop("future_packages must be NULL or a character vector", call. = FALSE)
-  }
-  if (!is.logical(stdout) || length(stdout) != 1L || is.na(stdout)) {
-    stop("future_stdout must be TRUE or FALSE", call. = FALSE)
-  }
-  if (is.null(conditions)) {
-    conditions <- character()
-  }
-  if (!is.character(conditions)) {
-    stop("future_conditions must be NULL or a character vector", call. = FALSE)
+    stop("ipc_packages must be NULL or a character vector", call. = FALSE)
   }
   if (!is.null(timeout) && (!is.numeric(timeout) || length(timeout) != 1L || is.na(timeout) || timeout < 0)) {
-    stop("future_timeout must be NULL or a non-negative numeric scalar", call. = FALSE)
+    stop("ipc_timeout must be NULL or a non-negative numeric scalar", call. = FALSE)
   }
+  if (!is.null(endpoints) && (!is.character(endpoints) || anyNA(endpoints) || any(!nzchar(endpoints)))) {
+    stop("ipc_endpoints must be NULL or a character vector of NNG endpoint URLs", call. = FALSE)
+  }
+  transport <- rducks_nng_normalize_transport(transport)
   list(
     globals = globals,
     packages = unique(c("Rducks", packages)),
-    seed = seed,
-    stdout = stdout,
-    conditions = conditions,
-    timeout = timeout
+    timeout = timeout,
+    endpoints = endpoints,
+    transport = transport
   )
 }
 
@@ -118,40 +107,42 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'
 #' `arrow_r + serial` is the reference implementation used for conformance.
 #' Other plans must be explicitly implemented and validated against that
-#' reference; Rducks does not silently fall back from one plan to another.
-#' Each valid pair maps to a concrete internal `engine_id` such as
-#' `"arrow_c_direct_serial"` or `"ipc_future_pool"`; the older
-#' `marshalling + concurrency` fields remain for user-facing readability.
+#' reference; Rducks does not silently switch from one plan to another.
+#' `arrow_ipc + multiprocess_parallel` uses the native NNG path with vendored
+#' nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal `engine_id` such as
+#' `"arrow_c_direct_serial"` or `"ipc_nng_pool"`.
 #'
 #' @param marshalling Chunk marshalling implementation. `"arrow_r"` uses Arrow C
 #'   Data plus nanoarrow/R materialization and is the reference implementation.
 #'   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
 #'   scalar and vectorized registrations. `"arrow_ipc"` uses Arrow IPC bytes as
-#'   the explicit task/result payload for the Future-based multiprocess path.
+#'   the explicit task/result payload for the NNG multiprocess path.
 #' @param concurrency Concurrency contract. `"serial"` evaluates one chunk at a
 #'   time in the calling process. `"inproc_concurrent"` allows in-process DuckDB
 #'   callback concurrency while keeping R API work serialized on the recorded
-#'   main R thread. `"multiprocess_parallel"` uses the current `future` backend
-#'   for process-isolated chunk work and requires `marshalling = "arrow_ipc"`.
-#' @param future_globals,future_packages,future_seed,future_stdout,future_conditions,future_timeout
-#'   Options forwarded to `future::future()` for `arrow_ipc +
-#'   multiprocess_parallel` registrations. By default (`future_globals = "auto"`),
-#'   Rducks discovers UDF globals once at registration-wrapper creation and then
-#'   sends explicit worker state per chunk, avoiding per-chunk automatic global
-#'   discovery. Use `future_packages` for packages that workers should attach,
-#'   `future_globals = TRUE` for Future's per-task discovery, `FALSE` for only
-#'   Rducks' required task state, or a character vector/named list for explicit
-#'   extra globals. `future_timeout` is also used as the Arrow IPC provider wait
-#'   timeout. The persistent mirai provider preloads the same discovered
-#'   globals/packages once per provider registration.
+#'   main R thread. `"multiprocess_parallel"` uses persistent NNG/nanonext
+#'   workers for process-isolated chunk work and requires `marshalling = "arrow_ipc"`.
+#'   When `ipc_endpoints` is `NULL`, Rducks starts local worker loops with
+#'   mirai daemons; otherwise the endpoint URLs are passed through unchanged.
+#' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport Arrow IPC worker options.
+#'   By default (`ipc_globals = "auto"`), Rducks discovers UDF globals once at
+#'   registration-wrapper creation and broadcasts them to each NNG worker when
+#'   the UDF is registered with the shared provider pool. Use `ipc_packages` for
+#'   packages that workers should attach, `ipc_globals = FALSE` to rely only on
+#'   the serialized UDF closure and explicit task state, or a character vector /
+#'   named list for explicit extra globals. `ipc_timeout` is the provider wait
+#'   timeout. `ipc_endpoints` optionally supplies NNG endpoint URLs for externally
+#'   managed worker processes running the Rducks NNG worker loop; any NNG URL
+#'   transport supported by both endpoints is allowed. When endpoints are not
+#'   supplied, `ipc_transport` selects the transport used for the mirai-launched
+#'   local worker endpoints (`"abstract"`, `"ipc"`, `"unix"`, `"tcp"`, or
+#'   `"ws"`; the default is `"abstract"` on Linux and `"ipc"` elsewhere).
 #' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
-#'   `"future"` is the portable default. `"mirai"` uses persistent mirai daemon
-#'   workers and fails at registration if the `mirai` package is unavailable; it
-#'   does not fall back to Future. The mirai provider broadcasts each registered
-#'   UDF closure plus discovered globals/packages to every daemon in the shared
+#'   Only `"nng"` is supported. The NNG provider broadcasts each registered UDF
+#'   closure plus discovered globals/packages to every worker in the shared
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
 #'   environments unless that memory cost is intended.
-#' @param ipc_workers Number of persistent workers for `ipc_provider = "mirai"`.
+#' @param ipc_workers Number of persistent NNG workers.
 #' @param ipc_max_pending Maximum accepted but uncollected tasks for the
 #'   persistent provider. The default bounds provider memory/use of outstanding
 #'   callback work; `NULL` disables this provider-level limit.
@@ -159,40 +150,42 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
                                   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-                                  future_globals = "auto",
-                                  future_packages = NULL,
-                                  future_seed = FALSE,
-                                  future_stdout = FALSE,
-                                  future_conditions = "condition",
-                                  future_timeout = NULL,
-                                  ipc_provider = c("future", "mirai"),
+                                  ipc_globals = "auto",
+                                  ipc_packages = NULL,
+                                  ipc_timeout = NULL,
+                                  ipc_endpoints = NULL,
+                                  ipc_transport = NULL,
+                                  ipc_provider = "nng",
                                   ipc_workers = 1L,
                                   ipc_max_pending = 64L) {
   marshalling <- rducks_plan_marshalling(marshalling)
   concurrency <- rducks_plan_concurrency(concurrency)
-  ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
+  if (identical(marshalling, "arrow_ipc")) {
+    ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
+  } else {
+    if (!identical(ipc_provider, "nng")) {
+      stop("ipc_provider only applies to marshalling = 'arrow_ipc'", call. = FALSE)
+    }
+    ipc_provider <- "none"
+  }
   ipc_workers <- rducks_validate_thread_count(ipc_workers, "ipc_workers")
   if (!is.null(ipc_max_pending) &&
       (!is.numeric(ipc_max_pending) || length(ipc_max_pending) != 1L || is.na(ipc_max_pending) || ipc_max_pending <= 0)) {
     stop("ipc_max_pending must be NULL or a positive numeric scalar", call. = FALSE)
   }
   rducks_validate_execution_plan_values(marshalling, concurrency)
-  if (!identical(marshalling, "arrow_ipc") && !identical(ipc_provider, "future")) {
-    stop("ipc_provider only applies to marshalling = 'arrow_ipc'", call. = FALSE)
-  }
   backend <- rducks_plan_backend(concurrency)
   serialization <- rducks_plan_serialization(marshalling)
   implemented <- rducks_plan_implemented(marshalling, concurrency)
   engine_id <- rducks_plan_engine_id(marshalling, concurrency, ipc_provider = ipc_provider)
   supported_call_shapes <- rducks_plan_supported_call_shapes(marshalling, concurrency)
-  future_options <- if (identical(marshalling, "arrow_ipc")) {
-    rducks_future_options(
-      globals = future_globals,
-      packages = future_packages,
-      seed = future_seed,
-      stdout = future_stdout,
-      conditions = future_conditions,
-      timeout = future_timeout
+  ipc_options <- if (identical(marshalling, "arrow_ipc")) {
+    rducks_ipc_options(
+      globals = ipc_globals,
+      packages = ipc_packages,
+      timeout = ipc_timeout,
+      endpoints = ipc_endpoints,
+      transport = ipc_transport
     )
   } else {
     NULL
@@ -208,12 +201,12 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       supported_call_shapes = supported_call_shapes,
       backend = backend,
       serialization = serialization,
-      future_options = future_options,
+      ipc_options = ipc_options,
       ipc_provider = if (identical(marshalling, "arrow_ipc")) ipc_provider else "none",
       ipc_workers = if (identical(marshalling, "arrow_ipc")) ipc_workers else NA_integer_,
       ipc_max_pending = if (identical(marshalling, "arrow_ipc")) ipc_max_pending else NA_real_,
       in_process = !identical(concurrency, "multiprocess_parallel"),
-      uses_r_thread = TRUE
+      uses_r_thread = !identical(marshalling, "arrow_ipc")
     ),
     class = "rducks_execution_plan"
   )
@@ -227,7 +220,7 @@ print.rducks_execution_plan <- function(x, ...) {
   cat("  marshalling: ", x$marshalling, "\n", sep = "")
   cat("  concurrency: ", x$concurrency, "\n", sep = "")
   if (identical(x$marshalling, "arrow_ipc")) {
-    cat("  ipc provider: ", x$ipc_provider %||% "future", "\n", sep = "")
+    cat("  ipc provider: ", x$ipc_provider %||% "nng", "\n", sep = "")
   }
   cat("  reference:   ", if (isTRUE(x$reference)) "yes" else "no", "\n", sep = "")
   cat("  implemented: ", if (isTRUE(x$implemented)) "yes" else "no", "\n", sep = "")
@@ -251,8 +244,7 @@ rducks_as_execution_plan <- function(plan) {
       arrow_r_main_queue = rducks_execution_plan("arrow_r", "inproc_concurrent"),
       arrow_c_direct_serial = rducks_execution_plan("arrow_c", "serial"),
       arrow_c_direct_main_queue = rducks_execution_plan("arrow_c", "inproc_concurrent"),
-      ipc_future_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel"),
-      ipc_mirai_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai"),
+      ipc_nng_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "nng"),
       stop("unknown Rducks execution plan shortcut: ", plan, call. = FALSE)
     ))
   }
@@ -354,7 +346,7 @@ rducks_cleanup_runtime_anchor <- function(db_token, token) {
   anchor_env <- get(db_token, envir = store, inherits = FALSE)
   rducks_remove_store_entry(anchor_env, token)
   if (rducks_runtime_anchor_empty(anchor_env)) {
-    rducks_mirai_stop_runtime_providers(db_token)
+    rducks_nng_stop_runtime_providers(db_token)
     rducks_remove_store_entry(store, db_token)
     rducks_remove_store_entry(.rducks_state$registrations, db_token)
   }

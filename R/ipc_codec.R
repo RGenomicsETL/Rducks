@@ -2,7 +2,7 @@ rducks_arrow_ipc_encode <- function(data) {
   if (!inherits(data, "nanoarrow_array")) {
     stop("Arrow IPC native path requires a nanoarrow_array", call. = FALSE)
   }
-  .Call(RDUCKS_arrow_ipc_encode_array, data, rducks_cache_nanoarrow_dll_path())
+  .Call(RDUCKS_arrow_ipc_encode_array, data)
 }
 
 rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {

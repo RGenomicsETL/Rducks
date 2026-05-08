@@ -499,7 +499,7 @@ SEXP RDUCKS_decimal_unscale_strings(SEXP x, SEXP scale_sexp) {
 
 SEXP RDUCKS_decimal_from_scaled_integer_strings(SEXP x, SEXP width_sexp, SEXP scale_sexp) {
     int width = rducks_decimal_get_width(width_sexp);
-    int scale = rducks_decimal_get_scale(scale_sexp, width);
+    (void)rducks_decimal_get_scale(scale_sexp, width);
     SEXP chars = PROTECT(RDUCKS_decimal_unscale_strings(x, scale_sexp));
     SEXP out = PROTECT(RDUCKS_normalize_decimal_string(chars, width_sexp, scale_sexp));
     UNPROTECT(2);

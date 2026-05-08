@@ -4,19 +4,15 @@ suppressPackageStartupMessages({
   library(Rducks)
   library(DBI)
   library(duckdb)
-  library(future)
 })
 
 main <- function() {
 limit <- as.integer(Sys.getenv("RDUCKS_MATRIX_MAX", "0"))
 if (is.na(limit)) limit <- 0L
 include_ipc <- tolower(Sys.getenv("RDUCKS_MATRIX_INCLUDE_IPC", "false")) %in% c("1", "true", "yes")
-future_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_MATRIX_FUTURE_WORKERS", "1")))
-if (length(future_workers) != 1L || is.na(future_workers) || future_workers < 1L) future_workers <- 1L
-old_future_plan <- future::plan()
-on.exit(future::plan(old_future_plan), add = TRUE)
+ipc_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_MATRIX_IPC_WORKERS", "1")))
+if (length(ipc_workers) != 1L || is.na(ipc_workers) || ipc_workers < 1L) ipc_workers <- 1L
 if (include_ipc) {
-  future::plan(future::multisession, workers = future_workers)
   if (!isTRUE(Rducks:::rducks_arrow_ipc_mapping_supported(INTEGER))) {
     stop("Arrow IPC matrix smoke check failed: INTEGER mapping is not supported", call. = FALSE)
   }
@@ -100,7 +96,7 @@ assert_marshalling_counter <- function(name, marshalling, label) {
   bad_other <- vapply(others, function(field) info[[field]][[1L]] != 0, logical(1))
   if (info[[expected]][[1L]] < 1 || any(bad_other)) {
     stop(
-      "generated marshalling case violated no-fallback counters: ", label,
+      "generated marshalling case used unexpected marshalling counters: ", label,
       " ", expected, "=", info[[expected]][[1L]],
       " others=", paste(paste0(others, "=", vapply(others, function(field) info[[field]][[1L]], numeric(1))), collapse = ","),
       call. = FALSE
@@ -111,7 +107,7 @@ assert_marshalling_counter <- function(name, marshalling, label) {
 
 run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql2, label, include_null = TRUE) {
   plan <- if (identical(marshalling, "arrow_ipc")) {
-    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_timeout = 60)
+    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 60, ipc_workers = ipc_workers)
   } else {
     rducks_execution_plan(marshalling, "serial")
   }
@@ -181,7 +177,7 @@ run_vectorized_row_conformance <- function(type, sql1, sql2, label, include_null
 
 run_scalar_return_null_one_plan <- function(marshalling, type, sql1, sql2, label, include_null = TRUE) {
   plan <- if (identical(marshalling, "arrow_ipc")) {
-    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_timeout = 60)
+    rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 60, ipc_workers = ipc_workers)
   } else {
     rducks_execution_plan(marshalling, "serial")
   }
@@ -216,7 +212,7 @@ run_scalar_return_null_conformance <- function(type, sql1, sql2, label, include_
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
 }
 
-run_arrow_c_scalar_no_fallback <- function(type, sql1, sql2, label, include_null = TRUE) {
+run_arrow_c_scalar_strict_counters <- function(type, sql1, sql2, label, include_null = TRUE) {
   if (!Rducks:::rducks_arrow_c_direct_mapping_supported(type)) return(invisible(FALSE))
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   type_sql <- rducks_type_sql(type)
@@ -308,7 +304,7 @@ run_composite_identity <- function(case, shape) {
   invisible(rducks_register(con, name, function(x) x, spec$type, spec$type))
   got <- sprintf("%s(%s)", name, spec$sql)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, spec$sql)), paste(shape, case$name))
-  run_arrow_c_scalar_no_fallback(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
+  run_arrow_c_scalar_strict_counters(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
   run_vectorized_row_conformance(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
 
   maybe_stop_for_limit()
@@ -425,7 +421,7 @@ tryCatch({
   for (case in scalar_cases) {
     run_identity(case)
     run_return(case)
-    run_arrow_c_scalar_no_fallback(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
+    run_arrow_c_scalar_strict_counters(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
     run_scalar_return_null_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
     run_vectorized_row_conformance(case$type, case$sql1, case$sql2, case$name, include_null = !identical(case$name, "union"))
   }

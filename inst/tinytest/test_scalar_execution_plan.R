@@ -26,26 +26,32 @@ expect_equal(ipc$serialization, "arrow_ipc")
 expect_true(ipc$implemented)
 expect_equal(ipc$supported_call_shapes, c("scalar", "vectorized"))
 expect_false(ipc$in_process)
-expect_true(ipc$uses_r_thread)
-expect_equal(ipc$future_options$packages, "Rducks")
-expect_equal(ipc$future_options$globals, "auto")
-expect_equal(ipc$ipc_provider, "future")
-expect_equal(ipc$engine_id, "ipc_future_pool")
-mirai_ipc <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai", ipc_workers = 1L)
-expect_equal(mirai_ipc$ipc_provider, "mirai")
-expect_equal(mirai_ipc$engine_id, "ipc_mirai_pool")
-expect_equal(mirai_ipc$ipc_max_pending, 64L)
+expect_false(ipc$uses_r_thread)
+expect_equal(ipc$ipc_options$packages, "Rducks")
+expect_equal(ipc$ipc_options$globals, "auto")
+expect_true(ipc$ipc_options$transport %in% Rducks:::rducks_nng_supported_transports())
 expect_equal(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "mirai", ipc_max_pending = 2L)$ipc_max_pending,
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "tcp")$ipc_options$transport,
+  "tcp"
+)
+expect_error(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "bogus"),
+  "arg"
+)
+expect_equal(ipc$ipc_provider, "nng")
+expect_equal(ipc$engine_id, "ipc_nng_pool")
+expect_equal(ipc$ipc_max_pending, 64L)
+expect_equal(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 2L)$ipc_max_pending,
   2L
 )
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 0L),
   "ipc_max_pending"
 )
-expect_equal(Rducks:::rducks_as_execution_plan("ipc_mirai_pool")$engine_id, "ipc_mirai_pool")
-expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_globals = TRUE)$future_options$globals)
-expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", future_globals = FALSE)$future_options$globals)
+expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$engine_id, "ipc_nng_pool")
+expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = TRUE)$ipc_options$globals)
+expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = FALSE)$ipc_options$globals)
 expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 
 expect_error(

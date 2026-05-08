@@ -7,7 +7,7 @@
  * still materializes R objects directly from borrowed DuckDB vectors.
  *
  * Do not treat current R/SEXP materialization or SEXP result writeback helpers as
- * worker-thread safe. A future async implementation must complete the remaining
+ * worker-thread safe. A later async implementation must complete the remaining
  * split into:
  *   1. worker-safe owned DuckDB/vector input snapshots with no R API;
  *   2. main-R-thread evaluation and R/nanoarrow external-pointer handling;
@@ -22,24 +22,6 @@
 #define RDUCKS_RC_BUNDLE_RESULT_ARRAY 5
 #define RDUCKS_RC_BUNDLE_EVAL_ROWS 6
 #define RDUCKS_RC_BUNDLE_SIZE 7
-
-static int rducks_rc_type_null_is_r_null(const rducks_type_desc_t *desc) {
-    if (!desc) return 1;
-    if (desc->kind != RDUCKS_KIND_SCALAR) return 1;
-    switch (desc->scalar) {
-    case RDUCKS_TYPE_I64:
-    case RDUCKS_TYPE_U64:
-    case RDUCKS_TYPE_BLOB:
-    case RDUCKS_TYPE_HUGEINT:
-    case RDUCKS_TYPE_UHUGEINT:
-    case RDUCKS_TYPE_UUID:
-    case RDUCKS_TYPE_INTERVAL:
-    case RDUCKS_TYPE_BIT:
-        return 1;
-    default:
-        return 0;
-    }
-}
 
 static int rducks_rc_bundle_valid(SEXP bundle) {
     return TYPEOF(bundle) == VECSXP && XLENGTH(bundle) >= RDUCKS_RC_BUNDLE_SIZE &&
@@ -117,19 +99,6 @@ static SEXP rducks_rc_vector_value_at(SEXP values, idx_t row, int *ok) {
     default:
         return rducks_rc_subset_with_bracket(values, row, ok);
     }
-}
-
-static int rducks_rc_logical_at(SEXP x, idx_t row) {
-    if (TYPEOF(x) != LGLSXP || (R_xlen_t)row < 0 || (R_xlen_t)row >= XLENGTH(x)) return 0;
-    return LOGICAL(x)[(R_xlen_t)row] == TRUE;
-}
-
-static SEXP rducks_rc_arg_at(const rducks_type_desc_t *type, SEXP values, SEXP nulls, idx_t row, int *ok) {
-    if (rducks_rc_logical_at(nulls, row) && rducks_rc_type_null_is_r_null(type)) {
-        *ok = 1;
-        return R_NilValue;
-    }
-    return rducks_rc_vector_value_at(values, row, ok);
 }
 
 static SEXP rducks_rc_call_user(SEXP fun, SEXP args, int *r_err) {
@@ -725,10 +694,6 @@ static SEXP rducks_rc_make_classed_string_len(const char *value, size_t len, con
     Rf_setAttrib(out, R_ClassSymbol, cls);
     UNPROTECT(2);
     return out;
-}
-
-static SEXP rducks_rc_make_classed_string(const char *value, const char *class_name) {
-    return rducks_rc_make_classed_string_len(value, strlen(value), class_name);
 }
 
 static SEXP rducks_rc_make_integer_object_from_le_bytes(const uint8_t *bytes, size_t width, int signed_value,
@@ -3401,7 +3366,7 @@ static SEXP rducks_rc_vectorized_prepare_inputs_on_r_thread(rducks_r_scalar_meta
                                                             int *protect_count,
                                                             char *err_msg, size_t err_cap) {
     /* Main-R-thread phase for the current vectorized direct path. It
-     * materializes borrowed DuckDB vectors into R objects. A future async path
+     * materializes borrowed DuckDB vectors into R objects. A later async path
      * must replace this with an owned, non-SEXP snapshot before crossing
      * threads.
      */
@@ -3427,7 +3392,7 @@ static int rducks_rc_vectorized_writeback_from_sexp_on_r_thread(rducks_r_scalar_
                                                                 idx_t n,
                                                                 char *err_msg, size_t err_cap) {
     /* Main-R-thread writeback for current R callback results. This is not the
-     * future worker-safe result phase; that requires owned non-SEXP result
+     * later worker-safe result phase; that requires owned non-SEXP result
      * payloads before writing DuckDB output off the R thread.
      */
     return rducks_rc_write_direct_results(meta, results, output, n, err_msg, err_cap);
@@ -3499,7 +3464,7 @@ fail_vectorized:
 }
 
 /* Current recorded-main-R-thread arrow_c direct dispatcher. This does not rule
- * out a future worker-safe native backend; it means this direct-vector
+ * out a later worker-safe native backend; it means this direct-vector
  * implementation is only legal on the calling R thread because it may call R
  * and touch SEXPs. Concurrent
  * backends must route through a transport boundary and write DuckDB output from
@@ -3689,7 +3654,7 @@ static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
  * from an R prompt. Do not install a fresh top-level context here.
  * R_tryCatchError() catches R allocation/marshalling errors that would otherwise
  * longjmp across DuckDB, while R_UnwindProtect() marks abnormal unwinds and is
- * the place to add deterministic cleanup if future direct arrow_c sections
+ * the place to add deterministic cleanup if later direct arrow_c sections
  * acquire native malloc/Arrow/DuckDB handles. The current impl bodies only
  * borrow callback vectors and use R PROTECT/UNPROTECT-managed SEXPs.
  */

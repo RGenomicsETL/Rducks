@@ -193,7 +193,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' connection-local R registry view was detached or is otherwise unavailable.
 #' The native counters are
 #' useful for checking that a plan executed through its requested evaluator
-#' instead of silently falling back: for example, an `arrow_c` scalar UDF should
+#' instead of silently switching engines: for example, an `arrow_c` scalar UDF should
 #' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.

@@ -5,7 +5,7 @@ R functions as DuckDB UDFs.
 
 See [Execution Plans And Validation Checklist](EXECUTION_PLANS.md) for the target
 separation between UDF semantics, marshalling implementation, concurrency model,
-the hard `arrow_r + serial` reference implementation, and the no-fallback rule.
+the hard `arrow_r + serial` reference implementation, and the strict-plan rule.
 
 ## Core layers
 
@@ -69,7 +69,7 @@ Thread-safety means preserving this invariant, not making R itself callable from
 DuckDB worker threads. In-process queuing is a same-process scheduling and
 liveness mechanism, not a parallel-R performance feature: R calls remain
 serialized on the main R thread. The public UDF contract should say what
-concurrency is allowed, not expose process pools, worker threads, mirai daemons,
+concurrency is allowed, not expose process pools, worker threads, NNG/nanonext workers,
 or a specific dispatcher implementation as scalar-function semantics.
 
 ## R API and DuckDB-worker boundary discipline
@@ -128,8 +128,8 @@ by the waiting worker thread from those Arrow buffers. For queued composite
 direct returns, checked R results are written into an owned DuckDB result chunk
 on the main R thread and copied to callback output by the waiting worker. Serial
 scalar callbacks still write DuckDB output on the recorded main R thread before
-the callback returns. It must fail rather than falling back to the Arrow helper
-engine. A future threaded native backend must also replace any remaining SEXP
+the callback returns. It must fail rather than switching to the Arrow helper
+engine. A later threaded native backend must also replace any remaining SEXP
 writeback cases with owned buffers before crossing threads, or be a genuinely
 pure-native evaluator with no R callback. Vectorized mode uses Arrow helper
 phases for `arrow_r`, named main-thread prepare/evaluate phases for direct
@@ -159,9 +159,8 @@ Internally the current concurrency backends are:
   copy that vector into callback output. The stack request and callback-owned
   output vector still require the UDF callback to stay alive until the main
   thread has consumed the request and any worker-side writeback has completed.
-- `multiprocess_parallel`: out-of-process execution through the selected Arrow
-  IPC worker provider (`ipc_future_pool` by default, experimental
-  `ipc_mirai_pool` when requested). The scalar-UDF callback implementation
+- `multiprocess_parallel`: out-of-process execution through the Arrow IPC
+  `ipc_nng_pool` worker provider. The scalar-UDF callback implementation
   serializes chunk payloads with Arrow IPC so workers receive raw task/result
   payloads rather than DuckDB-owned pointers or session-bound R objects. This
   path is implemented in the native extension (`rducks_arrow.c` and
@@ -224,7 +223,7 @@ four questions at every boundary:
 
 Borrowed DuckDB chunk views must not outlive the DuckDB UDF stack that created
 them. The current in-process queue is synchronous: the worker waits until the
-main R thread consumes the request. If a future dispatcher allows the worker to
+main R thread consumes the request. If a later dispatcher allows the worker to
 return before that consumption, the request must copy into owned nanoarrow
 buffers instead of exporting a borrowed view.
 

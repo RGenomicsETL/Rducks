@@ -35,9 +35,3 @@ such as scalar versus vectorized call shape, declared types, NULL handling,
 error handling, and side effects. The selected evaluator/marshalling for an
 already-registered UDF remains frozen in its database-catalog metadata.
 }
-\details{
-Compatibility note: the older \code{rducks_enable_inproc()} and
-\code{rducks_disable_inproc()} helpers now set the \code{inproc_concurrent} and
-\code{serial} concurrency parts of this plan while preserving the current
-marshalling choice.
-}

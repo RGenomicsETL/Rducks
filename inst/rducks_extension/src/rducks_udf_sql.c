@@ -116,6 +116,12 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     meta->exception_handling = exception_handling;
     meta->eval_mode = eval_mode;
     meta->runtime = runtime;
+    if (eval_mode == RDUCKS_EVAL_RIPC && !rducks_ripc_configure_meta_on_main(runtime, meta, eval_ref, err, err_cap)) {
+        rducks_r_scalar_meta_destroy(meta);
+        duckdb_destroy_scalar_function(&fn);
+        duckdb_destroy_logical_type(&return_logical_type);
+        return false;
+    }
     R_PreserveObject(eval_ref);
     meta->fun = eval_ref;
 

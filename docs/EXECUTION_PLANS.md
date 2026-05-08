@@ -9,7 +9,7 @@ The core rule is:
 > Registration states the UDF semantics and freezes the execution engine for
 > that catalog UDF. A connection execution plan is only the default for future
 > registrations through that connection. The runtime resolves exactly one engine
-> per registered UDF and never silently falls back to another engine.
+> per registered UDF and never silently switches to another engine.
 
 ## Vocabulary
 
@@ -55,12 +55,11 @@ mechanism used to make it happen.
   parallel R speed.
 - `multiprocess_parallel`: multiple chunks may be evaluated concurrently in
   isolated R worker processes. Worker lifecycle may be implemented with
-  mirai-style machinery, but the plan name does not expose that mechanism.
+  NNG/nanonext-style machinery, but the plan name does not expose that mechanism.
 
 Avoid public plan names such as `main_thread_loop`, `queue`, `pump`, or
-`sockets`; those describe mechanisms, not concurrency semantics. Provider names
-may appear only where provider selection is explicit, e.g. `ipc_future_pool`
-versus experimental `ipc_mirai_pool`.
+`sockets`; those describe mechanisms, not concurrency semantics. The only
+current IPC engine id is `ipc_nng_pool`.
 
 ## Reference implementation contract
 
@@ -70,7 +69,7 @@ Reference means:
 
 - it is complete for the public type surface that Rducks claims to support;
 - it is boring and explicit, not tuned for clever performance;
-- it does not call another evaluator as a fallback;
+- it does not call another evaluator as an alternate path;
 - every other execution plan is tested against it for every supported
   signature and semantic option;
 - it may be slower than other plans, but it must be easier to reason about.
@@ -86,7 +85,7 @@ conformance tests should therefore use specially constructed functions such as
 identity or simple pure transformations where the expected equivalence is part of
 the test case.
 
-## No-fallback rule
+## Strict plan rule
 
 A UDF invocation resolves to exactly one frozen execution engine:
 
@@ -119,10 +118,9 @@ observable plan remains one named plan with one declared support matrix.
 | --- | --- | --- | --- | --- | --- |
 | `arrow_r_serial` | `arrow_r` | `serial` | implemented/reference | implemented/reference | The semantic oracle for all other engines. |
 | `arrow_r_main_queue` | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded main R thread. |
-| `arrow_c_direct_serial` | `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`); no Arrow/R bridge fallback. |
+| `arrow_c_direct_serial` | `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`); unsupported signatures error. |
 | `arrow_c_direct_main_queue` | `arrow_c` | `inproc_concurrent` | implemented | implemented | Same direct marshalling semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded main R thread. |
-| `ipc_future_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented | implemented | Generic Future-backed Arrow IPC request/result payloads. Scalar mode loops over rows inside the worker; vectorized mode calls once per chunk. The native extension implements the UDF path in C by submitting Arrow IPC chunk work, cooperatively draining queued worker callbacks when execution reaches the main R thread, collecting Future results, and copying returned Arrow results into the DuckDB output vector. |
-| `ipc_mirai_pool` | `arrow_ipc` | `multiprocess_parallel` | experimental | experimental | Persistent mirai workers preload evaluator/schema state once per UDF, then receive task id, UDF id, row count, and Arrow IPC bytes per chunk. Accepted-but-uncollected tasks are bounded by `ipc_max_pending`. It uses the same native RIPC callback/writeback path and must not fall back to Future or same-process execution. |
+| `ipc_nng_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state once per UDF, then receive task id, UDF id, row count, and Arrow IPC bytes per chunk. Rducks starts local worker loops with mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints, and explicit endpoint URLs are passed through directly. Accepted-but-uncollected tasks are bounded by `ipc_max_pending`; the engine must not switch to same-process execution. |
 
 Current API direction:
 
@@ -217,8 +215,8 @@ Additional multiprocess cases:
 ### Iteration 0: freeze principles
 
 - [x] Add this execution-plan vocabulary to public/internal architecture docs.
-- [x] State that `arrow_r + serial` is the reference, not a fallback.
-- [x] State the no-fallback rule in registration and runtime docs.
+- [x] State that `arrow_r + serial` is the reference, not an alternate path.
+- [x] State the strict-plan rule in registration and runtime docs.
 - [x] Decide public names for concurrency: `serial`, `inproc_concurrent`,
       `multiprocess_parallel` unless a better what-not-how name is chosen.
 - [x] Decide whether `mode` remains the public spelling of `call_shape`.
@@ -235,7 +233,7 @@ Additional multiprocess cases:
 - [x] Add R-side plan introspection for tests via
       `rducks_current_execution_plan()` and per-UDF introspection via
       `rducks_explain_udf()` / `rducks_list_udfs()`.
-- [x] Add per-marshalling/per-evaluator counters so tests can prove no fallback
+- [x] Add per-marshalling/per-evaluator counters so tests can prove strict plan use
       path executed.
 
 ### Iteration 2: harden the reference
@@ -246,7 +244,7 @@ Additional multiprocess cases:
       generated tests.
 - [x] Expand the generated matrix until it covers every claimed public type and
       every NULL/error semantic option. The current run covers default/special
-      NULL handling, scalar/vectorized conformance, no-fallback counters, and
+      NULL handling, scalar/vectorized conformance, strict-plan counters, and
       `exception_handling = "return_null"` smoke cases across the supported
       generated type surface.
 - [x] Add negative generated cases for unsupported plan/type combinations.
@@ -258,8 +256,8 @@ Additional multiprocess cases:
       possible, while keeping `RC`/`RCV` as internal evaluator tokens exposed by
       diagnostics.
 - [x] Ensure current direct-buffer and Arrow-helper native paths are one named
-      plan, not an implicit fallback from one plan to another. `arrow_c` is now
-      direct-only; the old helper bridge is not a hidden fallback.
+      plan, not an implicit switch from one plan to another. `arrow_c` is now
+      direct-only; the old helper bridge is not a hidden alternate path.
 - [x] Document exactly which helpers are part of that plan through
       `docs/SUPPORT_MATRIX.md` and native direct-support predicates.
 - [x] Add tests proving `arrow_c + scalar` matches `arrow_r + serial + scalar`
@@ -301,15 +299,14 @@ not the old Arrow/R helper bridge.
       registered-UDF revalidation step on plan changes.
 - [x] Validate a UDF against the active plan when registering after a plan has
       been set.
-- [x] Preserve no-fallback behavior at query execution.
+- [x] Preserve strict-plan behavior at query execution.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
-- [x] Define request envelope: the persistent-provider contract and mirai engine
+- [x] Define request envelope: the persistent-provider contract and NNG engine
       use UDF id, task id, chunk id, row count, optional timeout, and Arrow IPC
-      bytes. The generic Future adapter still carries more worker state per task
-      for portability.
-- [x] Define response envelope: the persistent-provider contract and mirai engine
+      bytes.
+- [x] Define response envelope: the persistent-provider contract and NNG engine
       return task id, UDF id, chunk id, status, Arrow IPC result bytes, and
       structured error text.
 - [x] Encode DuckDB input chunks to Arrow IPC bytes in the DuckDB process for
@@ -318,9 +315,9 @@ not the old Arrow/R helper bridge.
 - [x] Execute scalar/vectorized call shape inside each worker.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
-- [x] Add scalar/vectorized RIPC runtime tests and no-fallback counters.
-- [x] Add worker lifecycle/shutdown/cancellation tests for the mirai provider and
-      a public `ipc_mirai_pool` UDF smoke test.
+- [x] Add scalar/vectorized RIPC runtime tests and strict-plan counters.
+- [x] Add worker lifecycle/shutdown/cancellation tests for the NNG provider and
+      a public `ipc_nng_pool` UDF smoke test.
 - [x] Add tests proving provider worker chunk input/output payloads are raw
       Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a

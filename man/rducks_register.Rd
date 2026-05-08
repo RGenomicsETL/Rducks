@@ -60,12 +60,11 @@ extension. Registration requires \code{external_threads=1} plus
 \verb{PRAGMA threads=1} so native registration and the default scalar execution
 path stay on the calling R thread. The active \code{\link[=rducks_execution_plan]{rducks_execution_plan()}}
 selects and freezes the marshalling implementation for this registration;
-unsupported plan/mode/type combinations fail instead of falling back. If a
+unsupported plan/mode/type combinations fail instead of switching engines. If a
 later call registers the same SQL name/signature, the callable implementation
 is replaced in the shared DuckDB database catalog rather than being tied to
 the registering DBI connection. After registration, use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}}
-to opt into queued same-process execution. For \code{arrow_ipc} plans with
-\code{ipc_provider = "mirai"}, the UDF closure and discovered globals are copied
-once to each daemon in the shared provider pool and retained for that pool's
-lifetime.
+to opt into queued same-process execution. For \code{arrow_ipc} plans, the UDF
+closure and discovered globals are copied once to each NNG worker in the
+shared provider pool and retained for that pool's lifetime.
 }

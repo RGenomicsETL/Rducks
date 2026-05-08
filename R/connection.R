@@ -364,11 +364,6 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' error handling, and side effects. The selected evaluator/marshalling for an
 #' already-registered UDF remains frozen in its database-catalog metadata.
 #'
-#' Compatibility note: the older `rducks_enable_inproc()` and
-#' `rducks_disable_inproc()` helpers now set the `inproc_concurrent` and
-#' `serial` concurrency parts of this plan while preserving the current
-#' marshalling choice.
-#'
 #' @param con A `duckdb_connection` already enabled with \code{\link[=rducks_enable]{rducks_enable()}}.
 #' @param plan An `rducks_execution_plan()` object.
 #' @param threads Optional positive integer to set with `PRAGMA threads`.

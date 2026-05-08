@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-05-08T14:23:36Z",
+  "dependencies": [
+    {
+      "id": "nng",
+      "name": "NNG",
+      "version": "1.11.0",
+      "tag": "v1.11",
+      "url": "https://github.com/nanomsg/nng/archive/refs/tags/v1.11.tar.gz",
+      "archive_sha256": "12aaff6f8f183ba0fec378af8620c47cf4be6da975d016ec6cdec2fbac0d3534"
+    },
+    {
+      "id": "mbedtls",
+      "name": "Mbed TLS",
+      "version": "3.6.5",
+      "tag": "mbedtls-3.6.5",
+      "url": "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2",
+      "archive_sha256": "4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8"
+    },
+    {
+      "id": "nanoarrow",
+      "name": "Apache Arrow nanoarrow C/IPC",
+      "version": "0.9.0.dev-4639910",
+      "tag": "apache-arrow-nanoarrow-0.9.0.dev-23-g4639910",
+      "commit": "4639910",
+      "url": "https://github.com/apache/arrow-nanoarrow",
+      "namespace": "RducksNanoarrow",
+      "layout": "inst/rducks_extension/tp/na"
+    }
+  ]
+}

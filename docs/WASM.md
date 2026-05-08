@@ -16,8 +16,8 @@ Current status:
 - Same-process queued execution relies on native thread/condition-variable
   primitives and a recorded main R thread; browser/webR runtimes may not provide
   equivalent threading or blocking semantics.
-- `arrow_ipc + multiprocess_parallel` relies on R worker processes via the
-  generic `future` path and should not be assumed to work in webR.
+- `arrow_ipc + multiprocess_parallel` relies on NNG/nanonext worker processes
+  and should not be assumed to work in webR.
 - The package should not claim browser/webR runtime support unless the CI smoke
   test is green for the target runtime and proves extension load, UDF
   registration, and query execution. If the webR DuckDB runtime lacks extension
@@ -51,7 +51,7 @@ Checklist before changing this status:
 2. Verify the extension artifact can be found and loaded by DuckDB in that
    runtime.
 3. Run a minimal `rducks_enable()` + `rducks_register()` + SQL query smoke test.
-4. Run at least one no-hidden-fallback check for the claimed execution plan.
+4. Run at least one strict-plan counter check for the claimed execution plan.
 5. Keep the browser smoke workflow green for the target runtime instead of
    relying only on the local harness.
 6. Document unsupported plans explicitly, especially same-process queued and

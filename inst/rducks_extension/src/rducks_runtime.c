@@ -599,6 +599,11 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
         meta->fun = R_NilValue;
     }
     free(meta->name);
+    if (meta->ripc_endpoints) {
+        for (size_t i = 0; i < meta->ripc_endpoint_count; i++) free(meta->ripc_endpoints[i]);
+    }
+    free(meta->ripc_endpoints);
+    free(meta->ripc_udf_id);
     if (meta->args) {
         for (size_t i = 0; i < meta->arity; i++) rducks_type_desc_destroy(meta->args[i]);
     }

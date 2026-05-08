@@ -23,6 +23,11 @@ fi
 
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
 RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
+RDUCKS_WITH_NNG="${RDUCKS_WITH_NNG:-0}"
+if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
+  echo "ERROR: vendored NNG support is not wired for configure.win yet"
+  exit 1
+fi
 if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
   echo "ERROR: USE_UNSTABLE_C_API must be 0 or 1 (got '${USE_UNSTABLE_C_API}')"
   exit 1
@@ -110,6 +115,7 @@ SHARED_FLAGS="-shared"
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
 echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
+echo "Vendored NNG support: 0"
 ${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${R_LD_FLAGS}
 
 echo "Appending DuckDB extension metadata..."

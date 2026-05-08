@@ -11,24 +11,25 @@ Description: R package and DuckDB extension bridge for registering R functions
     marshalling over DuckDB Arrow C Data, and a calling-R-thread execution
     discipline for safe interaction with R from DuckDB execution.
 License: GPL (>= 3)
+SystemRequirements: cmake for optional vendored NNG/Mbed TLS support
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Depends:
     R (>= 4.3)
 Imports:
+    codetools,
     DBI,
     duckdb (>= 1.5.0),
-    future,
     methods,
+    mirai,
     nanoarrow,
+    nanonext,
     S7
 LinkingTo:
     nanoarrow
 Suggests:
     bench,
-    future.mirai,
-    mirai,
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

@@ -4,9 +4,6 @@
 #define RDUCKS_QUEUE_WAIT_MS 100U
 #define RDUCKS_QUEUE_TIMEOUT_TICKS 300U
 #define RDUCKS_QUEUE_PENDING_TIMEOUT_MS ((uint64_t)RDUCKS_QUEUE_WAIT_MS * (uint64_t)RDUCKS_QUEUE_TIMEOUT_TICKS)
-#define RDUCKS_RIPC_COALESCE_WAIT_MS 2U
-#define RDUCKS_RIPC_MAIN_WAVE_MAX 64U
-
 static int rducks_queue_sleep_ms(unsigned int ms);
 
 typedef enum rducks_udf_request_state {
@@ -26,10 +23,6 @@ struct rducks_udf_request {
     rducks_r_scalar_meta_t *meta;
     duckdb_data_chunk input;
     duckdb_vector output;
-    SEXP ripc_future;
-    SEXP ripc_output_schema_xptr;
-    idx_t ripc_n;
-    int ripc_submitted;
     rducks_rc_owned_result_payload_t *rc_result_payload;
     duckdb_data_chunk rc_result_chunk;
     rducks_udf_request_state_t state;
@@ -220,386 +213,6 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
                                                   &request->rc_result_chunk, err_msg, err_cap);
 }
 
-static int rducks_queue_submit_ripc_request_on_main(rducks_udf_request_t *request,
-                                                    char *err_msg, size_t err_cap) {
-    if (!request || !request->runtime || !request->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC request is missing execution state");
-        return 0;
-    }
-    if (request->ripc_submitted) return 1;
-    if (!rducks_ripc_submit_chunk_on_main(request->runtime, request->meta, request->input,
-                                          &request->ripc_future, &request->ripc_output_schema_xptr,
-                                          &request->ripc_n, err_msg, err_cap)) {
-        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
-        request->ripc_submitted = 0;
-        return 0;
-    }
-    request->ripc_submitted = 1;
-    return 1;
-}
-
-static int rducks_queue_collect_ripc_request_on_main(rducks_udf_request_t *request,
-                                                     char *err_msg, size_t err_cap) {
-    int ok;
-    if (!request || !request->runtime || !request->meta || !request->ripc_submitted) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC request was not submitted");
-        return 0;
-    }
-    ok = rducks_ripc_collect_chunk_on_main(request->runtime, request->meta, &request->ripc_future,
-                                          &request->ripc_output_schema_xptr, request->ripc_n,
-                                          request->output, err_msg, err_cap);
-    rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
-    request->ripc_submitted = 0;
-    return ok;
-}
-
-static void rducks_queue_cancel_remaining_ripc_on_main(rducks_r_scalar_meta_t *meta,
-                                                       rducks_udf_request_t **requests,
-                                                       int *done, size_t count) {
-    size_t remaining = 0;
-    size_t pos = 0;
-    int protect_count = 0;
-    int r_err = 0;
-    SEXP futures;
-    SEXP result;
-    if (!meta || !requests || !done || !rducks_ripc_bundle_has_cancel(meta->fun)) return;
-    for (size_t i = 0; i < count; i++) {
-        if (!done[i] && requests[i] && requests[i]->ripc_submitted &&
-            requests[i]->ripc_future && requests[i]->ripc_future != R_NilValue) {
-            remaining++;
-        }
-    }
-    if (remaining == 0U) return;
-    futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
-    protect_count++;
-    for (size_t i = 0; i < count; i++) {
-        if (!done[i] && requests[i] && requests[i]->ripc_submitted &&
-            requests[i]->ripc_future && requests[i]->ripc_future != R_NilValue) {
-            SET_VECTOR_ELT(futures, (R_xlen_t)pos, requests[i]->ripc_future);
-            pos++;
-        }
-    }
-    result = rducks_ripc_call_cancel_on_r_thread(meta, futures, &protect_count, &r_err);
-    (void)result;
-    UNPROTECT(protect_count);
-}
-
-static int rducks_queue_collect_ripc_group_any_on_main_impl(rducks_udf_request_t *head, size_t count,
-                                                            char *err_msg, size_t err_cap) {
-    rducks_udf_request_t *request;
-    rducks_r_scalar_meta_t *meta;
-    rducks_udf_request_t **requests;
-    size_t *remaining_map;
-    int *done;
-    size_t i = 0;
-    size_t remaining;
-    int ok = 0;
-
-    if (!head || count == 0U || !head->runtime || !head->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group is missing state");
-        return 0;
-    }
-    if (!rducks_is_main_thread(head->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group reached a non-main thread");
-        return 0;
-    }
-    meta = head->meta;
-    requests = (rducks_udf_request_t **)R_alloc(count, sizeof(*requests));
-    remaining_map = (size_t *)R_alloc(count, sizeof(*remaining_map));
-    done = (int *)R_alloc(count, sizeof(*done));
-    memset(requests, 0, count * sizeof(*requests));
-    memset(done, 0, count * sizeof(*done));
-
-    for (request = head; request && i < count; request = request->next, i++) {
-        if (!request->runtime || request->meta != meta || !request->ripc_submitted ||
-            !request->ripc_future || request->ripc_future == R_NilValue ||
-            !request->ripc_output_schema_xptr || request->ripc_output_schema_xptr == R_NilValue) {
-            snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group contains an invalid request");
-            goto done_any;
-        }
-        requests[i] = request;
-    }
-    if (i != count) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any group length mismatch");
-        goto done_any;
-    }
-
-    remaining = count;
-    while (remaining > 0U) {
-        int protect_count = 0;
-        int r_err = 0;
-        SEXP futures = R_NilValue;
-        SEXP schemas = R_NilValue;
-        SEXP ns = R_NilValue;
-        SEXP results = R_NilValue;
-        SEXP indices = R_NilValue;
-        SEXP payloads = R_NilValue;
-        R_xlen_t ready_count = 0;
-        size_t pos = 0;
-
-        futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
-        protect_count++;
-        schemas = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)remaining));
-        protect_count++;
-        ns = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)remaining));
-        protect_count++;
-
-        for (i = 0; i < count; i++) {
-            if (done[i]) continue;
-            remaining_map[pos] = i;
-            SET_VECTOR_ELT(futures, (R_xlen_t)pos, requests[i]->ripc_future);
-            SET_VECTOR_ELT(schemas, (R_xlen_t)pos, requests[i]->ripc_output_schema_xptr);
-            REAL(ns)[pos] = (double)requests[i]->ripc_n;
-            pos++;
-        }
-        if (pos != remaining) {
-            UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks queued RIPC collect-any remaining-count mismatch");
-            goto done_any;
-        }
-
-        results = rducks_ripc_call_collect_any_on_r_thread(meta, futures, schemas, ns, remaining,
-                                                           &protect_count, &r_err);
-        if (r_err) {
-            UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any failed");
-            goto done_any;
-        }
-        if (rducks_r_scalar_result_is_error(results, err_msg, err_cap)) {
-            UNPROTECT(protect_count);
-            goto done_any;
-        }
-        if (TYPEOF(results) != VECSXP) {
-            UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned a non-list result");
-            goto done_any;
-        }
-        indices = rducks_named_list_get(results, "indices");
-        payloads = rducks_named_list_get(results, "payloads");
-        if (payloads == R_NilValue) payloads = rducks_named_list_get(results, "arrays");
-        if (indices == R_NilValue && XLENGTH(results) >= 1) indices = VECTOR_ELT(results, 0);
-        if (payloads == R_NilValue && XLENGTH(results) >= 2) payloads = VECTOR_ELT(results, 1);
-        if ((TYPEOF(indices) != INTSXP && TYPEOF(indices) != REALSXP) || TYPEOF(payloads) != VECSXP) {
-            UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned invalid indices/payloads");
-            goto done_any;
-        }
-        ready_count = XLENGTH(indices);
-        if (XLENGTH(payloads) != ready_count) {
-            UNPROTECT(protect_count);
-            snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any result length mismatch");
-            goto done_any;
-        }
-        if (ready_count == 0) {
-            UNPROTECT(protect_count);
-            (void)rducks_queue_sleep_ms(1U);
-            continue;
-        }
-        rducks_udf_record_ripc_batch(meta, (size_t)ready_count);
-        rducks_udf_record_ripc_collect_ready(meta, (size_t)ready_count);
-
-        for (R_xlen_t j = 0; j < ready_count; j++) {
-            double raw_index = TYPEOF(indices) == INTSXP ? (double)INTEGER(indices)[j] : REAL(indices)[j];
-            size_t remaining_index;
-            size_t request_index;
-            rducks_udf_request_t *ready_request;
-            if (!R_FINITE(raw_index) || floor(raw_index) != raw_index ||
-                raw_index < 1.0 || raw_index > (double)remaining) {
-                UNPROTECT(protect_count);
-                snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned an invalid index");
-                goto done_any;
-            }
-            remaining_index = (size_t)(raw_index - 1.0);
-            request_index = remaining_map[remaining_index];
-            if (request_index >= count || done[request_index]) {
-                UNPROTECT(protect_count);
-                snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-any returned a duplicate index");
-                goto done_any;
-            }
-            ready_request = requests[request_index];
-            if (!rducks_r_scalar_emit_arrow_result(ready_request->runtime, ready_request->meta,
-                                                  VECTOR_ELT(payloads, j), ready_request->ripc_output_schema_xptr,
-                                                  ready_request->ripc_n, ready_request->output,
-                                                  err_msg, err_cap)) {
-                UNPROTECT(protect_count);
-                goto done_any;
-            }
-            done[request_index] = 1;
-            remaining--;
-            rducks_udf_record_ripc_inflight_done(meta, 1U);
-            rducks_ripc_release_preserved(&ready_request->ripc_future, &ready_request->ripc_output_schema_xptr);
-            ready_request->ripc_submitted = 0;
-        }
-        UNPROTECT(protect_count);
-    }
-    ok = 1;
-
-done_any:
-    if (!ok) {
-        rducks_queue_cancel_remaining_ripc_on_main(meta, requests, done, count);
-        for (i = 0; i < count; i++) {
-            if (!done[i] && requests[i] && requests[i]->ripc_submitted) {
-                rducks_udf_record_ripc_inflight_done(requests[i]->meta, 1U);
-                rducks_ripc_release_preserved(&requests[i]->ripc_future, &requests[i]->ripc_output_schema_xptr);
-                requests[i]->ripc_submitted = 0;
-            }
-        }
-    }
-    return ok;
-}
-
-static int rducks_queue_collect_ripc_group_on_main_impl(rducks_udf_request_t *head, size_t count,
-                                                        char *err_msg, size_t err_cap) {
-    rducks_udf_request_t *request;
-    rducks_r_scalar_meta_t *meta;
-    int protect_count = 0;
-    int r_err = 0;
-    SEXP futures = R_NilValue;
-    SEXP schemas = R_NilValue;
-    SEXP ns = R_NilValue;
-    SEXP results = R_NilValue;
-    size_t i = 0;
-    int ok = 0;
-
-    if (!head || count == 0U || !head->runtime || !head->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group is missing state");
-        return 0;
-    }
-    if (!rducks_is_main_thread(head->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group reached a non-main thread");
-        return 0;
-    }
-    meta = head->meta;
-    if (rducks_ripc_bundle_has_collect_any(meta->fun)) {
-        return rducks_queue_collect_ripc_group_any_on_main_impl(head, count, err_msg, err_cap);
-    }
-    rducks_udf_record_ripc_batch(meta, count);
-
-    futures = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));
-    protect_count++;
-    schemas = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));
-    protect_count++;
-    ns = PROTECT(Rf_allocVector(REALSXP, (R_xlen_t)count));
-    protect_count++;
-
-    for (request = head; request && i < count; request = request->next, i++) {
-        if (!request->runtime || request->meta != meta || !request->ripc_submitted ||
-            !request->ripc_future || request->ripc_future == R_NilValue ||
-            !request->ripc_output_schema_xptr || request->ripc_output_schema_xptr == R_NilValue) {
-            snprintf(err_msg, err_cap, "Rducks queued RIPC collect group contains an invalid request");
-            goto done;
-        }
-        SET_VECTOR_ELT(futures, (R_xlen_t)i, request->ripc_future);
-        SET_VECTOR_ELT(schemas, (R_xlen_t)i, request->ripc_output_schema_xptr);
-        REAL(ns)[i] = (double)request->ripc_n;
-    }
-    if (i != count) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect group length mismatch");
-        goto done;
-    }
-
-    results = rducks_ripc_call_collect_many_on_r_thread(meta, futures, schemas, ns, &protect_count, &r_err);
-    if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-many failed");
-        goto done;
-    }
-    if (rducks_r_scalar_result_is_error(results, err_msg, err_cap)) goto done;
-    if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)count) {
-        snprintf(err_msg, err_cap, "Rducks Future Arrow IPC collect-many returned %lld results, expected %llu",
-                 (long long)(TYPEOF(results) == VECSXP ? XLENGTH(results) : -1),
-                 (unsigned long long)count);
-        goto done;
-    }
-    rducks_udf_record_ripc_collect_ready(meta, count);
-
-    i = 0;
-    for (request = head; request && i < count; request = request->next, i++) {
-        if (!rducks_r_scalar_emit_arrow_result(request->runtime, request->meta, VECTOR_ELT(results, (R_xlen_t)i),
-                                              request->ripc_output_schema_xptr, request->ripc_n,
-                                              request->output, err_msg, err_cap)) {
-            goto done;
-        }
-    }
-    ok = 1;
-
-done:
-    rducks_udf_record_ripc_inflight_done(meta, count);
-    i = 0;
-    for (request = head; request && i < count; request = request->next, i++) {
-        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
-        request->ripc_submitted = 0;
-    }
-    UNPROTECT(protect_count);
-    return ok;
-}
-
-typedef struct rducks_ripc_collect_group_context {
-    rducks_udf_request_t *head;
-    size_t count;
-    char *err_msg;
-    size_t err_cap;
-    int ok;
-} rducks_ripc_collect_group_context_t;
-
-static void rducks_ripc_collect_group_release_requests(rducks_udf_request_t *head, size_t count,
-                                                       int record_inflight_done) {
-    rducks_udf_request_t *request;
-    size_t i = 0;
-    for (request = head; request && i < count; request = request->next, i++) {
-        if (record_inflight_done && request->ripc_submitted && request->meta) {
-            rducks_udf_record_ripc_inflight_done(request->meta, 1U);
-        }
-        rducks_ripc_release_preserved(&request->ripc_future, &request->ripc_output_schema_xptr);
-        request->ripc_submitted = 0;
-    }
-}
-
-static SEXP rducks_ripc_collect_group_unwind_body(void *data) {
-    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
-    ctx->ok = rducks_queue_collect_ripc_group_on_main_impl(ctx->head, ctx->count,
-                                                           ctx->err_msg, ctx->err_cap);
-    return R_NilValue;
-}
-
-static void rducks_ripc_collect_group_unwind_cleanup(void *data, Rboolean jump) {
-    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
-    if (jump) {
-        ctx->ok = 0;
-        rducks_ripc_collect_group_release_requests(ctx->head, ctx->count, 1);
-        rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
-                                       "Rducks Future Arrow IPC collect-many failed");
-    }
-}
-
-static SEXP rducks_ripc_collect_group_try_body(void *data) {
-    return R_UnwindProtect(rducks_ripc_collect_group_unwind_body, data,
-                           rducks_ripc_collect_group_unwind_cleanup, data,
-                           NULL);
-}
-
-static SEXP rducks_ripc_collect_group_error_handler(SEXP condition, void *data) {
-    (void)condition;
-    rducks_ripc_collect_group_context_t *ctx = (rducks_ripc_collect_group_context_t *)data;
-    ctx->ok = 0;
-    rducks_ripc_set_default_error(ctx->err_msg, ctx->err_cap,
-                                   "Rducks Future Arrow IPC collect-many failed");
-    return R_NilValue;
-}
-
-static int rducks_queue_collect_ripc_group_on_main(rducks_udf_request_t *head, size_t count,
-                                                   char *err_msg, size_t err_cap) {
-    rducks_ripc_collect_group_context_t ctx;
-    memset(&ctx, 0, sizeof(ctx));
-    if (err_msg && err_cap > 0U) err_msg[0] = '\0';
-    ctx.head = head;
-    ctx.count = count;
-    ctx.err_msg = err_msg;
-    ctx.err_cap = err_cap;
-    (void)R_tryCatchError(rducks_ripc_collect_group_try_body, &ctx,
-                          rducks_ripc_collect_group_error_handler, &ctx);
-    return ctx.ok;
-}
-
 static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->execute) {
         snprintf(err_msg, err_cap, "Rducks queued request is missing execution state");
@@ -612,84 +225,10 @@ static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err
     return request->execute(request, err_msg, err_cap);
 }
 
-static int rducks_queue_request_is_ripc(rducks_udf_request_t *request) {
-    return request && request->meta && request->meta->eval_mode == RDUCKS_EVAL_RIPC;
-}
-
-static void rducks_queue_record_local_start(rducks_runtime_entry_t *runtime) {
-    if (!runtime) return;
-    rducks_queue_lock(runtime);
-    runtime->queue_submitted++;
-    runtime->queue_running_current++;
-    if (runtime->queue_running_current > runtime->queue_running_max) {
-        runtime->queue_running_max = runtime->queue_running_current;
-    }
-    rducks_queue_unlock(runtime);
-}
-
-static void rducks_queue_record_local_finish(rducks_runtime_entry_t *runtime) {
-    if (!runtime) return;
-    rducks_queue_lock(runtime);
-    runtime->queue_executed++;
-    if (runtime->queue_running_current > 0) runtime->queue_running_current--;
-    rducks_queue_unlock(runtime);
-}
-
-static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
-                                        int ok, const char *err_msg) {
-    if (!runtime || !request) return;
-    rducks_udf_record_queue_pending_done(request->meta);
-    rducks_queue_lock(runtime);
-    request->ok = ok;
-    if (!ok) {
-        rducks_queue_error_copy(request->error, sizeof(request->error), err_msg,
-                                "Rducks queued scalar UDF request failed");
-    }
-    request->state = RDUCKS_REQUEST_DONE;
-    runtime->queue_executed++;
-    if (runtime->queue_running_current > 0) runtime->queue_running_current--;
-    rducks_queue_signal_all(runtime);
-    rducks_queue_unlock(runtime);
-}
-
-static void rducks_queue_append_local(rducks_udf_request_t **head, rducks_udf_request_t **tail,
-                                      rducks_udf_request_t *request) {
-    if (!request) return;
-    request->next = NULL;
-    if (*tail) {
-        (*tail)->next = request;
-    } else {
-        *head = request;
-    }
-    *tail = request;
-}
-
-static int rducks_queue_has_pending(rducks_runtime_entry_t *runtime) {
-    int has_pending;
-    if (!runtime || !runtime->queue_initialized) return 0;
-    rducks_queue_lock(runtime);
-    has_pending = runtime->queue_head != NULL;
-    rducks_queue_unlock(runtime);
-    return has_pending;
-}
-
 static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *runtime) {
     rducks_udf_request_t *request;
     rducks_queue_lock(runtime);
     request = rducks_queue_pop_locked(runtime);
-    rducks_queue_unlock(runtime);
-    return request;
-}
-
-static rducks_udf_request_t *rducks_queue_pop_request_after_wait(rducks_runtime_entry_t *runtime,
-                                                                 unsigned int wait_ms) {
-    rducks_udf_request_t *request;
-    rducks_queue_lock(runtime);
-    request = rducks_queue_pop_locked(runtime);
-    if (!request && wait_ms > 0U) {
-        (void)rducks_queue_wait_timed(runtime, wait_ms);
-        request = rducks_queue_pop_locked(runtime);
-    }
     rducks_queue_unlock(runtime);
     return request;
 }
@@ -743,6 +282,23 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     }
     rducks_queue_unlock(runtime);
     return ok;
+}
+
+static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
+                                        int ok, const char *err_msg) {
+    if (!runtime || !request) return;
+    rducks_udf_record_queue_pending_done(request->meta);
+    rducks_queue_lock(runtime);
+    request->ok = ok;
+    if (!ok) {
+        rducks_queue_error_copy(request->error, sizeof(request->error), err_msg,
+                                "Rducks queued scalar UDF request failed");
+    }
+    request->state = RDUCKS_REQUEST_DONE;
+    runtime->queue_executed++;
+    if (runtime->queue_running_current > 0) runtime->queue_running_current--;
+    rducks_queue_signal_all(runtime);
+    rducks_queue_unlock(runtime);
 }
 
 static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
@@ -850,137 +406,6 @@ static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *ru
     return ok;
 }
 
-static int rducks_queue_collect_ripc_groups_on_main(rducks_runtime_entry_t *runtime,
-                                                    rducks_udf_request_t *ripc_head,
-                                                    rducks_udf_request_t *local_request,
-                                                    char *err_msg, size_t err_cap) {
-    int all_ok = 1;
-    int local_ok = 0;
-    if (!runtime || !ripc_head) {
-        snprintf(err_msg, err_cap, "Rducks queued RIPC collect groups are missing state");
-        return 0;
-    }
-
-    while (ripc_head) {
-        rducks_udf_request_t *group_head = ripc_head;
-        rducks_udf_request_t *group_tail = ripc_head;
-        rducks_udf_request_t *next = ripc_head->next;
-        rducks_r_scalar_meta_t *meta = ripc_head->meta;
-        char group_err[RDUCKS_QUEUE_ERROR_SIZE];
-        size_t group_count = 1U;
-        int group_has_local = (group_head == local_request);
-        int ok;
-
-        while (next && next->meta == meta) {
-            group_tail = next;
-            if (next == local_request) group_has_local = 1;
-            next = next->next;
-            group_count++;
-        }
-        group_tail->next = NULL;
-        rducks_udf_record_ripc_submit_wave(meta, group_count);
-        group_err[0] = '\0';
-        ok = rducks_queue_collect_ripc_group_on_main(group_head, group_count, group_err, sizeof(group_err));
-        if (group_has_local) local_ok = ok;
-        if (!ok) {
-            all_ok = 0;
-            if (err_msg && err_cap > 0U && err_msg[0] == '\0') {
-                rducks_queue_error_copy(err_msg, err_cap, group_err, "Rducks queued Future Arrow IPC collect group failed");
-            }
-        }
-
-        while (group_head) {
-            rducks_udf_request_t *finished = group_head;
-            group_head = group_head->next;
-            finished->next = NULL;
-            if (finished != local_request) {
-                rducks_queue_finish_request(runtime, finished, ok, group_err);
-            }
-        }
-        ripc_head = next;
-    }
-
-    if (local_request && !local_ok) return 0;
-    return all_ok;
-}
-
-static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *runtime,
-                                                        rducks_r_scalar_meta_t *meta,
-                                                        duckdb_data_chunk input, duckdb_vector output,
-                                                        char *err_msg, size_t err_cap) {
-    rducks_udf_request_t local_request;
-    rducks_udf_request_t *ripc_head = NULL;
-    rducks_udf_request_t *ripc_tail = NULL;
-    size_t submitted = 0U;
-
-    if (!runtime || !meta || meta->eval_mode != RDUCKS_EVAL_RIPC) {
-        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler is missing state");
-        return 0;
-    }
-    if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks cooperative RIPC scheduler must run on the recorded main R thread");
-        return 0;
-    }
-
-    memset(&local_request, 0, sizeof(local_request));
-    local_request.runtime = runtime;
-    local_request.meta = meta;
-    local_request.input = input;
-    local_request.output = output;
-    local_request.state = RDUCKS_REQUEST_RUNNING;
-    local_request.error[0] = '\0';
-
-    rducks_queue_record_local_start(runtime);
-    if (!rducks_queue_submit_ripc_request_on_main(&local_request, err_msg, err_cap)) {
-        rducks_ripc_release_preserved(&local_request.ripc_future, &local_request.ripc_output_schema_xptr);
-        rducks_queue_record_local_finish(runtime);
-        return 0;
-    }
-    rducks_queue_append_local(&ripc_head, &ripc_tail, &local_request);
-    submitted++;
-
-    while (submitted < RDUCKS_RIPC_MAIN_WAVE_MAX) {
-        rducks_udf_request_t *request;
-        char request_err[RDUCKS_QUEUE_ERROR_SIZE];
-        int ok;
-
-        request = rducks_queue_pop_request_after_wait(runtime, RDUCKS_RIPC_COALESCE_WAIT_MS);
-        if (!request) break;
-        request_err[0] = '\0';
-
-        if (rducks_queue_request_is_ripc(request)) {
-            ok = rducks_queue_submit_ripc_request_on_main(request, request_err, sizeof(request_err));
-            if (ok) {
-                rducks_queue_append_local(&ripc_head, &ripc_tail, request);
-            } else {
-                rducks_queue_finish_request(runtime, request, 0, request_err);
-            }
-        } else {
-            ok = rducks_queue_execute_on_main(request, request_err, sizeof(request_err));
-            rducks_queue_finish_request(runtime, request, ok, request_err);
-        }
-        submitted++;
-    }
-
-    err_msg[0] = '\0';
-    {
-        int ok = rducks_queue_collect_ripc_groups_on_main(runtime, ripc_head, &local_request, err_msg, err_cap);
-        rducks_queue_record_local_finish(runtime);
-        if (ok && rducks_queue_has_pending(runtime)) {
-            /* After the local callback-owned output has been filled, keep the
-             * recorded main R thread in the extension-owned scheduler long
-             * enough to service any worker callbacks that arrived during the
-             * submit/collect wave. This does not enqueue work for chunks whose
-             * DuckDB callbacks have not started yet, but it avoids returning to
-             * DuckDB with already-active worker callbacks stranded until a later
-             * main-thread callback happens to drain the queue.
-             */
-            (void)rducks_queue_drain_on_main(runtime, 0);
-        }
-        return ok;
-    }
-}
-
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {
     int count = 0;
     if (!runtime || !runtime->queue_initialized) return 0;
@@ -988,64 +413,15 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
     if (max_requests <= 0) max_requests = 1000000;
 
     while (count < max_requests) {
-        rducks_udf_request_t *ripc_head = NULL;
-        rducks_udf_request_t *ripc_tail = NULL;
-        int popped_this_round = 0;
-
-        while (count < max_requests) {
-            rducks_udf_request_t *request;
-            char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
-            int ok;
-
-            request = ripc_head ?
-                rducks_queue_pop_request_after_wait(runtime, RDUCKS_RIPC_COALESCE_WAIT_MS) :
-                rducks_queue_pop_request(runtime);
-            if (!request) break;
-            popped_this_round = 1;
-
-            err_msg[0] = '\0';
-            if (rducks_queue_request_is_ripc(request)) {
-                ok = rducks_queue_submit_ripc_request_on_main(request, err_msg, sizeof(err_msg));
-                if (ok) {
-                    rducks_queue_append_local(&ripc_head, &ripc_tail, request);
-                } else {
-                    rducks_queue_finish_request(runtime, request, 0, err_msg);
-                }
-            } else {
-                ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
-                rducks_queue_finish_request(runtime, request, ok, err_msg);
-            }
-            count++;
-        }
-
-        while (ripc_head) {
-            rducks_udf_request_t *group_head = ripc_head;
-            rducks_udf_request_t *group_tail = ripc_head;
-            rducks_udf_request_t *next = ripc_head->next;
-            rducks_r_scalar_meta_t *meta = ripc_head->meta;
-            char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
-            size_t group_count = 1U;
-            int ok;
-
-            while (next && next->meta == meta) {
-                group_tail = next;
-                next = next->next;
-                group_count++;
-            }
-            group_tail->next = NULL;
-            rducks_udf_record_ripc_submit_wave(meta, group_count);
-            err_msg[0] = '\0';
-            ok = rducks_queue_collect_ripc_group_on_main(group_head, group_count, err_msg, sizeof(err_msg));
-            while (group_head) {
-                rducks_udf_request_t *finished = group_head;
-                group_head = group_head->next;
-                finished->next = NULL;
-                rducks_queue_finish_request(runtime, finished, ok, err_msg);
-            }
-            ripc_head = next;
-        }
-
-        if (!popped_this_round) break;
+        rducks_udf_request_t *request;
+        char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
+        int ok;
+        request = rducks_queue_pop_request(runtime);
+        if (!request) break;
+        err_msg[0] = '\0';
+        ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
+        rducks_queue_finish_request(runtime, request, ok, err_msg);
+        count++;
     }
 
     rducks_queue_lock(runtime);

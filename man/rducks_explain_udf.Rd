@@ -21,6 +21,6 @@ column is \code{FALSE} when native catalog metadata is still present but the
 connection-local R registry view was detached or is otherwise unavailable.
 The native counters are
 useful for checking that a plan executed through its requested evaluator
-instead of silently falling back: for example, an \code{arrow_c} scalar UDF should
+instead of silently switching engines: for example, an \code{arrow_c} scalar UDF should
 increment \code{arrow_c_chunks} and leave \code{arrow_r_chunks} unchanged.
 }

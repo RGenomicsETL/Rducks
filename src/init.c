@@ -54,7 +54,7 @@ SEXP RDUCKS_arrow_string_array_from_character(SEXP values_sexp);
 SEXP RDUCKS_arrow_binary_payload_array(SEXP payloads);
 SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp);
 SEXP RDUCKS_arrow_i64_storage_from_numeric(SEXP values_sexp);
-SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr, SEXP nanoarrow_dll_path_sexp);
+SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -132,10 +132,15 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_arrow_binary_payload_array", (DL_FUNC) &RDUCKS_arrow_binary_payload_array, 1},
     {"RDUCKS_arrow_i64_micros_to_seconds", (DL_FUNC) &RDUCKS_arrow_i64_micros_to_seconds, 4},
     {"RDUCKS_arrow_i64_storage_from_numeric", (DL_FUNC) &RDUCKS_arrow_i64_storage_from_numeric, 1},
-    {"RDUCKS_arrow_ipc_encode_array", (DL_FUNC) &RDUCKS_arrow_ipc_encode_array, 2},
+    {"RDUCKS_arrow_ipc_encode_array", (DL_FUNC) &RDUCKS_arrow_ipc_encode_array, 1},
     {NULL, NULL, 0}
 };
 
+#if defined(_WIN32)
+__declspec(dllexport)
+#elif defined(__GNUC__)
+__attribute__((visibility("default")))
+#endif
 void R_init_Rducks(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);

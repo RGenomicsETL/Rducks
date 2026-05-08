@@ -6,9 +6,16 @@
 #endif
 #include "duckdb_extension.h"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Arith.h>
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #include <nanoarrow/r.h>
 
@@ -157,6 +164,11 @@ struct rducks_r_scalar_meta {
     rducks_exception_handling_t exception_handling;
     rducks_eval_mode_t eval_mode;
     rducks_runtime_entry_t *runtime;
+    char **ripc_endpoints;
+    size_t ripc_endpoint_count;
+    char *ripc_udf_id;
+    int ripc_timeout_ms;
+    atomic_uint_fast64_t ripc_next_endpoint;
     atomic_uint_fast64_t dispatch_chunks;
     atomic_uint_fast64_t dispatch_rows;
     atomic_uint_fast64_t direct_chunks;
@@ -415,20 +427,24 @@ static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *ru
                                                       rducks_r_scalar_meta_t *meta,
                                                       duckdb_data_chunk input, duckdb_vector output,
                                                       char *err_msg, size_t err_cap);
-static int rducks_queue_submit_ripc_cooperative_on_main(rducks_runtime_entry_t *runtime,
-                                                        rducks_r_scalar_meta_t *meta,
-                                                        duckdb_data_chunk input, duckdb_vector output,
-                                                        char *err_msg, size_t err_cap);
+static int rducks_nng_request_reply(const char *endpoint,
+                                    const uint8_t *request, size_t request_size,
+                                    int timeout_ms,
+                                    uint8_t **response_out, size_t *response_size_out,
+                                    char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
                                   uint64_t *out_value, char *err_msg, size_t err_cap);
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
+#include "src/rducks_vendor_nanoarrow.c"
+#include "src/rducks_vendor_ipc_helpers.h"
 #include "src/rducks_threads.c"
 #include "src/rducks_util.c"
 #include "src/rducks_types.c"
 #include "src/rducks_runtime.c"
+#include "src/rducks_nng.c"
 #include "src/rducks_arrow.c"
 #include "src/rducks_rc.c"
 #include "src/rducks_worker_queue.c"

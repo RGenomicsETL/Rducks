@@ -7,13 +7,12 @@
 rducks_execution_plan(
   marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
-  future_globals = "auto",
-  future_packages = NULL,
-  future_seed = FALSE,
-  future_stdout = FALSE,
-  future_conditions = "condition",
-  future_timeout = NULL,
-  ipc_provider = c("future", "mirai"),
+  ipc_globals = "auto",
+  ipc_packages = NULL,
+  ipc_timeout = NULL,
+  ipc_endpoints = NULL,
+  ipc_transport = NULL,
+  ipc_provider = "nng",
   ipc_workers = 1L,
   ipc_max_pending = 64L
 )
@@ -23,33 +22,37 @@ rducks_execution_plan(
 Data plus nanoarrow/R materialization and is the reference implementation.
 \code{"arrow_c"} uses native C/DuckDB-vector materialization for supported
 scalar and vectorized registrations. \code{"arrow_ipc"} uses Arrow IPC bytes as
-the explicit task/result payload for the Future-based multiprocess path.}
+the explicit task/result payload for the NNG multiprocess path.}
 
 \item{concurrency}{Concurrency contract. \code{"serial"} evaluates one chunk at a
 time in the calling process. \code{"inproc_concurrent"} allows in-process DuckDB
 callback concurrency while keeping R API work serialized on the recorded
-main R thread. \code{"multiprocess_parallel"} uses the current \code{future} backend
-for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.}
+main R thread. \code{"multiprocess_parallel"} uses persistent NNG/nanonext
+workers for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.
+When \code{ipc_endpoints} is \code{NULL}, Rducks starts local worker loops with
+mirai daemons; otherwise the endpoint URLs are passed through unchanged.}
 
-\item{future_globals, future_packages, future_seed, future_stdout, future_conditions, future_timeout}{Options forwarded to \code{future::future()} for \code{arrow_ipc + multiprocess_parallel} registrations. By default (\code{future_globals = "auto"}),
-Rducks discovers UDF globals once at registration-wrapper creation and then
-sends explicit worker state per chunk, avoiding per-chunk automatic global
-discovery. Use \code{future_packages} for packages that workers should attach,
-\code{future_globals = TRUE} for Future's per-task discovery, \code{FALSE} for only
-Rducks' required task state, or a character vector/named list for explicit
-extra globals. \code{future_timeout} is also used as the Arrow IPC provider wait
-timeout. The persistent mirai provider preloads the same discovered
-globals/packages once per provider registration.}
+\item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{Arrow IPC worker options.
+By default (\code{ipc_globals = "auto"}), Rducks discovers UDF globals once at
+registration-wrapper creation and broadcasts them to each NNG worker when
+the UDF is registered with the shared provider pool. Use \code{ipc_packages} for
+packages that workers should attach, \code{ipc_globals = FALSE} to rely only on
+the serialized UDF closure and explicit task state, or a character vector /
+named list for explicit extra globals. \code{ipc_timeout} is the provider wait
+timeout. \code{ipc_endpoints} optionally supplies NNG endpoint URLs for externally
+managed worker processes running the Rducks NNG worker loop; any NNG URL
+transport supported by both endpoints is allowed. When endpoints are not
+supplied, \code{ipc_transport} selects the transport used for the mirai-launched
+local worker endpoints (\code{"abstract"}, \code{"ipc"}, \code{"unix"}, \code{"tcp"}, or
+\code{"ws"}; the default is \code{"abstract"} on Linux and \code{"ipc"} elsewhere).}
 
 \item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
-\code{"future"} is the portable default. \code{"mirai"} uses persistent mirai daemon
-workers and fails at registration if the \code{mirai} package is unavailable; it
-does not fall back to Future. The mirai provider broadcasts each registered
-UDF closure plus discovered globals/packages to every daemon in the shared
+Only \code{"nng"} is supported. The NNG provider broadcasts each registered UDF
+closure plus discovered globals/packages to every worker in the shared
 database-runtime provider pool, so avoid capturing large objects in UDF
 environments unless that memory cost is intended.}
 
-\item{ipc_workers}{Number of persistent workers for \code{ipc_provider = "mirai"}.}
+\item{ipc_workers}{Number of persistent NNG workers.}
 
 \item{ipc_max_pending}{Maximum accepted but uncollected tasks for the
 persistent provider. The default bounds provider memory/use of outstanding
@@ -69,8 +72,8 @@ argument/return types, NULL handling, error handling, and side effects.
 \details{
 \code{arrow_r + serial} is the reference implementation used for conformance.
 Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently fall back from one plan to another.
-Each valid pair maps to a concrete internal \code{engine_id} such as
-\code{"arrow_c_direct_serial"} or \code{"ipc_future_pool"}; the older
-\code{marshalling + concurrency} fields remain for user-facing readability.
+reference; Rducks does not silently switch from one plan to another.
+\code{arrow_ipc + multiprocess_parallel} uses the native NNG path with vendored
+nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal \code{engine_id} such as
+\code{"arrow_c_direct_serial"} or \code{"ipc_nng_pool"}.
 }
