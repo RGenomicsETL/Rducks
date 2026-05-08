@@ -301,9 +301,20 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
   }
   provider$stop <- function() {
     if (isTRUE(state$started) && !isTRUE(state$external_endpoints)) {
+      tasks <- state$tasks
       for (endpoint in state$endpoints) {
         req <- rducks_nng_wire_encode_request(rducks_nng_wire_type_stop)
         try(rducks_nng_transact(endpoint, req, timeout = 1, retries = 5L), silent = TRUE)
+      }
+      if (length(tasks)) {
+        deadline <- unname(proc.time()[["elapsed"]]) + 1
+        while (any(vapply(tasks, mirai::unresolved, logical(1))) &&
+               unname(proc.time()[["elapsed"]]) < deadline) {
+          Sys.sleep(0.01)
+        }
+        for (task in tasks) {
+          if (!isTRUE(mirai::unresolved(task))) try(mirai::collect_mirai(task), silent = TRUE)
+        }
       }
       try(mirai::daemons(0L, .compute = state$compute), silent = TRUE)
       unlink(state$cleanup_paths %||% character(), force = TRUE)
