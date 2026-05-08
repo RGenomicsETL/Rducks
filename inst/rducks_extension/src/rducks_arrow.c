@@ -1089,6 +1089,60 @@ static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sca
     return ctx.ok;
 }
 
+static duckdb_data_chunk rducks_arrow_owned_result_chunk_new(rducks_r_scalar_meta_t *meta,
+                                                             idx_t n,
+                                                             char *err_msg, size_t err_cap) {
+    duckdb_logical_type type;
+    duckdb_data_chunk chunk;
+    if (!meta || !meta->return_desc) {
+        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk metadata missing");
+        return NULL;
+    }
+    type = rducks_create_logical_type_for_desc(meta->return_desc);
+    if (!type) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result logical type");
+        return NULL;
+    }
+    chunk = duckdb_create_data_chunk(&type, 1);
+    duckdb_destroy_logical_type(&type);
+    if (!chunk) {
+        snprintf(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result data chunk");
+        return NULL;
+    }
+    duckdb_data_chunk_set_size(chunk, n);
+    return chunk;
+}
+
+static int rducks_r_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtime,
+                                                  rducks_r_scalar_meta_t *meta,
+                                                  duckdb_data_chunk input,
+                                                  duckdb_vector output,
+                                                  duckdb_data_chunk *chunk_out,
+                                                  char *err_msg, size_t err_cap) {
+    duckdb_data_chunk chunk;
+    duckdb_vector chunk_output;
+    (void)output;
+    if (chunk_out) *chunk_out = NULL;
+    if (!runtime || !meta || meta->eval_mode != RDUCKS_EVAL_R || !input || !chunk_out) {
+        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk request is missing state");
+        return 0;
+    }
+    chunk = rducks_arrow_owned_result_chunk_new(meta, duckdb_data_chunk_get_size(input), err_msg, err_cap);
+    if (!chunk) return 0;
+    chunk_output = duckdb_data_chunk_get_vector(chunk, 0);
+    if (!chunk_output) {
+        duckdb_destroy_data_chunk(&chunk);
+        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk has no output vector");
+        return 0;
+    }
+    if (!rducks_r_scalar_execute(runtime, meta, input, chunk_output, err_msg, err_cap)) {
+        duckdb_destroy_data_chunk(&chunk);
+        return 0;
+    }
+    *chunk_out = chunk;
+    return 1;
+}
+
 static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
     rducks_runtime_entry_t *runtime = rducks_runtime_from_function_info(info, meta);

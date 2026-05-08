@@ -154,10 +154,11 @@ Internally the current concurrency backends are:
   output from those Arrow buffers without touching `SEXP`s or nanoarrow R
   bindings. With composite direct returns, the main R thread instead fills an
   owned DuckDB result chunk and the waiting worker copies that vector to the
-  callback output. Other queued modes still have the main R thread write DuckDB
-  output before signalling. The stack request and callback-owned output vector
-  still require the UDF callback to stay alive until the main thread has consumed
-  the request and any worker-side writeback has completed.
+  callback output. Queued `arrow_r` helper returns also import into an owned
+  DuckDB result chunk on the recorded main R thread and let the waiting worker
+  copy that vector into callback output. The stack request and callback-owned
+  output vector still require the UDF callback to stay alive until the main
+  thread has consumed the request and any worker-side writeback has completed.
 - `multiprocess_parallel`: out-of-process execution through the selected Arrow
   IPC worker provider (`ipc_future_pool` by default, experimental
   `ipc_mirai_pool` when requested). The scalar-UDF callback implementation

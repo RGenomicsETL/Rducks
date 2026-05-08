@@ -172,6 +172,28 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
                                   request->output, err_msg, err_cap);
 }
 
+static int rducks_queue_execute_arrow_scalar_to_chunk_on_main(rducks_udf_request_t *request,
+                                                              char *err_msg, size_t err_cap) {
+    if (!request || !request->runtime || !request->meta) {
+        snprintf(err_msg, err_cap, "Rducks queued Arrow/R owned-result request is missing execution state");
+        return 0;
+    }
+    if (!rducks_is_main_thread(request->runtime)) {
+        snprintf(err_msg, err_cap, "Rducks queued Arrow/R owned-result request reached a non-main thread");
+        return 0;
+    }
+    if (request->rc_result_payload) {
+        rducks_rc_owned_result_payload_free(request->rc_result_payload);
+        request->rc_result_payload = NULL;
+    }
+    if (request->rc_result_chunk) {
+        duckdb_destroy_data_chunk(&request->rc_result_chunk);
+        request->rc_result_chunk = NULL;
+    }
+    return rducks_r_scalar_execute_to_owned_chunk(request->runtime, request->meta, request->input, request->output,
+                                                 &request->rc_result_chunk, err_msg, err_cap);
+}
+
 static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_t *request,
                                                              char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->meta) {
@@ -726,9 +748,13 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
     }
 
     memset(&request, 0, sizeof(request));
-    request.execute = rducks_rc_owned_result_queue_supported(meta) ?
-        rducks_queue_execute_rc_scalar_to_payload_on_main :
-        rducks_queue_execute_scalar_on_main;
+    if (meta->eval_mode == RDUCKS_EVAL_R) {
+        request.execute = rducks_queue_execute_arrow_scalar_to_chunk_on_main;
+    } else if (rducks_rc_owned_result_queue_supported(meta)) {
+        request.execute = rducks_queue_execute_rc_scalar_to_payload_on_main;
+    } else {
+        request.execute = rducks_queue_execute_scalar_on_main;
+    }
     request.meta = meta;
     request.input = input;
     request.output = output;

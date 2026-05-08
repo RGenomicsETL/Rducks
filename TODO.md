@@ -531,7 +531,7 @@ for an asynchronous same-process design.
   - This covers direct scalar, temporal, enum/decimal, variable-width, and
     composite input vectors through DuckDB's vector-copy API. Arrow/R and RIPC
     queued requests still use their existing Arrow/IPC payload paths.
-- [ ] Implement owned result payloads plus safe writeback.
+- [x] Implement owned result payloads plus safe writeback.
   - Queued direct `arrow_c` scalar and vectorized UDFs with supported scalar
     return types now evaluate into an owned Arrow C Data result chunk on the
     recorded main R thread; the waiting worker writes DuckDB output from those
@@ -544,10 +544,13 @@ for an asynchronous same-process design.
     thread; the waiting worker copies that owned vector into callback output with
     DuckDB's vector-copy API. `rducks_explain_udf()` exposes
     `arrow_c_owned_result_chunk_chunks` for this path.
+  - Queued `arrow_r` helper returns now import into an owned DuckDB result chunk
+    on the recorded main R thread; the waiting worker copies that owned vector
+    into callback output with DuckDB's vector-copy API instead of having the main
+    thread write directly into the callback-owned output vector.
   - RIPC provider collection now returns owned raw Arrow IPC result bytes to the
     native extension, which decodes/imports them into DuckDB output vectors
     without first materializing nanoarrow R result arrays in the main process.
-  - Still open for Arrow/R helper returns.
 - [x] Split current `arrow_c` code into explicit worker-safe/native and
   recorded-main-R-thread phases.
   - Scalar `arrow_c` still has a borrowed-view phase for direct serial calls,

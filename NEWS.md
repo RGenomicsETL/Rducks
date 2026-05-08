@@ -41,6 +41,10 @@
 - UDF stat field discovery now comes from native `rducks_udf_stat_fields()`;
   the R-side field vector is only a documented compatibility list for sessions
   where that optional native discovery helper is unavailable.
+- Queued `arrow_r` helper returns now import into an owned DuckDB result chunk
+  on the recorded main R thread; the waiting worker copies that owned vector
+  into callback output instead of having the main thread write directly into the
+  callback-owned output vector.
 - `rducks_explain_udf()` and `rducks_list_udfs()` now include `r_side_record`
   to make detached/missing R-side registry metadata explicit. Native per-UDF
   hot-path counters are updated with atomics rather than the process-global
