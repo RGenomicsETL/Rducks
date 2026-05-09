@@ -72,24 +72,4 @@ rducks_nng_transports_body <- function() {
   }
 }
 
-if (identical(Sys.getenv("RDUCKS_NNG_TRANSPORTS_CHILD"), "true") ||
-    !identical(Sys.info()[["sysname"]], "Windows")) {
-  rducks_nng_transports_body()
-} else {
-  script <- paste(
-    "Sys.setenv(RDUCKS_NNG_TRANSPORTS_CHILD = 'true')",
-    "tinytest::run_test_file(system.file('tinytest', 'test_zzzz_duckdb_runtime_nng_transports.R', package = 'Rducks'))",
-    sep = "; "
-  )
-  output <- tempfile("rducks-nng-transports-", fileext = ".log")
-  status <- system2(
-    file.path(R.home("bin"), "Rscript"),
-    c("--vanilla", "-e", shQuote(script)),
-    stdout = output,
-    stderr = output
-  )
-  if (file.exists(output)) {
-    cat(paste(readLines(output, warn = FALSE), collapse = "\n"), "\n", sep = "")
-  }
-  expect_equal(status, 0L)
-}
+rducks_nng_transports_body()
