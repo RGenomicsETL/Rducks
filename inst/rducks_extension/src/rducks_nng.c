@@ -77,31 +77,18 @@ static int rducks_nng_request_reply(const char *endpoint,
             nng_close(sock);
             return 0;
         }
-        for (;;) {
-            rc = nng_send(sock, (void *)request, request_size, NNG_FLAG_NONBLOCK);
-            if (rc == 0) break;
-            if (rc != NNG_EAGAIN) {
-                rducks_nng_format_error(err_msg, err_cap, "nng_send failed", rc);
-                nng_close(sock);
-                return 0;
-            }
-            if (!rducks_nng_wait_or_timeout(deadline_ms, "nng_send", err_msg, err_cap)) {
-                nng_close(sock);
-                return 0;
-            }
+        (void)deadline_ms;
+        rc = nng_send(sock, (void *)request, request_size, 0);
+        if (rc != 0) {
+            rducks_nng_format_error(err_msg, err_cap, "nng_send failed", rc);
+            nng_close(sock);
+            return 0;
         }
-        for (;;) {
-            rc = nng_recv(sock, &recv_buf, &recv_len, NNG_FLAG_ALLOC | NNG_FLAG_NONBLOCK);
-            if (rc == 0) break;
-            if (rc != NNG_EAGAIN) {
-                rducks_nng_format_error(err_msg, err_cap, "nng_recv failed", rc);
-                nng_close(sock);
-                return 0;
-            }
-            if (!rducks_nng_wait_or_timeout(deadline_ms, "nng_recv", err_msg, err_cap)) {
-                nng_close(sock);
-                return 0;
-            }
+        rc = nng_recv(sock, &recv_buf, &recv_len, NNG_FLAG_ALLOC);
+        if (rc != 0) {
+            rducks_nng_format_error(err_msg, err_cap, "nng_recv failed", rc);
+            nng_close(sock);
+            return 0;
         }
     } else {
         rc = nng_dial(sock, endpoint, NULL, 0);
