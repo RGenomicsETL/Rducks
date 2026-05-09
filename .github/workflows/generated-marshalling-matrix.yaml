@@ -34,7 +34,7 @@ jobs:
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
-      RDUCKS_MATRIX_INCLUDE_IPC: ${{ github.event.inputs.include_ipc || 'false' }}
+      RDUCKS_MATRIX_INCLUDE_IPC: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.include_ipc || 'false' }}
       RDUCKS_MATRIX_IPC_WORKERS: ${{ github.event.inputs.ipc_workers || '1' }}
     steps:
       - uses: actions/checkout@v4

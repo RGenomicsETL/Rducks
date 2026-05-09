@@ -3,6 +3,7 @@ rducks_nng_wire_version <- 1L
 rducks_nng_wire_type_execute <- 1L
 rducks_nng_wire_type_register <- 2L
 rducks_nng_wire_type_stop <- 3L
+rducks_nng_wire_type_ping <- 4L
 rducks_nng_wire_type_response <- 100L
 
 rducks_nng_wire_u32 <- function(x) {

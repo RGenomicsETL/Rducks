@@ -6,10 +6,10 @@ local({
   on.exit({
     if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
   }, add = TRUE)
-  Rducks:::rducks_nng_stop_all_providers()
+  Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit({
-    try(Rducks:::rducks_nng_stop_all_providers(), silent = TRUE)
+    try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
     DBI::dbDisconnect(con, shutdown = TRUE)
   }, add = TRUE)
   rducks_enable(con, threads = "single")

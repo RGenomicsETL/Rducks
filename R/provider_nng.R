@@ -8,6 +8,18 @@ rducks_nng_counter_label <- function(value) {
   format(value, scientific = FALSE, trim = TRUE)
 }
 
+rducks_nng_defaults <- list(
+  control_timeout = 5,
+  startup_timeout = 5,
+  register_timeout = 5,
+  shutdown_timeout = 2,
+  stop_request_timeout = 1,
+  minimum_timeout = 0.001,
+  control_retries = 200L,
+  retry_sleep = 0.01,
+  per_attempt_timeout = 0.25
+)
+
 rducks_nng_supported_transports <- function() {
   c("abstract", "ipc", "unix", "tcp", "ws")
 }
@@ -102,10 +114,14 @@ rducks_nng_worker_loop <- function(endpoint) {
     try(close(sock), silent = TRUE)
   }, add = TRUE)
   repeat {
+    stop_requested <- FALSE
     req_raw <- nanonext::recv(ctx, mode = "raw", block = TRUE)
     response <- tryCatch({
       req <- rducks_nng_wire_decode_request(req_raw)
-      if (identical(req$type, rducks_nng_wire_type_stop)) {
+      stop_requested <- identical(req$type, rducks_nng_wire_type_stop)
+      if (stop_requested) {
+        rducks_nng_wire_encode_response("ok", raw())
+      } else if (identical(req$type, rducks_nng_wire_type_ping)) {
         rducks_nng_wire_encode_response("ok", raw())
       } else if (identical(req$type, rducks_nng_wire_type_register)) {
         rec <- unserialize(req$payload)
@@ -143,16 +159,18 @@ rducks_nng_worker_loop <- function(endpoint) {
       rducks_nng_wire_encode_response("error", raw(), conditionMessage(e))
     })
     nanonext::send(ctx, response, mode = "raw", block = TRUE)
-    decoded <- tryCatch(rducks_nng_wire_decode_request(req_raw), error = function(e) NULL)
-    if (!is.null(decoded) && identical(decoded$type, rducks_nng_wire_type_stop)) break
+    if (stop_requested) break
   }
   TRUE
 }
 
-rducks_nng_transact <- function(endpoint, request, timeout = 5, retries = 200L,
-                                 retry_sleep = 0.01, per_attempt_timeout = 0.25) {
-  timeout <- if (is.null(timeout)) 5 else as.numeric(timeout)
-  if (!is.finite(timeout) || timeout <= 0) timeout <- 5
+rducks_nng_transact <- function(endpoint, request,
+                                 timeout = rducks_nng_defaults$control_timeout,
+                                 retries = rducks_nng_defaults$control_retries,
+                                 retry_sleep = rducks_nng_defaults$retry_sleep,
+                                 per_attempt_timeout = rducks_nng_defaults$per_attempt_timeout) {
+  timeout <- if (is.null(timeout)) rducks_nng_defaults$control_timeout else as.numeric(timeout)
+  if (!is.finite(timeout) || timeout <= 0) timeout <- rducks_nng_defaults$control_timeout
   deadline <- unname(proc.time()[["elapsed"]]) + timeout
   last_error <- NULL
   for (i in seq_len(retries)) {
@@ -212,21 +230,22 @@ rducks_nng_provider_for_runtime <- function(runtime_token, workers, max_pending,
   provider
 }
 
-rducks_nng_stop_runtime_providers <- function(runtime_token = NULL) {
+rducks_nng_stop_runtime_providers <- function(runtime_token = NULL, quiet = FALSE) {
   store <- .rducks_state$nng_providers
-  if (is.null(store)) return(invisible(NULL))
+  if (is.null(store)) return(invisible(list()))
+  statuses <- list()
   for (key in ls(store, all.names = TRUE)) {
     record <- get(key, envir = store, inherits = FALSE)
     if (is.null(runtime_token) || identical(record$runtime_token, runtime_token)) {
-      try(record$provider$stop(), silent = TRUE)
+      statuses[[key]] <- tryCatch(record$provider$stop(quiet = quiet), error = function(e) e)
       rm(list = key, envir = store)
     }
   }
-  invisible(NULL)
+  invisible(statuses)
 }
 
-rducks_nng_stop_all_providers <- function() {
-  rducks_nng_stop_runtime_providers(NULL)
+rducks_nng_stop_all_providers <- function(quiet = FALSE) {
+  rducks_nng_stop_runtime_providers(NULL, quiet = quiet)
 }
 
 rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
@@ -285,6 +304,12 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         state$cleanup_paths <- bundle$cleanup_paths
         state$tasks <- tasks
       }
+      ping <- rducks_nng_wire_encode_request(rducks_nng_wire_type_ping)
+      for (endpoint in state$endpoints) {
+        resp <- rducks_nng_transact(endpoint, ping, timeout = rducks_nng_defaults$startup_timeout)
+        decoded <- rducks_nng_wire_decode_response(resp)
+        if (!identical(decoded$status, "ok")) stop(decoded$error, call. = FALSE)
+      }
       state$started <- TRUE
       invisible(provider)
     }, error = function(e) {
@@ -299,35 +324,68 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       stop(e)
     })
   }
-  provider$stop <- function() {
+  provider$stop <- function(timeout = rducks_nng_defaults$shutdown_timeout, quiet = FALSE) {
+    shutdown_status <- list(
+      stop_requests_sent = 0L,
+      stop_request_errors = character(),
+      tasks_total = length(state$tasks),
+      tasks_resolved = 0L,
+      tasks_unresolved = 0L,
+      forced_daemon_shutdown = FALSE
+    )
     if (isTRUE(state$started) && !isTRUE(state$external_endpoints)) {
       tasks <- state$tasks
       for (endpoint in state$endpoints) {
         req <- rducks_nng_wire_encode_request(rducks_nng_wire_type_stop)
-        try(rducks_nng_transact(endpoint, req, timeout = 1, retries = 5L), silent = TRUE)
+        sent <- tryCatch({
+          stop_timeout <- max(
+            rducks_nng_defaults$minimum_timeout,
+            min(rducks_nng_defaults$stop_request_timeout, as.numeric(timeout))
+          )
+          rducks_nng_transact(endpoint, req, timeout = stop_timeout, retries = 5L)
+          TRUE
+        }, error = function(e) {
+          shutdown_status$stop_request_errors <<- c(shutdown_status$stop_request_errors, conditionMessage(e))
+          FALSE
+        })
+        if (isTRUE(sent)) shutdown_status$stop_requests_sent <- shutdown_status$stop_requests_sent + 1L
       }
       if (length(tasks)) {
-        deadline <- unname(proc.time()[["elapsed"]]) + 1
+        deadline <- unname(proc.time()[["elapsed"]]) + max(0, as.numeric(timeout))
         while (any(vapply(tasks, mirai::unresolved, logical(1))) &&
                unname(proc.time()[["elapsed"]]) < deadline) {
           Sys.sleep(0.01)
         }
-        for (task in tasks) {
-          if (!isTRUE(mirai::unresolved(task))) try(mirai::collect_mirai(task), silent = TRUE)
+        resolved <- !vapply(tasks, mirai::unresolved, logical(1))
+        shutdown_status$tasks_resolved <- sum(resolved)
+        shutdown_status$tasks_unresolved <- sum(!resolved)
+        for (task in tasks[resolved]) {
+          try(mirai::collect_mirai(task), silent = TRUE)
         }
       }
+      shutdown_status$forced_daemon_shutdown <- shutdown_status$tasks_unresolved > 0L || length(shutdown_status$stop_request_errors) > 0L
       try(mirai::daemons(0L, .compute = state$compute), silent = TRUE)
       unlink(state$cleanup_paths %||% character(), force = TRUE)
       state$cleanup_paths <- character()
       state$tasks <- list()
       state$endpoints <- character()
     }
+    state$last_shutdown_status <- shutdown_status
     state$started <- FALSE
-    invisible(provider)
+    if (!quiet && isTRUE(shutdown_status$forced_daemon_shutdown)) {
+      warning(
+        "Rducks NNG provider shutdown was forced: ", shutdown_status$tasks_unresolved,
+        " worker task(s) unresolved; ", length(shutdown_status$stop_request_errors),
+        " stop request error(s)",
+        call. = FALSE
+      )
+    }
+    invisible(shutdown_status)
   }
   provider$register_udf <- function(udf_id, udf_name, fun, arg_types, return_type, mode,
                                     null_handling, exception_handling, output_schema_spec,
-                                    globals = NULL, packages = character(), timeout = 5) {
+                                    globals = NULL, packages = character(),
+                                    timeout = rducks_nng_defaults$register_timeout) {
     if (!isTRUE(state$started)) stop("NNG provider is not started", call. = FALSE)
     mode <- rducks_match_mode(mode)
     packages <- unique(c("Rducks", packages %||% character()))
@@ -425,7 +483,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
         output_schema_spec = output_schema_spec,
         globals = worker_state$globals,
         packages = unique(c(opts$packages, worker_state$packages)),
-        timeout = opts$timeout %||% 5
+        timeout = opts$timeout %||% rducks_nng_defaults$register_timeout
       )
       provider_registered <<- TRUE
     }
@@ -433,7 +491,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
       provider = "nng",
       endpoints = provider$endpoints(),
       udf_id = udf_id,
-      timeout_ms = if (is.null(opts$timeout)) 0L else as.integer(ceiling(as.numeric(opts$timeout) * 1000))
+      timeout_ms = as.integer(ceiling(as.numeric(opts$timeout) * 1000))
     )
   }
 

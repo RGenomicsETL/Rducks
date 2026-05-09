@@ -161,16 +161,14 @@ Internally the current concurrency backends are:
   thread has consumed the request and any worker-side writeback has completed.
 - `multiprocess_parallel`: out-of-process execution through the Arrow IPC
   `ipc_nng_pool` worker provider. The scalar-UDF callback implementation
-  serializes chunk payloads with Arrow IPC so workers receive raw task/result
+  serializes chunk payloads with Arrow IPC so workers receive raw request/result
   payloads rather than DuckDB-owned pointers or session-bound R objects. This
-  path is implemented in the native extension (`rducks_arrow.c` and
-  `rducks_worker_queue.c`): C submits Arrow IPC chunk work, collects provider
-  results, and imports returned Arrow IPC into the DuckDB output vector. When a
-  RIPC callback runs on the recorded main R thread, it cooperatively drains
-  queued worker callbacks into the same submit/collect wave and, after its own
-  output is filled, opportunistically drains any additional worker callbacks that
-  became pending during collection. This keeps active callbacks moving without an
-  external query pump.
+  path is implemented in the native extension (`rducks_arrow.c`): each callback
+  sends one synchronous NNG request/reply to a persistent worker process and
+  imports the returned Arrow IPC into the DuckDB output vector. The current v1
+  provider does not implement collect-many waves, task IDs, or `ipc_max_pending`
+  backpressure; those belong to a future queued provider, not the current
+  scalar-UDF callback path.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

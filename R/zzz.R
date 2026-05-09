@@ -18,7 +18,7 @@ rducks_main_thread_token <- function() {
 .onLoad <- function(libname, pkgname) {
   .rducks_state$main_thread_token <- .Call(RDUCKS_current_thread_token)
   reg.finalizer(.rducks_state, function(env) {
-    rducks_nng_stop_all_providers()
+    rducks_nng_stop_all_providers(quiet = TRUE)
     invisible(NULL)
   }, onexit = TRUE)
   S7::methods_register()

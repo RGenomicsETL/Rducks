@@ -24,6 +24,12 @@ rducks_plan_ipc_provider <- function(x) {
   match.arg(x, "nng")
 }
 
+rducks_ipc_defaults <- list(
+  timeout = 30
+)
+
+rducks_ipc_default_timeout <- function() rducks_ipc_defaults$timeout
+
 rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng") {
   key <- paste(marshalling, concurrency, sep = "+")
   if (identical(key, "arrow_ipc+multiprocess_parallel")) {
@@ -70,8 +76,9 @@ rducks_ipc_options <- function(globals = "auto",
   if (!is.null(packages) && !is.character(packages)) {
     stop("ipc_packages must be NULL or a character vector", call. = FALSE)
   }
-  if (!is.null(timeout) && (!is.numeric(timeout) || length(timeout) != 1L || is.na(timeout) || timeout < 0)) {
-    stop("ipc_timeout must be NULL or a non-negative numeric scalar", call. = FALSE)
+  if (is.null(timeout)) timeout <- rducks_ipc_default_timeout()
+  if (!is.numeric(timeout) || length(timeout) != 1L || is.na(timeout) || !is.finite(timeout) || timeout <= 0) {
+    stop("ipc_timeout must be NULL or a positive finite numeric scalar", call. = FALSE)
   }
   if (!is.null(endpoints) && (!is.character(endpoints) || anyNA(endpoints) || any(!nzchar(endpoints)))) {
     stop("ipc_endpoints must be NULL or a character vector of NNG endpoint URLs", call. = FALSE)
@@ -130,8 +137,9 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   the UDF is registered with the shared provider pool. Use `ipc_packages` for
 #'   packages that workers should attach, `ipc_globals = FALSE` to rely only on
 #'   the serialized UDF closure and explicit task state, or a character vector /
-#'   named list for explicit extra globals. `ipc_timeout` is the provider wait
-#'   timeout. `ipc_endpoints` optionally supplies NNG endpoint URLs for externally
+#'   named list for explicit extra globals. `ipc_timeout` is the positive finite
+#'   provider wait timeout in seconds; `NULL` uses a finite default of 30 seconds.
+#'   `ipc_endpoints` optionally supplies NNG endpoint URLs for externally
 #'   managed worker processes running the Rducks NNG worker loop; any NNG URL
 #'   transport supported by both endpoints is allowed. When endpoints are not
 #'   supplied, `ipc_transport` selects the transport used for the mirai-launched
@@ -146,9 +154,10 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
 #'   environments unless that memory cost is intended.
 #' @param ipc_workers Number of persistent NNG workers.
-#' @param ipc_max_pending Maximum accepted but uncollected tasks for the
-#'   persistent provider. The default bounds provider memory/use of outstanding
-#'   callback work; `NULL` disables this provider-level limit.
+#' @param ipc_max_pending Reserved provider queue limit for future collect-many
+#'   providers. The current native NNG scalar-UDF path is synchronous
+#'   request/reply per callback, so this value is recorded for compatibility and
+#'   diagnostics but is not yet an operational backpressure limit.
 #' @return An object of class `rducks_execution_plan`.
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
@@ -349,7 +358,7 @@ rducks_cleanup_runtime_anchor <- function(db_token, token) {
   anchor_env <- get(db_token, envir = store, inherits = FALSE)
   rducks_remove_store_entry(anchor_env, token)
   if (rducks_runtime_anchor_empty(anchor_env)) {
-    rducks_nng_stop_runtime_providers(db_token)
+    rducks_nng_stop_runtime_providers(db_token, quiet = TRUE)
     rducks_remove_store_entry(store, db_token)
     rducks_remove_store_entry(.rducks_state$registrations, db_token)
   }

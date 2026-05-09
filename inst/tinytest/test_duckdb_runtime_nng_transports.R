@@ -8,7 +8,7 @@ local({
   }, add = TRUE)
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit({
-    try(Rducks:::rducks_nng_stop_all_providers(), silent = TRUE)
+    try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
     DBI::dbDisconnect(con, shutdown = TRUE)
   }, add = TRUE)
   rducks_enable(con)
@@ -33,7 +33,7 @@ local({
   if (length(ipc_workers) != 1L || is.na(ipc_workers) || ipc_workers < 1L) ipc_workers <- 1L
 
   for (transport in transports) {
-    Rducks:::rducks_nng_stop_all_providers()
+    Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
     plan <- rducks_execution_plan(
       "arrow_ipc", "multiprocess_parallel",
       ipc_transport = transport,

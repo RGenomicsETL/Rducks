@@ -12,7 +12,7 @@ place.
 | `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | supported | supported | DuckDB worker callbacks queue work; R evaluation runs on the recorded main R thread. |
 | `arrow_c_direct_serial` | `arrow_c + serial` | supported | supported | Direct native DuckDB-vector marshalling only; unsupported signatures fail. |
 | `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | supported | supported | Same direct marshalling as serial, with queued main-thread R evaluation. |
-| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state and use owned Arrow IPC request/result bytes. Rducks starts local mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoints are passed through as NNG URLs. |
+| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent R worker processes preload evaluator/schema state and use owned Arrow IPC request/result bytes over synchronous NNG request/reply. Rducks starts local mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoints are passed through as NNG URLs. |
 
 Invalid combinations are intentionally rejected rather than mapped to another
 engine.
@@ -31,9 +31,10 @@ engine.
 | Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes | experimental yes | Direct UNION support depends on the pinned DuckDB C-vector layout and is covered by generated matrix tests. |
 
 The generated marshalling matrix is the operational truth for claimed type
-coverage; the latest full run passed 1213 cases across scalar/vectorized modes,
-`arrow_r`, direct `arrow_c`, and supported `arrow_ipc` mappings. Unsupported
-signatures must fail at registration/plan validation time where possible.
+coverage. CI runs the full reference/direct matrix by default; scheduled and
+manual-dispatch matrix runs also include Arrow IPC cases because they start
+worker processes and exercise the native NNG runtime. Unsupported signatures
+must fail at registration/plan validation time where possible.
 
 ## NULL and error semantics
 
@@ -80,7 +81,9 @@ R-side registry view has been detached.
   because the stack request and callback-owned output vector must stay live until
   the main thread and any worker-side writeback finish.
 - Arrow IPC payloads are owned raw-byte payloads intended to cross process
-  boundaries. The implementation must not use R `serialize()` or raw external
-  `SEXP` pointers as a hidden transport alternate path.
+  boundaries. The per-UDF registration bundle is serialized once to initialize
+  worker process state, but per-chunk request/result payloads must not use R
+  `serialize()` or raw external `SEXP` pointers as a hidden transport alternate
+  path.
 - `arrow_c` means direct native conversion. Any Arrow/R bridge or helper path
   must be a separately named plan if reintroduced.

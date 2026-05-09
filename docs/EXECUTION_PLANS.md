@@ -120,7 +120,7 @@ observable plan remains one named plan with one declared support matrix.
 | `arrow_r_main_queue` | `arrow_r` | `inproc_concurrent` | implemented | implemented | Same-process liveness path; R still runs serialized on the recorded main R thread. |
 | `arrow_c_direct_serial` | `arrow_c` | `serial` | implemented | implemented | Direct native scalar/vectorized evaluators (`RC`/`RCV`); unsupported signatures error. |
 | `arrow_c_direct_main_queue` | `arrow_c` | `inproc_concurrent` | implemented | implemented | Same direct marshalling semantics as `arrow_c + serial`, but requests may enter from concurrent DuckDB callbacks and must run R API work on the recorded main R thread. |
-| `ipc_nng_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent NNG/nanonext workers preload evaluator/schema state once per UDF, then receive task id, UDF id, row count, and Arrow IPC bytes per chunk. Rducks starts local worker loops with mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoint URLs are passed through directly. Accepted-but-uncollected tasks are bounded by `ipc_max_pending`; the engine must not switch to same-process execution. |
+| `ipc_nng_pool` | `arrow_ipc` | `multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent R worker processes preload evaluator/schema state once per UDF, then receive synchronous NNG request/reply calls containing UDF id, row count, and Arrow IPC bytes per callback chunk. Rducks starts local worker loops with mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoint URLs are passed through directly. `ipc_max_pending` is currently reserved/diagnostic, not an implemented backpressure limit. The engine must not switch to same-process execution. |
 
 Current API direction:
 
@@ -204,11 +204,14 @@ Additional multiprocess cases:
   integer arrays, while the declared type descriptor carries the dictionary
   levels. This is not general Arrow dictionary IPC support and must not be used
   for arbitrary dictionary arrays;
-- worker errors propagate with function name, chunk/request id, and original R
-  condition text where possible;
-- worker crash/timeout/cancellation returns a deterministic query error;
+- worker errors propagate as deterministic query errors with the worker's R
+  condition text where possible; the current v1 wire response carries a plain
+  error string, not a structured condition object;
+- worker crash/unreachable-endpoint/timeout paths return deterministic query
+  errors under the finite `ipc_timeout` deadline;
 - no process-local R object pointer is sent across process boundaries;
-- chunk order and result row order are preserved or explicitly reassembled.
+- each scalar-UDF callback receives exactly one reply for its submitted chunk,
+  so no task-id/chunk-id reassembly is implemented in the current v1 protocol.
 
 ## Implementation checklist
 
@@ -303,12 +306,14 @@ not the old Arrow/R helper bridge.
 
 ### Iteration 6: implement `arrow_ipc + multiprocess_parallel`
 
-- [x] Define request envelope: the persistent-provider contract and NNG engine
-      use UDF id, task id, chunk id, row count, optional timeout, and Arrow IPC
-      bytes.
-- [x] Define response envelope: the persistent-provider contract and NNG engine
-      return task id, UDF id, chunk id, status, Arrow IPC result bytes, and
-      structured error text.
+- [x] Define v1 request envelope: the current synchronous NNG engine uses
+      request type, UDF id, row count, and Arrow IPC bytes. Task id, chunk id,
+      and per-request timeout fields are reserved for a future collect-many
+      provider.
+- [x] Define v1 response envelope: the current synchronous NNG engine returns
+      status, plain error text, and Arrow IPC result bytes. Structured error
+      objects and task/chunk correlation fields are reserved for a future
+      collect-many provider.
 - [x] Encode DuckDB input chunks to Arrow IPC bytes in the DuckDB process for
       the current synchronous UDF callback implementation.
 - [x] Decode input IPC in worker R processes.
@@ -316,8 +321,11 @@ not the old Arrow/R helper bridge.
 - [x] Encode result IPC in worker R processes.
 - [x] Import result IPC into DuckDB output vectors.
 - [x] Add scalar/vectorized RIPC runtime tests and strict-plan counters.
-- [x] Add worker lifecycle/shutdown/cancellation tests for the NNG provider and
-      a public `ipc_nng_pool` UDF smoke test.
+- [~] Add worker lifecycle/shutdown/cancellation tests for the NNG provider and
+      a public `ipc_nng_pool` UDF smoke test. Current coverage includes provider
+      shutdown status, unreachable endpoint failure, stale endpoint timeout after
+      provider stop, and restart under a changed worker count; broader killed-
+      worker and collect-many cancellation coverage remains future work.
 - [x] Add tests proving provider worker chunk input/output payloads are raw
       Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a

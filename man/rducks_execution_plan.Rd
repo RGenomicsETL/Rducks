@@ -38,8 +38,9 @@ registration-wrapper creation and broadcasts them to each NNG worker when
 the UDF is registered with the shared provider pool. Use \code{ipc_packages} for
 packages that workers should attach, \code{ipc_globals = FALSE} to rely only on
 the serialized UDF closure and explicit task state, or a character vector /
-named list for explicit extra globals. \code{ipc_timeout} is the provider wait
-timeout. \code{ipc_endpoints} optionally supplies NNG endpoint URLs for externally
+named list for explicit extra globals. \code{ipc_timeout} is the positive finite
+provider wait timeout in seconds; \code{NULL} uses a finite default of 30 seconds.
+\code{ipc_endpoints} optionally supplies NNG endpoint URLs for externally
 managed worker processes running the Rducks NNG worker loop; any NNG URL
 transport supported by both endpoints is allowed. When endpoints are not
 supplied, \code{ipc_transport} selects the transport used for the mirai-launched
@@ -57,9 +58,10 @@ environments unless that memory cost is intended.}
 
 \item{ipc_workers}{Number of persistent NNG workers.}
 
-\item{ipc_max_pending}{Maximum accepted but uncollected tasks for the
-persistent provider. The default bounds provider memory/use of outstanding
-callback work; \code{NULL} disables this provider-level limit.}
+\item{ipc_max_pending}{Reserved provider queue limit for future collect-many
+providers. The current native NNG scalar-UDF path is synchronous
+request/reply per callback, so this value is recorded for compatibility and
+diagnostics but is not yet an operational backpressure limit.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.
