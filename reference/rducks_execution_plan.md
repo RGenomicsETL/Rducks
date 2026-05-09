@@ -56,8 +56,9 @@ rducks_execution_plan(
   shared provider pool. Use `ipc_packages` for packages that workers
   should attach, `ipc_globals = FALSE` to rely only on the serialized
   UDF closure and explicit task state, or a character vector / named
-  list for explicit extra globals. `ipc_timeout` is the provider wait
-  timeout. `ipc_endpoints` optionally supplies NNG endpoint URLs for
+  list for explicit extra globals. `ipc_timeout` is the positive finite
+  provider wait timeout in seconds; `NULL` uses a finite default of 30
+  seconds. `ipc_endpoints` optionally supplies NNG endpoint URLs for
   externally managed worker processes running the Rducks NNG worker
   loop; any NNG URL transport supported by both endpoints is allowed.
   When endpoints are not supplied, `ipc_transport` selects the transport
@@ -81,9 +82,10 @@ rducks_execution_plan(
 
 - ipc_max_pending:
 
-  Maximum accepted but uncollected tasks for the persistent provider.
-  The default bounds provider memory/use of outstanding callback work;
-  `NULL` disables this provider-level limit.
+  Reserved provider queue limit for future collect-many providers. The
+  current native NNG scalar-UDF path is synchronous request/reply per
+  callback, so this value is recorded for compatibility and diagnostics
+  but is not yet an operational backpressure limit.
 
 ## Value
 
