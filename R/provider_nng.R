@@ -99,7 +99,7 @@ rducks_nng_endpoint_bundle <- function(workers, transport = NULL) {
       paste0("unix://", cleanup_paths)
     },
     tcp = paste0("tcp://127.0.0.1:", rducks_nng_random_port(workers)),
-    ws = paste0("ws://127.0.0.1:", rducks_nng_random_port(workers), "/", token, "/", indexes)
+    ws = paste0("ws://127.0.0.1:", rducks_nng_random_port(workers))
   )
   list(endpoints = endpoints, cleanup_paths = cleanup_paths, transport = transport)
 }
