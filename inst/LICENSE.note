@@ -29,7 +29,7 @@ Upstream repository: https://github.com/apache/arrow-nanoarrow
 Bundled version: 0.9.0.dev-4639910
 Bundled path: inst/rducks_extension/tp/na
 Copyright:
-- Apache Arrow nanoarrow contributors and copyright holders
+- The Apache Software Foundation
 License:
 - Apache License 2.0
 - See inst/rducks_extension/tp/na/LICENSE.txt for the complete bundled

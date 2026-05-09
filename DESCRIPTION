@@ -7,6 +7,10 @@ Authors@R: c(
     person(given = "Staysail Systems, Inc. and Capitar IT Group BV",
     role = c("cph"),
     comment = "NNG copyright holders for bundled vendored NNG"),
+    person(given = "The Apache Software Foundation", role = c("cph"),
+    comment = "Apache Arrow nanoarrow copyright holder for bundled vendored nanoarrow C/IPC"),
+    person(given = "Mikkel F. Jørgensen", role = c("cph"),
+    comment = "flatcc copyright holder for bundled flatcc runtime"),
     person(given = "The Mbed TLS Contributors", role = c("cph"),
     comment = "Mbed TLS copyright holders for bundled vendored Mbed TLS")
   )

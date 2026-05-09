@@ -172,11 +172,14 @@ Internally the current concurrency backends are:
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not
-for the ordinary callback-local DuckDB ⇄ R handoff. For declared `ENUM(...)`
-types, the current `arrow_ipc` transport deliberately serializes enum storage
-indices as ordinary Arrow integer arrays and relies on the Rducks type descriptor
-for dictionary levels. This avoids nanoarrow C's current IPC writer limitation
-for dictionary arrays without claiming general Arrow dictionary IPC support.
+for the ordinary callback-local DuckDB ⇄ R handoff. The current native
+`arrow_ipc` path uses a Rducks-owned NNG frame, but the chunk payload inside that
+frame is still an Arrow IPC stream written/read with vendored nanoarrow C/IPC.
+Declared `ENUM(...)` types are therefore not enabled for this path yet: DuckDB
+exports them as dictionary arrays and the vendored nanoarrow C IPC writer rejects
+dictionary arrays. Rducks' intended enum-storage sidecar convention must be
+implemented in native input/output rewriting before `ENUM(...)` is claimed for
+native NNG Arrow IPC.
 
 ## Registration-safe mode
 

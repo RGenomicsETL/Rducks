@@ -29,6 +29,8 @@ Useful links:
 Other contributors:
 \itemize{
   \item Staysail Systems, Inc. and Capitar IT Group BV (NNG copyright holders for bundled vendored NNG) [copyright holder]
+  \item The Apache Software Foundation (Apache Arrow nanoarrow copyright holder for bundled vendored nanoarrow C/IPC) [copyright holder]
+  \item Mikkel F. Jørgensen (flatcc copyright holder for bundled flatcc runtime) [copyright holder]
   \item The Mbed TLS Contributors (Mbed TLS copyright holders for bundled vendored Mbed TLS) [copyright holder]
 }
 

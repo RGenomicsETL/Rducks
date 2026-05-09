@@ -26,9 +26,9 @@ engine.
 | Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | experimental yes | Rducks conversion helpers define the R-side value classes. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | experimental yes | Represented with Rducks value classes where base R has no exact scalar type. |
 | Decimal | `DECIMAL(width, scale)` | yes | yes | experimental yes | Must use `DECIMAL()` type constructors, not quoted SQL strings. |
-| Enum | `ENUM(c("a", "b"))` | yes | yes | experimental yes | Arrow IPC carries enum storage indices plus the Rducks type descriptor; this is not general Arrow dictionary IPC support. |
+| Enum | `ENUM(c("a", "b"))` | yes | yes | not yet | The current native Arrow IPC path still receives DuckDB enum dictionary arrays from `duckdb_data_chunk_to_arrow()`, and the vendored nanoarrow C IPC writer rejects dictionary arrays. Rducks has a planned enum-storage sidecar convention, but it is not enabled for the native NNG path until native input/output rewriting is implemented. |
 | Lists/arrays | `LIST(I32)`, `ARRAY(F64, 3)` | yes | yes | experimental yes | Nested child descriptors are validated before registration. |
-| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes | experimental yes | Direct UNION support depends on the pinned DuckDB C-vector layout and is covered by generated matrix tests. |
+| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes | experimental yes, except enum children | Direct UNION support depends on the pinned DuckDB C-vector layout and is covered by generated matrix tests. The native Arrow IPC validator rejects any nested `ENUM(...)` child until the enum-storage sidecar convention is implemented natively. |
 
 The generated marshalling matrix is the operational truth for claimed type
 coverage. CI runs the full reference/direct matrix by default; scheduled and

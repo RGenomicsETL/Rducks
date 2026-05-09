@@ -4,7 +4,8 @@ library(Rducks)
 local({
   expect_true(Rducks:::rducks_arrow_ipc_mapping_supported(INTEGER))
   expect_equal(Rducks:::rducks_arrow_ipc_unsupported_types(INTEGER), character())
-  expect_true(Rducks:::rducks_arrow_ipc_mapping_supported(STRUCT(x = LIST(ENUM(c("red", "blue"))))))
+  expect_false(Rducks:::rducks_arrow_ipc_mapping_supported(ENUM(c("red", "blue"))))
+  expect_false(Rducks:::rducks_arrow_ipc_mapping_supported(STRUCT(x = LIST(ENUM(c("red", "blue"))))))
   expect_equal(Rducks:::rducks_arrow_ipc_unsupported_types(MAP(VARCHAR, DECIMAL(10, 2))), character())
   expect_error(Rducks:::rducks_arrow_ipc_mapping_supported("list<i32>"), "constructors")
 

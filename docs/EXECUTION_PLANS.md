@@ -199,11 +199,12 @@ Additional multiprocess cases:
 
 - request payload is Arrow IPC bytes, not R `serialize()` output;
 - result payload is Arrow IPC bytes;
-- declared `ENUM(...)` payloads use Rducks' explicit enum-storage convention:
-  the Arrow IPC stream carries the DuckDB enum storage indices as ordinary
-  integer arrays, while the declared type descriptor carries the dictionary
-  levels. This is not general Arrow dictionary IPC support and must not be used
-  for arbitrary dictionary arrays;
+- declared `ENUM(...)` payloads are rejected by the current native Arrow IPC
+  validator. Although Rducks owns the outer NNG frame, the payload is still an
+  Arrow IPC stream written with vendored nanoarrow C/IPC; DuckDB currently
+  exports enums as dictionary arrays and that writer rejects dictionary arrays.
+  Rducks' planned enum-storage sidecar convention is not claimed until native
+  input/output rewriting converts declared enums to ordinary integer arrays;
 - worker errors propagate as deterministic query errors with the worker's R
   condition text where possible; the current v1 wire response carries a plain
   error string, not a structured condition object;
@@ -323,9 +324,10 @@ not the old Arrow/R helper bridge.
 - [x] Add scalar/vectorized RIPC runtime tests and strict-plan counters.
 - [~] Add worker lifecycle/shutdown/cancellation tests for the NNG provider and
       a public `ipc_nng_pool` UDF smoke test. Current coverage includes provider
-      shutdown status, unreachable endpoint failure, stale endpoint timeout after
-      provider stop, and restart under a changed worker count; broader killed-
-      worker and collect-many cancellation coverage remains future work.
+      shutdown status, unreachable endpoint failure before registration, and
+      restart under a changed worker count; broader killed-worker, stale-catalog
+      UDF, enum-storage sidecar, and collect-many cancellation coverage remains
+      future work.
 - [x] Add tests proving provider worker chunk input/output payloads are raw
       Arrow IPC bytes and not R object payloads.
 - [ ] Implement a first-class owned source/query pipeline if we decide to add a

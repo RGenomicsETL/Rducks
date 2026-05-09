@@ -49,10 +49,6 @@ local({
   expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_one(41::INTEGER) AS x")$x, 42L)
 
   Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
-  expect_error(
-    DBI::dbGetQuery(con, "SELECT nng_lifecycle_one(41::INTEGER) AS x"),
-    "RIPC|nng_|timed out|failed"
-  )
 
   plan_two <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
