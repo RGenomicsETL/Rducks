@@ -1,34 +1,72 @@
 library(Rducks)
 
-helper <- system.file("tinytest", "helper_nng_transports.R", package = "Rducks")
+local({
+  old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
+  Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+  on.exit({
+    if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
+  }, add = TRUE)
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit({
+    try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
+    DBI::dbDisconnect(con, shutdown = TRUE)
+  }, add = TRUE)
+  rducks_enable(con)
 
-for (transport in Rducks:::rducks_nng_runtime_transports()) {
-  child_test <- tempfile(paste0("rducks-nng-transport-", transport, "-"), fileext = ".R")
-  writeLines(c(
-    "library(Rducks)",
-    sprintf("source(%s, local = TRUE)", deparse(helper)),
-    sprintf("rducks_nng_transports_body(%s)", deparse(transport)),
-    "invisible(gc())",
-    "Sys.sleep(0.2)"
-  ), child_test)
+  enabled <- DBI::dbGetQuery(con, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
+  expect_true(enabled)
+  expect_true(DBI::dbGetQuery(con, "SELECT rducks_nng_self_test() AS ok")$ok[[1L]])
 
-  script <- sprintf(
-    paste(
-      "res <- tinytest::run_test_file(%s)",
-      "if (!tinytest::all_pass(res)) quit(status = 1L, save = 'no')",
-      sep = "; "
-    ),
-    deparse(child_test)
-  )
-  output <- tempfile(paste0("rducks-nng-transport-", transport, "-"), fileext = ".log")
-  status <- system2(
-    file.path(R.home("bin"), "Rscript"),
-    c("--vanilla", "-e", shQuote(script)),
-    stdout = output,
-    stderr = output
-  )
-  if (!identical(status, 0L) && file.exists(output)) {
-    cat(paste(readLines(output, warn = FALSE), collapse = "\n"), "\n", sep = "")
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  expect_true(all(c("ipc", "tcp", "ws") %in% transports))
+  if (identical(Sys.info()[["sysname"]], "Linux")) {
+    expect_true("abstract" %in% transports)
+  } else {
+    expect_false("abstract" %in% transports)
   }
-  expect_equal(status, 0L)
-}
+  if (identical(Sys.info()[["sysname"]], "Windows")) {
+    expect_false("unix" %in% transports)
+  } else {
+    expect_true("unix" %in% transports)
+  }
+  ipc_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_TEST_IPC_WORKERS", "1")))
+  if (length(ipc_workers) != 1L || is.na(ipc_workers) || ipc_workers < 1L) ipc_workers <- 1L
+
+  for (transport in transports) {
+    plan <- rducks_execution_plan(
+      "arrow_ipc", "multiprocess_parallel",
+      ipc_transport = transport,
+      ipc_workers = ipc_workers,
+      ipc_timeout = 10
+    )
+    expect_equal(plan$ipc_options$transport, transport)
+    rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+    name <- paste0("nng_transport_", gsub("[^[:alnum:]]+", "_", transport))
+    reg <- rducks_register(
+      con, name,
+      function(x) x + 1L,
+      INTEGER, INTEGER,
+      mode = "vectorized",
+      side_effects = TRUE
+    )
+    expect_equal(reg$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+    result <- DBI::dbGetQuery(con, sprintf(
+      "SELECT %s(i::INTEGER) AS x FROM range(4) t(i)",
+      DBI::dbQuoteIdentifier(con, name)
+    ))
+    expect_equal(result$x, 1:4)
+    info <- rducks_explain_udf(con, name)
+    expect_equal(info$native_marshalling, "arrow_ipc")
+    expect_equal(info$evaluator, "RIPC")
+    expect_true(info$arrow_ipc_chunks >= 1)
+    stats <- Rducks:::rducks_nng_provider_for_runtime(
+      runtime_token = Rducks:::rducks_runtime_token(con),
+      workers = ipc_workers,
+      max_pending = 64L,
+      endpoints = NULL,
+      transport = transport
+    )$stats()
+    expect_equal(stats$transport, transport)
+    expect_equal(stats$workers, ipc_workers)
+  }
+})
