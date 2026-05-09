@@ -51,6 +51,8 @@ static int rducks_nng_request_reply(const char *endpoint,
                                     uint8_t **response_out, size_t *response_size_out,
                                     char *err_msg, size_t err_cap) {
     nng_socket sock = NNG_SOCKET_INITIALIZER;
+    nng_msg *send_msg = NULL;
+    nng_msg *recv_msg = NULL;
     void *recv_buf = NULL;
     size_t recv_len = 0;
     int rc;
@@ -68,58 +70,56 @@ static int rducks_nng_request_reply(const char *endpoint,
     if (timeout_ms > 0) {
         (void)nng_socket_set_ms(sock, NNG_OPT_RECVTIMEO, timeout_ms);
         (void)nng_socket_set_ms(sock, NNG_OPT_SENDTIMEO, timeout_ms);
-    }
-    if (timeout_ms > 0) {
-        nng_time deadline_ms = nng_clock() + (nng_time)timeout_ms;
         rc = nng_dial(sock, endpoint, NULL, NNG_FLAG_NONBLOCK);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_dial failed", rc);
-            nng_close(sock);
-            return 0;
-        }
-        (void)deadline_ms;
-        rc = nng_send(sock, (void *)request, request_size, 0);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_send failed", rc);
-            nng_close(sock);
-            return 0;
-        }
-        rc = nng_recv(sock, &recv_buf, &recv_len, NNG_FLAG_ALLOC);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_recv failed", rc);
-            nng_close(sock);
-            return 0;
-        }
     } else {
         rc = nng_dial(sock, endpoint, NULL, 0);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_dial failed", rc);
-            nng_close(sock);
-            return 0;
-        }
-        rc = nng_send(sock, (void *)request, request_size, 0);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_send failed", rc);
-            nng_close(sock);
-            return 0;
-        }
-        rc = nng_recv(sock, &recv_buf, &recv_len, NNG_FLAG_ALLOC);
-        if (rc != 0) {
-            rducks_nng_format_error(err_msg, err_cap, "nng_recv failed", rc);
-            nng_close(sock);
-            return 0;
-        }
     }
+    if (rc != 0) {
+        rducks_nng_format_error(err_msg, err_cap, "nng_dial failed", rc);
+        nng_close(sock);
+        return 0;
+    }
+
+    rc = nng_msg_alloc(&send_msg, 0);
+    if (rc != 0) {
+        rducks_nng_format_error(err_msg, err_cap, "nng_msg_alloc failed", rc);
+        nng_close(sock);
+        return 0;
+    }
+    rc = nng_msg_append(send_msg, request, request_size);
+    if (rc != 0) {
+        rducks_nng_format_error(err_msg, err_cap, "nng_msg_append failed", rc);
+        nng_msg_free(send_msg);
+        nng_close(sock);
+        return 0;
+    }
+    rc = nng_sendmsg(sock, send_msg, 0);
+    if (rc != 0) {
+        rducks_nng_format_error(err_msg, err_cap, "nng_sendmsg failed", rc);
+        nng_msg_free(send_msg);
+        nng_close(sock);
+        return 0;
+    }
+    send_msg = NULL;
+    rc = nng_recvmsg(sock, &recv_msg, 0);
+    if (rc != 0) {
+        rducks_nng_format_error(err_msg, err_cap, "nng_recvmsg failed", rc);
+        nng_close(sock);
+        return 0;
+    }
+
+    recv_len = nng_msg_len(recv_msg);
+    recv_buf = nng_msg_body(recv_msg);
     *response_out = (uint8_t *)malloc(recv_len ? recv_len : 1U);
     if (!*response_out) {
         snprintf(err_msg, err_cap, "out of memory copying Rducks NNG response");
-        nng_free(recv_buf, recv_len);
+        nng_msg_free(recv_msg);
         nng_close(sock);
         return 0;
     }
     if (recv_len) memcpy(*response_out, recv_buf, recv_len);
     *response_size_out = recv_len;
-    nng_free(recv_buf, recv_len);
+    nng_msg_free(recv_msg);
     nng_close(sock);
     return 1;
 }
