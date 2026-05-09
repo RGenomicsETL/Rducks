@@ -1,6 +1,6 @@
 library(Rducks)
 
-local({
+rducks_nng_lifecycle_body <- function() {
   old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
   Sys.setenv(RDUCKS_DEV_SURFACES = "true")
   on.exit({
@@ -72,4 +72,25 @@ local({
     transport = Rducks:::rducks_nng_default_transport()
   )$stats()
   expect_equal(stats$workers, 2L)
-})
+}
+
+if (identical(Sys.getenv("RDUCKS_NNG_LIFECYCLE_CHILD"), "true")) {
+  rducks_nng_lifecycle_body()
+} else {
+  script <- paste(
+    "Sys.setenv(RDUCKS_NNG_LIFECYCLE_CHILD = 'true')",
+    "tinytest::run_test_file(system.file('tinytest', 'test_duckdb_runtime_nng_lifecycle.R', package = 'Rducks'))",
+    sep = "; "
+  )
+  output <- tempfile("rducks-nng-lifecycle-", fileext = ".log")
+  status <- system2(
+    file.path(R.home("bin"), "Rscript"),
+    c("--vanilla", "-e", shQuote(script)),
+    stdout = output,
+    stderr = output
+  )
+  if (!identical(status, 0L) && file.exists(output)) {
+    message(paste(readLines(output, warn = FALSE), collapse = "\n"))
+  }
+  expect_equal(status, 0L)
+}
