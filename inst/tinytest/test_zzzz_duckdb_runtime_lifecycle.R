@@ -166,24 +166,4 @@ rducks_runtime_lifecycle_body <- function() {
   })
 }
 
-if (identical(Sys.getenv("RDUCKS_RUNTIME_LIFECYCLE_CHILD"), "true") ||
-    !identical(Sys.info()[["sysname"]], "Windows")) {
-  rducks_runtime_lifecycle_body()
-} else {
-  script <- paste(
-    "Sys.setenv(RDUCKS_RUNTIME_LIFECYCLE_CHILD = 'true')",
-    "tinytest::run_test_file(system.file('tinytest', 'test_zzzz_duckdb_runtime_lifecycle.R', package = 'Rducks'))",
-    sep = "; "
-  )
-  output <- tempfile("rducks-runtime-lifecycle-", fileext = ".log")
-  status <- system2(
-    file.path(R.home("bin"), "Rscript"),
-    c("--vanilla", "-e", shQuote(script)),
-    stdout = output,
-    stderr = output
-  )
-  if (file.exists(output)) {
-    cat(paste(readLines(output, warn = FALSE), collapse = "\n"), "\n", sep = "")
-  }
-  expect_equal(status, 0L)
-}
+rducks_runtime_lifecycle_body()

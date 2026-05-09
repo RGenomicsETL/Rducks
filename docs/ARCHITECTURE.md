@@ -164,11 +164,12 @@ Internally the current concurrency backends are:
   serializes chunk payloads with Arrow IPC so workers receive raw request/result
   payloads rather than DuckDB-owned pointers or session-bound R objects. This
   path is implemented in the native extension (`rducks_arrow.c`): each callback
-  sends one synchronous NNG request/reply to a persistent worker process and
-  imports the returned Arrow IPC into the DuckDB output vector. The current v1
-  provider does not implement collect-many waves, task IDs, or `ipc_max_pending`
-  backpressure; those belong to a future queued provider, not the current
-  scalar-UDF callback path.
+  sends one synchronous NNG request/reply through a persistent per-UDF native
+  client pool to a persistent worker process and imports the returned Arrow IPC
+  into the DuckDB output vector. The current v1 provider enforces
+  `ipc_max_pending` as a native pending/in-flight admission bound, but does not
+  implement collect-many waves or task IDs; those belong to a future queued
+  provider, not the current scalar-UDF callback path.
 
 Arrow C Data remains the canonical in-process marshalling layer. Arrow IPC is
 reserved for serialized/out-of-process transport and owned task payloads, not

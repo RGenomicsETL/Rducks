@@ -449,9 +449,14 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     SEXP endpoints_sexp = R_NilValue;
     SEXP udf_id_sexp = R_NilValue;
     SEXP timeout_sexp = R_NilValue;
+    SEXP max_pending_sexp = R_NilValue;
+    SEXP external_endpoints_sexp = R_NilValue;
     char **endpoints = NULL;
     char *udf_id = NULL;
+    rducks_nng_client_pool_t *client_pool = NULL;
     int timeout_ms = 0;
+    uint64_t max_pending = UINT64_MAX;
+    int external_endpoints = 0;
     int protect_count = 0;
     int r_err = 0;
     R_xlen_t endpoint_count = 0;
@@ -492,6 +497,8 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     endpoints_sexp = rducks_named_list_get(result, "endpoints");
     udf_id_sexp = rducks_named_list_get(result, "udf_id");
     timeout_sexp = rducks_named_list_get(result, "timeout_ms");
+    max_pending_sexp = rducks_named_list_get(result, "max_pending");
+    external_endpoints_sexp = rducks_named_list_get(result, "external_endpoints");
     if (!Rf_isString(endpoints_sexp) || XLENGTH(endpoints_sexp) < 1) {
         snprintf(err_msg, err_cap, "RIPC configure() must return character vector field 'endpoints'");
         goto fail;
@@ -525,7 +532,26 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
         }
         timeout_ms = (int)timeout_value;
     }
+    if (!Rf_isNull(max_pending_sexp)) {
+        double max_pending_value = Rf_asReal(max_pending_sexp);
+        if (R_finite(max_pending_value)) {
+            if (max_pending_value < 1 || max_pending_value > (double)UINT64_MAX) {
+                snprintf(err_msg, err_cap, "RIPC max_pending must be a positive integer-compatible value or Inf");
+                goto fail;
+            }
+            max_pending = (uint64_t)max_pending_value;
+        }
+    }
+    if (!Rf_isNull(external_endpoints_sexp)) {
+        int value = Rf_asLogical(external_endpoints_sexp);
+        external_endpoints = (value == TRUE) ? 1 : 0;
+    }
 
+    client_pool = rducks_nng_client_pool_new(endpoints, (size_t)endpoint_count, timeout_ms,
+                                            max_pending, err_msg, err_cap);
+    if (!client_pool) goto fail;
+
+    rducks_nng_client_pool_destroy(&meta->ripc_client_pool);
     if (meta->ripc_endpoints) {
         for (size_t i = 0; i < meta->ripc_endpoint_count; i++) free(meta->ripc_endpoints[i]);
         free(meta->ripc_endpoints);
@@ -535,11 +561,16 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     meta->ripc_endpoint_count = (size_t)endpoint_count;
     meta->ripc_udf_id = udf_id;
     meta->ripc_timeout_ms = timeout_ms;
+    meta->ripc_max_pending = max_pending;
+    meta->ripc_external_endpoints = external_endpoints;
+    meta->ripc_client_pool = client_pool;
+    client_pool = NULL;
     atomic_store_explicit(&meta->ripc_next_endpoint, 0U, memory_order_relaxed);
     UNPROTECT(protect_count);
     return 1;
 
 fail:
+    rducks_nng_client_pool_destroy(&client_pool);
     if (endpoints) {
         for (R_xlen_t i = 0; i < endpoint_count; i++) free(endpoints[i]);
         free(endpoints);
@@ -769,9 +800,11 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
 
     endpoint_ticket = atomic_fetch_add_explicit(&meta->ripc_next_endpoint, 1U, memory_order_relaxed);
     endpoint = meta->ripc_endpoints[endpoint_ticket % meta->ripc_endpoint_count];
+    (void)endpoint_ticket;
+    (void)endpoint;
     rducks_udf_record_ripc_inflight_add(meta);
-    if (!rducks_nng_request_reply(endpoint, request.data, request.size, meta->ripc_timeout_ms,
-                                  &response, &response_size, err_msg, err_cap)) {
+    if (!rducks_nng_client_pool_request_reply(meta->ripc_client_pool, request.data, request.size,
+                                             &response, &response_size, err_msg, err_cap)) {
         rducks_udf_record_ripc_inflight_done(meta, 1U);
         goto cleanup;
     }

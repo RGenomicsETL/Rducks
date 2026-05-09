@@ -586,7 +586,9 @@ static bool rducks_register_queue_stats(duckdb_connection con, rducks_runtime_en
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_connection_open_failed", DUCKDB_TYPE_UBIGINT,
                                            rducks_runtime_connection_open_failed_stat_scalar, true) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_runtime_queue_init_failed", DUCKDB_TYPE_UBIGINT,
-                                           rducks_runtime_queue_init_failed_stat_scalar, true);
+                                           rducks_runtime_queue_init_failed_stat_scalar, true) &&
+           rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_quiesce", DUCKDB_TYPE_BOOLEAN,
+                                           rducks_nng_quiesce_scalar, true);
 }
 
 static bool rducks_register_dev_diagnostic_surfaces(duckdb_connection con, rducks_runtime_entry_t *runtime) {

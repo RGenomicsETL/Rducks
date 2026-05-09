@@ -192,18 +192,22 @@ static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) 
      * evaluators are queued for a safe recorded-main-thread release. Runtime
      * entries are retained for the process lifetime, so keep meta->runtime
      * stable instead of racing a destructor/callback read with a NULL write.
+     * Native RIPC client pools are not R objects; close them here so forgotten
+     * metas cannot strand NNG sockets outside the runtime quiesce path.
      */
     rducks_r_scalar_meta_t *cur;
+    rducks_r_scalar_meta_t *detached;
     if (!runtime) return;
     rducks_runtime_lock();
-    cur = runtime->udf_registry_head;
+    detached = runtime->udf_registry_head;
     runtime->udf_registry_head = NULL;
-    while (cur) {
+    rducks_runtime_unlock();
+    for (cur = detached; cur; ) {
         rducks_r_scalar_meta_t *next = cur->registry_next;
         cur->registry_next = NULL;
+        rducks_nng_client_pool_destroy(&cur->ripc_client_pool);
         cur = next;
     }
-    rducks_runtime_unlock();
 }
 
 static uint64_t rducks_udf_counter_load(atomic_uint_fast64_t *counter) {
@@ -599,6 +603,7 @@ static void rducks_r_scalar_meta_destroy(void *ptr) {
         meta->fun = R_NilValue;
     }
     free(meta->name);
+    rducks_nng_client_pool_destroy(&meta->ripc_client_pool);
     if (meta->ripc_endpoints) {
         for (size_t i = 0; i < meta->ripc_endpoint_count; i++) free(meta->ripc_endpoints[i]);
     }

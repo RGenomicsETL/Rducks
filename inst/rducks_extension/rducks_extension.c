@@ -100,6 +100,7 @@ typedef enum rducks_type_kind {
 
 typedef struct rducks_udf_request rducks_udf_request_t;
 typedef struct rducks_r_scalar_meta rducks_r_scalar_meta_t;
+typedef struct rducks_nng_client_pool rducks_nng_client_pool_t;
 
 typedef struct rducks_type_desc {
     rducks_type_kind_t kind;
@@ -168,6 +169,9 @@ struct rducks_r_scalar_meta {
     size_t ripc_endpoint_count;
     char *ripc_udf_id;
     int ripc_timeout_ms;
+    uint64_t ripc_max_pending;
+    int ripc_external_endpoints;
+    rducks_nng_client_pool_t *ripc_client_pool;
     atomic_uint_fast64_t ripc_next_endpoint;
     atomic_uint_fast64_t dispatch_chunks;
     atomic_uint_fast64_t dispatch_rows;
@@ -427,11 +431,15 @@ static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *ru
                                                       rducks_r_scalar_meta_t *meta,
                                                       duckdb_data_chunk input, duckdb_vector output,
                                                       char *err_msg, size_t err_cap);
-static int rducks_nng_request_reply(const char *endpoint,
-                                    const uint8_t *request, size_t request_size,
-                                    int timeout_ms,
-                                    uint8_t **response_out, size_t *response_size_out,
-                                    char *err_msg, size_t err_cap);
+static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, size_t endpoint_count,
+                                                            int timeout_ms, uint64_t max_pending,
+                                                            char *err_msg, size_t err_cap);
+static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr);
+static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
+                                                const uint8_t *request, size_t request_size,
+                                                uint8_t **response_out, size_t *response_size_out,
+                                                char *err_msg, size_t err_cap);
+static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
                                   uint64_t *out_value, char *err_msg, size_t err_cap);

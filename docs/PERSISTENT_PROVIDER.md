@@ -5,10 +5,12 @@ Rducks has one IPC provider shape for `arrow_ipc + multiprocess_parallel`:
 
 The current implementation is intentionally narrower than a general task queue:
 workers are persistent, but each DuckDB scalar-UDF callback performs one
-synchronous NNG request/reply. Native code opens a request socket, sends a v1
-frame, waits under `ipc_timeout`, imports the Arrow IPC result into DuckDB, and
-then returns from the callback. There is no collect-many queue, task id, chunk
-id, or implemented `ipc_max_pending` backpressure limit yet.
+synchronous NNG request/reply through a native per-UDF client pool. Native code
+uses persistent request sockets, sends a v1 frame, waits under `ipc_timeout`,
+imports the Arrow IPC result into DuckDB, and then returns from the callback.
+There is no collect-many queue, task id, or chunk id yet. `ipc_max_pending` is
+enforced as a native pending/in-flight admission limit for this synchronous
+callback path, not as a queued submit/collect scheduler.
 
 The provider contract is explicit:
 
@@ -26,8 +28,9 @@ The provider contract is explicit:
 - DuckDB scalar callbacks fill callback-owned DuckDB output before returning and
   do not call the R API on DuckDB worker threads.
 
-`ipc_max_pending` remains a reserved compatibility/diagnostic field until a
-future provider implements a true submit/collect queue with backpressure.
+`ipc_max_pending` bounds the number of native requests admitted to a registered
+UDF's NNG client pool. It is not a task queue size and does not add collect-many
+semantics.
 
 Rducks does not silently route IPC work through a different provider or fall
 back to same-process evaluation.

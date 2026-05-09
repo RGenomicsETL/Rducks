@@ -143,7 +143,7 @@ fi
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
 CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
-SHARED_FLAGS="-shared"
+SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
 
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"

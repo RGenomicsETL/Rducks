@@ -154,10 +154,11 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
 #'   environments unless that memory cost is intended.
 #' @param ipc_workers Number of persistent NNG workers.
-#' @param ipc_max_pending Reserved provider queue limit for future collect-many
-#'   providers. The current native NNG scalar-UDF path is synchronous
-#'   request/reply per callback, so this value is recorded for compatibility and
-#'   diagnostics but is not yet an operational backpressure limit.
+#' @param ipc_max_pending Maximum simultaneous native NNG requests admitted per
+#'   registered UDF client pool. The current provider still uses synchronous
+#'   request/reply per callback rather than collect-many batching, but this value
+#'   is enforced as a bounded pending/in-flight guard before a callback enters
+#'   the native request path.
 #' @return An object of class `rducks_execution_plan`.
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),

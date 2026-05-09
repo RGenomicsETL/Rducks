@@ -16,6 +16,7 @@ local({
 
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
   on.exit({
+    try(rducks_release(con), silent = TRUE)
     try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
     DBI::dbDisconnect(con, shutdown = TRUE)
   }, add = TRUE)
@@ -48,7 +49,12 @@ local({
   expect_equal(reg_one$execution_plan$ipc_workers, 1L)
   expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_one(41::INTEGER) AS x")$x, 42L)
 
+  # Quiesce native client pools before stopping the provider process. The old
+  # catalog UDF remains in DuckDB, but this test does not call it after replacing
+  # the plan/provider.
+  rducks_release(con)
   Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
+  rducks_enable(con, threads = "single")
 
   plan_two <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
@@ -72,4 +78,39 @@ local({
     transport = Rducks:::rducks_nng_default_transport()
   )$stats()
   expect_equal(stats$workers, 2L)
+})
+
+local({
+  old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
+  Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+  on.exit({
+    if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
+  }, add = TRUE)
+
+  external_provider <- Rducks:::rducks_nng_provider(
+    workers = 1L,
+    transport = Rducks:::rducks_nng_default_transport()
+  )
+  external_provider$start()
+  on.exit(try(external_provider$stop(quiet = TRUE), silent = TRUE), add = TRUE)
+
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  plan <- rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    ipc_endpoints = external_provider$endpoints(),
+    ipc_workers = 1L,
+    ipc_timeout = 2
+  )
+  rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+  invisible(rducks_register(
+    con, "nng_external_release_alive", function(x) x + 3L,
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  expect_equal(DBI::dbGetQuery(con, "SELECT nng_external_release_alive(39::INTEGER) AS x")$x, 42L)
+  rducks_release(con)
+  expect_equal(DBI::dbGetQuery(con, "SELECT nng_external_release_alive(39::INTEGER) AS x")$x, 42L)
 })

@@ -58,10 +58,11 @@ environments unless that memory cost is intended.}
 
 \item{ipc_workers}{Number of persistent NNG workers.}
 
-\item{ipc_max_pending}{Reserved provider queue limit for future collect-many
-providers. The current native NNG scalar-UDF path is synchronous
-request/reply per callback, so this value is recorded for compatibility and
-diagnostics but is not yet an operational backpressure limit.}
+\item{ipc_max_pending}{Maximum simultaneous native NNG requests admitted per
+registered UDF client pool. The current provider still uses synchronous
+request/reply per callback rather than collect-many batching, but this value
+is enforced as a bounded pending/in-flight guard before a callback enters
+the native request path.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.

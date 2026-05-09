@@ -129,11 +129,25 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' @export
 rducks_release <- function(con) {
   rducks_assert_duckdb_connection(con)
+  token <- rducks_existing_connection_token(con)
+  db_token <- rducks_attached_runtime_token(con)
+  last_runtime_anchor <- FALSE
+  if (!is.na(token) && !is.na(db_token)) {
+    anchor_store <- .rducks_state$runtime_anchors
+    if (!is.null(anchor_store) && exists(db_token, envir = anchor_store, inherits = FALSE)) {
+      anchor_env <- get(db_token, envir = anchor_store, inherits = FALSE)
+      anchors <- ls(envir = anchor_env, all.names = TRUE)
+      last_runtime_anchor <- identical(sort(anchors), token)
+    }
+  }
   # If the extension is still reachable, give native code a safe recorded-main-
   # thread drain point for preserved R objects queued by off-main DuckDB catalog
   # destructors. This is non-destructive: it does not drop functions or release
   # closures still owned by live catalog metadata.
   try(rducks_runtime_token(con, required = FALSE), silent = TRUE)
+  if (isTRUE(last_runtime_anchor)) {
+    try(DBI::dbGetQuery(con, "SELECT rducks_nng_quiesce() AS ok"), silent = TRUE)
+  }
   rducks_detach_connection_token(con)
   invisible(con)
 }
