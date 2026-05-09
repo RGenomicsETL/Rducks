@@ -75,22 +75,24 @@ rducks_nng_transports_body <- function(only = NULL) {
   }
 }
 
-if (identical(Sys.getenv("RDUCKS_NNG_TRANSPORTS_CHILD"), "true") ||
-    !identical(Sys.info()[["sysname"]], "Windows")) {
-  only <- Sys.getenv("RDUCKS_NNG_TRANSPORT_ONLY", unset = NA_character_)
-  rducks_nng_transports_body(if (is.na(only) || !nzchar(only)) NULL else only)
-  if (identical(Sys.getenv("RDUCKS_NNG_TRANSPORTS_CHILD"), "true") &&
-      identical(Sys.info()[["sysname"]], "Windows")) {
+transport_arg <- getOption("rducks.test.nng_transport", NULL)
+windows <- identical(Sys.info()[["sysname"]], "Windows")
+
+if (!windows || length(transport_arg)) {
+  rducks_nng_transports_body(transport_arg)
+  if (windows) {
     invisible(gc())
     Sys.sleep(0.2)
   }
 } else {
-  transports <- Rducks:::rducks_nng_runtime_transports()
-  for (transport in transports) {
-    script <- paste(
-      sprintf("Sys.setenv(RDUCKS_NNG_TRANSPORTS_CHILD = 'true', RDUCKS_NNG_TRANSPORT_ONLY = '%s')", transport),
-      "tinytest::run_test_file(system.file('tinytest', 'test_zzzy_duckdb_runtime_nng_transports.R', package = 'Rducks'))",
-      sep = "; "
+  for (transport in Rducks:::rducks_nng_runtime_transports()) {
+    script <- sprintf(
+      paste(
+        "options(rducks.test.nng_transport = %s)",
+        "tinytest::run_test_file(system.file('tinytest', 'test_zzzy_duckdb_runtime_nng_transports.R', package = 'Rducks'))",
+        sep = "; "
+      ),
+      deparse(transport)
     )
     output <- tempfile(paste0("rducks-nng-transport-", transport, "-"), fileext = ".log")
     status <- system2(
