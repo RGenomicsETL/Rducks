@@ -5,8 +5,8 @@ rducks_nng_transport_marker <- function(label) {
   flush.console()
 }
 
-rducks_nng_transports_body <- function() {
-  rducks_nng_transport_marker("start")
+rducks_nng_transports_body <- function(only = NULL) {
+  rducks_nng_transport_marker(paste("start", if (is.null(only)) "all" else only))
   old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
   Sys.setenv(RDUCKS_DEV_SURFACES = "true")
   on.exit({
@@ -43,6 +43,8 @@ rducks_nng_transports_body <- function() {
   } else {
     expect_true("unix" %in% transports)
   }
+  if (!is.null(only)) transports <- intersect(transports, only)
+  expect_true(length(transports) >= 1L)
   ipc_workers <- suppressWarnings(as.integer(Sys.getenv("RDUCKS_TEST_IPC_WORKERS", "1")))
   if (length(ipc_workers) != 1L || is.na(ipc_workers) || ipc_workers < 1L) ipc_workers <- 1L
 
@@ -92,4 +94,28 @@ rducks_nng_transports_body <- function() {
   }
 }
 
-rducks_nng_transports_body()
+if (identical(Sys.getenv("RDUCKS_NNG_TRANSPORTS_CHILD"), "true") ||
+    !identical(Sys.info()[["sysname"]], "Windows")) {
+  only <- Sys.getenv("RDUCKS_NNG_TRANSPORT_ONLY", unset = NA_character_)
+  rducks_nng_transports_body(if (is.na(only) || !nzchar(only)) NULL else only)
+} else {
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  for (transport in transports) {
+    script <- paste(
+      sprintf("Sys.setenv(RDUCKS_NNG_TRANSPORTS_CHILD = 'true', RDUCKS_NNG_TRANSPORT_ONLY = '%s')", transport),
+      "tinytest::run_test_file(system.file('tinytest', 'test_zzzy_duckdb_runtime_nng_transports.R', package = 'Rducks'))",
+      sep = "; "
+    )
+    output <- tempfile(paste0("rducks-nng-transport-", transport, "-"), fileext = ".log")
+    status <- system2(
+      file.path(R.home("bin"), "Rscript"),
+      c("--vanilla", "-e", shQuote(script)),
+      stdout = output,
+      stderr = output
+    )
+    if (file.exists(output)) {
+      cat(paste(readLines(output, warn = FALSE), collapse = "\n"), "\n", sep = "")
+    }
+    expect_equal(status, 0L)
+  }
+}
