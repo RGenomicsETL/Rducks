@@ -362,15 +362,15 @@ inputs and outputs are accepted as constructed type objects such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types.
 
-Enum types are supported by all implemented execution plans. For
-`arrow_ipc`, Rducks does not rely on general Arrow dictionary IPC
-because the nanoarrow C IPC writer used by this path does not yet encode
-dictionary arrays. Instead, enum payloads use the declared Rducks type
-descriptor as the dictionary sidecar and serialize the DuckDB enum
-storage indices as ordinary Arrow integer arrays. This is an explicit
-Rducks wire convention for declared `ENUM(...)` types, not general
-support for arbitrary Arrow dictionary arrays. A future same-host
-payload mode such as `mori` may optimize this path further.
+Enum types are supported by the implemented same-process plans
+(`arrow_r` and `arrow_c`). They are not yet enabled for the native
+`arrow_ipc` NNG path. Rducks owns the outer NNG frame, but the chunk
+payload is still an Arrow IPC stream written with vendored nanoarrow
+C/IPC; DuckDB currently exports enums as Arrow dictionary arrays and
+that writer rejects dictionary arrays. Rducks has a planned enum-storage
+sidecar convention for declared `ENUM(...)` types, but it is not claimed
+until native input/output rewriting converts declared enums to ordinary
+integer arrays.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values:

@@ -8,6 +8,13 @@
   holder.  
   NNG copyright holders for bundled vendored NNG
 
+- **The Apache Software Foundation**. Copyright holder.  
+  Apache Arrow nanoarrow copyright holder for bundled vendored nanoarrow
+  C/IPC
+
+- **Mikkel F. Jørgensen**. Copyright holder.  
+  flatcc copyright holder for bundled flatcc runtime
+
 - **The Mbed TLS Contributors**. Copyright holder.  
   Mbed TLS copyright holders for bundled vendored Mbed TLS
 

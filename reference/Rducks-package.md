@@ -28,5 +28,11 @@ Other contributors:
 - Staysail Systems, Inc. and Capitar IT Group BV (NNG copyright holders
   for bundled vendored NNG) \[copyright holder\]
 
+- The Apache Software Foundation (Apache Arrow nanoarrow copyright
+  holder for bundled vendored nanoarrow C/IPC) \[copyright holder\]
+
+- Mikkel F. Jørgensen (flatcc copyright holder for bundled flatcc
+  runtime) \[copyright holder\]
+
 - The Mbed TLS Contributors (Mbed TLS copyright holders for bundled
   vendored Mbed TLS) \[copyright holder\]
