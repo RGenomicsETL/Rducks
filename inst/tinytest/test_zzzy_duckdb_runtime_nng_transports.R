@@ -116,6 +116,7 @@ if (identical(Sys.getenv("RDUCKS_NNG_TRANSPORTS_CHILD"), "true") ||
     if (file.exists(output)) {
       cat(paste(readLines(output, warn = FALSE), collapse = "\n"), "\n", sep = "")
     }
+    message("[rducks-nng-transport] child ", transport, " exit status ", status)
     expect_equal(status, 0L)
   }
 }
