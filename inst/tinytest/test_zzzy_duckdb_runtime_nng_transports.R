@@ -2,7 +2,6 @@ library(Rducks)
 
 rducks_nng_transport_trace <- function(phase) {
   message("[rducks-nng-transport] ", phase)
-  flush.console()
 }
 
 local({

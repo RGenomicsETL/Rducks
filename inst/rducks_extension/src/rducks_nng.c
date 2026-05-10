@@ -88,9 +88,7 @@ static int g_rducks_nng_quiescing = 0;
 struct rducks_nng_client {
     char *endpoint;
     nng_socket sock;
-    nng_ctx ctx;
     int opened;
-    int ctx_opened;
     int mutex_initialized;
     rducks_nng_mutex_t mutex;
     atomic_uint_fast64_t inflight;
@@ -176,11 +174,6 @@ static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap) {
 
 static void rducks_nng_client_close_locked(rducks_nng_client_t *client) {
     if (!client) return;
-    if (client->ctx_opened) {
-        nng_ctx_close(client->ctx);
-        client->ctx = (nng_ctx){0};
-        client->ctx_opened = 0;
-    }
     if (client->opened) {
         nng_close(client->sock);
         client->sock = (nng_socket)NNG_SOCKET_INITIALIZER;
@@ -214,13 +207,6 @@ static int rducks_nng_client_open_locked(rducks_nng_client_t *client, int timeou
     }
     client->sock = sock;
     client->opened = 1;
-    rc = nng_ctx_open(&client->ctx, client->sock);
-    if (rc != 0) {
-        rducks_nng_format_error(err_msg, err_cap, "nng_ctx_open failed", rc);
-        rducks_nng_client_close_locked(client);
-        return 0;
-    }
-    client->ctx_opened = 1;
     return 1;
 }
 
@@ -254,7 +240,7 @@ static int rducks_nng_client_request_reply_locked(rducks_nng_client_t *client,
         nng_msg_free(send_msg);
         return 0;
     }
-    rc = nng_ctx_sendmsg(client->ctx, send_msg, 0);
+    rc = nng_sendmsg(client->sock, send_msg, 0);
     if (rc != 0) {
         rducks_nng_format_error(err_msg, err_cap, "nng_sendmsg failed", rc);
         nng_msg_free(send_msg);
@@ -263,7 +249,7 @@ static int rducks_nng_client_request_reply_locked(rducks_nng_client_t *client,
     }
     send_msg = NULL;
 
-    rc = nng_ctx_recvmsg(client->ctx, &recv_msg, 0);
+    rc = nng_recvmsg(client->sock, &recv_msg, 0);
     if (rc != 0) {
         rducks_nng_format_error(err_msg, err_cap, "nng_recvmsg failed", rc);
         rducks_nng_client_close_locked(client);

@@ -15,8 +15,19 @@ rd:
 catalog:
 	Rscript tools/generate_function_catalog.R
 
-test:
-	RDUCKS_DEV_SURFACES=true Rscript -e 'tinytest::test_package("$(PKGNAME)", testdir = "inst/tinytest")'
+test: build
+	@tmpdir=$$(mktemp -d); \
+	USE_UNSTABLE_C_API=$(USE_UNSTABLE_C_API) \
+	RDUCKS_EXTENSION_ABI_TYPE=$(RDUCKS_EXTENSION_ABI_TYPE) \
+	R_LIBS_USER="$$tmpdir" \
+	R CMD INSTALL $(PKGNAME)_$(PKGVERS).tar.gz; \
+	res=$$?; \
+	if [ $$res -ne 0 ]; then rm -rf "$$tmpdir"; exit $$res; fi; \
+	R_LIBS_USER="$$tmpdir" RDUCKS_DEV_SURFACES=true \
+	Rscript -e 'tinytest::test_package("$(PKGNAME)", testdir = "inst/tinytest")'; \
+	res=$$?; \
+	rm -rf "$$tmpdir"; \
+	exit $$res
 
 install: build
 	USE_UNSTABLE_C_API=$(USE_UNSTABLE_C_API) \
