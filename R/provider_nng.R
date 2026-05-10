@@ -169,14 +169,11 @@ rducks_nng_worker_loop <- function(endpoint) {
 }
 
 rducks_nng_control_get <- function(endpoint) {
-  sock <- nanonext::socket("req", dial = endpoint)
-  ctx <- nanonext::context(sock)
-  list(sock = sock, ctx = ctx)
+  list(sock = nanonext::socket("req", dial = endpoint))
 }
 
 rducks_nng_control_close <- function(con) {
   if (is.null(con)) return(invisible(NULL))
-  try(close(con$ctx), silent = TRUE)
   try(close(con$sock), silent = TRUE)
   invisible(NULL)
 }
@@ -199,9 +196,9 @@ rducks_nng_transact <- function(endpoint, request,
     con <- NULL
     out <- tryCatch({
       con <- rducks_nng_control_get(endpoint)
-      aio <- nanonext::request(con$ctx, request, send_mode = "raw", recv_mode = "raw", timeout = timeout_ms)
-      nanonext::call_aio(aio)
-      response <- aio$data
+      send_status <- nanonext::send(con$sock, request, mode = "raw", block = timeout_ms)
+      if (!identical(as.integer(send_status), 0L)) stop(as.character(send_status), call. = FALSE)
+      response <- nanonext::recv(con$sock, mode = "raw", block = timeout_ms)
       if (nanonext::is_error_value(response)) stop(as.character(response), call. = FALSE)
       response
     }, error = function(e) {
