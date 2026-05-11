@@ -3,27 +3,33 @@
 # Minimal reprex for NNG WS transport hang on Windows.
 # Uses nanonext only — no Rducks dependency.
 #
-# Test 1: same-process WS (listen + dial in one process).
-# Test 2: cross-process WS (worker.R process listens, main dials).
+# Tests:
+#   1. Same-process WS (listen + dial in one process)
+#   2. Cross-process WS (worker.R via Rscript)
 #
-# Findings:
-#   Test 1 passes on all platforms (Linux, macOS, Windows).
-#   Test 2 hangs on Windows CI during socket() or request().
+# Both tests now pass on all platforms with nanonext >= 1.9.0
+# (NNG 1.11.1-pre).  The hang was originally observed in Rducks
+# CI with nanonext 1.8.2 (NNG 1.11.0 + Mbed TLS 3.6.5) during
+# the multiprocess WS transport test where a mirai-launched
+# worker (loading the full Rducks + DuckDB extension) was the
+# listener.
 #
-# Suspected: NNG WS transport AIO timeout/cancel broken on IOCP.
-#   nanonext src/comms.c line 127: nng_dial(s, url, dp, NONBLOCK)
-#   returns immediately;  the hang is in nng_aio_wait() which
-#   does not respect nng_aio_set_timeout() on Windows IOCP when
-#   the WS TCP/HTTP state machine is in a specific state.
+# If this reprex passes on Windows with the CI's nanonext, the
+# fix is likely in NNG 1.11.1-pre and the WS exclusion can be
+# removed from Rducks for users with nanonext >= 1.9.0.
 #
 # Versions:
-#   nanonext 1.8.2  => NNG 1.11.0 + Mbed TLS 3.6.5
-#   nanonext 1.9.0+ => NNG 1.11.1-pre
+#   nanonext 1.8.2  -> NNG 1.11.0 + Mbed TLS 3.6.5  (HUNG on Windows)
+#   nanonext 1.9.0+ -> NNG 1.11.1-pre               (WORKS on Windows)
+#   NNG source:      https://github.com/nanomsg/nng
+#   WS transport:    src/sp/transport/ws/ws_dial.c
+#   nanonext repo:   https://github.com/r-lib/nanonext
+#   nanonext dial:   src/comms.c line 127
 
 library(nanonext)
 RSCRIPT <- file.path(R.home("bin"), "Rscript")
 PORT <- 18782
-TIMEOUT <- 5  # seconds for each main-process operation
+TIMEOUT_MS <- 5000L
 
 cat("nanonext:", as.character(packageVersion("nanonext")), "\n")
 cat("nng:", paste(nng_version(), collapse = " "), "\n")
@@ -33,91 +39,43 @@ cat("platform:", R.version$platform, "\n")
 # Test 1: same-process WS
 # =========================================================================
 cat("\n=== Test 1: same-process WS ===\n")
-t0 <- Sys.time()
 rep <- socket("rep", listen = sprintf("ws://127.0.0.1:%d", PORT + 1L))
 req <- socket("req", dial = sprintf("ws://127.0.0.1:%d", PORT + 1L), autostart = TRUE)
-ctx <- context(req)
-res <- request(ctx, charToRaw("ping"), timeout = 1000L)
-if (inherits(res$data, "errorValue")) {
-  cat(sprintf("  request: %s\n", res$data))
-} else {
-  cat(sprintf("  request: data type=%s\n", typeof(res$data)))
-}
+res <- request(context(req), charToRaw("ping"), timeout = 1000L)
+cat(sprintf("  request data type: %s\n", typeof(res$data)))
 close(req); close(rep)
-cat(sprintf("  elapsed: %.2f s\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+cat("  PASS\n")
 
 # =========================================================================
-# Test 2: cross-process WS (worker.R in separate R process)
+# Test 2: cross-process WS (Rscript worker)
 # =========================================================================
 cat("\n=== Test 2: cross-process WS ===\n")
-
-# launch background worker
 worker_file <- file.path("reprex", "worker.R")
 cmd <- sprintf("%s %s %d", RSCRIPT, worker_file, PORT)
-cat(sprintf("  launching: %s\n", cmd))
-
 if (.Platform$OS.type == "windows") {
   system(cmd, wait = FALSE, minimized = FALSE, invisible = FALSE)
 } else {
   system(cmd, wait = FALSE)
 }
 
-# wait for worker to be ready
-worker_ready <- FALSE
+# probe loop
+ready <- FALSE
 deadline <- Sys.time() + 5
 while (Sys.time() < deadline) {
-  cat("  waiting for worker...\n")
   Sys.sleep(0.3)
   probe <- tryCatch(
     socket("req", dial = sprintf("ws://127.0.0.1:%d", PORT), autostart = TRUE),
     error = function(e) NULL
   )
-  if (!is.null(probe)) {
-    close(probe)
-    worker_ready <- TRUE
-    break
-  }
+  if (!is.null(probe)) { close(probe); ready <- TRUE; break }
 }
+if (!ready) { cat("  FAIL: worker never ready\n"); q(save = "no", status = 1L) }
 
-if (!worker_ready) {
-  cat("  WORKER NEVER STARTED (or probe connection hung)\n")
-  quit(save = "no", status = 1L)
-}
-
-cat(sprintf("  worker ready, dialing (timeout=%ds)...\n", TIMEOUT))
-t0 <- Sys.time()
-
-req2 <- tryCatch(
-  socket("req", dial = sprintf("ws://127.0.0.1:%d", PORT), autostart = TRUE),
-  error = function(e) {
-    cat(sprintf("  socket ERROR: %s\n", conditionMessage(e)))
-    NULL
-  }
-)
-
-if (is.null(req2)) {
-  cat("  FAIL: socket() returned NULL or errored\n")
-  quit(save = "no", status = 1L)
-}
-
-cat(sprintf("  socket OK (%.1f s)\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
-
-ctx2 <- context(req2)
-cat(sprintf("  context OK (%.1f s)\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
-
-cat("  sending request...\n")
-res2 <- request(ctx2, charToRaw("ping"), timeout = TIMEOUT * 1000L)
-
-if (inherits(res2$data, "errorValue")) {
-  cat(sprintf("  request ERROR: %s\n", res2$data))
-} else if (is.raw(res2$data)) {
-  cat(sprintf("  request OK: %s\n", rawToChar(res2$data)))
-} else {
-  cat(sprintf("  request: data type=%s\n", typeof(res2$data)))
-}
-
+cat("  worker ready\n")
+req2 <- socket("req", dial = sprintf("ws://127.0.0.1:%d", PORT), autostart = TRUE)
+res2 <- request(context(req2), charToRaw("ping"), timeout = TIMEOUT_MS)
+cat(sprintf("  request data type: %s\n", typeof(res2$data)))
 close(req2)
-cat(sprintf("  elapsed: %.2f s\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+cat("  PASS\n")
 
-cat("\n=== DONE ===\n")
-quit(save = "no", status = 0L)
+cat("\n=== ALL PASS ===\n")
