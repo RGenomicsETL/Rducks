@@ -771,12 +771,30 @@ cleanup:
     return ok;
 }
 
+static rducks_nng_client_pool_t *
+rducks_ripc_acquire_pool(rducks_r_scalar_meta_t *meta, char *err_msg, size_t err_cap) {
+    rducks_nng_client_pool_t *pool = NULL;
+
+    if (!meta) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC execution metadata is missing");
+        return NULL;
+    }
+
+    rducks_runtime_lock();
+    pool = meta->ripc_client_pool;
+    if (!rducks_nng_client_pool_acquire(pool, err_msg, err_cap)) {
+        rducks_runtime_unlock();
+        return NULL;
+    }
+    rducks_runtime_unlock();
+    return pool;
+}
+
 static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                duckdb_data_chunk input, duckdb_vector output,
                                char *err_msg, size_t err_cap) {
     idx_t n;
-    uint64_t endpoint_ticket;
-    const char *endpoint;
+    rducks_nng_client_pool_t *client_pool = NULL;
     rducks_owned_bytes_t input_payload = {0};
     rducks_owned_bytes_t request = {0};
     uint8_t *response = NULL;
@@ -798,16 +816,20 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     if (!rducks_arrow_ipc_encode_input_chunk_native(runtime, meta, input, &input_payload, err_msg, err_cap)) goto cleanup;
     if (!rducks_ripc_build_execute_request(meta, n, input_payload.data, input_payload.size, &request, err_msg, err_cap)) goto cleanup;
 
-    endpoint_ticket = atomic_fetch_add_explicit(&meta->ripc_next_endpoint, 1U, memory_order_relaxed);
-    endpoint = meta->ripc_endpoints[endpoint_ticket % meta->ripc_endpoint_count];
-    (void)endpoint_ticket;
-    (void)endpoint;
     rducks_udf_record_ripc_inflight_add(meta);
-    if (!rducks_nng_client_pool_request_reply(meta->ripc_client_pool, request.data, request.size,
-                                             &response, &response_size, err_msg, err_cap)) {
+    client_pool = rducks_ripc_acquire_pool(meta, err_msg, err_cap);
+    if (!client_pool) {
         rducks_udf_record_ripc_inflight_done(meta, 1U);
         goto cleanup;
     }
+    if (!rducks_nng_client_pool_request_reply_acquired(client_pool, request.data, request.size,
+                                                      &response, &response_size,
+                                                      err_msg, err_cap)) {
+        rducks_nng_client_pool_release(client_pool);
+        rducks_udf_record_ripc_inflight_done(meta, 1U);
+        goto cleanup;
+    }
+    rducks_nng_client_pool_release(client_pool);
     rducks_udf_record_ripc_inflight_done(meta, 1U);
     rducks_udf_record_ripc_submit_wave(meta, 1U);
     rducks_udf_record_ripc_collect_ready(meta, 1U);

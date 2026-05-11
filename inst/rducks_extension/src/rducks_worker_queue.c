@@ -438,8 +438,8 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
 
 typedef struct rducks_queue_self_test_state {
     rducks_runtime_entry_t *runtime;
-    volatile int worker_done;
-    int worker_ok;
+    atomic_int worker_done;
+    atomic_int worker_ok;
     uint64_t value;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 } rducks_queue_self_test_state_t;
@@ -463,10 +463,12 @@ static void *rducks_queue_self_test_worker(void *arg) {
     memset(&request, 0, sizeof(request));
     request.execute = rducks_queue_self_test_execute;
     request.data = state;
-    state->worker_ok = rducks_queue_submit_request(state->runtime, &request,
-        "Rducks queue self-test timed out waiting for the recorded main R thread",
-        state->error, sizeof(state->error));
-    state->worker_done = 1;
+    atomic_store_explicit(&state->worker_ok,
+                          rducks_queue_submit_request(state->runtime, &request,
+                            "Rducks queue self-test timed out waiting for the recorded main R thread",
+                            state->error, sizeof(state->error)),
+                          memory_order_release);
+    atomic_store_explicit(&state->worker_done, 1, memory_order_release);
 #ifdef _WIN32
     return 0;
 #else
@@ -492,6 +494,7 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         rducks_queue_self_test_state_t state;
         unsigned int spins = 0;
         memset(&state, 0, sizeof(state));
+        atomic_init(&state.worker_done, 0);
         state.runtime = runtime;
 #ifdef _WIN32
         HANDLE worker = CreateThread(NULL, 0, rducks_queue_self_test_worker, &state, 0, NULL);
@@ -506,9 +509,9 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
             return 0;
         }
 #endif
-        while (!state.worker_done && spins < 5000U) {
+        while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < 5000U) {
             (void)rducks_queue_drain_on_main(runtime, 1000);
-            if (!state.worker_done) rducks_queue_sleep_ms(1);
+            if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) rducks_queue_sleep_ms(1);
             spins++;
         }
 #ifdef _WIN32
@@ -517,11 +520,11 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #else
         pthread_join(worker, NULL);
 #endif
-        if (!state.worker_done) {
+        if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
             snprintf(err_msg, err_cap, "Rducks queue self-test worker did not finish");
             return 0;
         }
-        if (!state.worker_ok) {
+        if (!atomic_load_explicit(&state.worker_ok, memory_order_acquire)) {
             rducks_queue_error_copy(err_msg, err_cap, state.error, "Rducks queue self-test worker failed");
             return 0;
         }

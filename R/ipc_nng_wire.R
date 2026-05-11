@@ -5,6 +5,8 @@ rducks_nng_wire_type_register <- 2L
 rducks_nng_wire_type_stop <- 3L
 rducks_nng_wire_type_ping <- 4L
 rducks_nng_wire_type_response <- 100L
+rducks_nng_wire_request_header_size <- 36L
+rducks_nng_wire_response_header_size <- 32L
 
 rducks_nng_wire_u32 <- function(x) {
   writeBin(as.integer(x), raw(), size = 4L, endian = "little")
@@ -53,9 +55,13 @@ rducks_nng_wire_encode_request <- function(type, udf_id = "", row_count = 0, pay
 }
 
 rducks_nng_wire_decode_request <- function(buf) {
-  if (!is.raw(buf) || length(buf) < 32L || !rducks_nng_wire_check_magic(buf)) {
+  if (!is.raw(buf) || !rducks_nng_wire_check_magic(buf)) {
     stop("invalid Rducks NNG request frame", call. = FALSE)
   }
+  if (!is.finite(length(buf)) || length(buf) < rducks_nng_wire_request_header_size) {
+    stop("truncated Rducks NNG request frame", call. = FALSE)
+  }
+
   pos <- 5L
   version <- rducks_nng_wire_read_u32(buf, pos); pos <- version$pos
   type <- rducks_nng_wire_read_u32(buf, pos); pos <- type$pos
@@ -66,8 +72,15 @@ rducks_nng_wire_decode_request <- function(buf) {
   if (!identical(as.integer(version$value), rducks_nng_wire_version)) {
     stop("unsupported Rducks NNG request version", call. = FALSE)
   }
-  total <- 36 + udf_len$value + payload_len$value
-  if (total != length(buf)) stop("truncated Rducks NNG request frame", call. = FALSE)
+
+  total <- rducks_nng_wire_request_header_size + udf_len$value + payload_len$value
+  if (total > as.double(length(buf)) || total < 0) {
+    stop("truncated Rducks NNG request frame", call. = FALSE)
+  }
+  if (total != length(buf)) {
+    stop("truncated Rducks NNG request frame", call. = FALSE)
+  }
+
   udf_id <- if (udf_len$value > 0) rawToChar(buf[pos:(pos + udf_len$value - 1L)]) else ""
   pos <- pos + udf_len$value
   payload <- if (payload_len$value > 0) as.raw(buf[pos:(pos + payload_len$value - 1L)]) else raw()
@@ -97,7 +110,10 @@ rducks_nng_wire_encode_response <- function(status = "ok", payload = raw(), erro
 }
 
 rducks_nng_wire_decode_response <- function(buf) {
-  if (!is.raw(buf) || length(buf) < 32L || !rducks_nng_wire_check_magic(buf)) {
+  if (!is.raw(buf) || !rducks_nng_wire_check_magic(buf)) {
+    stop("invalid Rducks NNG response frame", call. = FALSE)
+  }
+  if (length(buf) < rducks_nng_wire_response_header_size) {
     stop("invalid Rducks NNG response frame", call. = FALSE)
   }
   pos <- 5L
@@ -111,7 +127,7 @@ rducks_nng_wire_decode_response <- function(buf) {
       !identical(as.integer(type$value), rducks_nng_wire_type_response)) {
     stop("unsupported Rducks NNG response frame", call. = FALSE)
   }
-  total <- 32 + error_len$value + payload_len$value
+  total <- rducks_nng_wire_response_header_size + error_len$value + payload_len$value
   if (total != length(buf)) stop("truncated Rducks NNG response frame", call. = FALSE)
   error <- if (error_len$value > 0) rawToChar(buf[pos:(pos + error_len$value - 1L)]) else ""
   pos <- pos + error_len$value

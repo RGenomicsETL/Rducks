@@ -148,7 +148,18 @@ static void rducks_nng_pool_count_done(void) {
 
 static int rducks_nng_global_quiesce_allow_open(uint64_t allowed_open_pools,
                                                 char *err_msg, size_t err_cap) {
+    int ok = 0;
     rducks_nng_lifecycle_lock();
+    if (g_rducks_nng_quiescing) {
+        if (err_msg && err_cap) {
+            snprintf(err_msg, err_cap,
+                     "%s while Rducks NNG is already quiescing",
+                     "Rducks NNG quiescence is in progress");
+        }
+        rducks_nng_lifecycle_unlock();
+        return 0;
+    }
+    g_rducks_nng_quiescing = 1;
     if (g_rducks_nng_active_ops != 0 || g_rducks_nng_open_pools > allowed_open_pools) {
         if (err_msg && err_cap) {
             snprintf(err_msg, err_cap,
@@ -156,22 +167,25 @@ static int rducks_nng_global_quiesce_allow_open(uint64_t allowed_open_pools,
                      (unsigned long long)g_rducks_nng_active_ops,
                      (unsigned long long)g_rducks_nng_open_pools);
         }
+        g_rducks_nng_quiescing = 0;
         rducks_nng_lifecycle_unlock();
         return 0;
     }
+    ok = 1;
+    g_rducks_nng_quiescing = 0;
+    rducks_nng_lifecycle_unlock();
+
     /* Do not call nng_fini() during ordinary R/DuckDB runtime teardown.
      * NNG documents fini as an atexit/just-before-dlclose operation; in an R
      * session, quiescing a connection can be followed by more registrations.
      * Socket/pool shutdown above is the runtime quiesce point.
      */
-    rducks_nng_lifecycle_unlock();
-    return 1;
+    return ok;
 }
 
 static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap) {
     return rducks_nng_global_quiesce_allow_open(0U, err_msg, err_cap);
 }
-
 static void rducks_nng_client_close_locked(rducks_nng_client_t *client) {
     if (!client) return;
     if (client->opened) {
@@ -199,7 +213,7 @@ static int rducks_nng_client_open_locked(rducks_nng_client_t *client, int timeou
         (void)nng_socket_set_ms(sock, NNG_OPT_RECVTIMEO, timeout_ms);
         (void)nng_socket_set_ms(sock, NNG_OPT_SENDTIMEO, timeout_ms);
     }
-    rc = nng_dial(sock, client->endpoint, NULL, timeout_ms > 0 ? NNG_FLAG_NONBLOCK : 0);
+    rc = nng_dial(sock, client->endpoint, NULL, 0);
     if (rc != 0) {
         rducks_nng_format_error(err_msg, err_cap, "nng_dial failed", rc);
         nng_close(sock);
@@ -437,10 +451,10 @@ static size_t rducks_nng_client_pool_choose(rducks_nng_client_pool_t *pool) {
     return best;
 }
 
-static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
-                                                const uint8_t *request, size_t request_size,
-                                                uint8_t **response_out, size_t *response_size_out,
-                                                char *err_msg, size_t err_cap) {
+static int rducks_nng_client_pool_request_reply_acquired(rducks_nng_client_pool_t *pool,
+                                                           const uint8_t *request, size_t request_size,
+                                                           uint8_t **response_out, size_t *response_size_out,
+                                                           char *err_msg, size_t err_cap) {
     rducks_nng_client_t *client;
     size_t idx;
     uint64_t pending;
@@ -448,11 +462,6 @@ static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
 
     if (response_out) *response_out = NULL;
     if (response_size_out) *response_size_out = 0;
-    if (!pool || !pool->clients || pool->count == 0U) {
-        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC client pool is not configured");
-        return 0;
-    }
-    if (!rducks_nng_client_pool_acquire(pool, err_msg, err_cap)) return 0;
 
     pending = (uint64_t)atomic_fetch_add_explicit(&pool->pending, 1U, memory_order_relaxed) + 1U;
     if (pool->max_pending != UINT64_MAX && pending > pool->max_pending) {
@@ -463,13 +472,11 @@ static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
                      (unsigned long long)pending,
                      (unsigned long long)pool->max_pending);
         }
-        rducks_nng_client_pool_release(pool);
         return 0;
     }
 
     if (!rducks_nng_enter_op("Rducks NNG request", err_msg, err_cap)) {
         atomic_fetch_sub_explicit(&pool->pending, 1U, memory_order_relaxed);
-        rducks_nng_client_pool_release(pool);
         return 0;
     }
 
@@ -483,10 +490,25 @@ static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
     atomic_fetch_sub_explicit(&client->inflight, 1U, memory_order_relaxed);
     rducks_nng_leave_op();
     atomic_fetch_sub_explicit(&pool->pending, 1U, memory_order_relaxed);
-    rducks_nng_client_pool_release(pool);
     return ok;
 }
 
+static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
+                                                const uint8_t *request, size_t request_size,
+                                                uint8_t **response_out, size_t *response_size_out,
+                                                char *err_msg, size_t err_cap) {
+    int ok;
+    if (!pool || !pool->clients || pool->count == 0U) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC client pool is not configured");
+        return 0;
+    }
+    if (!rducks_nng_client_pool_acquire(pool, err_msg, err_cap)) return 0;
+    ok = rducks_nng_client_pool_request_reply_acquired(pool, request, request_size,
+                                                       response_out, response_size_out,
+                                                       err_msg, err_cap);
+    rducks_nng_client_pool_release(pool);
+    return ok;
+}
 static int rducks_nng_pair_self_test_impl(char *err_msg, size_t err_cap) {
     nng_socket pair_sock = NNG_SOCKET_INITIALIZER;
     nng_socket req_sock = NNG_SOCKET_INITIALIZER;
@@ -586,19 +608,55 @@ static int rducks_nng_pair_self_test(char *err_msg, size_t err_cap) {
 }
 #endif
 
-static uint64_t rducks_nng_runtime_close_local_pools(rducks_runtime_entry_t *runtime) {
+static rducks_nng_client_pool_t **rducks_nng_runtime_detach_local_pools(rducks_runtime_entry_t *runtime,
+                                                                 uint64_t *external_pools_out,
+                                                                 size_t *pool_count_out) {
     rducks_r_scalar_meta_t *meta;
-    uint64_t external_pools = 0U;
-    if (!runtime) return 0U;
+    size_t pool_count = 0U;
+    size_t pool_cap = 0U;
+    rducks_nng_client_pool_t **pools = NULL;
+
+    if (external_pools_out) *external_pools_out = 0U;
+    if (pool_count_out) *pool_count_out = 0U;
+    if (!runtime) return NULL;
+
     rducks_runtime_lock();
     for (meta = runtime->udf_registry_head; meta; meta = meta->registry_next) {
         if (meta->ripc_external_endpoints) {
-            if (meta->ripc_client_pool) external_pools++;
-        } else {
-            rducks_nng_client_pool_destroy(&meta->ripc_client_pool);
+            if (meta->ripc_client_pool && external_pools_out) (*external_pools_out)++;
+            continue;
         }
+        if (!meta->ripc_client_pool) continue;
+
+        if (pool_count >= pool_cap) {
+            size_t new_cap = pool_cap == 0U ? 4U : (pool_cap * 2U);
+            rducks_nng_client_pool_t **next = (rducks_nng_client_pool_t **)realloc(pools, new_cap * sizeof(*next));
+            if (!next) {
+                break;
+            }
+            pools = next;
+            pool_cap = new_cap;
+        }
+
+        pools[pool_count++] = meta->ripc_client_pool;
+        meta->ripc_client_pool = NULL;
     }
     rducks_runtime_unlock();
+
+    if (pool_count_out) *pool_count_out = pool_count;
+    return pools;
+}
+
+static uint64_t rducks_nng_runtime_close_local_pools(rducks_runtime_entry_t *runtime) {
+    rducks_nng_client_pool_t **pools = NULL;
+    size_t pool_count = 0U;
+    uint64_t external_pools = 0U;
+
+    pools = rducks_nng_runtime_detach_local_pools(runtime, &external_pools, &pool_count);
+    for (size_t i = 0U; i < pool_count; i++) {
+        rducks_nng_client_pool_destroy(&pools[i]);
+    }
+    free(pools);
     return external_pools;
 }
 

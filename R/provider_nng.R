@@ -306,6 +306,12 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         setup_value <- mirai::collect_mirai(setup)
         if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
         bundle <- rducks_nng_endpoint_bundle(state$workers, state$transport)
+        if (length(bundle$endpoints) != state$workers) {
+          stop(
+            "Rducks NNG endpoint bundle returned a worker count mismatch",
+            call. = FALSE
+          )
+        }
         tasks <- vector("list", length(bundle$endpoints))
         worker_loop <- rducks_nng_worker_loop
         for (i in seq_along(bundle$endpoints)) {
@@ -352,7 +358,11 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
     )
     if (isTRUE(state$started) && !isTRUE(state$external_endpoints)) {
       tasks <- state$tasks
-      for (endpoint in state$endpoints) {
+      endpoints <- state$endpoints
+      unresolved <- function(task) {
+        tryCatch(mirai::unresolved(task), error = function(e) TRUE)
+      }
+      for (endpoint in endpoints) {
         req <- rducks_nng_wire_encode_request(rducks_nng_wire_type_stop)
         sent <- tryCatch({
           stop_timeout <- max(
@@ -369,11 +379,11 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       }
       if (length(tasks)) {
         deadline <- unname(proc.time()[["elapsed"]]) + max(0, as.numeric(timeout))
-        while (any(vapply(tasks, mirai::unresolved, logical(1))) &&
+        while (any(vapply(tasks, unresolved, logical(1))) &&
                unname(proc.time()[["elapsed"]]) < deadline) {
           Sys.sleep(0.01)
         }
-        resolved <- !vapply(tasks, mirai::unresolved, logical(1))
+        resolved <- !vapply(tasks, unresolved, logical(1))
         shutdown_status$tasks_resolved <- sum(resolved)
         shutdown_status$tasks_unresolved <- sum(!resolved)
         for (task in tasks[resolved]) {
