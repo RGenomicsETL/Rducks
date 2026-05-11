@@ -219,9 +219,14 @@ rducks_nng_worker_loop <- function(endpoint) {
   TRUE
 }
 
-rducks_nng_control_get <- function(endpoint) {
-  sock <- nanonext::socket("req", dial = endpoint)
+rducks_nng_control_get <- function(endpoint, dial_timeout = 500L) {
+  sock <- nanonext::socket("req", dial = endpoint, timeout = as.integer(dial_timeout))
+  if (nanonext::is_error_value(sock)) stop(rducks_nng_error_label(sock), call. = FALSE)
   ctx <- nanonext::context(sock)
+  if (nanonext::is_error_value(ctx)) {
+    close(sock)
+    stop(rducks_nng_error_label(ctx), call. = FALSE)
+  }
   list(sock = sock, ctx = ctx)
 }
 
@@ -533,8 +538,7 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       resp <- rducks_nng_transact(
         endpoint,
         rducks_nng_wire_encode_request(rducks_nng_wire_type_register, udf_id, payload = payload),
-        timeout = timeout,
-        per_attempt_timeout = timeout
+        timeout = timeout
       )
       rducks_nng_provider_trace(paste0(state$transport, ":register:request:response:bytes=", length(resp)))
       decoded <- rducks_nng_decode_response_checked(resp, endpoint, "register")
