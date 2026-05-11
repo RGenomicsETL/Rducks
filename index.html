@@ -55,7 +55,7 @@
 <li>
 <code>arrow_r</code>: reference path using DuckDB Arrow C Data plus nanoarrow/R.</li>
 <li>
-<code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization. The vectorized <code>RCV</code> evaluator uses direct native chunk materialization/writeback, not the old Arrow/R helper bridge.</li>
+<code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization.</li>
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport and explicit <code>ipc_endpoints</code> can target externally managed workers.</li>
 </ul>
@@ -144,8 +144,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        302ms      3.28    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    246ms      4.11    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        300ms      3.32    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    234ms      4.28    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -153,10 +153,10 @@
 <p>Execution plans choose the default marshalling implementation and concurrency contract for future registrations through a connection. Registration remains semantic: name, function, mode, types, NULL handling, exception handling, and side-effect flag. The plan active at <code><a href="reference/rducks_register.html">rducks_register()</a></code> freezes the UDF’s native evaluator/marshalling metadata; later plan changes do not retarget already-registered UDFs.</p>
 <table class="table">
 <colgroup>
-<col width="14%">
-<col width="5%">
-<col width="5%">
-<col width="75%">
+<col width="11%">
+<col width="3%">
+<col width="3%">
+<col width="80%">
 </colgroup>
 <thead><tr>
 <th>Plan</th>
@@ -317,9 +317,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.813         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.755         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.902         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.885         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.086      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>

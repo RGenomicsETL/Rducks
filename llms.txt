@@ -12,9 +12,7 @@ plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized
-  calls with direct DuckDB-vector materialization. The vectorized `RCV`
-  evaluator uses direct native chunk materialization/writeback, not the
-  old Arrow/R helper bridge.
+  calls with direct DuckDB-vector materialization.
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker
   loops with mirai daemons and Rducks-generated NNG endpoint URLs;
@@ -152,8 +150,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        302ms      3.28    1.97MB
-#> 2 vectorized    246ms      4.11    2.34MB
+#> 1 scalar        300ms      3.32    1.97MB
+#> 2 vectorized    234ms      4.28    2.34MB
 ```
 
 ## Execution plans
@@ -333,9 +331,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.813         R             16
-#> 2    in-process queue       1 536887296       1.755         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.902         R             16
+#> 2    in-process queue       1 536887296       1.885         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.086      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
