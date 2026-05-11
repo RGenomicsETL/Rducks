@@ -84,20 +84,7 @@ local({
       rducks_nng_transport_trace(paste0("transport:", transport, ":query:done"))
       expect_equal(result$x, 1:4)
       rducks_nng_transport_trace(paste0("transport:", transport, ":explain:start"))
-      info <- tryCatch({
-        setTimeLimit(elapsed = 10, transient = TRUE)
-        on.exit(setTimeLimit(elapsed = Inf, transient = TRUE))
-        rducks_explain_udf(con, name)
-      }, error = function(e) {
-        rducks_nng_transport_trace(paste0("transport:", transport, ":explain:error:", conditionMessage(e)))
-        NULL
-      })
-      setTimeLimit(elapsed = Inf, transient = TRUE)
-      if (is.null(info)) {
-        rducks_nng_transport_trace(paste0("transport:", transport, ":explain:skip"))
-        rducks_nng_transport_trace(paste0("transport:", transport, ":done"))
-        return(NULL)
-      }
+      info <- rducks_explain_udf(con, name)
       rducks_nng_transport_trace(paste0("transport:", transport, ":explain:done"))
       expect_equal(info$native_marshalling, "arrow_ipc")
       expect_equal(info$evaluator, "RIPC")
