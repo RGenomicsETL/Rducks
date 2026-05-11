@@ -27,9 +27,7 @@ outputs move through explicit execution plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized calls
-  with direct DuckDB-vector materialization. The vectorized `RCV` evaluator uses
-  direct native chunk materialization/writeback, not the old Arrow/R helper
-  bridge.
+  with direct DuckDB-vector materialization.
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker loops with
   mirai daemons and Rducks-generated NNG endpoint URLs; `ipc_transport` selects

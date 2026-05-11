@@ -15,9 +15,7 @@ plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized
-  calls with direct DuckDB-vector materialization. The vectorized `RCV`
-  evaluator uses direct native chunk materialization/writeback, not the
-  old Arrow/R helper bridge.
+  calls with direct DuckDB-vector materialization.
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker
   loops with mirai daemons and Rducks-generated NNG endpoint URLs;
@@ -149,8 +147,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        302ms      3.28    1.97MB
-#> 2 vectorized    246ms      4.11    2.34MB
+#> 1 scalar        300ms      3.32    1.97MB
+#> 2 vectorized    234ms      4.28    2.34MB
 ```
 
 ## Execution plans
@@ -162,12 +160,12 @@ handling, exception handling, and side-effect flag. The plan active at
 `rducks_register()` freezes the UDF’s native evaluator/marshalling
 metadata; later plan changes do not retarget already-registered UDFs.
 
-| Plan                                | Scalar      | Vectorized  | Notes                                                                                                                                                                                       |
-|-------------------------------------|-------------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `arrow_r + serial`                  | implemented | implemented | reference implementation                                                                                                                                                                    |
-| `arrow_r + inproc_concurrent`       | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread                                                                                                               |
-| `arrow_c + serial`                  | implemented | implemented | direct native evaluator tokens `RC`/`RCV`                                                                                                                                                   |
-| `arrow_c + inproc_concurrent`       | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling                                                                                                                             |
+| Plan                                | Scalar      | Vectorized  | Notes                                                                                                                                                                                                                                                                  |
+|-------------------------------------|-------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `arrow_r + serial`                  | implemented | implemented | reference implementation                                                                                                                                                                                                                                               |
+| `arrow_r + inproc_concurrent`       | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread                                                                                                                                                                                          |
+| `arrow_c + serial`                  | implemented | implemented | direct native evaluator tokens `RC`/`RCV`                                                                                                                                                                                                                              |
+| `arrow_c + inproc_concurrent`       | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling                                                                                                                                                                                                        |
 | `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` generates `abstract` (Linux abstract IPC), `ipc` (NNG IPC), `unix` (POSIX Unix-domain alias), `tcp`, or `ws` endpoints; optional explicit `ipc_endpoints`; strict plan |
 
 `arrow_r + serial` is the semantic reference. Other implemented plans
@@ -229,12 +227,12 @@ result bytes back into DuckDB callback output. By default Rducks
 launches local worker loops with mirai daemons and Rducks-generated
 nanonext endpoint URLs; `ipc_transport` selects the generated endpoint
 transport: `abstract` is Linux abstract IPC, `ipc` is NNG IPC, `unix` is
-the POSIX Unix-domain alias, and `tcp` / `ws` use loopback TCP / WebSocket
-endpoints. `ipc_endpoints`
-may instead point at externally managed NNG worker loops using endpoint
-URLs directly. The plan errors rather than changing to same-process
-execution, generic process backends, R serialization, or path-loaded
-symbols from another R package shared library.
+the POSIX Unix-domain alias, and `tcp` / `ws` use loopback TCP /
+WebSocket endpoints. `ipc_endpoints` may instead point at externally
+managed NNG worker loops using endpoint URLs directly. The plan errors
+rather than changing to same-process execution, generic process
+backends, R serialization, or path-loaded symbols from another R package
+shared library.
 
 The example below registers the same vectorized R function three ways
 and then runs a small chunk-level comparison over several CSV files.
@@ -325,9 +323,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.813         R             16
-#> 2    in-process queue       1 536887296       1.755         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.038      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.902         R             16
+#> 2    in-process queue       1 536887296       1.885         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.086      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
@@ -356,8 +354,8 @@ Enum types are supported by the implemented same-process plans
 (`arrow_r` and `arrow_c`). They are not yet enabled for the native
 `arrow_ipc` NNG path. Rducks owns the outer NNG frame, but the chunk
 payload is still an Arrow IPC stream written with vendored nanoarrow
-C/IPC; DuckDB currently exports enums as Arrow dictionary arrays and that
-writer rejects dictionary arrays. Rducks has a planned enum-storage
+C/IPC; DuckDB currently exports enums as Arrow dictionary arrays and
+that writer rejects dictionary arrays. Rducks has a planned enum-storage
 sidecar convention for declared `ENUM(...)` types, but it is not claimed
 until native input/output rewriting converts declared enums to ordinary
 integer arrays.
