@@ -203,10 +203,14 @@ if [ "${OS_NAME}" != "Windows_NT" ]; then
 fi
 CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
 
-if [ "${OS_NAME}" = "Darwin" ]; then
-  SHARED_FLAGS="-shared -fPIC -undefined dynamic_lookup -Wl,-exported_symbol,_rducks_init_c_api"
+if [ "${WASM_BUILD}" = "yes" ]; then
+  SHARED_FLAGS="-shared -fPIC"
 else
-  SHARED_FLAGS="-shared -fPIC -Wl,--exclude-libs,ALL -Wl,-Bsymbolic-functions"
+  if [ "${OS_NAME}" = "Darwin" ]; then
+    SHARED_FLAGS="-shared -fPIC -undefined dynamic_lookup -Wl,-exported_symbol,_rducks_init_c_api"
+  else
+    SHARED_FLAGS="-shared -fPIC -Wl,--exclude-libs,ALL -Wl,-Bsymbolic-functions"
+  fi
 fi
 
 EXT_EXPORT_FLAGS=""
