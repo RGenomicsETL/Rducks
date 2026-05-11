@@ -291,6 +291,7 @@ rducks_nng_transact <- function(endpoint, request,
       }
       response
     }, error = function(e) {
+      rducks_nng_provider_trace(paste0("transact:error:", conditionMessage(e)))
       last_error <<- conditionMessage(e)
       NULL
     }, finally = {
