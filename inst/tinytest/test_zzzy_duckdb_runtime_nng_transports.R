@@ -23,7 +23,12 @@ local({
 
   transports <- Rducks:::rducks_nng_runtime_transports()
   if (identical(Sys.info()[["sysname"]], "Windows")) {
-    expect_false("ws" %in% transports)
+    ws_ok <- tryCatch(packageVersion("nanonext") >= "1.9.0", error = function(e) FALSE)
+    if (ws_ok) {
+      expect_true("ws" %in% transports)
+    } else {
+      expect_false("ws" %in% transports)
+    }
   } else {
     expect_true(all(c("ipc", "tcp", "ws") %in% transports))
   }
