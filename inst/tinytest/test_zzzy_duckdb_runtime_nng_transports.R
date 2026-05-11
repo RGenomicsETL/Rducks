@@ -22,7 +22,11 @@ local({
   rducks_nng_transport_trace("diagnostic-connect:done")
 
   transports <- Rducks:::rducks_nng_runtime_transports()
-  expect_true(all(c("ipc", "tcp", "ws") %in% transports))
+  if (identical(Sys.info()[["sysname"]], "Windows")) {
+    expect_false("ws" %in% transports)
+  } else {
+    expect_true(all(c("ipc", "tcp", "ws") %in% transports))
+  }
   if (identical(Sys.info()[["sysname"]], "Linux")) {
     expect_true("abstract" %in% transports)
   } else {
