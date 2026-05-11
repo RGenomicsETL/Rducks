@@ -188,19 +188,37 @@ rducks_nng_transact <- function(endpoint, request,
   timeout <- if (is.null(timeout)) rducks_nng_defaults$control_timeout else as.numeric(timeout)
   if (!is.finite(timeout) || timeout <= 0) timeout <- rducks_nng_defaults$control_timeout
   deadline <- unname(proc.time()[["elapsed"]]) + timeout
+  poll_delay <- max(rducks_nng_defaults$minimum_timeout, 0.001)
   last_error <- NULL
+
+  receive_response <- function(con, attempt_deadline) {
+    repeat {
+      response <- tryCatch(
+        nanonext::recv(con$sock, mode = "raw", block = 0L),
+        error = function(e) e
+      )
+      if (is.raw(response) && !nanonext::is_error_value(response)) {
+        return(response)
+      }
+      if (unname(proc.time()[["elapsed"]]) >= attempt_deadline) {
+        stop("timed out waiting for NNG response", call. = FALSE)
+      }
+      remaining <- attempt_deadline - unname(proc.time()[["elapsed"]])
+      Sys.sleep(min(poll_delay, max(0.001, remaining)))
+    }
+  }
+
   for (i in seq_len(retries)) {
     remaining <- deadline - unname(proc.time()[["elapsed"]])
     if (remaining <= 0) break
-    timeout_ms <- as.integer(max(1L, ceiling(min(remaining, per_attempt_timeout) * 1000)))
+    send_timeout_ms <- as.integer(max(1L, ceiling(min(remaining, per_attempt_timeout) * 1000)))
+    attempt_deadline <- unname(proc.time()[["elapsed"]]) + min(remaining, per_attempt_timeout)
     con <- NULL
     out <- tryCatch({
       con <- rducks_nng_control_get(endpoint)
-      send_status <- nanonext::send(con$sock, request, mode = "raw", block = timeout_ms)
+      send_status <- nanonext::send(con$sock, request, mode = "raw", block = send_timeout_ms)
       if (!identical(as.integer(send_status), 0L)) stop(as.character(send_status), call. = FALSE)
-      response <- nanonext::recv(con$sock, mode = "raw", block = timeout_ms)
-      if (nanonext::is_error_value(response)) stop(as.character(response), call. = FALSE)
-      response
+      receive_response(con, attempt_deadline)
     }, error = function(e) {
       last_error <<- conditionMessage(e)
       NULL
