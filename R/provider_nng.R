@@ -21,7 +21,8 @@ rducks_nng_defaults <- list(
   minimum_timeout = 0.001,
   control_retries = 200L,
   retry_sleep = 0.01,
-  per_attempt_timeout = 0.25
+  per_attempt_timeout = 0.25,
+  worker_send_timeout = 5
 )
 
 rducks_nng_supported_transports <- function() {
@@ -57,6 +58,48 @@ rducks_nng_normalize_transport <- function(transport = NULL) {
 
 rducks_nng_random_token <- function() {
   gsub("[^[:alnum:]]", "", nanonext::random(8L))
+}
+
+rducks_nng_elapsed <- function() {
+  unname(proc.time()[["elapsed"]])
+}
+
+rducks_nng_error_label <- function(value) {
+  code <- suppressWarnings(as.integer(value))
+  msg <- tryCatch(nanonext::nng_error(code), error = function(e) "")
+  if (!length(msg) || is.na(msg) || !nzchar(msg)) {
+    paste0("NNG error ", code)
+  } else {
+    paste0(msg, " (", code, ")")
+  }
+}
+
+rducks_nng_response_summary <- function(buf, limit = 16L) {
+  if (!is.raw(buf)) {
+    return(paste0("non-raw response of class ", paste(class(buf), collapse = "/")))
+  }
+  n <- length(buf)
+  prefix <- paste(sprintf("%02x", as.integer(buf[seq_len(min(n, limit))])), collapse = " ")
+  paste0("length=", n, if (n) paste0(", prefix=", prefix) else "")
+}
+
+rducks_nng_response_frame_ready <- function(buf, min_bytes = rducks_nng_wire_response_header_size) {
+  is.raw(buf) && length(buf) >= min_bytes
+}
+
+rducks_nng_decode_response_checked <- function(resp, endpoint = "", phase = "control") {
+  decoded <- tryCatch(
+    rducks_nng_wire_decode_response(resp),
+    error = function(e) {
+      stop(
+        "failed to decode Rducks NNG ", phase, " response",
+        if (nzchar(endpoint %||% "")) paste0(" from ", endpoint) else "",
+        ": ", conditionMessage(e), "; ", rducks_nng_response_summary(resp),
+        call. = FALSE
+      )
+    }
+  )
+  decoded
 }
 
 rducks_nng_random_port <- function(n) {
@@ -117,9 +160,14 @@ rducks_nng_worker_loop <- function(endpoint) {
     try(close(ctx), silent = TRUE)
     try(close(sock), silent = TRUE)
   }, add = TRUE)
+  send_timeout_ms <- as.integer(max(1L, ceiling(rducks_nng_defaults$worker_send_timeout * 1000)))
   repeat {
     stop_requested <- FALSE
     req_raw <- nanonext::recv(ctx, mode = "raw", block = TRUE)
+    if (nanonext::is_error_value(req_raw)) {
+      rducks_nng_provider_trace(paste0("worker:recv:error:", rducks_nng_error_label(req_raw)))
+      next
+    }
     response <- tryCatch({
       req <- rducks_nng_wire_decode_request(req_raw)
       stop_requested <- identical(req$type, rducks_nng_wire_type_stop)
@@ -162,18 +210,24 @@ rducks_nng_worker_loop <- function(endpoint) {
     }, error = function(e) {
       rducks_nng_wire_encode_response("error", raw(), conditionMessage(e))
     })
-    nanonext::send(ctx, response, mode = "raw", block = TRUE)
+    send_status <- nanonext::send(ctx, response, mode = "raw", block = send_timeout_ms)
+    if (nanonext::is_error_value(send_status) || !identical(as.integer(send_status), 0L)) {
+      rducks_nng_provider_trace(paste0("worker:send:error:", rducks_nng_error_label(send_status)))
+    }
     if (stop_requested) break
   }
   TRUE
 }
 
 rducks_nng_control_get <- function(endpoint) {
-  list(sock = nanonext::socket("req", dial = endpoint))
+  sock <- nanonext::socket("req", dial = endpoint)
+  ctx <- nanonext::context(sock)
+  list(sock = sock, ctx = ctx)
 }
 
 rducks_nng_control_close <- function(con) {
   if (is.null(con)) return(invisible(NULL))
+  try(close(con$ctx), silent = TRUE)
   try(close(con$sock), silent = TRUE)
   invisible(NULL)
 }
@@ -184,52 +238,76 @@ rducks_nng_transact <- function(endpoint, request,
                                  timeout = rducks_nng_defaults$control_timeout,
                                  retries = rducks_nng_defaults$control_retries,
                                  retry_sleep = rducks_nng_defaults$retry_sleep,
-                                 per_attempt_timeout = rducks_nng_defaults$per_attempt_timeout) {
+                                 per_attempt_timeout = rducks_nng_defaults$per_attempt_timeout,
+                                 min_response_bytes = rducks_nng_wire_response_header_size) {
   timeout <- if (is.null(timeout)) rducks_nng_defaults$control_timeout else as.numeric(timeout)
-  if (!is.finite(timeout) || timeout <= 0) timeout <- rducks_nng_defaults$control_timeout
-  deadline <- unname(proc.time()[["elapsed"]]) + timeout
-  poll_delay <- max(rducks_nng_defaults$minimum_timeout, 0.001)
-  last_error <- NULL
-
-  receive_response <- function(con, attempt_deadline) {
-    repeat {
-      response <- tryCatch(
-        nanonext::recv(con$sock, mode = "raw", block = 0L),
-        error = function(e) e
-      )
-      if (is.raw(response) && !nanonext::is_error_value(response)) {
-        return(response)
-      }
-      if (unname(proc.time()[["elapsed"]]) >= attempt_deadline) {
-        stop("timed out waiting for NNG response", call. = FALSE)
-      }
-      remaining <- attempt_deadline - unname(proc.time()[["elapsed"]])
-      Sys.sleep(min(poll_delay, max(0.001, remaining)))
-    }
+  if (length(timeout) != 1L || is.na(timeout) || !is.finite(timeout) || timeout <= 0) {
+    timeout <- rducks_nng_defaults$control_timeout
+  }
+  retries <- suppressWarnings(as.integer(retries))
+  if (length(retries) != 1L || is.na(retries) || !is.finite(retries) || retries < 1L) {
+    retries <- 1L
+  }
+  per_attempt_timeout <- if (is.null(per_attempt_timeout)) timeout else as.numeric(per_attempt_timeout)
+  if (length(per_attempt_timeout) != 1L || is.na(per_attempt_timeout) ||
+      !is.finite(per_attempt_timeout) || per_attempt_timeout <= 0) {
+    per_attempt_timeout <- timeout
   }
 
+  deadline <- rducks_nng_elapsed() + timeout
+  last_error <- NULL
+
   for (i in seq_len(retries)) {
-    remaining <- deadline - unname(proc.time()[["elapsed"]])
+    remaining <- deadline - rducks_nng_elapsed()
     if (remaining <= 0) break
-    send_timeout_ms <- as.integer(max(1L, ceiling(min(remaining, per_attempt_timeout) * 1000)))
-    attempt_deadline <- unname(proc.time()[["elapsed"]]) + min(remaining, per_attempt_timeout)
+
+    attempt_seconds <- if (retries == 1L) remaining else min(remaining, per_attempt_timeout)
+    attempt_timeout_ms <- as.integer(max(1L, ceiling(attempt_seconds * 1000)))
     con <- NULL
+
     out <- tryCatch({
       con <- rducks_nng_control_get(endpoint)
-      send_status <- nanonext::send(con$sock, request, mode = "raw", block = send_timeout_ms)
-      if (!identical(as.integer(send_status), 0L)) stop(as.character(send_status), call. = FALSE)
-      receive_response(con, attempt_deadline)
+      aio <- nanonext::request(
+        con$ctx,
+        request,
+        send_mode = "raw",
+        recv_mode = "raw",
+        timeout = attempt_timeout_ms
+      )
+      aio <- nanonext::call_aio(aio)
+      response <- aio$data
+      if (nanonext::is_error_value(response)) {
+        stop(rducks_nng_error_label(response), call. = FALSE)
+      }
+      if (!is.raw(response)) {
+        stop(
+          "NNG response was not raw: ",
+          paste(class(response), collapse = "/"),
+          call. = FALSE
+        )
+      }
+      if (!rducks_nng_response_frame_ready(response, min_response_bytes)) {
+        stop("NNG response frame was too short: ", rducks_nng_response_summary(response), call. = FALSE)
+      }
+      response
     }, error = function(e) {
       last_error <<- conditionMessage(e)
       NULL
     }, finally = {
       rducks_nng_control_close(con)
     })
+
     if (!is.null(out)) return(out)
-    if (deadline - unname(proc.time()[["elapsed"]]) <= 0) break
-    Sys.sleep(min(retry_sleep, max(0, deadline - unname(proc.time()[["elapsed"]]))))
+    remaining <- deadline - rducks_nng_elapsed()
+    if (remaining <= 0) break
+    Sys.sleep(min(retry_sleep, max(0, remaining)))
   }
-  stop("Rducks NNG request failed for endpoint ", endpoint, ": ", last_error %||% "unknown error", call. = FALSE)
+
+  stop(
+    "Rducks NNG request failed for endpoint ", endpoint,
+    ": ", last_error %||% "unknown error",
+    call. = FALSE
+  )
 }
 
 rducks_nng_provider_store <- function() {
@@ -346,8 +424,8 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       for (endpoint in state$endpoints) {
         rducks_nng_provider_trace(paste0(state$transport, ":start:ping:start"))
         resp <- rducks_nng_transact(endpoint, ping, timeout = rducks_nng_defaults$startup_timeout)
-        rducks_nng_provider_trace(paste0(state$transport, ":start:ping:response"))
-        decoded <- rducks_nng_wire_decode_response(resp)
+        rducks_nng_provider_trace(paste0(state$transport, ":start:ping:response:bytes=", length(resp)))
+        decoded <- rducks_nng_decode_response_checked(resp, endpoint, "startup ping")
         if (!identical(decoded$status, "ok")) stop(decoded$error, call. = FALSE)
       }
       state$started <- TRUE
@@ -454,11 +532,16 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       resp <- rducks_nng_transact(
         endpoint,
         rducks_nng_wire_encode_request(rducks_nng_wire_type_register, udf_id, payload = payload),
-        timeout = timeout
+        timeout = timeout,
+        per_attempt_timeout = timeout
       )
-      rducks_nng_provider_trace(paste0(state$transport, ":register:request:response"))
-      decoded <- rducks_nng_wire_decode_response(resp)
-      if (!identical(decoded$status, "ok")) stop(decoded$error, call. = FALSE)
+      rducks_nng_provider_trace(paste0(state$transport, ":register:request:response:bytes=", length(resp)))
+      decoded <- rducks_nng_decode_response_checked(resp, endpoint, "register")
+      rducks_nng_provider_trace(paste0(state$transport, ":register:request:status:", decoded$status))
+      if (!identical(decoded$status, "ok")) {
+        rducks_nng_provider_trace(paste0(state$transport, ":register:request:error:", decoded$error))
+        stop(decoded$error, call. = FALSE)
+      }
     }
     rducks_nng_provider_trace(paste0(state$transport, ":register:done"))
     invisible(udf_id)
