@@ -6,7 +6,7 @@
 # Expected behaviour on Linux/macOS:
 #   All operations complete within ~2s (last op times out with error).
 #
-# Expected behaviour on Windows (with the NNG bug):
+# Expected behaviour on Windows (with the NNG bug on IOCP):
 #   Hangs at DIAL or CTX and gets killed by the CI timeout (2 min).
 
 library(nanonext)

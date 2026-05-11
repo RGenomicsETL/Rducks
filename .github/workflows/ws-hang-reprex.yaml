@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - ".github/workflows/ws-hang-reprex.yaml"
       - "reprex/ws_hang_reprex.R"
-      - "reprex/ws-hang-reprex.yaml"
 
 jobs:
   ws-hang-reprex:
