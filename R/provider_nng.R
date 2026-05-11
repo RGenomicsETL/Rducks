@@ -31,10 +31,13 @@ rducks_nng_supported_transports <- function() {
 
 rducks_nng_runtime_transports <- function() {
   sysname <- Sys.info()[["sysname"]]
+  if (identical(sysname, "Windows")) {
+    return(c("ipc", "tcp"))
+  }
   transports <- c("ipc", "tcp", "ws")
   if (identical(sysname, "Linux")) {
     transports <- c("abstract", transports, "unix")
-  } else if (!identical(sysname, "Windows")) {
+  } else {
     transports <- c(transports, "unix")
   }
   transports
