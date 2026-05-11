@@ -219,14 +219,9 @@ rducks_nng_worker_loop <- function(endpoint) {
   TRUE
 }
 
-rducks_nng_control_get <- function(endpoint, dial_timeout = 500L) {
-  sock <- nanonext::socket("req", dial = endpoint, timeout = as.integer(dial_timeout))
-  if (nanonext::is_error_value(sock)) stop(rducks_nng_error_label(sock), call. = FALSE)
+rducks_nng_control_get <- function(endpoint) {
+  sock <- nanonext::socket("req", dial = endpoint)
   ctx <- nanonext::context(sock)
-  if (nanonext::is_error_value(ctx)) {
-    close(sock)
-    stop(rducks_nng_error_label(ctx), call. = FALSE)
-  }
   list(sock = sock, ctx = ctx)
 }
 
