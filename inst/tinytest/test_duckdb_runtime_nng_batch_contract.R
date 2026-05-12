@@ -81,7 +81,8 @@ local({
     ), silent = TRUE)
     try(mirai::collect_mirai(task), silent = TRUE)
     try(mirai::daemons(0L, .compute = compute), silent = TRUE)
-    unlink(bundle$cleanup_paths %||% character(), force = TRUE)
+    cleanup_paths <- if (is.null(bundle$cleanup_paths)) character() else bundle$cleanup_paths
+    unlink(cleanup_paths, force = TRUE)
   }, add = TRUE)
   invisible(Rducks:::rducks_nng_transact(
     endpoint,
