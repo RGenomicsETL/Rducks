@@ -62,7 +62,8 @@ rducks_execution_plan(
   externally managed worker processes running the Rducks NNG worker
   loop; any NNG URL transport supported by both endpoints is allowed.
   When endpoints are not supplied, `ipc_transport` selects the transport
-  used for the mirai-launched local worker endpoints. `"abstract"` means
+  used for the mirai-launched local worker endpoints and must be left as
+  `NULL` when explicit `ipc_endpoints` are supplied. `"abstract"` means
   Linux abstract IPC, `"ipc"` means NNG IPC (Unix-domain sockets on
   POSIX and named pipes on Windows), `"unix"` means the POSIX
   Unix-domain alias, and `"tcp"` / `"ws"` use loopback TCP / WebSocket

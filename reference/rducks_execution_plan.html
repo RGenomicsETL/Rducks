@@ -103,7 +103,8 @@ provider wait timeout in seconds; <code>NULL</code> uses a finite default of 30 
 managed worker processes running the Rducks NNG worker loop; any NNG URL
 transport supported by both endpoints is allowed. When endpoints are not
 supplied, <code>ipc_transport</code> selects the transport used for the mirai-launched
-local worker endpoints. <code>"abstract"</code> means Linux abstract IPC, <code>"ipc"</code>
+local worker endpoints and must be left as <code>NULL</code> when explicit
+<code>ipc_endpoints</code> are supplied. <code>"abstract"</code> means Linux abstract IPC, <code>"ipc"</code>
 means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
 <code>"unix"</code> means the POSIX Unix-domain alias, and <code>"tcp"</code> / <code>"ws"</code> use
 loopback TCP / WebSocket endpoints. The default is <code>"abstract"</code> on Linux
