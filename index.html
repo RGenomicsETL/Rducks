@@ -798,8 +798,20 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
 </h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> uses the native NNG/Arrow IPC path. The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code, sends owned request bytes over native NNG, and imports owned Arrow IPC result bytes back into DuckDB callback output. By default Rducks launches local worker loops with mirai daemons and Rducks-generated nanonext endpoint URLs; <code>ipc_transport</code> selects the generated endpoint transport: <code>abstract</code> is Linux abstract IPC, <code>ipc</code> is NNG IPC, <code>unix</code> is the POSIX Unix-domain alias, and <code>tcp</code> / <code>ws</code> use loopback TCP / WebSocket endpoints. <code>ipc_endpoints</code> may instead point at externally managed NNG worker loops using endpoint URLs directly. The plan errors rather than changing to same-process execution, generic process backends, R serialization, or path-loaded symbols from another R package shared library.</p>
-<p>The example below registers the same vectorized R function three ways and then runs a small chunk-level comparison over several CSV files. Multiple input files make DuckDB’s scanner eligible for threaded work; inspect <code>ripc_inflight_max</code> to see whether more than one IPC request was in flight during the query. The exact value is scheduler- and machine-dependent. <code>ipc_workers</code> is the number of persistent R worker processes. <code>threads</code> is DuckDB’s query execution thread count: keep it at <code>1</code> while registering so catalog setup and R-owned evaluator configuration happen on the recorded main R thread, then raise it for the IPC query phase so DuckDB can fan chunks out to the IPC workers. <code>external_threads = 1</code> keeps DuckDB’s external-thread budget conservative; the IPC R workers are separate processes, not DuckDB external threads. The in-process queue row is kept single-threaded because that plan serializes R API work on the recorded main R thread; it is a same-process safety path, not the multiprocess throughput path.</p>
+<p><code>arrow_ipc + multiprocess_parallel</code> is the native NNG/Arrow IPC path: DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and Arrow IPC result bytes are imported back into DuckDB output vectors. Local workers are mirai daemons running Rducks worker loops; <code>ipc_endpoints</code> can point at externally managed NNG workers instead.</p>
+<p>Operationally:</p>
+<ul>
+<li>
+<code>ipc_workers</code> is the number of persistent R worker processes.</li>
+<li>
+<code>ipc_transport</code> chooses local mirai worker endpoints: <code>abstract</code>, <code>ipc</code>, <code>unix</code>, <code>tcp</code>, or <code>ws</code>.</li>
+<li>
+<code>ipc_timeout</code> is used for worker registration/control requests and for native NNG send/receive on each UDF’s client pool.</li>
+<li>Worker providers are reused by runtime, worker count, max-pending limit, and endpoint/transport choice. Registering another function with the same IPC provider key reuses the existing workers; changing that key starts another provider. Changing the default plan does not stop old providers.</li>
+<li>
+<code>rducks_release(con)</code> stops local providers when the last Rducks anchor for the DuckDB runtime is released. <code>rducks_nng_quiesce()</code> is lower-level: it only closes native client pools.</li>
+</ul>
+<p>The example below registers the same vectorized R function three ways. Keep <code>threads = 1</code> while registering; raise DuckDB <code>threads</code> for the IPC query phase so chunks can fan out to the IPC workers. <code>ripc_inflight_max</code> reports observed native IPC concurrency and is scheduler-dependent.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span> <span class="co"># visible chunk work for the comparison, not required by Rducks</span></span>
