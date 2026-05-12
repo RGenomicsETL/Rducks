@@ -490,4 +490,5 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
+#include "src/rducks_table.c"
 #include "src/rducks_surfaces.c"

@@ -26,7 +26,10 @@ plans:
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
-`mode = "vectorized"` means one R call per DuckDB chunk.
+`mode = "vectorized"` means one R call per DuckDB chunk. Table functions
+use a separate first-slice API, `rducks_register_table()`, for finite
+zero-argument scans whose R function returns a data frame or named list
+matching a declared output schema.
 
 ## Quick start
 
@@ -204,8 +207,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        291ms      3.47    1.97MB
-#> 2 vectorized    239ms      4.14    2.34MB
+#> 1 scalar        289ms      3.46    1.97MB
+#> 2 vectorized    231ms      4.34    2.34MB
 ```
 
 ## Execution mode semantics
@@ -667,9 +670,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.684         R             16
-#> 2    in-process queue       1 536887296       1.648         R             16
-#> 3 2-process Arrow IPC       2 536887296       0.993      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.886         R             16
+#> 2    in-process queue       1 536887296       1.802         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

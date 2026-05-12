@@ -230,3 +230,113 @@ print.rducks_registration <- function(x, ...) {
   cat("  signature:  ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }
+
+rducks_table_registration_spec <- function(name, fun, returns, chunk_size) {
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("name must be a non-empty character scalar", call. = FALSE)
+  }
+  if (!is.function(fun)) {
+    stop("fun must be a function", call. = FALSE)
+  }
+  if (!is.numeric(chunk_size) || length(chunk_size) != 1L || is.na(chunk_size) ||
+      !is.finite(chunk_size) || chunk_size < 1 || chunk_size > 1024 || chunk_size != as.integer(chunk_size)) {
+    stop("chunk_size must be an integer between 1 and 1024", call. = FALSE)
+  }
+  column_types <- rducks_as_type_list(returns)
+  column_names <- names(column_types)
+  if (!length(column_types)) {
+    stop("returns must declare at least one output column", call. = FALSE)
+  }
+  if (is.null(column_names) || anyNA(column_names) || any(!nzchar(column_names))) {
+    stop("returns must be a named list of output column types", call. = FALSE)
+  }
+  if (anyDuplicated(column_names)) {
+    stop("returns column names must be unique", call. = FALSE)
+  }
+  if (any(grepl(",", column_names, fixed = TRUE))) {
+    stop("returns column names must not contain commas", call. = FALSE)
+  }
+  unsupported <- vapply(column_types, function(type) {
+    if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
+  }, character(1))
+  unsupported <- unsupported[nzchar(unsupported)]
+  if (length(unsupported)) {
+    stop("table-function marshalling is not implemented yet for: ", paste(unique(unsupported), collapse = ", "), call. = FALSE)
+  }
+  list(
+    name = name,
+    columns = vapply(column_types, rducks_type_token, character(1), USE.NAMES = FALSE),
+    column_names = column_names,
+    column_types = column_types,
+    chunk_size = as.integer(chunk_size),
+    signature = paste0(name, "() -> TABLE(", paste(sprintf("%s %s", column_names, vapply(column_types, rducks_type_duckdb_sql, character(1))), collapse = ", "), ")")
+  )
+}
+
+#' Register an R table function in DuckDB
+#'
+#' Registers a first-slice R-backed DuckDB table function. The registered SQL
+#' table function accepts no SQL arguments and calls `fun()` once per query on
+#' the recorded calling R thread. `fun()` must return a data frame or named list
+#' of equal-length columns matching the declared `returns` schema. Results are
+#' emitted to DuckDB in chunks and the query state releases preserved R results
+#' on completion or error.
+#'
+#' This is intentionally separate from scalar/vectorized UDF registration: table
+#' functions have their own bind/init/scan state and currently support only the
+#' one-shot finite table shape. Use `rducks_enable(con, threads = "single")` or
+#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before
+#' registration and execution; worker-thread calls into R are rejected.
+#'
+#' @param con A `duckdb_connection`.
+#' @param name SQL table function name.
+#' @param fun Zero-argument R function returning a data frame or named list of
+#'   columns.
+#' @param returns Named list of output column type descriptors, such as
+#'   `list(i = INTEGER, label = VARCHAR)`.
+#' @param chunk_size Maximum number of rows emitted per DuckDB output chunk.
+#'   Must be an integer from 1 to 1024.
+#' @return Object of class `rducks_table_registration` containing the
+#'   connection and normalized table signature. The table function remains
+#'   registered in DuckDB even if this object is discarded.
+#' @export
+rducks_register_table <- function(con, name, fun, returns, chunk_size = 1024L) {
+  if (!inherits(con, "duckdb_connection")) {
+    stop("con must be a duckdb_connection", call. = FALSE)
+  }
+  spec <- rducks_table_registration_spec(name, fun, returns, chunk_size)
+  rducks_assert_single_thread(con)
+  rducks_attach_runtime_anchor(con)
+  eval_ref_handle <- rducks_evaluator_ref_put(fun)
+  on.exit(rducks_evaluator_ref_remove(eval_ref_handle), add = TRUE)
+  sql <- sprintf(
+    "SELECT rducks_register_table(%s, %s, %s, %s, %s, %d::UBIGINT) AS ok",
+    rducks_sql_string(name),
+    rducks_sql_string(eval_ref_handle$id),
+    rducks_sql_string(eval_ref_handle$token),
+    rducks_sql_string(paste(spec$columns, collapse = ",")),
+    rducks_sql_string(paste(spec$column_names, collapse = ",")),
+    spec$chunk_size
+  )
+  res <- DBI::dbGetQuery(con, sql)
+  if (!NROW(res) || !isTRUE(res$ok[[1]])) {
+    stop("native Rducks table registration failed for SQL function: ", name, call. = FALSE)
+  }
+  structure(
+    list(
+      connection = con,
+      spec = spec,
+      registered = TRUE
+    ),
+    class = "rducks_table_registration"
+  )
+}
+
+#' @export
+print.rducks_table_registration <- function(x, ...) {
+  cat("<rducks_table_registration>\n")
+  cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
+  cat("  name:       ", x$spec$name, "\n", sep = "")
+  cat("  signature:  ", x$spec$signature, "\n", sep = "")
+  invisible(x)
+}

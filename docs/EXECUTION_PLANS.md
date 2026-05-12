@@ -24,6 +24,13 @@ The plan active at registration time is frozen into that registered DuckDB
 catalog UDF. Changing a connection's default plan later affects only future
 registrations.
 
+Table functions registered with `rducks_register_table()` are separate from this
+scalar/vectorized execution-plan matrix. The current first slice is a one-shot,
+finite, zero-argument table function: DuckDB binds the declared output schema,
+then calls the R function once on the recorded calling R thread and emits its
+returned data-frame/list columns in chunks. Worker-thread calls into R are
+rejected; use `rducks_enable(con, threads = "single")` for this path.
+
 ## Strict-plan rule
 
 A registered UDF resolves to one engine:
