@@ -36,7 +36,7 @@ static void rducks_parallel_range_bind(duckdb_bind_info info) {
         return;
     }
 
-    bind = (rducks_parallel_range_bind_t *)calloc(1, sizeof(*bind));
+    bind = (rducks_parallel_range_bind_t *)rducks_calloc_array(1, sizeof(*bind));
     if (!bind) {
         duckdb_destroy_value(&value);
         duckdb_bind_set_error(info, "out of memory allocating rducks_parallel_range bind data");
@@ -69,7 +69,7 @@ static void rducks_parallel_range_init(duckdb_init_info info) {
         return;
     }
 
-    state = (rducks_parallel_range_state_t *)calloc(1, sizeof(*state));
+    state = (rducks_parallel_range_state_t *)rducks_calloc_array(1, sizeof(*state));
     if (!state) {
         duckdb_init_set_error(info, "out of memory allocating rducks_parallel_range state");
         return;
@@ -83,7 +83,7 @@ static void rducks_parallel_range_init(duckdb_init_info info) {
 }
 
 static void rducks_parallel_range_local_init(duckdb_init_info info) {
-    int *local = (int *)calloc(1, sizeof(int));
+    int *local = (int *)rducks_calloc_array(1, sizeof(*local));
     if (!local) {
         duckdb_init_set_error(info, "out of memory allocating rducks_parallel_range local state");
         return;
@@ -134,7 +134,7 @@ static void rducks_parallel_thread_probe_bind(duckdb_bind_info info) {
         duckdb_bind_set_error(info, "failed to read rducks_parallel_thread_probe() argument");
         return;
     }
-    bind = (rducks_parallel_range_bind_t *)calloc(1, sizeof(*bind));
+    bind = (rducks_parallel_range_bind_t *)rducks_calloc_array(1, sizeof(*bind));
     if (!bind) {
         duckdb_destroy_value(&value);
         duckdb_bind_set_error(info, "out of memory allocating rducks_parallel_thread_probe bind data");

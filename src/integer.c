@@ -77,11 +77,11 @@ static int rducks_integer_abs_compare(const char *a, size_t alen, const char *b,
     return 0;
 }
 
-static SEXP rducks_mkchar_scalar_or_na(const char *x, size_t n, int is_na) {
-    SEXP out = PROTECT(Rf_allocVector(STRSXP, 1));
-    SET_STRING_ELT(out, 0, is_na ? NA_STRING : Rf_mkCharLenCE(x, (int)n, CE_UTF8));
-    UNPROTECT(1);
-    return out;
+static SEXP rducks_mkchar_or_na(const char *x, size_t n, int is_na) {
+    if (is_na) {
+        return NA_STRING;
+    }
+    return Rf_mkCharLenCE(x, (int)n, CE_UTF8);
 }
 
 SEXP RDUCKS_normalize_integer_string(SEXP x, SEXP unsigned_sexp, SEXP what_sexp) {
@@ -195,7 +195,7 @@ static size_t rducks_sub_abs_digits(const char *a, size_t alen, const char *b, s
 }
 
 static SEXP rducks_integer_add_one(SEXP ach, SEXP bch) {
-    if (ach == NA_STRING || bch == NA_STRING) return rducks_mkchar_scalar_or_na(NULL, 0, 1);
+    if (ach == NA_STRING || bch == NA_STRING) return rducks_mkchar_or_na(NULL, 0, 1);
     const char *a_digits;
     const char *b_digits;
     size_t alen;
@@ -218,7 +218,7 @@ static SEXP rducks_integer_add_one(SEXP ach, SEXP bch) {
         out_sign = as;
     } else {
         int cmp = rducks_integer_abs_compare(a_digits, alen, b_digits, blen);
-        if (cmp == 0) return rducks_mkchar_scalar_or_na("0", 1, 0);
+        if (cmp == 0) return rducks_mkchar_or_na("0", 1, 0);
         if (cmp > 0) {
             ndigits = rducks_sub_abs_digits(a_digits, alen, b_digits, blen, rev);
             out_sign = as;
@@ -236,7 +236,7 @@ static SEXP rducks_integer_add_one(SEXP ach, SEXP bch) {
     if (negative) out[pos++] = '-';
     for (size_t i = 0; i < ndigits; i++) out[pos++] = rev[ndigits - i - 1U];
     out[pos] = '\0';
-    return rducks_mkchar_scalar_or_na(out, out_len, 0);
+    return rducks_mkchar_or_na(out, out_len, 0);
 }
 
 SEXP RDUCKS_integer_add_strings(SEXP a, SEXP b) {
@@ -249,9 +249,7 @@ SEXP RDUCKS_integer_add_strings(SEXP a, SEXP b) {
     for (R_xlen_t i = 0; i < n; i++) {
         SEXP ach = na == 0 ? NA_STRING : STRING_ELT(aa, i % na);
         SEXP bch = nb == 0 ? NA_STRING : STRING_ELT(bb, i % nb);
-        SEXP one = PROTECT(rducks_integer_add_one(ach, bch));
-        SET_STRING_ELT(out, i, STRING_ELT(one, 0));
-        UNPROTECT(1);
+        SET_STRING_ELT(out, i, rducks_integer_add_one(ach, bch));
     }
     UNPROTECT(1);
     rducks_integer_maybe_unprotect_character(b, bb);

@@ -13,11 +13,16 @@ local({
   by_name <- Rducks:::rducks_ipc_worker_globals(function() helper_offset, "helper_offset")
   expect_equal(by_name$globals$helper_offset, 2L)
 
+  null_global <- NULL
+  by_null_name <- Rducks:::rducks_ipc_worker_globals(function() null_global, "null_global")
+  expect_true("null_global" %in% names(by_null_name$globals))
+  expect_true(is.null(by_null_name$globals$null_global))
+
   merged <- Rducks:::rducks_ipc_worker_globals(function() helper_offset, list(extra = 1L))
   expect_equal(merged$globals$extra, 1L)
   expect_error(
     Rducks:::rducks_ipc_worker_globals(function() helper_offset, list(1L)),
-    "must be named"
+    "must have unique non-empty names"
   )
 })
 

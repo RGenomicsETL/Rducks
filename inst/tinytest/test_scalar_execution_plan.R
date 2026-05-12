@@ -43,6 +43,22 @@ expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "bogus"),
   "ipc_transport"
 )
+expect_error(
+  rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    ipc_endpoints = "tcp://127.0.0.1:5555",
+    ipc_transport = "tcp"
+  ),
+  "ipc_transport only applies"
+)
+expect_error(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = c("ok", NA_character_)),
+  "ipc_globals"
+)
+expect_error(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_packages = ""),
+  "ipc_packages"
+)
 expect_equal(ipc$ipc_provider, "nng")
 expect_equal(ipc$engine_id, "ipc_nng_pool")
 expect_equal(ipc$ipc_max_pending, 64L)

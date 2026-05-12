@@ -4,6 +4,8 @@
 #include <R.h>
 #include <Rinternals.h>
 
+#include "rducks_native.h"
+
 #include <stdint.h>
 #include <string.h>
 
@@ -28,19 +30,24 @@ SEXP RDUCKS_arrow_bool_to_logical(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_
     int n = Rf_asInteger(n_sexp);
     int bool8 = Rf_asLogical(bool8_sexp) == TRUE;
     if (offset < 0 || n < 0) Rf_error("invalid boolean Arrow parameters");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
+    R_xlen_t end_bit = rducks_xlen_add((R_xlen_t)offset, (R_xlen_t)n, "boolean Arrow");
     SEXP out = PROTECT(Rf_allocVector(LGLSXP, n));
     const Rbyte *bytes = RAW(bytes_sexp);
     R_xlen_t nbytes = XLENGTH(bytes_sexp);
     int byte_per_value = 0;
-    if (bool8 && nbytes >= (R_xlen_t)offset + n) {
+    if (bool8 && nbytes >= end_bit) {
         byte_per_value = 1;
         for (int i = 0; i < n; i++) {
-            Rbyte b = bytes[offset + i];
+            Rbyte b = bytes[(R_xlen_t)offset + i];
             if (b != 0 && b != 1) {
                 byte_per_value = 0;
                 break;
             }
         }
+    }
+    if (!byte_per_value) {
+        rducks_require_bit_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, "boolean Arrow");
     }
     for (int i = 0; i < n; i++) {
         if (LOGICAL(valid_sexp)[i] != TRUE) {
@@ -48,11 +55,11 @@ SEXP RDUCKS_arrow_bool_to_logical(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_
             continue;
         }
         if (byte_per_value) {
-            LOGICAL(out)[i] = bytes[offset + i] != 0;
+            LOGICAL(out)[i] = bytes[(R_xlen_t)offset + i] != 0;
         } else {
-            int bit = offset + i;
-            int byte_index = bit / 8;
-            int bit_index = bit % 8;
+            R_xlen_t bit = (R_xlen_t)offset + i;
+            R_xlen_t byte_index = bit / 8;
+            int bit_index = (int)(bit % 8);
             if (byte_index >= nbytes) Rf_error("boolean Arrow buffer is too short");
             LOGICAL(out)[i] = (bytes[byte_index] & (Rbyte)(1U << bit_index)) != 0;
         }
@@ -71,7 +78,8 @@ SEXP RDUCKS_arrow_integer_storage_to_values(SEXP bytes_sexp, SEXP valid_sexp, SE
     int signed_flag = Rf_asLogical(signed_sexp) == TRUE;
     int numeric = Rf_asLogical(numeric_sexp) == TRUE;
     if (offset < 0 || n < 0 || !(width == 1 || width == 2 || width == 4)) Rf_error("invalid integer Arrow parameters");
-    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * width) Rf_error("integer Arrow buffer is too short");
+    rducks_require_raw_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, (R_xlen_t)width, "integer Arrow");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(numeric ? REALSXP : INTSXP, n));
     const Rbyte *bytes = RAW(bytes_sexp);
     for (int i = 0; i < n; i++) {
@@ -79,7 +87,7 @@ SEXP RDUCKS_arrow_integer_storage_to_values(SEXP bytes_sexp, SEXP valid_sexp, SE
             if (numeric) REAL(out)[i] = NA_REAL; else INTEGER(out)[i] = NA_INTEGER;
             continue;
         }
-        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * width;
+        const Rbyte *src = bytes + ((R_xlen_t)offset + i) * (R_xlen_t)width;
         uint32_t u = 0;
         for (int j = width - 1; j >= 0; j--) u = (u << 8) | (uint32_t)src[j];
         double value;
@@ -103,8 +111,9 @@ SEXP RDUCKS_arrow_integer_storage_from_values(SEXP values_sexp, SEXP width_sexp,
     int signed_flag = Rf_asLogical(signed_sexp) == TRUE;
     if (!(width == 1 || width == 2 || width == 4)) Rf_error("invalid integer Arrow storage width");
     R_xlen_t n = XLENGTH(values);
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, n * width));
-    memset(RAW(out), 0, (size_t)(n * width));
+    R_xlen_t out_len = rducks_xlen_mul(n, (R_xlen_t)width, "integer Arrow storage");
+    SEXP out = PROTECT(Rf_allocVector(RAWSXP, out_len));
+    memset(RAW(out), 0, (size_t)out_len);
     double full_range = width == 1 ? 256.0 : (width == 2 ? 65536.0 : 4294967296.0);
     for (R_xlen_t i = 0; i < n; i++) {
         double value = REAL(values)[i];
@@ -128,7 +137,9 @@ SEXP RDUCKS_arrow_string_array_to_character(SEXP data_sexp, SEXP offsets_sexp, S
     if (TYPEOF(valid_sexp) != LGLSXP) Rf_error("valid must be logical");
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
-    if (offset < 0 || n < 0 || XLENGTH(offsets_sexp) < offset + n + 1) Rf_error("invalid string Arrow parameters");
+    if (offset < 0 || n < 0) Rf_error("invalid string Arrow parameters");
+    rducks_require_len(offsets_sexp, rducks_xlen_add(rducks_xlen_add((R_xlen_t)offset, (R_xlen_t)n, "string Arrow"), 1, "string Arrow"), "offsets");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
     const Rbyte *data = RAW(data_sexp);
     R_xlen_t data_len = XLENGTH(data_sexp);
@@ -137,8 +148,9 @@ SEXP RDUCKS_arrow_string_array_to_character(SEXP data_sexp, SEXP offsets_sexp, S
             SET_STRING_ELT(out, i, NA_STRING);
             continue;
         }
-        int start = INTEGER(offsets_sexp)[offset + i];
-        int end = INTEGER(offsets_sexp)[offset + i + 1];
+        R_xlen_t idx = (R_xlen_t)offset + i;
+        int start = INTEGER(offsets_sexp)[idx];
+        int end = INTEGER(offsets_sexp)[idx + 1];
         if (start < 0 || end < start || end > data_len) Rf_error("invalid string Arrow offsets");
         SET_STRING_ELT(out, i, Rf_mkCharLenCE((const char *)data + start, end - start, CE_UTF8));
     }
@@ -153,7 +165,9 @@ SEXP RDUCKS_arrow_binary_array_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP
     if (TYPEOF(valid_sexp) != LGLSXP) Rf_error("valid must be logical");
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
-    if (offset < 0 || n < 0 || XLENGTH(offsets_sexp) < offset + n + 1) Rf_error("invalid binary Arrow parameters");
+    if (offset < 0 || n < 0) Rf_error("invalid binary Arrow parameters");
+    rducks_require_len(offsets_sexp, rducks_xlen_add(rducks_xlen_add((R_xlen_t)offset, (R_xlen_t)n, "binary Arrow"), 1, "binary Arrow"), "offsets");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(VECSXP, n));
     const Rbyte *data = RAW(data_sexp);
     R_xlen_t data_len = XLENGTH(data_sexp);
@@ -162,8 +176,9 @@ SEXP RDUCKS_arrow_binary_array_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP
             SET_VECTOR_ELT(out, i, R_NilValue);
             continue;
         }
-        int start = INTEGER(offsets_sexp)[offset + i];
-        int end = INTEGER(offsets_sexp)[offset + i + 1];
+        R_xlen_t idx = (R_xlen_t)offset + i;
+        int start = INTEGER(offsets_sexp)[idx];
+        int end = INTEGER(offsets_sexp)[idx + 1];
         if (start < 0 || end < start || end > data_len) Rf_error("invalid binary Arrow offsets");
         SEXP one = PROTECT(Rf_allocVector(RAWSXP, end - start));
         if (end > start) memcpy(RAW(one), data + start, (size_t)(end - start));
@@ -189,7 +204,7 @@ SEXP RDUCKS_arrow_string_array_from_character(SEXP values_sexp) {
         } else {
             LOGICAL(valid)[i] = TRUE;
             const char *ptr = Rf_translateCharUTF8(ch);
-            total += (R_xlen_t)strlen(ptr);
+            total = rducks_xlen_add(total, (R_xlen_t)strlen(ptr), "string Arrow buffer");
             if (total > INT_MAX) Rf_error("string Arrow buffer exceeds integer offset range");
         }
         INTEGER(offsets)[i + 1] = (int)total;
@@ -224,7 +239,7 @@ SEXP RDUCKS_arrow_binary_payload_array(SEXP payloads) {
         } else {
             if (TYPEOF(one) != RAWSXP) Rf_error("payloads must contain raw vectors or NULL");
             LOGICAL(valid)[i] = TRUE;
-            total += XLENGTH(one);
+            total = rducks_xlen_add(total, XLENGTH(one), "binary Arrow buffer");
             if (total > INT_MAX) Rf_error("binary Arrow buffer exceeds integer offset range");
         }
         INTEGER(offsets)[i + 1] = (int)total;
@@ -249,7 +264,8 @@ SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP o
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
     if (offset < 0 || n < 0) Rf_error("invalid int64 Arrow parameters");
-    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * 8) Rf_error("int64 Arrow buffer is too short");
+    rducks_require_raw_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, 8, "int64 Arrow");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(REALSXP, n));
     const Rbyte *bytes = RAW(bytes_sexp);
     for (int i = 0; i < n; i++) {
@@ -257,9 +273,8 @@ SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP o
             REAL(out)[i] = NA_REAL;
             continue;
         }
-        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * 8;
-        uint64_t u = 0;
-        for (int j = 7; j >= 0; j--) u = (u << 8) | (uint64_t)src[j];
+        const Rbyte *src = bytes + ((R_xlen_t)offset + i) * 8;
+        uint64_t u = rducks_load_u64_le(src);
         int64_t v;
         memcpy(&v, &u, sizeof(v));
         REAL(out)[i] = (double)v / 1000000.0;
@@ -271,15 +286,16 @@ SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP o
 SEXP RDUCKS_arrow_i64_storage_from_numeric(SEXP values_sexp) {
     SEXP values = PROTECT(Rf_coerceVector(values_sexp, REALSXP));
     R_xlen_t n = XLENGTH(values);
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, n * 8));
-    memset(RAW(out), 0, (size_t)(n * 8));
+    R_xlen_t out_len = rducks_xlen_mul(n, 8, "int64 Arrow storage");
+    SEXP out = PROTECT(Rf_allocVector(RAWSXP, out_len));
+    memset(RAW(out), 0, (size_t)out_len);
     for (R_xlen_t i = 0; i < n; i++) {
         double d = REAL(values)[i];
         int64_t v = (ISNA(d) || ISNAN(d)) ? 0 : (int64_t)d;
         uint64_t u;
         memcpy(&u, &v, sizeof(u));
         Rbyte *dst = RAW(out) + i * 8;
-        for (int j = 0; j < 8; j++) dst[j] = (Rbyte)((u >> (8 * j)) & 0xffU);
+        rducks_store_u64_le(dst, u);
     }
     UNPROTECT(2);
     return out;

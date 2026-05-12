@@ -105,14 +105,6 @@ static duckdb_logical_type rducks_create_logical_type_for_id(rducks_type_id_t ty
     return duckdb_create_logical_type(duckdb_type_id);
 }
 
-static char *rducks_strdup_len(const char *x, size_t len) {
-    char *out = (char *)malloc(len + 1U);
-    if (!out) return NULL;
-    memcpy(out, x, len);
-    out[len] = '\0';
-    return out;
-}
-
 static char *rducks_strdup_trimmed_len(const char *x, size_t len) {
     while (len > 0 && (*x == ' ' || *x == '\t' || *x == '\n' || *x == '\r')) {
         x++;
@@ -187,7 +179,7 @@ static void rducks_type_desc_destroy(rducks_type_desc_t *desc) {
 }
 
 static rducks_type_desc_t *rducks_type_desc_new(rducks_type_kind_t kind) {
-    rducks_type_desc_t *desc = (rducks_type_desc_t *)calloc(1, sizeof(rducks_type_desc_t));
+    rducks_type_desc_t *desc = (rducks_type_desc_t *)rducks_calloc_array(1, sizeof(*desc));
     if (desc) desc->kind = kind;
     return desc;
 }
@@ -274,7 +266,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 size_t new_cap = cap == 0 ? 4U : cap * 2U;
                 char **new_names;
                 if (new_cap <= cap) goto oom;
-                new_names = (char **)realloc(desc->field_names, sizeof(char *) * new_cap);
+                new_names = (char **)rducks_realloc_array(desc->field_names, new_cap, sizeof(*new_names));
                 if (!new_names) goto oom;
                 desc->field_names = new_names;
                 for (size_t j = cap; j < new_cap; j++) desc->field_names[j] = NULL;
@@ -319,10 +311,10 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 char **new_names;
                 rducks_type_desc_t **new_types;
                 if (new_cap <= cap) goto oom;
-                new_names = (char **)realloc(desc->field_names, sizeof(char *) * new_cap);
+                new_names = (char **)rducks_realloc_array(desc->field_names, new_cap, sizeof(*new_names));
                 if (!new_names) goto oom;
                 desc->field_names = new_names;
-                new_types = (rducks_type_desc_t **)realloc(desc->field_types, sizeof(rducks_type_desc_t *) * new_cap);
+                new_types = (rducks_type_desc_t **)rducks_realloc_array(desc->field_types, new_cap, sizeof(*new_types));
                 if (!new_types) goto oom;
                 desc->field_types = new_types;
                 for (size_t j = cap; j < new_cap; j++) {
@@ -387,10 +379,10 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 char **new_names;
                 rducks_type_desc_t **new_types;
                 if (new_cap <= cap) goto oom;
-                new_names = (char **)realloc(desc->field_names, sizeof(char *) * new_cap);
+                new_names = (char **)rducks_realloc_array(desc->field_names, new_cap, sizeof(*new_names));
                 if (!new_names) goto oom;
                 desc->field_names = new_names;
-                new_types = (rducks_type_desc_t **)realloc(desc->field_types, sizeof(rducks_type_desc_t *) * new_cap);
+                new_types = (rducks_type_desc_t **)rducks_realloc_array(desc->field_types, new_cap, sizeof(*new_types));
                 if (!new_types) goto oom;
                 desc->field_types = new_types;
                 for (size_t j = cap; j < new_cap; j++) {
@@ -490,8 +482,8 @@ static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_
     if (desc->kind == RDUCKS_KIND_STRUCT) {
         duckdb_logical_type *types;
         duckdb_logical_type out = NULL;
-        if (desc->field_count == 0 || desc->field_count > (SIZE_MAX / sizeof(duckdb_logical_type))) return NULL;
-        types = (duckdb_logical_type *)calloc(desc->field_count, sizeof(duckdb_logical_type));
+        if (desc->field_count == 0 || desc->field_count > (SIZE_MAX / sizeof(*types))) return NULL;
+        types = (duckdb_logical_type *)rducks_calloc_array(desc->field_count, sizeof(*types));
         if (!types) return NULL;
         for (size_t i = 0; i < desc->field_count; i++) {
             types[i] = rducks_create_logical_type_for_desc(desc->field_types[i]);
@@ -518,8 +510,8 @@ cleanup_struct:
     if (desc->kind == RDUCKS_KIND_UNION) {
         duckdb_logical_type *types;
         duckdb_logical_type out = NULL;
-        if (desc->field_count == 0 || desc->field_count > 255U || desc->field_count > (SIZE_MAX / sizeof(duckdb_logical_type))) return NULL;
-        types = (duckdb_logical_type *)calloc(desc->field_count, sizeof(duckdb_logical_type));
+        if (desc->field_count == 0 || desc->field_count > 255U || desc->field_count > (SIZE_MAX / sizeof(*types))) return NULL;
+        types = (duckdb_logical_type *)rducks_calloc_array(desc->field_count, sizeof(*types));
         if (!types) return NULL;
         for (size_t i = 0; i < desc->field_count; i++) {
             types[i] = rducks_create_logical_type_for_desc(desc->field_types[i]);
@@ -658,12 +650,11 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
     *out = NULL;
     *out_count = 0;
     if (text[0] == '\0') return 1;
-    copy = (char *)malloc(strlen(text) + 1U);
+    copy = rducks_strdup(text);
     if (!copy) {
         snprintf(err, err_cap, "out of memory");
         return 0;
     }
-    strcpy(copy, text);
     cursor = copy;
     while (cursor && *cursor) {
         char *next;
@@ -692,7 +683,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
                 free(copy);
                 return 0;
             }
-            new_items = (rducks_type_desc_t **)realloc(items, sizeof(rducks_type_desc_t *) * new_capacity);
+            new_items = (rducks_type_desc_t **)rducks_realloc_array(items, new_capacity, sizeof(*new_items));
             if (!new_items) {
                 snprintf(err, err_cap, "out of memory");
                 rducks_type_desc_destroy(desc);

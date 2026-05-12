@@ -1,5 +1,14 @@
+rducks_nng_provider_trace_enabled <- function() {
+  opt <- getOption("rducks.nng.trace", FALSE)
+  env <- tolower(Sys.getenv("RDUCKS_NNG_TRACE", ""))
+  isTRUE(opt) || env %in% c("1", "true", "yes", "on")
+}
+
 rducks_nng_provider_trace <- function(phase) {
-  message("[rducks-nng-provider] ", phase)
+  if (rducks_nng_provider_trace_enabled()) {
+    message("[rducks-nng-provider] ", phase)
+  }
+  invisible(NULL)
 }
 
 rducks_nng_counter_next <- function(value) {
@@ -25,6 +34,35 @@ rducks_nng_defaults <- list(
   worker_send_timeout = 5
 )
 
+rducks_nng_check_seconds <- function(x, what, default = NULL, minimum = 0) {
+  if (is.null(x)) x <- default
+  x <- suppressWarnings(as.numeric(x))
+  if (length(x) != 1L || is.na(x) || !is.finite(x) || x <= minimum) {
+    stop(what, " must be a positive finite numeric scalar", call. = FALSE)
+  }
+  x
+}
+
+rducks_nng_timeout_ms <- function(seconds, what = "timeout") {
+  seconds <- rducks_nng_check_seconds(seconds, what)
+  as.integer(max(1L, ceiling(seconds * 1000)))
+}
+
+rducks_nng_validate_endpoints <- function(endpoints, workers = NULL, allow_null = TRUE,
+                                          what = "ipc_endpoints") {
+  if (is.null(endpoints)) {
+    if (allow_null) return(NULL)
+    stop(what, " must be a non-empty character vector of NNG endpoint URLs", call. = FALSE)
+  }
+  if (!is.character(endpoints) || !length(endpoints) || anyNA(endpoints) || any(!nzchar(endpoints))) {
+    stop(what, " must be a non-empty character vector of NNG endpoint URLs", call. = FALSE)
+  }
+  if (!is.null(workers) && length(endpoints) != workers) {
+    stop("length(", what, ") must equal ipc_workers", call. = FALSE)
+  }
+  endpoints
+}
+
 rducks_nng_supported_transports <- function() {
   c("abstract", "ipc", "unix", "tcp", "ws")
 }
@@ -47,9 +85,9 @@ rducks_nng_default_transport <- function() {
   if (identical(Sys.info()[["sysname"]], "Linux")) "abstract" else "ipc"
 }
 
-rducks_nng_normalize_transport <- function(transport = NULL) {
+rducks_nng_normalize_transport <- function(transport = NULL, runtime = FALSE) {
   if (is.null(transport)) transport <- rducks_nng_default_transport()
-  supported <- rducks_nng_supported_transports()
+  supported <- if (isTRUE(runtime)) rducks_nng_runtime_transports() else rducks_nng_supported_transports()
   if (!is.character(transport) || length(transport) != 1L || is.na(transport) || !(transport %in% supported)) {
     stop(
       "ipc_transport must be one of: ", paste(supported, collapse = ", "),
@@ -106,9 +144,21 @@ rducks_nng_decode_response_checked <- function(resp, endpoint = "", phase = "con
 }
 
 rducks_nng_random_port <- function(n) {
-  bytes <- as.integer(nanonext::random(2L * n, convert = FALSE))
-  values <- bytes[seq_len(n)] * 256L + bytes[n + seq_len(n)]
-  20000L + (values %% 45536L)
+  n <- as.integer(n)
+  if (length(n) != 1L || is.na(n) || n < 1L) return(integer())
+  ports <- integer()
+  attempts <- 0L
+  while (length(ports) < n && attempts < 100L) {
+    attempts <- attempts + 1L
+    batch <- max(n - length(ports), n)
+    bytes <- as.integer(nanonext::random(2L * batch, convert = FALSE))
+    values <- bytes[seq_len(batch)] * 256L + bytes[batch + seq_len(batch)]
+    ports <- unique(c(ports, 20000L + (values %% 45536L)))
+  }
+  if (length(ports) < n) {
+    stop("failed to generate unique local NNG ports", call. = FALSE)
+  }
+  ports[seq_len(n)]
 }
 
 rducks_nng_socket_paths <- function(token, indexes) {
@@ -128,7 +178,7 @@ rducks_nng_socket_paths <- function(token, indexes) {
 }
 
 rducks_nng_endpoint_bundle <- function(workers, transport = NULL) {
-  transport <- rducks_nng_normalize_transport(transport)
+  transport <- rducks_nng_normalize_transport(transport, runtime = TRUE)
   token <- paste("rdn", Sys.getpid(), substr(rducks_nng_random_token(), 1L, 8L), sep = "-")
   indexes <- seq_len(workers)
   cleanup_paths <- character()
@@ -243,19 +293,12 @@ rducks_nng_transact <- function(endpoint, request,
                                  retry_sleep = rducks_nng_defaults$retry_sleep,
                                  per_attempt_timeout = rducks_nng_defaults$per_attempt_timeout,
                                  min_response_bytes = rducks_nng_wire_response_header_size) {
-  timeout <- if (is.null(timeout)) rducks_nng_defaults$control_timeout else as.numeric(timeout)
-  if (length(timeout) != 1L || is.na(timeout) || !is.finite(timeout) || timeout <= 0) {
-    timeout <- rducks_nng_defaults$control_timeout
-  }
+  timeout <- rducks_nng_check_seconds(timeout, "timeout", default = rducks_nng_defaults$control_timeout)
   retries <- suppressWarnings(as.integer(retries))
   if (length(retries) != 1L || is.na(retries) || !is.finite(retries) || retries < 1L) {
     retries <- 1L
   }
-  per_attempt_timeout <- if (is.null(per_attempt_timeout)) timeout else as.numeric(per_attempt_timeout)
-  if (length(per_attempt_timeout) != 1L || is.na(per_attempt_timeout) ||
-      !is.finite(per_attempt_timeout) || per_attempt_timeout <= 0) {
-    per_attempt_timeout <- timeout
-  }
+  per_attempt_timeout <- rducks_nng_check_seconds(per_attempt_timeout, "per_attempt_timeout", default = timeout)
 
   deadline <- rducks_nng_elapsed() + timeout
   last_error <- NULL
@@ -265,7 +308,7 @@ rducks_nng_transact <- function(endpoint, request,
     if (remaining <= 0) break
 
     attempt_seconds <- if (retries == 1L) remaining else min(remaining, per_attempt_timeout)
-    attempt_timeout_ms <- as.integer(max(1L, ceiling(attempt_seconds * 1000)))
+    attempt_timeout_ms <- rducks_nng_timeout_ms(attempt_seconds, "attempt timeout")
     con <- NULL
 
     out <- tryCatch({
@@ -331,13 +374,22 @@ rducks_nng_provider_key <- function(runtime_token, workers, max_pending, endpoin
 
 rducks_nng_provider_for_runtime <- function(runtime_token, workers, max_pending, endpoints, transport = NULL) {
   runtime_token <- runtime_token %||% paste("process", Sys.getpid(), sep = "-")
-  transport <- rducks_nng_normalize_transport(transport)
+  external_endpoints <- !is.null(endpoints)
+  if (external_endpoints && !is.null(transport)) {
+    stop("ipc_transport only applies when ipc_endpoints is NULL", call. = FALSE)
+  }
+  transport <- if (external_endpoints) "external" else rducks_nng_normalize_transport(transport, runtime = TRUE)
   key <- rducks_nng_provider_key(runtime_token, workers, max_pending, endpoints, transport)
   store <- rducks_nng_provider_store()
   if (exists(key, envir = store, inherits = FALSE)) {
     return(get(key, envir = store, inherits = FALSE)$provider)
   }
-  provider <- rducks_nng_provider(workers = workers, max_pending = max_pending, endpoints = endpoints, transport = transport)
+  provider <- rducks_nng_provider(
+    workers = workers,
+    max_pending = max_pending,
+    endpoints = endpoints,
+    transport = if (external_endpoints) NULL else transport
+  )
   assign(key, list(runtime_token = runtime_token, workers = workers, max_pending = max_pending,
                    endpoints = endpoints, transport = transport, provider = provider), envir = store)
   provider
@@ -368,14 +420,12 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
   if (!is.numeric(max_pending) || length(max_pending) != 1L || is.na(max_pending) || max_pending <= 0) {
     stop("max_pending must be NULL or a positive numeric scalar", call. = FALSE)
   }
-  transport <- rducks_nng_normalize_transport(transport)
   external_endpoints <- !is.null(endpoints)
-  if (external_endpoints && (!is.character(endpoints) || !length(endpoints) || anyNA(endpoints) || any(!nzchar(endpoints)))) {
-    stop("ipc_endpoints must be NULL or a non-empty character vector of NNG endpoint URLs", call. = FALSE)
+  if (external_endpoints && !is.null(transport)) {
+    stop("ipc_transport only applies when ipc_endpoints is NULL", call. = FALSE)
   }
-  if (external_endpoints && length(endpoints) != workers) {
-    stop("length(ipc_endpoints) must equal ipc_workers", call. = FALSE)
-  }
+  transport <- if (external_endpoints) "external" else rducks_nng_normalize_transport(transport, runtime = TRUE)
+  endpoints <- rducks_nng_validate_endpoints(endpoints, workers = if (external_endpoints) workers else NULL)
   if (is.null(compute)) {
     counter <- rducks_nng_counter_next(.rducks_state$nng_provider_counter)
     .rducks_state$nng_provider_counter <- counter
@@ -444,10 +494,11 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         state$endpoints <- character()
       }
       state$started <- FALSE
-      stop(e)
+      stop(conditionMessage(e), call. = FALSE)
     })
   }
   provider$stop <- function(timeout = rducks_nng_defaults$shutdown_timeout, quiet = FALSE) {
+    timeout <- rducks_nng_check_seconds(timeout, "timeout", default = rducks_nng_defaults$shutdown_timeout)
     shutdown_status <- list(
       stop_requests_sent = 0L,
       stop_request_errors = character(),
@@ -464,7 +515,7 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         sent <- tryCatch({
           stop_timeout <- max(
             rducks_nng_defaults$minimum_timeout,
-            min(rducks_nng_defaults$stop_request_timeout, as.numeric(timeout))
+            min(rducks_nng_defaults$stop_request_timeout, timeout)
           )
           rducks_nng_transact(endpoint, req, timeout = stop_timeout, retries = 5L)
           TRUE
@@ -478,9 +529,9 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         unresolved <- function(task) {
           tryCatch(mirai::unresolved(task), error = function(e) TRUE)
         }
-        deadline <- unname(proc.time()[["elapsed"]]) + max(0, as.numeric(timeout))
+        deadline <- rducks_nng_elapsed() + timeout
         while (any(vapply(tasks, unresolved, logical(1))) &&
-               unname(proc.time()[["elapsed"]]) < deadline) {
+               rducks_nng_elapsed() < deadline) {
           Sys.sleep(0.01)
         }
         resolved <- !vapply(tasks, unresolved, logical(1))

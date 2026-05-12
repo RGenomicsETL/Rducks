@@ -19,3 +19,17 @@ err <- tryCatch(
 expect_true(is.character(err))
 expect_true(grepl("failed to decode Rducks NNG unit response", err, fixed = TRUE))
 expect_true(grepl("length=0", err, fixed = TRUE))
+
+ports <- Rducks:::rducks_nng_random_port(128L)
+expect_equal(length(ports), 128L)
+expect_equal(length(unique(ports)), 128L)
+expect_true(all(ports >= 20000L & ports <= 65535L))
+
+expect_error(
+  Rducks:::rducks_nng_provider(
+    workers = 1L,
+    endpoints = "tcp://127.0.0.1:5555",
+    transport = "tcp"
+  ),
+  "ipc_transport only applies"
+)

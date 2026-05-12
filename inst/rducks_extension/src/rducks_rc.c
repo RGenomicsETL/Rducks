@@ -325,7 +325,7 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
         return 0;
     }
     if (meta->arity == 0U) return 1;
-    if (meta->arity > (SIZE_MAX / sizeof(duckdb_logical_type))) {
+    if (meta->arity > (SIZE_MAX / sizeof(*types))) {
         snprintf(err_msg, err_cap, "Rducks RC input snapshot arity is too large");
         return 0;
     }
@@ -336,7 +336,7 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
         return 0;
     }
 
-    types = (duckdb_logical_type *)calloc(meta->arity, sizeof(duckdb_logical_type));
+    types = (duckdb_logical_type *)rducks_calloc_array(meta->arity, sizeof(*types));
     if (!types) {
         snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot types");
         return 0;
@@ -415,7 +415,7 @@ static int rducks_rc_direct_scalar_snapshot_input_views(rducks_r_scalar_meta_t *
     frame->n = duckdb_data_chunk_get_size(input);
     frame->arity = meta->arity;
     if (meta->arity > 0U) {
-        frame->inputs = (rducks_rc_direct_vector_view_t *)calloc(meta->arity, sizeof(rducks_rc_direct_vector_view_t));
+        frame->inputs = (rducks_rc_direct_vector_view_t *)rducks_calloc_array(meta->arity, sizeof(*frame->inputs));
         if (!frame->inputs) {
             snprintf(err_msg, err_cap, "failed to allocate Rducks RC scalar input views");
             return 0;
@@ -504,7 +504,8 @@ static uint64_t rducks_rc_le_bytes_to_u64(const uint8_t *bytes) {
     return value;
 }
 
-static void rducks_rc_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, uint32_t multiplier, uint32_t addend) {
+static int rducks_rc_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, size_t cap,
+                                    uint32_t multiplier, uint32_t addend) {
     uint64_t carry = addend;
     for (size_t i = 0; i < *nlimbs; i++) {
         uint64_t value = (uint64_t)limbs[i] * (uint64_t)multiplier + carry;
@@ -512,10 +513,12 @@ static void rducks_rc_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, uint32_t mu
         carry = value / RDUCKS_RC_DEC_BASE;
     }
     while (carry) {
+        if (*nlimbs >= cap) return 0;
         limbs[*nlimbs] = (uint32_t)(carry % RDUCKS_RC_DEC_BASE);
         carry /= RDUCKS_RC_DEC_BASE;
         (*nlimbs)++;
     }
+    return 1;
 }
 
 static size_t rducks_rc_unsigned_le_bytes_to_decimal_buf(const uint8_t *bytes, size_t n, char *out, size_t out_cap) {
@@ -530,7 +533,7 @@ static size_t rducks_rc_unsigned_le_bytes_to_decimal_buf(const uint8_t *bytes, s
     memset(limbs, 0, cap * sizeof(uint32_t));
     size_t nlimbs = 1U;
     for (size_t i = n; i > 0; i--) {
-        rducks_rc_limbs_mul_add(limbs, &nlimbs, 256U, (uint32_t)bytes[i - 1U]);
+        if (!rducks_rc_limbs_mul_add(limbs, &nlimbs, cap, 256U, (uint32_t)bytes[i - 1U])) return 0;
     }
     while (nlimbs > 1U && limbs[nlimbs - 1U] == 0U) nlimbs--;
     if (nlimbs == 1U && limbs[0] == 0U) {
@@ -2623,7 +2626,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return NULL;
     }
-    payload = (rducks_rc_owned_result_payload_t *)calloc(1, sizeof(*payload));
+    payload = (rducks_rc_owned_result_payload_t *)rducks_calloc_array(1, sizeof(*payload));
     if (!payload) {
         snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result payload");
         return NULL;
@@ -2644,9 +2647,9 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     payload->array.n_children = 1;
     payload->array.dictionary = NULL;
     payload->array.release = rducks_rc_owned_arrow_parent_release;
-    payload->array.buffers = (const void **)calloc(1, sizeof(void *));
-    payload->array.children = (struct ArrowArray **)calloc(1, sizeof(struct ArrowArray *));
-    child = (struct ArrowArray *)calloc(1, sizeof(struct ArrowArray));
+    payload->array.buffers = (const void **)rducks_calloc_array(1, sizeof(*payload->array.buffers));
+    payload->array.children = (struct ArrowArray **)rducks_calloc_array(1, sizeof(*payload->array.children));
+    child = (struct ArrowArray *)rducks_calloc_array(1, sizeof(*child));
     if (!payload->array.buffers || !payload->array.children || !child) {
         free(child);
         rducks_rc_owned_result_payload_free(payload);
@@ -2664,7 +2667,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     child->n_children = 0;
     child->dictionary = NULL;
     child->release = rducks_rc_owned_arrow_child_release;
-    child->buffers = (const void **)calloc((size_t)child->n_buffers, sizeof(void *));
+    child->buffers = (const void **)rducks_calloc_array((size_t)child->n_buffers, sizeof(*child->buffers));
     if (!child->buffers) {
         rducks_rc_owned_result_payload_free(payload);
         snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result buffers");
@@ -2677,7 +2680,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         snprintf(err_msg, err_cap, "Rducks owned Arrow result payload is too large");
         return NULL;
     }
-    if (validity_bytes > 0U) child->buffers[0] = calloc(validity_bytes, 1U);
+    if (validity_bytes > 0U) child->buffers[0] = rducks_calloc_array(validity_bytes, 1U);
     if (variable) {
         if ((uint64_t)n > (uint64_t)INT32_MAX - 1U || (uint64_t)n + 1U > SIZE_MAX / sizeof(int32_t)) {
             rducks_rc_owned_result_payload_free(payload);
@@ -2685,7 +2688,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
             return NULL;
         }
         offset_bytes = ((size_t)n + 1U) * sizeof(int32_t);
-        child->buffers[1] = calloc(offset_bytes, 1U);
+        child->buffers[1] = rducks_calloc_array(offset_bytes, 1U);
         child->buffers[2] = NULL;
         if (offset_bytes > 0U && !child->buffers[1]) {
             rducks_rc_owned_result_payload_free(payload);
@@ -2696,7 +2699,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         value_bytes = (meta->return_desc->kind == RDUCKS_KIND_SCALAR &&
                        meta->return_desc->scalar == RDUCKS_TYPE_BOOL) ?
             validity_bytes : (size_t)n * payload->element_size;
-        if (value_bytes > 0U) child->buffers[1] = calloc(value_bytes, 1U);
+        if (value_bytes > 0U) child->buffers[1] = rducks_calloc_array(value_bytes, 1U);
         if (value_bytes > 0U && !child->buffers[1]) {
             rducks_rc_owned_result_payload_free(payload);
             snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
@@ -2746,7 +2749,7 @@ static int rducks_rc_owned_result_payload_append_bytes(rducks_rc_owned_result_pa
             new_capacity *= 2U;
         }
         child = payload->array.children[0];
-        new_data = realloc((void *)child->buffers[2], new_capacity);
+        new_data = rducks_realloc_array((void *)child->buffers[2], new_capacity, 1U);
         if (!new_data) {
             snprintf(err_msg, err_cap, "failed to grow Rducks owned Arrow variable result buffer");
             return 0;

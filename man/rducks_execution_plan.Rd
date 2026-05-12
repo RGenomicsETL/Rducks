@@ -44,7 +44,8 @@ provider wait timeout in seconds; \code{NULL} uses a finite default of 30 second
 managed worker processes running the Rducks NNG worker loop; any NNG URL
 transport supported by both endpoints is allowed. When endpoints are not
 supplied, \code{ipc_transport} selects the transport used for the mirai-launched
-local worker endpoints. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}
+local worker endpoints and must be left as \code{NULL} when explicit
+\code{ipc_endpoints} are supplied. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}
 means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
 \code{"unix"} means the POSIX Unix-domain alias, and \code{"tcp"} / \code{"ws"} use
 loopback TCP / WebSocket endpoints. The default is \code{"abstract"} on Linux

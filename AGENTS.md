@@ -21,6 +21,11 @@ This repo owns:
 - Use Arrow IPC only for explicit serialized/out-of-process transports such as a future mirai-backed compute plan.
 - Prefer small staged native modules over a monolithic extension source.
 
+## Style discipline
+
+- Write C as a BSD kernel programmer rather than a Java programmer that failed upwards; this is about ownership, control flow, allocation, error paths, and byte-level clarity, not just indentation.
+- Write R as a r-lib programmer rather than a Python programmer that failed upwards; this is about API shape, vector semantics, conditions, dependencies, and package discipline, not just indentation.
+
 ## Architecture notes
 
 - See `docs/ARCHITECTURE.md` for the package/extension split.

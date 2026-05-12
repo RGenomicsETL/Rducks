@@ -1,3 +1,12 @@
+rducks_as_raw_payload <- function(payload, what = "payload") {
+  if (is.raw(payload)) return(payload)
+  if (!is.numeric(payload) || anyNA(payload) || any(!is.finite(payload)) ||
+      any(payload < 0 | payload > 255 | payload != floor(payload))) {
+    stop(what, " must be a raw vector or byte-valued numeric vector", call. = FALSE)
+  }
+  as.raw(payload)
+}
+
 rducks_arrow_ipc_encode <- function(data) {
   if (!inherits(data, "nanoarrow_array")) {
     stop("Arrow IPC native path requires a nanoarrow_array", call. = FALSE)
@@ -6,7 +15,8 @@ rducks_arrow_ipc_encode <- function(data) {
 }
 
 rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {
-  nanoarrow::read_nanoarrow(as.raw(payload), lazy = lazy)
+  payload <- rducks_as_raw_payload(payload, "Arrow IPC payload")
+  nanoarrow::read_nanoarrow(payload, lazy = lazy)
 }
 
 rducks_arrow_ipc_decode_array <- function(payload) {
@@ -15,6 +25,10 @@ rducks_arrow_ipc_decode_array <- function(payload) {
   array <- stream$get_next(schema)
   if (is.null(array)) {
     stop("Arrow IPC payload did not contain a record batch", call. = FALSE)
+  }
+  extra <- stream$get_next(schema)
+  if (!is.null(extra)) {
+    stop("Arrow IPC payload contained more than one record batch", call. = FALSE)
   }
   nanoarrow::nanoarrow_array_set_schema(array, schema)
   list(array = array, schema = schema)

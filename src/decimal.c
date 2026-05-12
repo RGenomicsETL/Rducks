@@ -4,6 +4,8 @@
 #include <R.h>
 #include <Rinternals.h>
 
+#include "rducks_native.h"
+
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -183,7 +185,9 @@ SEXP RDUCKS_decimal_string_multiply_small(SEXP x, SEXP multiplier_sexp) {
     return rducks_string_scalar_result(out, out_len);
 }
 
-static void rducks_decimal_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, uint32_t multiplier, uint32_t addend) {
+static void rducks_decimal_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, size_t cap,
+                                          uint32_t multiplier, uint32_t addend,
+                                          const char *what) {
     uint64_t carry = addend;
     for (size_t i = 0; i < *nlimbs; i++) {
         uint64_t value = (uint64_t)limbs[i] * (uint64_t)multiplier + carry;
@@ -191,6 +195,7 @@ static void rducks_decimal_limbs_mul_add(uint32_t *limbs, size_t *nlimbs, uint32
         carry = value / RDUCKS_DEC_BASE;
     }
     while (carry > 0) {
+        if (*nlimbs >= cap) Rf_error("%s overflowed internal buffer", what);
         limbs[*nlimbs] = (uint32_t)(carry % RDUCKS_DEC_BASE);
         carry /= RDUCKS_DEC_BASE;
         (*nlimbs)++;
@@ -215,11 +220,8 @@ SEXP RDUCKS_decimal_string_from_unsigned_bytes(SEXP bytes_sexp) {
 
     const Rbyte *raw = RAW(bytes);
     for (R_xlen_t i = n; i > 0; i--) {
-        rducks_decimal_limbs_mul_add(limbs, &nlimbs, 256U, (uint32_t)raw[i - 1]);
-        if (nlimbs > cap) {
-            if (bytes != bytes_sexp) UNPROTECT(1);
-            Rf_error("decimal byte conversion overflowed internal buffer");
-        }
+        rducks_decimal_limbs_mul_add(limbs, &nlimbs, cap, 256U, (uint32_t)raw[i - 1],
+                                     "decimal byte conversion");
     }
 
     while (nlimbs > 1U && limbs[nlimbs - 1U] == 0U) nlimbs--;
@@ -662,9 +664,10 @@ SEXP RDUCKS_fixed_width_bytes_from_decimal_strings(SEXP values, SEXP width_sexp,
     int signed_flag = Rf_asLogical(signed_sexp) == TRUE;
     SEXP input = rducks_as_character_protect(values);
     R_xlen_t n = XLENGTH(input);
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, n * (R_xlen_t)width));
+    R_xlen_t out_len = rducks_xlen_mul(n, (R_xlen_t)width, "fixed-width byte");
+    SEXP out = PROTECT(Rf_allocVector(RAWSXP, out_len));
     Rbyte *raw = RAW(out);
-    memset(raw, 0, (size_t)(n * (R_xlen_t)width));
+    memset(raw, 0, (size_t)out_len);
     for (R_xlen_t i = 0; i < n; i++) {
         SEXP ch = STRING_ELT(input, i);
         Rbyte *dest = raw + i * (R_xlen_t)width;
@@ -704,7 +707,8 @@ static size_t rducks_unsigned_bytes_to_decimal_buf(const Rbyte *raw, size_t n, c
     memset(limbs, 0, cap * sizeof(uint32_t));
     size_t nlimbs = 1U;
     for (size_t i = n; i > 0; i--) {
-        rducks_decimal_limbs_mul_add(limbs, &nlimbs, 256U, (uint32_t)raw[i - 1U]);
+        rducks_decimal_limbs_mul_add(limbs, &nlimbs, cap, 256U, (uint32_t)raw[i - 1U],
+                                     "decimal byte conversion");
     }
     while (nlimbs > 1U && limbs[nlimbs - 1U] == 0U) nlimbs--;
     if (nlimbs == 1U && limbs[0] == 0U) {
@@ -730,7 +734,8 @@ SEXP RDUCKS_decimal_strings_from_fixed_width_bytes(SEXP bytes_sexp, SEXP valid_s
     int width = Rf_asInteger(width_sexp);
     int signed_flag = Rf_asLogical(signed_sexp) == TRUE;
     if (offset < 0 || n < 0 || width <= 0) Rf_error("invalid fixed-width byte conversion parameters");
-    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * (R_xlen_t)width) Rf_error("fixed-width byte buffer is too short");
+    rducks_require_raw_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, (R_xlen_t)width, "fixed-width byte");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
     const Rbyte *bytes = RAW(bytes_sexp);
     for (int i = 0; i < n; i++) {
@@ -738,7 +743,7 @@ SEXP RDUCKS_decimal_strings_from_fixed_width_bytes(SEXP bytes_sexp, SEXP valid_s
             SET_STRING_ELT(out, i, NA_STRING);
             continue;
         }
-        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * (R_xlen_t)width;
+        const Rbyte *src = bytes + ((R_xlen_t)offset + i) * (R_xlen_t)width;
         Rbyte *tmp = (Rbyte *)R_alloc((size_t)width, sizeof(Rbyte));
         memcpy(tmp, src, (size_t)width);
         int neg = signed_flag && width > 0 && tmp[width - 1] >= 128;
@@ -764,11 +769,7 @@ SEXP RDUCKS_decimal_strings_from_fixed_width_bytes(SEXP bytes_sexp, SEXP valid_s
 }
 
 static int32_t rducks_read_i32_le(const Rbyte *src) {
-    uint32_t u = ((uint32_t)src[0]) |
-                 ((uint32_t)src[1] << 8) |
-                 ((uint32_t)src[2] << 16) |
-                 ((uint32_t)src[3] << 24);
-    return (int32_t)u;
+    return (int32_t)rducks_load_u32_le(src);
 }
 
 static size_t rducks_decimal_divide_integer_to_buf(const char *s, size_t len, int divisor, char *out) {
@@ -822,7 +823,8 @@ SEXP RDUCKS_interval_values_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP of
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
     if (offset < 0 || n < 0) Rf_error("invalid INTERVAL conversion parameters");
-    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * 16) Rf_error("INTERVAL byte buffer is too short");
+    rducks_require_raw_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, 16, "INTERVAL byte");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
 
     SEXP months = PROTECT(Rf_allocVector(INTSXP, n));
     SEXP days = PROTECT(Rf_allocVector(INTSXP, n));
@@ -836,7 +838,7 @@ SEXP RDUCKS_interval_values_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP of
             SET_STRING_ELT(micros, i, NA_STRING);
             continue;
         }
-        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * 16;
+        const Rbyte *src = bytes + ((R_xlen_t)offset + i) * 16;
         INTEGER(months)[i] = (int)rducks_read_i32_le(src);
         INTEGER(days)[i] = (int)rducks_read_i32_le(src + 4);
 

@@ -1,8 +1,14 @@
+#ifndef R_NO_REMAP
+#define R_NO_REMAP
+#endif
 #include <R.h>
 #include <Rinternals.h>
+
+#include "rducks_native.h"
+
+#include <ctype.h>
 #include <stdint.h>
 #include <string.h>
-#include <ctype.h>
 
 static int rducks_uuid_hex_value(unsigned char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -19,8 +25,9 @@ SEXP RDUCKS_uuid_bytes_from_strings(SEXP values_sexp) {
         protect_values = 1;
     }
     R_xlen_t n = XLENGTH(values);
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, n * 16));
-    memset(RAW(out), 0, (size_t)(n * 16));
+    R_xlen_t out_len = rducks_xlen_mul(n, 16, "UUID byte");
+    SEXP out = PROTECT(Rf_allocVector(RAWSXP, out_len));
+    memset(RAW(out), 0, (size_t)out_len);
     for (R_xlen_t i = 0; i < n; i++) {
         SEXP ch = STRING_ELT(values, i);
         if (ch == NA_STRING) continue;
@@ -49,7 +56,8 @@ SEXP RDUCKS_uuid_strings_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP offse
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
     if (offset < 0 || n < 0) Rf_error("invalid UUID conversion parameters");
-    if (XLENGTH(bytes_sexp) < (R_xlen_t)(offset + n) * 16) Rf_error("UUID byte buffer is too short");
+    rducks_require_raw_span(bytes_sexp, (R_xlen_t)offset, (R_xlen_t)n, 16, "UUID byte");
+    rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
     static const char hex[] = "0123456789abcdef";
     const Rbyte *bytes = RAW(bytes_sexp);
@@ -58,7 +66,7 @@ SEXP RDUCKS_uuid_strings_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP offse
             SET_STRING_ELT(out, i, NA_STRING);
             continue;
         }
-        const Rbyte *src = bytes + (R_xlen_t)(offset + i) * 16;
+        const Rbyte *src = bytes + ((R_xlen_t)offset + i) * 16;
         char buf[37];
         int pos = 0;
         for (int j = 0; j < 16; j++) {

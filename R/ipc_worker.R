@@ -2,6 +2,14 @@ rducks_nanoarrow_pointer_is_valid <- function(ptr) {
   isTRUE(tryCatch(nanoarrow::nanoarrow_pointer_is_valid(ptr), error = function(e) FALSE))
 }
 
+rducks_ipc_worker_check_n <- function(n) {
+  if (!is.numeric(n) || length(n) != 1L || is.na(n) || !is.finite(n) || n < 0 || n != floor(n) ||
+      n > .Machine$integer.max) {
+    stop("Rducks IPC row count must be a non-negative integer scalar", call. = FALSE)
+  }
+  as.integer(n)
+}
+
 rducks_ipc_worker_eval_arrow_ipc_chunk <- function(input_payload,
                                                    output_schema_spec,
                                                    n,
@@ -11,7 +19,7 @@ rducks_ipc_worker_eval_arrow_ipc_chunk <- function(input_payload,
                                                    null_handling,
                                                    exception_handling,
                                                    mode) {
-  n <- as.integer(n)
+  n <- rducks_ipc_worker_check_n(n)
   mode <- rducks_match_mode(mode)
   decoded <- rducks_arrow_ipc_decode_array(input_payload)
   output_schema <- rducks_arrow_schema_from_spec(output_schema_spec)
@@ -81,17 +89,22 @@ rducks_ipc_globals_for_function <- function(fun) {
   if (!requireNamespace("codetools", quietly = TRUE)) {
     stop("ipc_globals = 'auto' requires the codetools package", call. = FALSE)
   }
+  if (!is.function(fun)) {
+    stop("ipc_globals = 'auto' requires an R function", call. = FALSE)
+  }
   globals <- list()
   packages <- character()
   queue <- list(fun)
-  seen <- character()
+  queue_pos <- 1L
+  seen <- new.env(parent = emptyenv())
+  seen_globals <- new.env(parent = emptyenv())
 
-  while (length(queue)) {
-    current <- queue[[1L]]
-    queue <- queue[-1L]
+  while (queue_pos <= length(queue)) {
+    current <- queue[[queue_pos]]
+    queue_pos <- queue_pos + 1L
     current_key <- paste0(typeof(current), "@", .Call(RDUCKS_sexp_addr, current))
-    if (current_key %in% seen) next
-    seen <- c(seen, current_key)
+    if (exists(current_key, envir = seen, inherits = FALSE)) next
+    assign(current_key, TRUE, envir = seen)
 
     found <- codetools::findGlobals(current, merge = FALSE)
     names <- unique(c(found$variables %||% character(), found$functions %||% character()))
@@ -108,12 +121,15 @@ rducks_ipc_globals_for_function <- function(fun) {
       }
 
       value <- get(name, envir = binding_env, inherits = FALSE)
-      if (!name %in% names(globals)) globals[[name]] <- value
+      if (!exists(name, envir = seen_globals, inherits = FALSE)) {
+        globals[[name]] <- value
+        assign(name, TRUE, envir = seen_globals)
+      }
       if (is.function(value)) queue[[length(queue) + 1L]] <- value
     }
   }
 
-  list(globals = globals, packages = packages)
+  list(globals = globals, packages = unique(packages))
 }
 
 rducks_ipc_worker_globals <- function(fun, globals) {
@@ -124,17 +140,21 @@ rducks_ipc_worker_globals <- function(fun, globals) {
     return(list(globals = list(), packages = character()))
   }
   if (is.character(globals)) {
+    globals <- unique(globals)
+    if (!is.function(fun)) stop("ipc_globals character names require an R function", call. = FALSE)
     env <- environment(fun) %||% parent.frame()
-    values <- mget(globals, envir = env, inherits = TRUE, ifnotfound = list(NULL))
-    missing <- globals[vapply(values, is.null, logical(1))]
+    found <- vapply(globals, exists, logical(1), envir = env, inherits = TRUE)
+    missing <- globals[!found]
     if (length(missing)) {
       stop("ipc_globals names not found in the UDF environment: ", paste(missing, collapse = ", "), call. = FALSE)
     }
+    values <- mget(globals, envir = env, inherits = TRUE)
     return(list(globals = values, packages = character()))
   }
   if (is.list(globals)) {
-    if (length(globals) && (is.null(names(globals)) || any(!nzchar(names(globals))))) {
-      stop("ipc_globals supplied as a list must be named", call. = FALSE)
+    names <- names(globals)
+    if (length(globals) && (is.null(names) || anyNA(names) || any(!nzchar(names)) || anyDuplicated(names))) {
+      stop("ipc_globals supplied as a list must have unique non-empty names", call. = FALSE)
     }
     return(list(globals = globals, packages = character()))
   }

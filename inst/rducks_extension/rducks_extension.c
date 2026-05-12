@@ -6,6 +6,10 @@
 #endif
 #include "duckdb_extension.h"
 
+#if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
+#error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
+#endif
+
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -218,6 +222,25 @@ static uint64_t g_runtime_connections_closed = 0;
 static uint64_t g_runtime_connection_open_failed = 0;
 static uint64_t g_runtime_queue_init_failed = 0;
 
+static int rducks_size_mul(size_t a, size_t b, size_t *out) {
+    if (!out) return 0;
+    if (b != 0 && a > SIZE_MAX / b) return 0;
+    *out = a * b;
+    return 1;
+}
+
+static void *rducks_calloc_array(size_t n, size_t size) {
+    size_t bytes;
+    if (!rducks_size_mul(n, size, &bytes)) return NULL;
+    return calloc(n, size);
+}
+
+static void *rducks_realloc_array(void *ptr, size_t n, size_t size) {
+    size_t bytes;
+    if (!rducks_size_mul(n, size, &bytes)) return NULL;
+    return realloc(ptr, bytes);
+}
+
 /* Locking discipline: avoid nesting the global runtime registry lock and a
  * runtime queue lock. Queue operations should release runtime->queue_lock before
  * updating registry/stat counters under g_runtime_lock. If future code must
@@ -268,14 +291,20 @@ static int rducks_registration_surface_available(duckdb_connection connection) {
 static int rducks_runtime_reserve_locked(idx_t wanted) {
     rducks_runtime_entry_t **new_entries;
     idx_t new_capacity;
+    size_t bytes;
     if (g_runtime_capacity >= wanted) return 1;
-    new_capacity = g_runtime_capacity == 0 ? 4 : g_runtime_capacity * 2;
-    while (new_capacity < wanted) new_capacity *= 2;
-    new_entries = (rducks_runtime_entry_t **)duckdb_malloc(sizeof(rducks_runtime_entry_t *) * new_capacity);
+    new_capacity = g_runtime_capacity == 0 ? 4 : g_runtime_capacity;
+    while (new_capacity < wanted) {
+        if (new_capacity > (idx_t)(SIZE_MAX / (2U * sizeof(*new_entries)))) return 0;
+        new_capacity *= 2;
+    }
+    if ((uint64_t)new_capacity > (uint64_t)(SIZE_MAX / sizeof(*new_entries))) return 0;
+    if (!rducks_size_mul((size_t)new_capacity, sizeof(*new_entries), &bytes)) return 0;
+    new_entries = (rducks_runtime_entry_t **)duckdb_malloc(bytes);
     if (!new_entries) return 0;
-    memset(new_entries, 0, sizeof(rducks_runtime_entry_t *) * new_capacity);
+    memset(new_entries, 0, bytes);
     if (g_runtime_entries && g_runtime_count > 0) {
-        memcpy(new_entries, g_runtime_entries, sizeof(rducks_runtime_entry_t *) * g_runtime_count);
+        memcpy(new_entries, g_runtime_entries, sizeof(*new_entries) * (size_t)g_runtime_count);
         duckdb_free(g_runtime_entries);
     }
     g_runtime_entries = new_entries;
@@ -435,10 +464,13 @@ static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, si
                                                             int timeout_ms, uint64_t max_pending,
                                                             char *err_msg, size_t err_cap);
 static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr);
-static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
-                                                const uint8_t *request, size_t request_size,
-                                                uint8_t **response_out, size_t *response_size_out,
-                                                char *err_msg, size_t err_cap);
+static int rducks_nng_client_pool_request_reply_borrowed_acquired(rducks_nng_client_pool_t *pool,
+                                                                  const uint8_t *request, size_t request_size,
+                                                                  void **response_msg_out,
+                                                                  const uint8_t **response_body_out,
+                                                                  size_t *response_size_out,
+                                                                  char *err_msg, size_t err_cap);
+static void rducks_nng_response_msg_free(void *response_msg);
 static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,

@@ -30,6 +30,34 @@ rducks_ipc_defaults <- list(
 
 rducks_ipc_default_timeout <- function() rducks_ipc_defaults$timeout
 
+rducks_validate_ipc_globals <- function(globals) {
+  if (identical(globals, "auto") || isTRUE(globals) || identical(globals, FALSE)) {
+    return(globals)
+  }
+  if (is.character(globals)) {
+    if (anyNA(globals) || any(!nzchar(globals))) {
+      stop("ipc_globals character names must be non-missing, non-empty strings", call. = FALSE)
+    }
+    return(unique(globals))
+  }
+  if (is.list(globals)) {
+    names <- names(globals)
+    if (length(globals) && (is.null(names) || anyNA(names) || any(!nzchar(names)) || anyDuplicated(names))) {
+      stop("ipc_globals supplied as a list must have unique non-empty names", call. = FALSE)
+    }
+    return(globals)
+  }
+  stop("ipc_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
+}
+
+rducks_validate_ipc_packages <- function(packages) {
+  if (is.null(packages)) return(character())
+  if (!is.character(packages) || anyNA(packages) || any(!nzchar(packages))) {
+    stop("ipc_packages must be NULL or a character vector of non-empty package names", call. = FALSE)
+  }
+  unique(packages)
+}
+
 rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng") {
   key <- paste(marshalling, concurrency, sep = "+")
   if (identical(key, "arrow_ipc+multiprocess_parallel")) {
@@ -70,20 +98,14 @@ rducks_ipc_options <- function(globals = "auto",
                                 timeout = NULL,
                                 endpoints = NULL,
                                 transport = NULL) {
-  if (!(isTRUE(globals) || identical(globals, FALSE) || is.character(globals) || is.list(globals))) {
-    stop("ipc_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
+  globals <- rducks_validate_ipc_globals(globals)
+  packages <- rducks_validate_ipc_packages(packages)
+  timeout <- rducks_nng_check_seconds(timeout, "ipc_timeout", default = rducks_ipc_default_timeout())
+  endpoints <- rducks_nng_validate_endpoints(endpoints)
+  if (!is.null(endpoints) && !is.null(transport)) {
+    stop("ipc_transport only applies when ipc_endpoints is NULL", call. = FALSE)
   }
-  if (!is.null(packages) && !is.character(packages)) {
-    stop("ipc_packages must be NULL or a character vector", call. = FALSE)
-  }
-  if (is.null(timeout)) timeout <- rducks_ipc_default_timeout()
-  if (!is.numeric(timeout) || length(timeout) != 1L || is.na(timeout) || !is.finite(timeout) || timeout <= 0) {
-    stop("ipc_timeout must be NULL or a positive finite numeric scalar", call. = FALSE)
-  }
-  if (!is.null(endpoints) && (!is.character(endpoints) || anyNA(endpoints) || any(!nzchar(endpoints)))) {
-    stop("ipc_endpoints must be NULL or a character vector of NNG endpoint URLs", call. = FALSE)
-  }
-  transport <- rducks_nng_normalize_transport(transport)
+  transport <- if (is.null(endpoints)) rducks_nng_normalize_transport(transport, runtime = TRUE) else NULL
   list(
     globals = globals,
     packages = unique(c("Rducks", packages)),
@@ -143,7 +165,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   managed worker processes running the Rducks NNG worker loop; any NNG URL
 #'   transport supported by both endpoints is allowed. When endpoints are not
 #'   supplied, `ipc_transport` selects the transport used for the mirai-launched
-#'   local worker endpoints. `"abstract"` means Linux abstract IPC, `"ipc"`
+#'   local worker endpoints and must be left as `NULL` when explicit
+#'   `ipc_endpoints` are supplied. `"abstract"` means Linux abstract IPC, `"ipc"`
 #'   means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
 #'   `"unix"` means the POSIX Unix-domain alias, and `"tcp"` / `"ws"` use
 #'   loopback TCP / WebSocket endpoints. The default is `"abstract"` on Linux

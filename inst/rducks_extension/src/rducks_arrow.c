@@ -53,6 +53,34 @@ static void rducks_release_arrow_array_if_set(struct ArrowArray *array) {
     }
 }
 
+static void rducks_arrow_buffer_noop_free(struct ArrowBufferAllocator *allocator, uint8_t *ptr, int64_t size) {
+    (void)allocator;
+    (void)ptr;
+    (void)size;
+}
+
+static int rducks_arrow_ipc_input_stream_init_borrowed(const uint8_t *payload, size_t payload_size,
+                                                       struct ArrowBuffer *buffer,
+                                                       struct ArrowIpcInputStream *input_stream,
+                                                       char *err_msg, size_t err_cap) {
+    if (payload_size > (size_t)INT64_MAX) {
+        snprintf(err_msg, err_cap, "RIPC Arrow IPC result payload is too large");
+        return 0;
+    }
+
+    ArrowBufferInit(buffer);
+    buffer->data = (uint8_t *)payload;
+    buffer->size_bytes = (int64_t)payload_size;
+    buffer->capacity_bytes = (int64_t)payload_size;
+    buffer->allocator = ArrowBufferDeallocator(&rducks_arrow_buffer_noop_free, NULL);
+
+    if (ArrowIpcInputStreamInitBuffer(input_stream, buffer) != NANOARROW_OK) {
+        snprintf(err_msg, err_cap, "ArrowIpcInputStreamInitBuffer() failed for RIPC result");
+        return 0;
+    }
+    return 1;
+}
+
 static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
                                            rducks_type_desc_t **descs, size_t count,
                                            const char **names, char *err_msg, size_t err_cap) {
@@ -67,7 +95,7 @@ static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, stru
     }
 
     if (count > 0) {
-        types = (duckdb_logical_type *)calloc(count, sizeof(duckdb_logical_type));
+        types = (duckdb_logical_type *)rducks_calloc_array(count, sizeof(*types));
         if (!types) {
             snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema type list");
             return 0;
@@ -120,8 +148,8 @@ static int rducks_fill_input_arrow_schema_native(rducks_runtime_entry_t *runtime
     char **owned_names = NULL;
     int ok;
     if (meta->arity > 0) {
-        names = (const char **)calloc(meta->arity, sizeof(char *));
-        owned_names = (char **)calloc(meta->arity, sizeof(char *));
+        names = (const char **)rducks_calloc_array(meta->arity, sizeof(*names));
+        owned_names = (char **)rducks_calloc_array(meta->arity, sizeof(*owned_names));
         if (!names || !owned_names) {
             free(names);
             free(owned_names);
@@ -300,6 +328,11 @@ static int rducks_import_arrow_result_native(rducks_runtime_entry_t *runtime,
         duckdb_destroy_arrow_converted_schema(&converted_schema);
         return 0;
     }
+    /* duckdb_data_chunk_from_arrow() transfers ArrowArray ownership to the
+     * returned DuckDB data chunk. Mark the source ArrowArray as released so
+     * caller cleanup/finalizers do not attempt a second release.
+     */
+    result_array->release = NULL;
     result_size = duckdb_data_chunk_get_size(result_chunk);
     if (result_size != expected_size) {
         snprintf(err_msg, err_cap, "DuckDB imported %llu Arrow C Data result rows, expected %llu",
@@ -504,7 +537,7 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
         goto fail;
     }
     endpoint_count = XLENGTH(endpoints_sexp);
-    endpoints = (char **)calloc((size_t)endpoint_count, sizeof(char *));
+    endpoints = (char **)rducks_calloc_array((size_t)endpoint_count, sizeof(*endpoints));
     if (!endpoints) {
         snprintf(err_msg, err_cap, "out of memory copying RIPC endpoints");
         goto fail;
@@ -716,6 +749,7 @@ static int rducks_import_arrow_ipc_result_bytes(rducks_runtime_entry_t *runtime,
     struct ArrowArrayStream array_stream;
     struct ArrowSchema schema;
     struct ArrowArray array;
+    struct ArrowArray extra_array;
     struct ArrowError error;
     int input_initialized = 0;
     int stream_initialized = 0;
@@ -726,18 +760,15 @@ static int rducks_import_arrow_ipc_result_bytes(rducks_runtime_entry_t *runtime,
     memset(&array_stream, 0, sizeof(array_stream));
     memset(&schema, 0, sizeof(schema));
     memset(&array, 0, sizeof(array));
+    memset(&extra_array, 0, sizeof(extra_array));
     memset(&error, 0, sizeof(error));
 
     if (!payload || payload_size == 0U) {
         snprintf(err_msg, err_cap, "RIPC worker returned an empty Arrow IPC payload");
         goto cleanup;
     }
-    if (ArrowBufferAppend(&buffer, payload, (int64_t)payload_size) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "out of memory copying RIPC Arrow IPC result bytes");
-        goto cleanup;
-    }
-    if (ArrowIpcInputStreamInitBuffer(&input_stream, &buffer) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "ArrowIpcInputStreamInitBuffer() failed for RIPC result");
+    if (!rducks_arrow_ipc_input_stream_init_borrowed(payload, payload_size, &buffer, &input_stream,
+                                                     err_msg, err_cap)) {
         goto cleanup;
     }
     input_initialized = 1;
@@ -760,9 +791,18 @@ static int rducks_import_arrow_ipc_result_bytes(rducks_runtime_entry_t *runtime,
         goto cleanup;
     }
     if (!rducks_import_arrow_result_native(runtime, &array, &schema, return_desc, expected_size, output, err_msg, err_cap)) goto cleanup;
+    if (ArrowArrayStreamGetNext(&array_stream, &extra_array, &error) != NANOARROW_OK) {
+        snprintf(err_msg, err_cap, "RIPC result trailing-batch decode failed: %s", error.message[0] ? error.message : "unknown error");
+        goto cleanup;
+    }
+    if (extra_array.release != NULL) {
+        snprintf(err_msg, err_cap, "RIPC result payload contained more than one record batch");
+        goto cleanup;
+    }
     ok = 1;
 
 cleanup:
+    rducks_release_arrow_array_if_set(&extra_array);
     rducks_release_arrow_array_if_set(&array);
     rducks_release_arrow_schema_if_set(&schema);
     if (stream_initialized && array_stream.release) array_stream.release(&array_stream);
@@ -797,7 +837,8 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     rducks_nng_client_pool_t *client_pool = NULL;
     rducks_owned_bytes_t input_payload = {0};
     rducks_owned_bytes_t request = {0};
-    uint8_t *response = NULL;
+    void *response_msg = NULL;
+    const uint8_t *response = NULL;
     size_t response_size = 0;
     const uint8_t *result_payload = NULL;
     size_t result_payload_size = 0;
@@ -822,9 +863,9 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
         rducks_udf_record_ripc_inflight_done(meta, 1U);
         goto cleanup;
     }
-    if (!rducks_nng_client_pool_request_reply_acquired(client_pool, request.data, request.size,
-                                                      &response, &response_size,
-                                                      err_msg, err_cap)) {
+    if (!rducks_nng_client_pool_request_reply_borrowed_acquired(client_pool, request.data, request.size,
+                                                               &response_msg, &response, &response_size,
+                                                               err_msg, err_cap)) {
         rducks_nng_client_pool_release(client_pool);
         rducks_udf_record_ripc_inflight_done(meta, 1U);
         goto cleanup;
@@ -842,7 +883,7 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
 cleanup:
     rducks_owned_bytes_reset(&input_payload);
     rducks_owned_bytes_reset(&request);
-    free(response);
+    rducks_nng_response_msg_free(response_msg);
     return ok;
 }
 
@@ -1089,4 +1130,3 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 }
-

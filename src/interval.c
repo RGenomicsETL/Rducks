@@ -4,6 +4,8 @@
 #include <R.h>
 #include <Rinternals.h>
 
+#include "rducks_native.h"
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -12,13 +14,13 @@
 static void rducks_interval_write_i32_le(Rbyte *dst, int32_t value) {
     uint32_t u;
     memcpy(&u, &value, sizeof(u));
-    for (int i = 0; i < 4; i++) dst[i] = (Rbyte)((u >> (8 * i)) & 0xffU);
+    rducks_store_u32_le(dst, u);
 }
 
 static void rducks_interval_write_i64_le(Rbyte *dst, int64_t value) {
     uint64_t u;
     memcpy(&u, &value, sizeof(u));
-    for (int i = 0; i < 8; i++) dst[i] = (Rbyte)((u >> (8 * i)) & 0xffU);
+    rducks_store_u64_le(dst, u);
 }
 
 static int rducks_interval_parse_i64(SEXP x, int64_t *out) {
@@ -49,9 +51,10 @@ static SEXP rducks_interval_named2(SEXP valid, SEXP data) {
 SEXP RDUCKS_interval_bytes_from_values(SEXP values) {
     if (TYPEOF(values) != VECSXP) Rf_error("values must be a list");
     R_xlen_t n = XLENGTH(values);
+    R_xlen_t data_len = rducks_xlen_mul(n, 16, "INTERVAL byte");
     SEXP valid = PROTECT(Rf_allocVector(LGLSXP, n));
-    SEXP data = PROTECT(Rf_allocVector(RAWSXP, n * 16));
-    memset(RAW(data), 0, (size_t)(n * 16));
+    SEXP data = PROTECT(Rf_allocVector(RAWSXP, data_len));
+    memset(RAW(data), 0, (size_t)data_len);
     for (R_xlen_t i = 0; i < n; i++) {
         SEXP value = VECTOR_ELT(values, i);
         if (value == R_NilValue) {

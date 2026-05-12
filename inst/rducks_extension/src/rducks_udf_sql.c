@@ -84,7 +84,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         duckdb_destroy_logical_type(&arg_logical_type);
     }
 
-    meta = (rducks_r_scalar_meta_t *)calloc(1, sizeof(rducks_r_scalar_meta_t));
+    meta = (rducks_r_scalar_meta_t *)rducks_calloc_array(1, sizeof(*meta));
     if (!meta) {
         snprintf(err, err_cap, "out of memory");
         duckdb_destroy_scalar_function(&fn);

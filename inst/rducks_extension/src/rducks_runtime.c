@@ -501,7 +501,7 @@ static void *rducks_r_scalar_bind_state_copy(void *ptr) {
     rducks_r_scalar_bind_state_t *src = (rducks_r_scalar_bind_state_t *)ptr;
     rducks_r_scalar_bind_state_t *dst;
     if (!src) return NULL;
-    dst = (rducks_r_scalar_bind_state_t *)calloc(1, sizeof(*dst));
+    dst = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*dst));
     if (!dst) return NULL;
     memcpy(dst, src, sizeof(*dst));
     return dst;
@@ -528,7 +528,7 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
         return;
     }
 
-    state = (rducks_r_scalar_bind_state_t *)calloc(1, sizeof(*state));
+    state = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*state));
     if (!state) {
         duckdb_scalar_function_bind_set_error(info, "out of memory allocating Rducks bind state");
         return;
@@ -555,7 +555,7 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
     meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_init_get_extra_info(info);
     bind_state = (rducks_r_scalar_bind_state_t *)duckdb_scalar_function_init_get_bind_data(info);
 
-    state = (rducks_r_scalar_local_state_t *)calloc(1, sizeof(*state));
+    state = (rducks_r_scalar_local_state_t *)rducks_calloc_array(1, sizeof(*state));
     if (!state) {
         duckdb_scalar_function_init_set_error(info, "out of memory allocating Rducks worker-local state");
         return;

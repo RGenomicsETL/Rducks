@@ -96,6 +96,10 @@ struct rducks_nng_client {
 
 typedef struct rducks_nng_client rducks_nng_client_t;
 
+static void rducks_nng_response_msg_free(void *response_msg) {
+    if (response_msg) nng_msg_free((nng_msg *)response_msg);
+}
+
 struct rducks_nng_client_pool {
     rducks_nng_client_t *clients;
     size_t count;
@@ -224,20 +228,21 @@ static int rducks_nng_client_open_locked(rducks_nng_client_t *client, int timeou
     return 1;
 }
 
-static int rducks_nng_client_request_reply_locked(rducks_nng_client_t *client,
-                                                  const uint8_t *request, size_t request_size,
-                                                  int timeout_ms,
-                                                  uint8_t **response_out, size_t *response_size_out,
-                                                  char *err_msg, size_t err_cap) {
+static int rducks_nng_client_request_reply_borrowed_locked(rducks_nng_client_t *client,
+                                                           const uint8_t *request, size_t request_size,
+                                                           int timeout_ms,
+                                                           void **response_msg_out,
+                                                           const uint8_t **response_body_out,
+                                                           size_t *response_size_out,
+                                                           char *err_msg, size_t err_cap) {
     nng_msg *send_msg = NULL;
     nng_msg *recv_msg = NULL;
-    void *recv_buf = NULL;
-    size_t recv_len = 0;
     int rc;
 
-    if (response_out) *response_out = NULL;
+    if (response_msg_out) *response_msg_out = NULL;
+    if (response_body_out) *response_body_out = NULL;
     if (response_size_out) *response_size_out = 0;
-    if (!client || !request || request_size == 0 || !response_out || !response_size_out) {
+    if (!client || !request || request_size == 0 || !response_msg_out || !response_body_out || !response_size_out) {
         if (err_msg && err_cap) snprintf(err_msg, err_cap, "invalid Rducks NNG request");
         return 0;
     }
@@ -270,17 +275,9 @@ static int rducks_nng_client_request_reply_locked(rducks_nng_client_t *client,
         return 0;
     }
 
-    recv_len = nng_msg_len(recv_msg);
-    recv_buf = nng_msg_body(recv_msg);
-    *response_out = (uint8_t *)malloc(recv_len ? recv_len : 1U);
-    if (!*response_out) {
-        if (err_msg && err_cap) snprintf(err_msg, err_cap, "out of memory copying Rducks NNG response");
-        nng_msg_free(recv_msg);
-        return 0;
-    }
-    if (recv_len) memcpy(*response_out, recv_buf, recv_len);
-    *response_size_out = recv_len;
-    nng_msg_free(recv_msg);
+    *response_msg_out = (void *)recv_msg;
+    *response_body_out = (const uint8_t *)nng_msg_body(recv_msg);
+    *response_size_out = nng_msg_len(recv_msg);
     return 1;
 }
 
@@ -347,12 +344,12 @@ static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, si
     }
     if (!rducks_nng_enter_op("create Rducks NNG client pool", err_msg, err_cap)) return NULL;
 
-    pool = (rducks_nng_client_pool_t *)calloc(1, sizeof(*pool));
+    pool = (rducks_nng_client_pool_t *)rducks_calloc_array(1, sizeof(*pool));
     if (!pool) {
         if (err_msg && err_cap) snprintf(err_msg, err_cap, "out of memory allocating Rducks NNG client pool");
         goto fail;
     }
-    pool->clients = (rducks_nng_client_t *)calloc(endpoint_count, sizeof(*pool->clients));
+    pool->clients = (rducks_nng_client_t *)rducks_calloc_array(endpoint_count, sizeof(*pool->clients));
     if (!pool->clients) {
         if (err_msg && err_cap) snprintf(err_msg, err_cap, "out of memory allocating Rducks NNG clients");
         goto fail;
@@ -451,17 +448,24 @@ static size_t rducks_nng_client_pool_choose(rducks_nng_client_pool_t *pool) {
     return best;
 }
 
-static int rducks_nng_client_pool_request_reply_acquired(rducks_nng_client_pool_t *pool,
-                                                           const uint8_t *request, size_t request_size,
-                                                           uint8_t **response_out, size_t *response_size_out,
-                                                           char *err_msg, size_t err_cap) {
+static int rducks_nng_client_pool_request_reply_borrowed_acquired(rducks_nng_client_pool_t *pool,
+                                                                  const uint8_t *request, size_t request_size,
+                                                                  void **response_msg_out,
+                                                                  const uint8_t **response_body_out,
+                                                                  size_t *response_size_out,
+                                                                  char *err_msg, size_t err_cap) {
     rducks_nng_client_t *client;
     size_t idx;
     uint64_t pending;
     int ok;
 
-    if (response_out) *response_out = NULL;
+    if (response_msg_out) *response_msg_out = NULL;
+    if (response_body_out) *response_body_out = NULL;
     if (response_size_out) *response_size_out = 0;
+    if (!pool || !pool->clients || pool->count == 0U) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC client pool is not configured");
+        return 0;
+    }
 
     pending = (uint64_t)atomic_fetch_add_explicit(&pool->pending, 1U, memory_order_relaxed) + 1U;
     if (pool->max_pending != UINT64_MAX && pending > pool->max_pending) {
@@ -484,8 +488,9 @@ static int rducks_nng_client_pool_request_reply_acquired(rducks_nng_client_pool_
     client = &pool->clients[idx];
     atomic_fetch_add_explicit(&client->inflight, 1U, memory_order_relaxed);
     rducks_nng_mutex_lock(&client->mutex);
-    ok = rducks_nng_client_request_reply_locked(client, request, request_size, pool->timeout_ms,
-                                                response_out, response_size_out, err_msg, err_cap);
+    ok = rducks_nng_client_request_reply_borrowed_locked(client, request, request_size, pool->timeout_ms,
+                                                        response_msg_out, response_body_out, response_size_out,
+                                                        err_msg, err_cap);
     rducks_nng_mutex_unlock(&client->mutex);
     atomic_fetch_sub_explicit(&client->inflight, 1U, memory_order_relaxed);
     rducks_nng_leave_op();
@@ -493,22 +498,6 @@ static int rducks_nng_client_pool_request_reply_acquired(rducks_nng_client_pool_
     return ok;
 }
 
-static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
-                                                const uint8_t *request, size_t request_size,
-                                                uint8_t **response_out, size_t *response_size_out,
-                                                char *err_msg, size_t err_cap) {
-    int ok;
-    if (!pool || !pool->clients || pool->count == 0U) {
-        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC client pool is not configured");
-        return 0;
-    }
-    if (!rducks_nng_client_pool_acquire(pool, err_msg, err_cap)) return 0;
-    ok = rducks_nng_client_pool_request_reply_acquired(pool, request, request_size,
-                                                       response_out, response_size_out,
-                                                       err_msg, err_cap);
-    rducks_nng_client_pool_release(pool);
-    return ok;
-}
 static int rducks_nng_pair_self_test_impl(char *err_msg, size_t err_cap) {
     nng_socket pair_sock = NNG_SOCKET_INITIALIZER;
     nng_socket req_sock = NNG_SOCKET_INITIALIZER;
@@ -568,6 +557,10 @@ struct rducks_nng_client_pool {
     int disabled;
 };
 
+static void rducks_nng_response_msg_free(void *response_msg) {
+    (void)response_msg;
+}
+
 static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, size_t endpoint_count,
                                                             int timeout_ms, uint64_t max_pending,
                                                             char *err_msg, size_t err_cap) {
@@ -581,19 +574,6 @@ static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, si
 
 static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr) {
     if (pool_ptr) *pool_ptr = NULL;
-}
-
-static int rducks_nng_client_pool_request_reply(rducks_nng_client_pool_t *pool,
-                                                const uint8_t *request, size_t request_size,
-                                                uint8_t **response_out, size_t *response_size_out,
-                                                char *err_msg, size_t err_cap) {
-    (void)pool;
-    (void)request;
-    (void)request_size;
-    if (response_out) *response_out = NULL;
-    if (response_size_out) *response_size_out = 0;
-    if (err_msg && err_cap) snprintf(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return 0;
 }
 
 static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap) {
@@ -625,18 +605,22 @@ static void rducks_nng_client_pool_release(rducks_nng_client_pool_t *pool) {
     (void)pool;
 }
 
-static int rducks_nng_client_pool_request_reply_acquired(rducks_nng_client_pool_t *pool,
-                                                          const uint8_t *request, size_t request_size,
-                                                          uint8_t **response_out, size_t *response_size_out,
-                                                          char *err_msg, size_t err_cap) {
+static int rducks_nng_client_pool_request_reply_borrowed_acquired(rducks_nng_client_pool_t *pool,
+                                                                  const uint8_t *request, size_t request_size,
+                                                                  void **response_msg_out,
+                                                                  const uint8_t **response_body_out,
+                                                                  size_t *response_size_out,
+                                                                  char *err_msg, size_t err_cap) {
     (void)pool;
     (void)request;
     (void)request_size;
-    if (response_out) *response_out = NULL;
+    if (response_msg_out) *response_msg_out = NULL;
+    if (response_body_out) *response_body_out = NULL;
     if (response_size_out) *response_size_out = 0;
     if (err_msg && err_cap) snprintf(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
     return 0;
 }
+
 #endif
 
 static rducks_nng_client_pool_t **rducks_nng_runtime_detach_local_pools(rducks_runtime_entry_t *runtime,
@@ -661,7 +645,9 @@ static rducks_nng_client_pool_t **rducks_nng_runtime_detach_local_pools(rducks_r
 
         if (pool_count >= pool_cap) {
             size_t new_cap = pool_cap == 0U ? 4U : (pool_cap * 2U);
-            rducks_nng_client_pool_t **next = (rducks_nng_client_pool_t **)realloc(pools, new_cap * sizeof(*next));
+            rducks_nng_client_pool_t **next;
+            if (new_cap <= pool_cap) break;
+            next = (rducks_nng_client_pool_t **)rducks_realloc_array(pools, new_cap, sizeof(*next));
             if (!next) {
                 break;
             }
