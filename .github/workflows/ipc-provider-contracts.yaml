@@ -48,6 +48,7 @@ jobs:
 
       - name: Install Rducks
         run: R CMD INSTALL --preclean .
+        shell: bash
 
       - name: Run focused IPC provider contract tests
         run: |
