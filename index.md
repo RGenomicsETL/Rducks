@@ -225,8 +225,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        285ms      3.47    1.97MB
-#> 2 vectorized    230ms      4.33    2.34MB
+#> 1 scalar        287ms      3.49    1.97MB
+#> 2 vectorized    228ms      4.34    2.34MB
 ```
 
 ## Execution mode semantics
@@ -540,6 +540,38 @@ rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain
 rducks_disable_inproc(con, threads = 1)
 ```
 
+## Streaming query batches
+
+Use
+[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+when an R caller wants explicit batch-by-batch query consumption rather
+than one eager
+[`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
+result. The returned stream is connection-bound and has `next_batch()`,
+[`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
+methods; `next_batch()` returns a data frame or `NULL` at end-of-stream.
+Each non-empty batch carries the stream’s nanoarrow schema in the
+`"rducks_nanoarrow_schema"` attribute, and `rducks_release(con)` closes
+streams attached to that connection.
+
+``` r
+
+stream <- rducks_query_stream(
+  con,
+  "SELECT i::INTEGER AS i FROM range(1, 6) t(i)",
+  batch_size = 2L
+)
+stream$next_batch()
+#>   i
+#> 1 1
+#> 2 2
+stream$next_batch()
+#>   i
+#> 1 3
+#> 2 4
+stream$close()
+```
+
 ## Multiprocess Arrow IPC execution
 
 `arrow_ipc + multiprocess_parallel` is the native NNG/Arrow IPC path:
@@ -697,9 +729,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.867         R             16
-#> 2    in-process queue       1 536887296       1.817         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.037      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.862         R             16
+#> 2    in-process queue       1 536887296       1.801         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.035      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

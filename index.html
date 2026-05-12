@@ -173,8 +173,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        285ms      3.47    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    230ms      4.33    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        287ms      3.49    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    228ms      4.34    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
@@ -775,6 +775,26 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="fu"><a href="reference/rducks_disable_inproc.html">rducks_disable_inproc</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
+<h2 id="streaming-query-batches">Streaming query batches<a class="anchor" aria-label="anchor" href="#streaming-query-batches"></a>
+</h2>
+<p>Use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> when an R caller wants explicit batch-by-batch query consumption rather than one eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result. The returned stream is connection-bound and has <code>next_batch()</code>, <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code>, and <code>is_closed()</code> methods; <code>next_batch()</code> returns a data frame or <code>NULL</code> at end-of-stream. Each non-empty batch carries the stream’s nanoarrow schema in the <code>"rducks_nanoarrow_schema"</code> attribute, and <code>rducks_release(con)</code> closes streams attached to that connection.</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  <span class="st">"SELECT i::INTEGER AS i FROM range(1, 6) t(i)"</span>,</span>
+<span>  batch_size <span class="op">=</span> <span class="fl">2L</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">stream</span><span class="op">$</span><span class="fu">next_batch</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   i</span></span>
+<span><span class="co">#&gt; 1 1</span></span>
+<span><span class="co">#&gt; 2 2</span></span>
+<span><span class="va">stream</span><span class="op">$</span><span class="fu">next_batch</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   i</span></span>
+<span><span class="co">#&gt; 1 3</span></span>
+<span><span class="co">#&gt; 2 4</span></span>
+<span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
 <h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
 </h2>
 <p><code>arrow_ipc + multiprocess_parallel</code> is the native NNG/Arrow IPC path: DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and Arrow IPC result bytes are imported back into DuckDB output vectors. Local workers are mirai daemons running Rducks worker loops. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops.</p>
@@ -794,7 +814,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <h3 id="large-ipc-globals-with-mori">Large IPC globals with mori<a class="anchor" aria-label="anchor" href="#large-ipc-globals-with-mori"></a>
 </h3>
 <p>Automatic global discovery for parallel workers is subtle. Rducks uses <code>globals::globalsOf(..., method = "dfs", recursive = TRUE)</code> when available, following the futureverse fix around <code>globals::findGlobals(..., method = "dfs")</code>; see Henrik Bengtsson’s discussion of why conservative <code>codetools</code>-style discovery can miss globals needed by worker processes: <a href="https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/" class="external-link uri">https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/</a>. For production UDFs with large dependencies, prefer explicit <code>ipc_globals</code>. When the workers are on the same host, <code>ipc_globals_share = "mori"</code> applies <code><a href="https://shikokuchuo.net/mori/reference/share.html" class="external-link">mori::share()</a></code> to each selected global before worker registration so large atomic vectors, lists, and data frames travel as compact shared-memory references rather than full serialized copies. Rducks keeps those shared objects anchored for the registered UDF lifetime.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">large_lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">1e6</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">mori_ipc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
@@ -816,7 +836,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span></code></pre></div>
 <p>This mori path is only for sharing R globals. Built-in IPC backends do not yet support SQL chunk shared-memory handles. A future shared-memory data plane for DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle messages, not per-chunk ALTREP objects or R C API calls from DuckDB worker threads. See <code>docs/SHARED_MEMORY_IPC.md</code> and the local diagnostic <code>tools/benchmark_ipc_data_plane.R</code> before adding any user-facing data-plane option.</p>
 <p>The example below registers the same vectorized R function three ways. Keep <code>threads = 1</code> while registering; raise DuckDB <code>threads</code> for the IPC query phase so chunks can fan out to the IPC workers. <code>ripc_inflight_max</code> reports observed native IPC concurrency and is scheduler-dependent.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span> <span class="co"># visible chunk work for the comparison, not required by Rducks</span></span>
 <span>  <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
@@ -889,9 +909,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.867         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.817         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.037      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.862         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.801         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.035      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
@@ -906,7 +926,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 </h2>
 <p>The package builds its DuckDB extension during installation using <code>configure</code> or <code>configure.win</code>. The extension metadata footer is appended by <code>tools/append_extension_metadata.R</code>.</p>
 <p>DuckDB C API headers are refreshed explicitly with:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
 <p>The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
 </div>
 <div class="section level2">

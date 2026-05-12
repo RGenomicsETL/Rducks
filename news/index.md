@@ -18,6 +18,13 @@
   hidden NNG client shim when CMake is available, and dev/test SQL
   diagnostics expose `rducks_nng_enabled()`, `rducks_nng_version()`, and
   `rducks_nng_self_test()`.
+- Added
+  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+  as a connection-bound R-side streaming query object with explicit
+  `next_batch()`, [`close()`](https://rdrr.io/r/base/connections.html),
+  schema/prototype metadata, finalizer cleanup, and
+  [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+  integration.
 - Clarified IPC shared-memory capability metadata and design notes: mori
   is a same-host path for long-lived globals, while built-in backends
   still report no SQL chunk shared-memory handle support. Added a
