@@ -173,8 +173,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        288ms      3.47    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    234ms      4.27    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        293ms      3.43    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    232ms      4.31    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
@@ -885,9 +885,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.861         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.838         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.048      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.880         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.841         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>

@@ -212,8 +212,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.47    1.97MB
-#> 2 vectorized    234ms      4.27    2.34MB
+#> 1 scalar        293ms      3.43    1.97MB
+#> 2 vectorized    232ms      4.31    2.34MB
 ```
 
 ## Execution mode semantics
@@ -632,9 +632,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.861         R             16
-#> 2    in-process queue       1 536887296       1.838         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.048      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.880         R             16
+#> 2    in-process queue       1 536887296       1.841         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
