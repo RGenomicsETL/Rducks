@@ -4,11 +4,14 @@
 
 - Added a first-slice
   [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
-  API for finite zero-argument R-backed DuckDB table functions. The
-  native table-function path binds a declared output schema, calls the R
-  function once on the recorded calling R thread, emits data-frame/list
-  columns in chunks, and reports schema, length, and R errors through
-  DuckDB.
+  API for finite R-backed DuckDB table functions. The native
+  table-function path infers positional SQL argument count from the R
+  function formals, registers those inputs as DuckDB `ANY`, converts
+  actual SQL bind values to R values, calls the R function during DuckDB
+  bind on the recorded calling R thread, infers the output schema from
+  the returned data frame/list, imports the result through nanoarrow
+  Arrow C Data, emits slices of the imported DuckDB chunk, and reports
+  schema, length, and R errors through DuckDB.
 - Added vendored NNG/Mbed TLS source management for the native
   worker-provider foundation. `tools/vendor_nng_mbedtls.R` pins and
   refreshes the vendored sources, source builds can statically link a

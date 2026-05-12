@@ -26,8 +26,10 @@ The user-facing UDF semantics are separate from the execution plan:
 `mode = "vectorized"` means one R call per DuckDB chunk. Table functions
 use a separate first-slice API,
 [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md),
-for finite zero-argument scans whose R function returns a data frame or
-named list matching a declared output schema.
+for finite scans whose positional SQL argument count is inferred from
+the R function formals and whose input types are registered as DuckDB
+`ANY`; the output schema is inferred during DuckDB bind and the result
+is imported through nanoarrow Arrow C Data before scanning.
 
 ## Quick start
 
@@ -223,8 +225,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        289ms      3.46    1.97MB
-#> 2 vectorized    231ms      4.34    2.34MB
+#> 1 scalar        281ms      3.48    1.97MB
+#> 2 vectorized    230ms      4.36    2.34MB
 ```
 
 ## Execution mode semantics
@@ -692,9 +694,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.886         R             16
-#> 2    in-process queue       1 536887296       1.802         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.878         R             16
+#> 2    in-process queue       1 536887296       1.814         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.051      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
