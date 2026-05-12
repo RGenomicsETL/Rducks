@@ -18,7 +18,8 @@ plans:
   loops with mirai daemons and Rducks-generated NNG endpoint URLs;
   `ipc_transport` selects the generated transport. If `ipc_endpoints` is
   supplied, Rducks connects to worker URLs that the caller starts and
-  stops.
+  stops. Large same-host read-only R globals can optionally be sent as
+  mori shared-memory references with `ipc_globals_share = "mori"`.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
@@ -218,8 +219,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        287ms      3.47    1.97MB
-#> 2 vectorized    233ms      4.28    2.34MB
+#> 1 scalar        291ms      3.47    1.97MB
+#> 2 vectorized    239ms      4.14    2.34MB
 ```
 
 ## Execution mode semantics
@@ -561,6 +562,52 @@ Operationally:
   `rducks_nng_quiesce()` is lower-level: it only closes native client
   pools for local IPC providers.
 
+### Large IPC globals with mori
+
+Automatic global discovery for parallel workers is subtle. Rducks uses
+`globals::globalsOf(..., method = "dfs", recursive = TRUE)` when
+available, following the futureverse fix around
+`globals::findGlobals(..., method = "dfs")`; see Henrik Bengtsson’s
+discussion of why conservative `codetools`-style discovery can miss
+globals needed by worker processes:
+<https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/>.
+For production UDFs with large dependencies, prefer explicit
+`ipc_globals`. When the workers are on the same host,
+`ipc_globals_share = "mori"` applies
+[`mori::share()`](https://shikokuchuo.net/mori/reference/share.html) to
+each selected global before worker registration so large atomic vectors,
+lists, and data frames travel as compact shared-memory references rather
+than full serialized copies. Rducks keeps those shared objects anchored
+for the registered UDF lifetime.
+
+``` r
+
+large_lookup <- rnorm(1e6)
+
+mori_ipc_plan <- rducks_execution_plan(
+  "arrow_ipc", "multiprocess_parallel",
+  ipc_workers = 2L,
+  ipc_globals = "large_lookup",
+  ipc_globals_share = "mori"
+)
+rducks_set_execution_plan(con, mori_ipc_plan, threads = 1, external_threads = 1)
+
+rducks_register(
+  con,
+  name = "r_with_large_lookup",
+  fun = function(x) x + large_lookup[[1L]],
+  args = DOUBLE,
+  returns = DOUBLE,
+  mode = "vectorized",
+  side_effects = TRUE
+)
+```
+
+This mori path is only for sharing R globals. A future shared-memory
+data plane for DuckDB chunks should use Rducks-owned raw byte buffers
+and NNG handle messages, not per-chunk ALTREP objects or R C API calls
+from DuckDB worker threads.
+
 The example below registers the same vectorized R function three ways.
 Keep `threads = 1` while registering; raise DuckDB `threads` for the IPC
 query phase so chunks can fan out to the IPC workers.
@@ -641,9 +688,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.845         R             16
-#> 2    in-process queue       1 536887296       1.823         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.049      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.684         R             16
+#> 2    in-process queue       1 536887296       1.648         R             16
+#> 3 2-process Arrow IPC       2 536887296       0.993      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

@@ -20,6 +20,7 @@ rducks_execution_plan(
   ipc_timeout = NULL,
   ipc_endpoints = NULL,
   ipc_transport = NULL,
+  ipc_globals_share = "none",
   ipc_provider = "nng",
   ipc_workers = 1L,
   ipc_max_pending = 64L
@@ -56,7 +57,10 @@ rducks_execution_plan(
   shared provider pool. Automatic capture estimates the serialized
   globals payload and warns when it exceeds option
   `rducks.ipc_globals.warn_bytes` (8 MiB by default); option
-  `rducks.ipc_globals.max_bytes` can set a hard byte limit. Use
+  `rducks.ipc_globals.max_bytes` can set a hard byte limit. Set
+  `ipc_globals_share = "mori"` to pass selected globals through mori
+  shared memory references for same-host workers; Rducks keeps the
+  shared objects anchored for the registered UDF lifetime. Use
   `ipc_packages` for packages that workers should attach,
   `ipc_globals = FALSE` to rely only on the serialized UDF closure and
   explicit task state, or a character vector / named list for explicit
@@ -76,13 +80,25 @@ rducks_execution_plan(
   `"tcp"` / `"ws"` use loopback TCP / WebSocket endpoints. The default
   is `"abstract"` on Linux and `"ipc"` elsewhere.
 
+- ipc_globals_share:
+
+  How selected IPC globals are represented before worker broadcast.
+  `"none"` serializes them into the registration payload. `"mori"`
+  applies
+  [`mori::share()`](https://shikokuchuo.net/mori/reference/share.html)
+  to each selected global before serialization, which can turn large
+  atomic vectors, lists, and data frames into same-host shared-memory
+  references. This requires the optional mori package and workers on the
+  same machine.
+
 - ipc_provider:
 
   Worker provider for `arrow_ipc + multiprocess_parallel`. Only `"nng"`
   is supported. The NNG provider broadcasts each registered UDF closure
   plus discovered globals/packages to every worker in the shared
   database-runtime provider pool, so avoid capturing large objects in
-  UDF environments unless that memory cost is intended.
+  UDF environments unless that memory cost is intended or
+  `ipc_globals_share = "mori"` is appropriate.
 
 - ipc_workers:
 
