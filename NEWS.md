@@ -14,6 +14,9 @@
   CMake is available, and dev/test SQL diagnostics expose
   `rducks_nng_enabled()`, `rducks_nng_version()`, and
   `rducks_nng_self_test()`.
+- Added `rducks_query_stream()` as a connection-bound R-side streaming query
+  object with explicit `next_batch()`, `close()`, schema/prototype metadata,
+  finalizer cleanup, and `rducks_release()` integration.
 - Clarified IPC shared-memory capability metadata and design notes: mori is a
   same-host path for long-lived globals, while built-in backends still report no
   SQL chunk shared-memory handle support. Added a diagnostic data-plane

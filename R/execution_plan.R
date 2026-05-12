@@ -486,6 +486,7 @@ rducks_cleanup_connection_token <- function(ref_key, token) {
       rm(list = ref_key, envir = token_store)
     }
   }
+  rducks_query_stream_close_for_token(token)
   rducks_remove_store_entry(.rducks_state$connection_plans, token)
   invisible(NULL)
 }

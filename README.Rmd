@@ -478,6 +478,26 @@ rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain
 rducks_disable_inproc(con, threads = 1)
 ```
 
+## Streaming query batches
+
+Use `rducks_query_stream()` when an R caller wants explicit batch-by-batch query
+consumption rather than one eager `DBI::dbGetQuery()` result. The returned stream
+is connection-bound and has `next_batch()`, `close()`, and `is_closed()` methods;
+`next_batch()` returns a data frame or `NULL` at end-of-stream. Each non-empty
+batch carries the stream's nanoarrow schema in the `"rducks_nanoarrow_schema"`
+attribute, and `rducks_release(con)` closes streams attached to that connection.
+
+```{r streaming-query}
+stream <- rducks_query_stream(
+  con,
+  "SELECT i::INTEGER AS i FROM range(1, 6) t(i)",
+  batch_size = 2L
+)
+stream$next_batch()
+stream$next_batch()
+stream$close()
+```
+
 ## Multiprocess Arrow IPC execution
 
 `arrow_ipc + multiprocess_parallel` is the native NNG/Arrow IPC path: DuckDB

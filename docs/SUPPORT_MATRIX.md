@@ -15,6 +15,13 @@ truth is the plan/type validation predicates and the generated marshalling matri
 
 Invalid marshalling/concurrency pairs fail validation.
 
+## Streaming queries
+
+`rducks_query_stream()` is a connection-bound R-side result/session API. It
+returns data-frame batches, records a nanoarrow schema from DuckDB's zero-row
+prototype, closes its DBI result on `close()`, finalization, or
+`rducks_release(con)`, and does not survive connection release.
+
 ## Type-family support
 
 | Type family | Examples | `arrow_r` | `arrow_c` | `arrow_ipc` | Notes |
