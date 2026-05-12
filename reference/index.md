@@ -60,6 +60,8 @@
   : Inspect the native Rducks execution backend
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
+- [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+  : Register an R table function in DuckDB
 - [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   [`rducks_detach()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   : Detach Rducks connection-local state

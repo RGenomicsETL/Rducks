@@ -59,7 +59,7 @@
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops. Large same-host read-only R globals can optionally be sent as mori shared-memory references with <code>ipc_globals_share = "mori"</code>.</li>
 </ul>
-<p>The user-facing UDF semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row; <code>mode = "vectorized"</code> means one R call per DuckDB chunk.</p>
+<p>The user-facing UDF semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row; <code>mode = "vectorized"</code> means one R call per DuckDB chunk. Table functions use a separate first-slice API, <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code>, for finite zero-argument scans whose R function returns a data frame or named list matching a declared output schema.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -173,8 +173,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        291ms      3.47    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    239ms      4.14    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        289ms      3.46    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    231ms      4.34    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
@@ -889,9 +889,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.684         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.648         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       0.993      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.886         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.802         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
