@@ -1,6 +1,44 @@
 library(Rducks)
 
 local({
+  events <- character()
+  fake_backend <- list(
+    name = "fake",
+    capabilities = list(
+      local_only = TRUE,
+      supports_shared_memory_handles = TRUE,
+      supports_cancellation = FALSE,
+      supports_remote_endpoints = FALSE
+    ),
+    start = function(state, plan = NULL) {
+      events <<- c(events, "start")
+      list(endpoints = character(), cleanup_paths = character(), tasks = list())
+    },
+    stop = function(state, timeout, quiet = FALSE) {
+      events <<- c(events, "stop")
+      Rducks:::rducks_nng_shutdown_status(0L)
+    },
+    cleanup = function(state) {
+      events <<- c(events, "cleanup")
+      invisible(NULL)
+    }
+  )
+  provider <- Rducks:::rducks_nng_provider(
+    workers = 1L,
+    transport = Rducks:::rducks_nng_default_transport(),
+    backend = fake_backend
+  )
+  provider$start()
+  expect_equal(provider$stats()$backend[[1L]], "fake")
+  expect_true(provider$stats()$started[[1L]])
+  expect_equal(provider$endpoints(), character())
+  expect_true(isTRUE(provider$capabilities()$supports_shared_memory_handles))
+  shutdown <- provider$stop(timeout = 1)
+  expect_equal(shutdown$tasks_total, 0L)
+  expect_equal(events, c("start", "stop"))
+})
+
+local({
   old_dev <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA_character_)
   Sys.setenv(RDUCKS_DEV_SURFACES = "true")
   on.exit({

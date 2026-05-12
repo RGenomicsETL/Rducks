@@ -10,13 +10,15 @@ vector, and returns.
 ## Contract
 
 - Workers are persistent R processes reachable through NNG/nanonext endpoints.
-- Rducks can launch local worker loops with mirai daemons. TCP and WebSocket
-  local startup retries with fresh endpoint bundles after startup-ping failure,
-  because randomly selected loopback ports can race with other processes. The
-  default retry budget is three attempts with a short fixed pause; option
-  `rducks.nng.startup_attempts` can adjust the attempt count. If explicit
-  `ipc_endpoints` are supplied, Rducks connects to worker URLs that the caller
-  starts and stops and does not retry with replacement endpoints.
+- Rducks can launch local worker loops with a small internal lifecycle backend.
+  The current managed backend is mirai; caller-supplied `ipc_endpoints` use an
+  external-endpoint backend with no Rducks-owned process lifecycle. TCP and
+  WebSocket local startup retries with fresh endpoint bundles after startup-ping
+  failure, because randomly selected loopback ports can race with other
+  processes. The default retry budget is three attempts with a short fixed
+  pause; option `rducks.nng.startup_attempts` can adjust the attempt count. If
+  explicit `ipc_endpoints` are supplied, Rducks connects to worker URLs that the
+  caller starts and stops and does not retry with replacement endpoints.
 - Each UDF is registered once per provider pool. Registration sends the closure,
   declared types, NULL/error policy, output schema description, packages, and
   selected globals to workers. With `ipc_globals = "auto"`, Rducks estimates the
@@ -33,6 +35,16 @@ vector, and returns.
   batch with the requested row count; empty payloads, missing batches, and
   trailing batches are hard errors.
 - DuckDB worker callbacks do not call the R API.
+
+## Provider lifecycle backends
+
+The NNG provider separates control/data transport from worker lifecycle. The
+internal lifecycle backend contract currently covers `start()`, `stop()`,
+`cleanup()`, endpoint publication, and capability metadata. The default managed
+backend starts local mirai workers that run the Rducks NNG worker loop. The
+external-endpoint backend only health-checks caller-supplied endpoints and never
+stops those processes. This split is deliberately below SQL/UDF semantics:
+backend choice must not redefine type mapping, null handling, or result shapes.
 
 ## Globals discovery and shared memory
 
