@@ -511,35 +511,34 @@ rducks_disable_inproc(con, threads = 1)
 
 ## Multiprocess Arrow IPC execution
 
-`arrow_ipc + multiprocess_parallel` uses the native NNG/Arrow IPC path.
-The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code,
-sends owned request bytes over native NNG, and imports owned Arrow IPC
-result bytes back into DuckDB callback output. By default Rducks
-launches local worker loops with mirai daemons and Rducks-generated
-nanonext endpoint URLs; `ipc_transport` selects the generated endpoint
-transport: `abstract` is Linux abstract IPC, `ipc` is NNG IPC, `unix` is
-the POSIX Unix-domain alias, and `tcp` / `ws` use loopback TCP /
-WebSocket endpoints. `ipc_endpoints` may instead point at externally
-managed NNG worker loops using endpoint URLs directly. The plan errors
-rather than changing to same-process execution, generic process
-backends, R serialization, or path-loaded symbols from another R package
-shared library.
+`arrow_ipc + multiprocess_parallel` is the native NNG/Arrow IPC path:
+DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R
+worker loops, and Arrow IPC result bytes are imported back into DuckDB
+output vectors. Local workers are mirai daemons running Rducks worker
+loops; `ipc_endpoints` can point at externally managed NNG workers
+instead.
 
-The example below registers the same vectorized R function three ways
-and then runs a small chunk-level comparison over several CSV files.
-Multiple input files make DuckDB’s scanner eligible for threaded work;
-inspect `ripc_inflight_max` to see whether more than one IPC request was
-in flight during the query. The exact value is scheduler- and
-machine-dependent. `ipc_workers` is the number of persistent R worker
-processes. `threads` is DuckDB’s query execution thread count: keep it
-at `1` while registering so catalog setup and R-owned evaluator
-configuration happen on the recorded main R thread, then raise it for
-the IPC query phase so DuckDB can fan chunks out to the IPC workers.
-`external_threads = 1` keeps DuckDB’s external-thread budget
-conservative; the IPC R workers are separate processes, not DuckDB
-external threads. The in-process queue row is kept single-threaded
-because that plan serializes R API work on the recorded main R thread;
-it is a same-process safety path, not the multiprocess throughput path.
+Operationally:
+
+- `ipc_workers` is the number of persistent R worker processes.
+- `ipc_transport` chooses local mirai worker endpoints: `abstract`,
+  `ipc`, `unix`, `tcp`, or `ws`.
+- `ipc_timeout` is used for worker registration/control requests and for
+  native NNG send/receive on each UDF’s client pool.
+- Worker providers are reused by runtime, worker count, max-pending
+  limit, and endpoint/transport choice. Registering another function
+  with the same IPC provider key reuses the existing workers; changing
+  that key starts another provider. Changing the default plan does not
+  stop old providers.
+- `rducks_release(con)` stops local providers when the last Rducks
+  anchor for the DuckDB runtime is released. `rducks_nng_quiesce()` is
+  lower-level: it only closes native client pools.
+
+The example below registers the same vectorized R function three ways.
+Keep `threads = 1` while registering; raise DuckDB `threads` for the IPC
+query phase so chunks can fan out to the IPC workers.
+`ripc_inflight_max` reports observed native IPC concurrency and is
+scheduler-dependent.
 
 ``` r
 chunk_plus_one <- function(x) {
