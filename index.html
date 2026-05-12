@@ -173,8 +173,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        281ms      3.48    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    230ms      4.36    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        285ms      3.47    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    230ms      4.33    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
@@ -814,7 +814,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p>This mori path is only for sharing R globals. A future shared-memory data plane for DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle messages, not per-chunk ALTREP objects or R C API calls from DuckDB worker threads.</p>
+<p>This mori path is only for sharing R globals. Built-in IPC backends do not yet support SQL chunk shared-memory handles. A future shared-memory data plane for DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle messages, not per-chunk ALTREP objects or R C API calls from DuckDB worker threads. See <code>docs/SHARED_MEMORY_IPC.md</code> and the local diagnostic <code>tools/benchmark_ipc_data_plane.R</code> before adding any user-facing data-plane option.</p>
 <p>The example below registers the same vectorized R function three ways. Keep <code>threads = 1</code> while registering; raise DuckDB <code>threads</code> for the IPC query phase so chunks can fan out to the IPC workers. <code>ripc_inflight_max</code> reports observed native IPC concurrency and is scheduler-dependent.</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
@@ -889,9 +889,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.878         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.814         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.051      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.867         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.817         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.037      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>

@@ -225,8 +225,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        281ms      3.48    1.97MB
-#> 2 vectorized    230ms      4.36    2.34MB
+#> 1 scalar        285ms      3.47    1.97MB
+#> 2 vectorized    230ms      4.33    2.34MB
 ```
 
 ## Execution mode semantics
@@ -609,10 +609,13 @@ rducks_register(
 )
 ```
 
-This mori path is only for sharing R globals. A future shared-memory
+This mori path is only for sharing R globals. Built-in IPC backends do
+not yet support SQL chunk shared-memory handles. A future shared-memory
 data plane for DuckDB chunks should use Rducks-owned raw byte buffers
 and NNG handle messages, not per-chunk ALTREP objects or R C API calls
-from DuckDB worker threads.
+from DuckDB worker threads. See `docs/SHARED_MEMORY_IPC.md` and the
+local diagnostic `tools/benchmark_ipc_data_plane.R` before adding any
+user-facing data-plane option.
 
 The example below registers the same vectorized R function three ways.
 Keep `threads = 1` while registering; raise DuckDB `threads` for the IPC
@@ -694,9 +697,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.878         R             16
-#> 2    in-process queue       1 536887296       1.814         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.051      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.867         R             16
+#> 2    in-process queue       1 536887296       1.817         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.037      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

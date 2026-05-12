@@ -18,6 +18,11 @@
   hidden NNG client shim when CMake is available, and dev/test SQL
   diagnostics expose `rducks_nng_enabled()`, `rducks_nng_version()`, and
   `rducks_nng_self_test()`.
+- Clarified IPC shared-memory capability metadata and design notes: mori
+  is a same-host path for long-lived globals, while built-in backends
+  still report no SQL chunk shared-memory handle support. Added a
+  diagnostic data-plane benchmark for current Arrow IPC bytes versus
+  per-chunk mori reference costs.
 - Added vendored Apache Arrow nanoarrow C/IPC sources for the native
   `arrow_ipc + multiprocess_parallel` path. The vendored code is
   compiled with `-DNANOARROW_NAMESPACE=RducksNanoarrow`, flatcc runtime
