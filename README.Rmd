@@ -540,10 +540,13 @@ rducks_register(
 )
 ```
 
-This mori path is only for sharing R globals. A future shared-memory data plane
-for DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle
-messages, not per-chunk ALTREP objects or R C API calls from DuckDB worker
-threads.
+This mori path is only for sharing R globals. Built-in IPC backends do not yet
+support SQL chunk shared-memory handles. A future shared-memory data plane for
+DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle messages,
+not per-chunk ALTREP objects or R C API calls from DuckDB worker threads. See
+`docs/SHARED_MEMORY_IPC.md` and the local diagnostic
+`tools/benchmark_ipc_data_plane.R` before adding any user-facing data-plane
+option.
 
 The example below registers the same vectorized R function three ways. Keep
 `threads = 1` while registering; raise DuckDB `threads` for the IPC query phase

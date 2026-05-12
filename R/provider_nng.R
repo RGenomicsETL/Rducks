@@ -403,6 +403,8 @@ rducks_nng_backend_external <- function(endpoints, transport) {
     name = "external",
     capabilities = list(
       local_only = FALSE,
+      supports_mori_global_sharing = FALSE,
+      supports_chunk_shared_memory_handles = FALSE,
       supports_shared_memory_handles = FALSE,
       supports_cancellation = FALSE,
       supports_remote_endpoints = TRUE
@@ -429,7 +431,9 @@ rducks_nng_backend_mirai <- function(compute, workers, transport) {
     name = "mirai",
     capabilities = list(
       local_only = TRUE,
-      supports_shared_memory_handles = TRUE,
+      supports_mori_global_sharing = TRUE,
+      supports_chunk_shared_memory_handles = FALSE,
+      supports_shared_memory_handles = FALSE,
       supports_cancellation = FALSE,
       supports_remote_endpoints = FALSE
     ),
@@ -540,6 +544,15 @@ rducks_nng_validate_backend <- function(backend) {
   }
   if (is.null(backend$name)) backend$name <- "custom"
   if (is.null(backend$capabilities)) backend$capabilities <- list()
+  if (is.null(backend$capabilities$supports_mori_global_sharing)) {
+    backend$capabilities$supports_mori_global_sharing <- FALSE
+  }
+  if (is.null(backend$capabilities$supports_chunk_shared_memory_handles)) {
+    backend$capabilities$supports_chunk_shared_memory_handles <- isTRUE(backend$capabilities$supports_shared_memory_handles)
+  }
+  if (is.null(backend$capabilities$supports_shared_memory_handles)) {
+    backend$capabilities$supports_shared_memory_handles <- isTRUE(backend$capabilities$supports_chunk_shared_memory_handles)
+  }
   if (is.null(backend$cleanup)) backend$cleanup <- function(state) invisible(NULL)
   backend
 }

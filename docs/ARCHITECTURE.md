@@ -64,6 +64,9 @@ phase has produced owned result data.
   synchronous until borrowed callback-local state is no longer needed.
 - Arrow IPC payloads are owned byte buffers. They are used only for explicit
   process/transport boundaries.
+- Same-host mori sharing is only for long-lived R globals today; SQL chunk
+  shared-memory handles are not implemented and must remain distinct from the
+  current owned-byte data plane.
 - Native destructors that cannot safely call the R API must queue release work or
   leak conservatively rather than call `R_ReleaseObject()` from an unsafe thread.
 

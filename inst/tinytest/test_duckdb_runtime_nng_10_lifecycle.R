@@ -6,7 +6,9 @@ local({
     name = "fake",
     capabilities = list(
       local_only = TRUE,
-      supports_shared_memory_handles = TRUE,
+      supports_mori_global_sharing = TRUE,
+      supports_chunk_shared_memory_handles = FALSE,
+      supports_shared_memory_handles = FALSE,
       supports_cancellation = FALSE,
       supports_remote_endpoints = FALSE
     ),
@@ -32,10 +34,29 @@ local({
   expect_equal(provider$stats()$backend[[1L]], "fake")
   expect_true(provider$stats()$started[[1L]])
   expect_equal(provider$endpoints(), character())
-  expect_true(isTRUE(provider$capabilities()$supports_shared_memory_handles))
+  expect_true(isTRUE(provider$capabilities()$supports_mori_global_sharing))
+  expect_false(isTRUE(provider$capabilities()$supports_chunk_shared_memory_handles))
+  expect_false(isTRUE(provider$capabilities()$supports_shared_memory_handles))
   shutdown <- provider$stop(timeout = 1)
   expect_equal(shutdown$tasks_total, 0L)
   expect_equal(events, c("start", "stop"))
+})
+
+local({
+  managed <- Rducks:::rducks_nng_provider(workers = 1L, transport = Rducks:::rducks_nng_default_transport())
+  managed_caps <- managed$capabilities()
+  expect_true(isTRUE(managed_caps$local_only))
+  expect_true(isTRUE(managed_caps$supports_mori_global_sharing))
+  expect_false(isTRUE(managed_caps$supports_chunk_shared_memory_handles))
+  expect_false(isTRUE(managed_caps$supports_shared_memory_handles))
+
+  external <- Rducks:::rducks_nng_provider(workers = 1L, endpoints = "tcp://127.0.0.1:9")
+  external_caps <- external$capabilities()
+  expect_false(isTRUE(external_caps$local_only))
+  expect_false(isTRUE(external_caps$supports_mori_global_sharing))
+  expect_false(isTRUE(external_caps$supports_chunk_shared_memory_handles))
+  expect_false(isTRUE(external_caps$supports_shared_memory_handles))
+  expect_true(isTRUE(external_caps$supports_remote_endpoints))
 })
 
 local({

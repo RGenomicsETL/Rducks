@@ -43,8 +43,11 @@ internal lifecycle backend contract currently covers `start()`, `stop()`,
 `cleanup()`, endpoint publication, and capability metadata. The default managed
 backend starts local mirai workers that run the Rducks NNG worker loop. The
 external-endpoint backend only health-checks caller-supplied endpoints and never
-stops those processes. This split is deliberately below SQL/UDF semantics:
-backend choice must not redefine type mapping, null handling, or result shapes.
+stops those processes. Capability metadata distinguishes long-lived mori global
+sharing (`supports_mori_global_sharing`) from SQL chunk shared-memory handles
+(`supports_chunk_shared_memory_handles`, currently false for built-in backends).
+This split is deliberately below SQL/UDF semantics: backend choice must not
+redefine type mapping, null handling, or result shapes.
 
 ## Globals discovery and shared memory
 
@@ -66,7 +69,10 @@ A future chunk-data shared-memory mode should be a Rducks-owned raw-buffer
 transport: producers share owned input or output byte buffers, send only handles
 and byte ranges over NNG, and receivers destroy buffers after receipt/import. It
 should not require per-chunk ALTREP creation or R C API calls in DuckDB worker
-threads.
+threads. See `docs/SHARED_MEMORY_IPC.md` for the candidate handle protocol and
+`tools/benchmark_ipc_data_plane.R` for the diagnostic benchmark that compares
+current Arrow IPC bytes with per-chunk mori reference costs before any
+user-facing shared-memory data-plane API is added.
 
 ## Non-contracts
 

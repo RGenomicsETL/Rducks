@@ -54,3 +54,6 @@ Invalid marshalling/concurrency pairs fail validation.
   writes callback output.
 - Arrow IPC request/result payloads are owned raw bytes and must not hide R
   `serialize()` payloads or process-local pointers.
+- Same-host `ipc_globals_share = "mori"` is only a long-lived global-sharing
+  path. Built-in IPC backends currently report `supports_chunk_shared_memory_handles = FALSE`;
+  no SQL chunk data-plane shared-memory handles are supported yet.
