@@ -57,7 +57,7 @@
 <li>
 <code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization.</li>
 <li>
-<code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport and explicit <code>ipc_endpoints</code> can target externally managed workers.</li>
+<code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops.</li>
 </ul>
 <p>The user-facing UDF semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row; <code>mode = "vectorized"</code> means one R call per DuckDB chunk.</p>
 <div class="section level2">
@@ -101,7 +101,7 @@
 <div class="section level3">
 <h3 id="release-and-disconnect">Release and disconnect<a class="anchor" aria-label="anchor" href="#release-and-disconnect"></a>
 </h3>
-<p><code>rducks_release(con)</code> detaches connection-local Rducks state such as the current default plan and R-side runtime anchor. It is non-destructive: it does not drop DuckDB catalog functions and does not release closures still owned by native catalog metadata. Call it before <code>DBI::dbDisconnect(con)</code> when you want deterministic R-side cleanup. Rducks does not provide <code>rducks_unregister()</code>; registered catalog UDFs and their preserved R closures are intentionally retained for the database/runtime lifetime or until the same SQL name/signature is replaced.</p>
+<p><code>rducks_release(con)</code> detaches connection-local Rducks state such as the current default plan and R-side runtime anchor. It is non-destructive for the DuckDB catalog: it does not drop catalog functions and does not release closures still owned by native catalog metadata. For <code>arrow_ipc + multiprocess_parallel</code>, the last Rducks attachment to a runtime also closes native client pools for Rducks-launched local workers and stops those local mirai/NNG workers. If <code>ipc_endpoints</code> was supplied, those URLs name user-owned worker processes; Rducks does not send stop requests to them during release. Call <code>rducks_release(con)</code> before <code>DBI::dbDisconnect(con)</code> when you want deterministic R-side cleanup. Rducks does not provide <code>rducks_unregister()</code>; registered catalog UDFs and their preserved R closures are intentionally retained for the database/runtime lifetime or until the same SQL name/signature is replaced.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">release_con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">release_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
@@ -118,9 +118,9 @@
 <h2 id="what-you-can-register">What you can register<a class="anchor" aria-label="anchor" href="#what-you-can-register"></a>
 </h2>
 <p>Rducks installs a package-managed DuckDB extension, loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, and registers scalar or vectorized R UDFs with <code><a href="reference/rducks_register.html">rducks_register()</a></code>.</p>
-<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type objects such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types.</p>
+<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types.</p>
 <p>Declared <code>ENUM(...)</code> descriptors are supported by all implemented execution plans. On the native <code>arrow_ipc</code> NNG path, Rducks does not depend on Arrow IPC dictionary transport for enums: declared enum levels are registration metadata, and the IPC payload carries the underlying DuckDB enum index storage as Arrow integer buffers.</p>
-<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type objects are formal S7-backed descriptors with structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
+<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type descriptors use the formal S7 <code>rducks_type</code> class and structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
 </div>
 <div class="section level2">
 <h2 id="type-descriptors">Type descriptors<a class="anchor" aria-label="anchor" href="#type-descriptors"></a>
@@ -173,8 +173,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        293ms      3.43    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    232ms      4.31    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        287ms      3.47    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    233ms      4.28    2.34MB</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-mode-semantics">Execution mode semantics<a class="anchor" aria-label="anchor" href="#execution-mode-semantics"></a>
@@ -242,41 +242,38 @@
 </h2>
 <details><summary>
 Expand for argument values passed to R functions
-</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented nanoarrow scalar marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R function. The <code>SQL NULL in function</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact/exotic value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
-<table class="table">
+</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented nanoarrow scalar marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R function. The <code>special_null_argument</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact Rducks value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
+<table style="width:100%;" class="table">
 <colgroup>
-<col width="10%">
-<col width="10%">
+<col width="11%">
+<col width="5%">
 <col width="4%">
-<col width="3%">
-<col width="15%">
-<col width="6%">
-<col width="9%">
+<col width="17%">
 <col width="7%">
+<col width="8%">
 <col width="7%">
-<col width="6%">
-<col width="18%">
+<col width="8%">
+<col width="7%">
+<col width="21%">
 </colgroup>
 <thead><tr>
-<th align="left">rducks_type</th>
-<th align="left">duckdb_sql</th>
-<th align="left">argument_kind</th>
-<th align="left">r_type</th>
-<th align="left">r_value_passed_to_fun</th>
-<th align="left">sql_null_in_function</th>
+<th align="left">duckdb_type</th>
+<th align="left">descriptor_kind</th>
+<th align="left">r_value_class</th>
+<th align="left">r_argument_shape</th>
+<th align="left">special_null_argument</th>
 <th align="left">copy_semantics</th>
-<th align="left">uses_r_double_for_integer</th>
-<th align="left">uses_r_double_for_float</th>
+<th align="left">integer_uses_r_double</th>
+<th align="left">float32_widens_to_r_double</th>
 <th align="left">precision_may_be_lost</th>
 <th align="left">notes</th>
 </tr></thead>
 <tbody>
 <tr>
-<td align="left">i32</td>
 <td align="left">INTEGER</td>
 <td align="left">scalar</td>
 <td align="left">integer</td>
-<td align="left">integer(1)</td>
+<td align="left">integer scalar</td>
 <td align="left">NA_integer_</td>
 <td align="left">boxed scalar</td>
 <td align="left">FALSE</td>
@@ -285,11 +282,10 @@ Expand for argument values passed to R functions
 <td align="left"></td>
 </tr>
 <tr>
-<td align="left">f64</td>
 <td align="left">DOUBLE</td>
 <td align="left">scalar</td>
 <td align="left">numeric</td>
-<td align="left">numeric(1)</td>
+<td align="left">numeric scalar</td>
 <td align="left">NA_real_</td>
 <td align="left">boxed scalar</td>
 <td align="left">FALSE</td>
@@ -298,8 +294,6 @@ Expand for argument values passed to R functions
 <td align="left"></td>
 </tr>
 <tr>
-<td align="left">list<i32></i32>
-</td>
 <td align="left">INTEGER[]</td>
 <td align="left">list</td>
 <td align="left">vector</td>
@@ -312,7 +306,6 @@ Expand for argument values passed to R functions
 <td align="left">homogeneous scalar children use atomic vectors</td>
 </tr>
 <tr>
-<td align="left">i64[3]</td>
 <td align="left">BIGINT[3]</td>
 <td align="left">array</td>
 <td align="left">vector</td>
@@ -325,7 +318,6 @@ Expand for argument values passed to R functions
 <td align="left">fixed-size array; homogeneous scalar children use atomic vectors</td>
 </tr>
 <tr>
-<td align="left">struct&lt;a:uuid;b:decimal&lt;10;2&gt;&gt;</td>
 <td align="left">STRUCT(a UUID, b DECIMAL(10, 2))</td>
 <td align="left">struct</td>
 <td align="left">list</td>
@@ -338,7 +330,6 @@ Expand for argument values passed to R functions
 <td align="left">recursive field mapping</td>
 </tr>
 <tr>
-<td align="left">map&lt;varchar;i32&gt;</td>
 <td align="left">MAP(VARCHAR, INTEGER)</td>
 <td align="left">map</td>
 <td align="left">list</td>
@@ -351,26 +342,24 @@ Expand for argument values passed to R functions
 <td align="left">keys and values use sequence mapping</td>
 </tr>
 <tr>
-<td align="left">enum&lt;red|blue&gt;</td>
 <td align="left">ENUM(‘red’, ‘blue’)</td>
 <td align="left">enum</td>
 <td align="left">rducks_enum</td>
 <td align="left">rducks_enum scalar</td>
 <td align="left">NULL</td>
-<td align="left">boxed exact Rducks value object</td>
+<td align="left">boxed exact Rducks value</td>
 <td align="left">FALSE</td>
 <td align="left">FALSE</td>
 <td align="left">FALSE</td>
 <td align="left">factor with enum levels</td>
 </tr>
 <tr>
-<td align="left">union&lt;code:i32;label:varchar&gt;</td>
 <td align="left">UNION(code INTEGER, label VARCHAR)</td>
 <td align="left">union</td>
 <td align="left">rducks_union</td>
 <td align="left">rducks_union object</td>
 <td align="left">NULL</td>
-<td align="left">boxed exact Rducks value object</td>
+<td align="left">boxed exact Rducks value</td>
 <td align="left">FALSE</td>
 <td align="left">FALSE</td>
 <td align="left">FALSE</td>
@@ -384,31 +373,29 @@ Expand for argument values passed to R functions
 </h2>
 <details><summary>
 Expand for NULL, NA, NaN, Inf, and value-class semantics
-</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document scalar-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic return paths reject them.</p>
+</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document scalar-mode missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, and exact Rducks value classes reject them.</p>
 <table class="table">
 <colgroup>
-<col width="4%">
 <col width="5%">
-<col width="1%">
+<col width="2%">
 <col width="2%">
 <col width="9%">
 <col width="3%">
 <col width="9%">
-<col width="9%">
-<col width="12%">
+<col width="10%">
+<col width="13%">
 <col width="5%">
 <col width="5%">
-<col width="11%">
 <col width="12%">
+<col width="13%">
 <col width="5%">
 </colgroup>
 <thead><tr>
-<th align="left">rducks_type</th>
-<th align="left">duckdb_sql</th>
-<th align="left">kind</th>
-<th align="left">r_type</th>
-<th align="left">sql_null_input_default</th>
-<th align="left">sql_null_input_special</th>
+<th align="left">duckdb_type</th>
+<th align="left">descriptor_kind</th>
+<th align="left">r_value_class</th>
+<th align="left">default_null_input</th>
+<th align="left">special_null_argument</th>
 <th align="left">sql_nan_inf_input</th>
 <th align="left">r_null_return</th>
 <th align="left">r_na_return</th>
@@ -420,7 +407,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 </tr></thead>
 <tbody>
 <tr>
-<td align="left">i32</td>
 <td align="left">INTEGER</td>
 <td align="left">scalar</td>
 <td align="left">integer</td>
@@ -436,7 +422,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left"></td>
 </tr>
 <tr>
-<td align="left">f64</td>
 <td align="left">DOUBLE</td>
 <td align="left">scalar</td>
 <td align="left">numeric</td>
@@ -452,7 +437,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left"></td>
 </tr>
 <tr>
-<td align="left">i64</td>
 <td align="left">BIGINT</td>
 <td align="left">scalar</td>
 <td align="left">rducks_bigint</td>
@@ -465,10 +449,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left">error</td>
 <td align="left">rducks_bigint +, -, comparisons; NA propagates; range errors remain errors</td>
 <td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
-<td align="left">exact signed 64-bit integer string</td>
+<td align="left">exact signed 64-bit integer value</td>
 </tr>
 <tr>
-<td align="left">uuid</td>
 <td align="left">UUID</td>
 <td align="left">scalar</td>
 <td align="left">rducks_uuid</td>
@@ -484,7 +467,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left">exact Rducks value class</td>
 </tr>
 <tr>
-<td align="left">decimal&lt;10;2&gt;</td>
 <td align="left">DECIMAL(10, 2)</td>
 <td align="left">decimal</td>
 <td align="left">rducks_decimal</td>
@@ -500,7 +482,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left">exact fixed-point value class</td>
 </tr>
 <tr>
-<td align="left">enum&lt;red|blue&gt;</td>
 <td align="left">ENUM(‘red’, ‘blue’)</td>
 <td align="left">enum</td>
 <td align="left">rducks_enum</td>
@@ -516,7 +497,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left">factor with enum levels</td>
 </tr>
 <tr>
-<td align="left">union&lt;code:i32;label:varchar&gt;</td>
 <td align="left">UNION(code INTEGER, label VARCHAR)</td>
 <td align="left">union</td>
 <td align="left">rducks_union</td>
@@ -532,7 +512,6 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <td align="left">tagged value object</td>
 </tr>
 <tr>
-<td align="left">map&lt;varchar;i32&gt;</td>
 <td align="left">MAP(VARCHAR, INTEGER)</td>
 <td align="left">map</td>
 <td align="left">list</td>
@@ -798,7 +777,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
 </h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> is the native NNG/Arrow IPC path: DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and Arrow IPC result bytes are imported back into DuckDB output vectors. Local workers are mirai daemons running Rducks worker loops; <code>ipc_endpoints</code> can point at externally managed NNG workers instead.</p>
+<p><code>arrow_ipc + multiprocess_parallel</code> is the native NNG/Arrow IPC path: DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and Arrow IPC result bytes are imported back into DuckDB output vectors. Local workers are mirai daemons running Rducks worker loops. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops.</p>
 <p>Operationally:</p>
 <ul>
 <li>
@@ -809,7 +788,7 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <code>ipc_timeout</code> is used for worker registration/control requests and for native NNG send/receive on each UDF’s client pool.</li>
 <li>Worker providers are reused by runtime, worker count, max-pending limit, and endpoint/transport choice. Registering another function with the same IPC provider key reuses the existing workers; changing that key starts another provider. Changing the default plan does not stop old providers.</li>
 <li>
-<code>rducks_release(con)</code> stops local providers when the last Rducks anchor for the DuckDB runtime is released. <code>rducks_nng_quiesce()</code> is lower-level: it only closes native client pools.</li>
+<code>rducks_release(con)</code> stops Rducks-launched local providers when the last Rducks anchor for the DuckDB runtime is released. For caller-supplied <code>ipc_endpoints</code>, release closes Rducks bookkeeping but does not send stop requests to the processes listening at those URLs. <code>rducks_nng_quiesce()</code> is lower-level: it only closes native client pools for local IPC providers.</li>
 </ul>
 <p>The example below registers the same vectorized R function three ways. Keep <code>threads = 1</code> while registering; raise DuckDB <code>threads</code> for the IPC query phase so chunks can fan out to the IPC workers. <code>ripc_inflight_max</code> reports observed native IPC concurrency and is scheduler-dependent.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
@@ -885,9 +864,9 @@ Expand for NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.880         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.841         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.845         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.823         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.049      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>

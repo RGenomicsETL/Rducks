@@ -1,8 +1,8 @@
 # Rducks type descriptor helpers
 
 These generic helpers expose the formal DuckDB type descriptor carried
-by objects such as `INTEGER`, `INTEGER[]`, `STRUCT(...)`,
-`DECIMAL(...)`, `ENUM(...)`, and `UNION(...)`.
+by `rducks_type` descriptors such as `INTEGER`, `INTEGER[]`,
+`STRUCT(...)`, `DECIMAL(...)`, `ENUM(...)`, and `UNION(...)`.
 
 ## Usage
 
@@ -26,7 +26,7 @@ rducks_type_parameters(x, ...)
 
 - x:
 
-  A `rducks_type` object.
+  A `rducks_type` descriptor.
 
 - ...:
 

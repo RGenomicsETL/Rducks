@@ -16,8 +16,9 @@ plans:
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker
   loops with mirai daemons and Rducks-generated NNG endpoint URLs;
-  `ipc_transport` selects the generated transport and explicit
-  `ipc_endpoints` can target externally managed workers.
+  `ipc_transport` selects the generated transport. If `ipc_endpoints` is
+  supplied, Rducks connects to worker URLs that the caller starts and
+  stops.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
@@ -74,14 +75,19 @@ shared DuckDB database catalog.
 ### Release and disconnect
 
 `rducks_release(con)` detaches connection-local Rducks state such as the
-current default plan and R-side runtime anchor. It is non-destructive:
-it does not drop DuckDB catalog functions and does not release closures
-still owned by native catalog metadata. Call it before
-`DBI::dbDisconnect(con)` when you want deterministic R-side cleanup.
-Rducks does not provide `rducks_unregister()`; registered catalog UDFs
-and their preserved R closures are intentionally retained for the
-database/runtime lifetime or until the same SQL name/signature is
-replaced.
+current default plan and R-side runtime anchor. It is non-destructive
+for the DuckDB catalog: it does not drop catalog functions and does not
+release closures still owned by native catalog metadata. For
+`arrow_ipc + multiprocess_parallel`, the last Rducks attachment to a
+runtime also closes native client pools for Rducks-launched local
+workers and stops those local mirai/NNG workers. If `ipc_endpoints` was
+supplied, those URLs name user-owned worker processes; Rducks does not
+send stop requests to them during release. Call `rducks_release(con)`
+before `DBI::dbDisconnect(con)` when you want deterministic R-side
+cleanup. Rducks does not provide `rducks_unregister()`; registered
+catalog UDFs and their preserved R closures are intentionally retained
+for the database/runtime lifetime or until the same SQL name/signature
+is replaced.
 
 ``` r
 
@@ -118,7 +124,7 @@ Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`,
 `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
 `DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`. Composite
-inputs and outputs are accepted as constructed type objects such as
+inputs and outputs are accepted as constructed type descriptors such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types.
 
@@ -141,8 +147,8 @@ DuckDB-specific values:
 [`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md),
 and
 [`rducks_union()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_union.md).
-Constructed DuckDB type objects are formal S7-backed descriptors with
-structural validation via
+Constructed DuckDB type descriptors use the formal S7 `rducks_type`
+class and structural validation via
 [`rducks_is_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md).
 
 ## Type descriptors
@@ -212,8 +218,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        293ms      3.43    1.97MB
-#> 2 vectorized    232ms      4.31    2.34MB
+#> 1 scalar        287ms      3.47    1.97MB
+#> 2 vectorized    233ms      4.28    2.34MB
 ```
 
 ## Execution mode semantics
@@ -235,24 +241,24 @@ The table is produced by the exported
 helper and reflects the currently implemented nanoarrow scalar
 marshalling path. With `null_handling = "default"`, any top-level SQL
 `NULL` input makes DuckDB return SQL `NULL` without calling the R
-function. The `SQL NULL in function` column below applies when
+function. The `special_null_argument` column below applies when
 `null_handling = "special"`. It is type-specific: ordinary R scalar
-types receive typed `NA` values, while exact/exotic value classes,
+types receive typed `NA` values, while exact Rducks value classes,
 binary values, and top-level composite values receive R `NULL`. Within
 homogeneous scalar lists/arrays, SQL `NULL` elements are represented as
 typed `NA` values where the child type has an R `NA` representation;
 nested composite `NULL` values are represented as R `NULL`.
 
-| rducks_type | duckdb_sql | argument_kind | r_type | r_value_passed_to_fun | sql_null_in_function | copy_semantics | uses_r_double_for_integer | uses_r_double_for_float | precision_may_be_lost | notes |
-|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| i32 | INTEGER | scalar | integer | integer(1) | NA_integer\_ | boxed scalar | FALSE | FALSE | FALSE |  |
-| f64 | DOUBLE | scalar | numeric | numeric(1) | NA_real\_ | boxed scalar | FALSE | FALSE | FALSE |  |
-| list | INTEGER\[\] | list | vector | integer vector | NULL | R vector allocation | FALSE | FALSE | FALSE | homogeneous scalar children use atomic vectors |
-| i64\[3\] | BIGINT\[3\] | array | vector | rducks_bigint vector of length 3 | NULL | R vector allocation | FALSE | FALSE | FALSE | fixed-size array; homogeneous scalar children use atomic vectors |
-| struct\<a:uuid;b:decimal\<10;2\>\> | STRUCT(a UUID, b DECIMAL(10, 2)) | struct | list | named list of fields | NULL | recursive R allocation | FALSE | FALSE | FALSE | recursive field mapping |
-| map\<varchar;i32\> | MAP(VARCHAR, INTEGER) | map | list | list(keys = character vector, values = integer vector) | NULL | recursive R allocation | FALSE | FALSE | FALSE | keys and values use sequence mapping |
-| enum\<red\|blue\> | ENUM(‘red’, ‘blue’) | enum | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | factor with enum levels |
-| union\<code:i32;label:varchar\> | UNION(code INTEGER, label VARCHAR) | union | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | tagged value object |
+| duckdb_type | descriptor_kind | r_value_class | r_argument_shape | special_null_argument | copy_semantics | integer_uses_r_double | float32_widens_to_r_double | precision_may_be_lost | notes |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| INTEGER | scalar | integer | integer scalar | NA_integer\_ | boxed scalar | FALSE | FALSE | FALSE |  |
+| DOUBLE | scalar | numeric | numeric scalar | NA_real\_ | boxed scalar | FALSE | FALSE | FALSE |  |
+| INTEGER\[\] | list | vector | integer vector | NULL | R vector allocation | FALSE | FALSE | FALSE | homogeneous scalar children use atomic vectors |
+| BIGINT\[3\] | array | vector | rducks_bigint vector of length 3 | NULL | R vector allocation | FALSE | FALSE | FALSE | fixed-size array; homogeneous scalar children use atomic vectors |
+| STRUCT(a UUID, b DECIMAL(10, 2)) | struct | list | named list of fields | NULL | recursive R allocation | FALSE | FALSE | FALSE | recursive field mapping |
+| MAP(VARCHAR, INTEGER) | map | list | list(keys = character vector, values = integer vector) | NULL | recursive R allocation | FALSE | FALSE | FALSE | keys and values use sequence mapping |
+| ENUM(‘red’, ‘blue’) | enum | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value | FALSE | FALSE | FALSE | factor with enum levels |
+| UNION(code INTEGER, label VARCHAR) | union | rducks_union | rducks_union object | NULL | boxed exact Rducks value | FALSE | FALSE | FALSE | tagged value object |
 
 ## NULL, NA, NaN, Inf, and value-class semantics
 
@@ -264,18 +270,18 @@ the exported schema that Rducks uses to document scalar-mode missing and
 non-finite value behavior. Top-level R `NULL` returns map to SQL `NULL`.
 R `NA` values map to SQL `NULL` when represented by the declared R type.
 `NaN` and `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date,
-time, timestamp, exact, and exotic return paths reject them.
+time, timestamp, and exact Rducks value classes reject them.
 
-| rducks_type | duckdb_sql | kind | r_type | sql_null_input_default | sql_null_input_special | sql_nan_inf_input | r_null_return | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics | notes |
-|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| i32 | INTEGER | scalar | integer | short-circuit to SQL NULL result; R function is not called | NA_integer\_ | not representable for this DuckDB type | SQL NULL | NA_integer\_ -\> SQL NULL | error | error | no Rducks-specific binary ops | NaN, Inf, fractional, and out-of-range return values error |  |
-| f64 | DOUBLE | scalar | numeric | short-circuit to SQL NULL result; R function is not called | NA_real\_ | DuckDB NaN/Inf pass through as R numeric values | SQL NULL | NA_real\_ -\> SQL NULL | preserved as DuckDB NaN | preserved as DuckDB +/-Inf | ordinary R numeric semantics in the R function | NA is NULL; NaN and Inf are valid DOUBLE values |  |
-| i64 | BIGINT | scalar | rducks_bigint | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_bigint(NA) -\> SQL NULL | error | error | rducks_bigint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error | exact signed 64-bit integer string |
-| uuid | UUID | scalar | rducks_uuid | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_uuid(NA) -\> SQL NULL | error | error | no Rducks-specific binary ops | NA UUID values are NULL; malformed UUID text errors | exact Rducks value class |
-| decimal\<10;2\> | DECIMAL(10, 2) | decimal | rducks_decimal | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB DECIMAL | SQL NULL for the top-level value; nested NULLs map recursively | rducks_decimal(NA, width, scale) -\> SQL NULL | error | error | rducks_decimal +, -, comparisons; NA propagates; matching scales are required | NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error | exact fixed-point value class |
-| enum\<red\|blue\> | ENUM(‘red’, ‘blue’) | enum | rducks_enum | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB ENUM | SQL NULL for the top-level value; nested NULLs map recursively | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error | factor with enum levels |
-| union\<code:i32;label:varchar\> | UNION(code INTEGER, label VARCHAR) | union | rducks_union | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE union members can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error | tagged value object |
-| map\<varchar;i32\> | MAP(VARCHAR, INTEGER) | map | list | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE children can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error | keys and values use sequence mapping |
+| duckdb_type | descriptor_kind | r_value_class | default_null_input | special_null_argument | sql_nan_inf_input | r_null_return | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics | notes |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| INTEGER | scalar | integer | short-circuit to SQL NULL result; R function is not called | NA_integer\_ | not representable for this DuckDB type | SQL NULL | NA_integer\_ -\> SQL NULL | error | error | no Rducks-specific binary ops | NaN, Inf, fractional, and out-of-range return values error |  |
+| DOUBLE | scalar | numeric | short-circuit to SQL NULL result; R function is not called | NA_real\_ | DuckDB NaN/Inf pass through as R numeric values | SQL NULL | NA_real\_ -\> SQL NULL | preserved as DuckDB NaN | preserved as DuckDB +/-Inf | ordinary R numeric semantics in the R function | NA is NULL; NaN and Inf are valid DOUBLE values |  |
+| BIGINT | scalar | rducks_bigint | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_bigint(NA) -\> SQL NULL | error | error | rducks_bigint +, -, comparisons; NA propagates; range errors remain errors | non-integer strings, numeric NaN/Inf, and out-of-range values error | exact signed 64-bit integer value |
+| UUID | scalar | rducks_uuid | short-circuit to SQL NULL result; R function is not called | NULL | not representable for this DuckDB type | SQL NULL | rducks_uuid(NA) -\> SQL NULL | error | error | no Rducks-specific binary ops | NA UUID values are NULL; malformed UUID text errors | exact Rducks value class |
+| DECIMAL(10, 2) | decimal | rducks_decimal | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB DECIMAL | SQL NULL for the top-level value; nested NULLs map recursively | rducks_decimal(NA, width, scale) -\> SQL NULL | error | error | rducks_decimal +, -, comparisons; NA propagates; matching scales are required | NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error | exact fixed-point value class |
+| ENUM(‘red’, ‘blue’) | enum | rducks_enum | short-circuit to SQL NULL result; R function is not called | NULL | not representable for DuckDB ENUM | SQL NULL for the top-level value; nested NULLs map recursively | rducks_enum(NA, levels) -\> SQL NULL | not applicable | not applicable | no Rducks-specific ENUM binary ops | values outside the declared enum levels error | factor with enum levels |
+| UNION(code INTEGER, label VARCHAR) | union | rducks_union | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE union members can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error | tagged value object |
+| MAP(VARCHAR, INTEGER) | map | list | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE children can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error | keys and values use sequence mapping |
 
 ## Composite input examples
 
@@ -533,8 +539,8 @@ rducks_disable_inproc(con, threads = 1)
 DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R
 worker loops, and Arrow IPC result bytes are imported back into DuckDB
 output vectors. Local workers are mirai daemons running Rducks worker
-loops; `ipc_endpoints` can point at externally managed NNG workers
-instead.
+loops. If `ipc_endpoints` is supplied, Rducks connects to worker URLs
+that the caller starts and stops.
 
 Operationally:
 
@@ -548,9 +554,12 @@ Operationally:
   with the same IPC provider key reuses the existing workers; changing
   that key starts another provider. Changing the default plan does not
   stop old providers.
-- `rducks_release(con)` stops local providers when the last Rducks
-  anchor for the DuckDB runtime is released. `rducks_nng_quiesce()` is
-  lower-level: it only closes native client pools.
+- `rducks_release(con)` stops Rducks-launched local providers when the
+  last Rducks anchor for the DuckDB runtime is released. For
+  caller-supplied `ipc_endpoints`, release closes Rducks bookkeeping but
+  does not send stop requests to the processes listening at those URLs.
+  `rducks_nng_quiesce()` is lower-level: it only closes native client
+  pools for local IPC providers.
 
 The example below registers the same vectorized R function three ways.
 Keep `threads = 1` while registering; raise DuckDB `threads` for the IPC
@@ -632,9 +641,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.880         R             16
-#> 2    in-process queue       1 536887296       1.841         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.845         R             16
+#> 2    in-process queue       1 536887296       1.823         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.049      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

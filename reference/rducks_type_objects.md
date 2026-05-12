@@ -1,8 +1,8 @@
-# Rducks DuckDB type objects and constructors
+# Rducks DuckDB type descriptors and constructors
 
-Use these objects and constructors in
+Use these descriptors and constructors in
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
-to avoid string type specifications. Examples include `args = INTEGER`,
+to avoid quoted type specifications. Examples include `args = INTEGER`,
 `args = c(INTEGER, DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
 `args = STRUCT(a = INTEGER, b = VARCHAR)`, and
 `args = MAP(VARCHAR, INTEGER)`.
@@ -171,7 +171,7 @@ An object of class `rducks_bit_type` (inherits from
 
 - ...:
 
-  Named field types for `STRUCT()`/`UNION()` or type objects for
+  Named field types for `STRUCT()`/`UNION()` or descriptors for
   [`c()`](https://rdrr.io/r/base/c.html).
 
 - type:
@@ -188,5 +188,5 @@ An object of class `rducks_bit_type` (inherits from
 
 ## Value
 
-A formal S7/S3-compatible `rducks_type` object, or a `rducks_type_list`
-from [`c()`](https://rdrr.io/r/base/c.html).
+A formal S7 `rducks_type` descriptor, or a `rducks_type_list` from
+[`c()`](https://rdrr.io/r/base/c.html).

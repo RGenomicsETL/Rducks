@@ -16,11 +16,11 @@ rducks_duckdb_signature(name, args, returns)
 
 - args:
 
-  Argument type tokens.
+  Argument type descriptors.
 
 - returns:
 
-  Return type token.
+  Return type descriptor.
 
 ## Value
 

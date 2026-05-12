@@ -31,7 +31,7 @@
 - [`rducks_duckdb_signature()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.md)
   : Format a DuckDB scalar function signature
 - [`rducks_duckdb_types()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_types.md)
-  : Convert Rducks type tokens to DuckDB SQL types
+  : Convert Rducks type descriptors to DuckDB SQL types
 - [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
   : Enable Rducks on a DuckDB connection
 - [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
@@ -102,7 +102,7 @@
   [`ARRAY()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`MAP()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`STRUCT()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
-  : Rducks DuckDB type objects and constructors
+  : Rducks DuckDB type descriptors and constructors
 - [`rducks_type_token()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_token.md)
   [`rducks_type_sql()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_token.md)
   [`rducks_type_kind()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_token.md)

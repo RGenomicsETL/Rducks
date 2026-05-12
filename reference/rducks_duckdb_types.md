@@ -1,6 +1,6 @@
-# Convert Rducks type tokens to DuckDB SQL types
+# Convert Rducks type descriptors to DuckDB SQL types
 
-Convert Rducks type tokens to DuckDB SQL types
+Convert Rducks type descriptors to DuckDB SQL types
 
 ## Usage
 
@@ -12,7 +12,8 @@ rducks_duckdb_types(x)
 
 - x:
 
-  Character vector of type tokens.
+  Character scalar tokens, `rducks_type` descriptors, or a list of
+  descriptors.
 
 ## Value
 

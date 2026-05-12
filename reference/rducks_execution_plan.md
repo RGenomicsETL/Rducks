@@ -59,15 +59,16 @@ rducks_execution_plan(
   list for explicit extra globals. `ipc_timeout` is the positive finite
   provider wait timeout in seconds; `NULL` uses a finite default of 30
   seconds. `ipc_endpoints` optionally supplies NNG endpoint URLs for
-  externally managed worker processes running the Rducks NNG worker
-  loop; any NNG URL transport supported by both endpoints is allowed.
-  When endpoints are not supplied, `ipc_transport` selects the transport
-  used for the mirai-launched local worker endpoints and must be left as
-  `NULL` when explicit `ipc_endpoints` are supplied. `"abstract"` means
-  Linux abstract IPC, `"ipc"` means NNG IPC (Unix-domain sockets on
-  POSIX and named pipes on Windows), `"unix"` means the POSIX
-  Unix-domain alias, and `"tcp"` / `"ws"` use loopback TCP / WebSocket
-  endpoints. The default is `"abstract"` on Linux and `"ipc"` elsewhere.
+  worker processes that the caller starts and stops; those processes
+  must run the Rducks NNG worker loop. Any NNG URL transport supported
+  by both endpoints is allowed. When endpoints are not supplied,
+  `ipc_transport` selects the transport used for the mirai-launched
+  local worker endpoints and must be left as `NULL` when explicit
+  `ipc_endpoints` are supplied. `"abstract"` means Linux abstract IPC,
+  `"ipc"` means NNG IPC (Unix-domain sockets on POSIX and named pipes on
+  Windows), `"unix"` means the POSIX Unix-domain alias, and `"tcp"` /
+  `"ws"` use loopback TCP / WebSocket endpoints. The default is
+  `"abstract"` on Linux and `"ipc"` elsewhere.
 
 - ipc_provider:
 

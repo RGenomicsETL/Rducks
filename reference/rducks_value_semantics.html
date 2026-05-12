@@ -56,7 +56,7 @@ contract close to the type descriptors used by the marshaller.</p>
 
 
 <dl><dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
-<dd><p>Optional scalar type tokens or constructed <code>rducks_type</code> objects.
+<dd><p>Optional scalar type tokens or constructed <code>rducks_type</code> descriptors.
 When <code>NULL</code>, all currently implemented scalar-mode scalar type semantics are
 returned. Constructed descriptors such as <code>DECIMAL(10, 2)</code>,
 <code>ENUM(c("a", "b"))</code>, <code>UNION(i = INTEGER, s = VARCHAR)</code>, <code>INTEGER[]</code>,
@@ -74,12 +74,12 @@ Rducks value-class binary operation behavior, and error semantics.</p>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>With <code>null_handling = "default"</code>, top-level SQL <code>NULL</code> inputs short-circuit
 to SQL <code>NULL</code> and the R function is not called. The
-<code>sql_null_input_special</code> column describes what the R function receives with
+<code>special_null_argument</code> column describes what the R function receives with
 <code>null_handling = "special"</code>.</p>
 <p>Return semantics are stated from R back to DuckDB. In scalar mode, top-level
 <code>NULL</code> returns map to SQL <code>NULL</code>; type-specific R <code>NA</code> values also map to SQL
 <code>NULL</code> where a missing representation exists. <code>NaN</code> and <code>Inf</code> are values only
-for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, exact, and exotic
+for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, and exact Rducks
 value classes reject non-finite values.</p>
     </div>
 

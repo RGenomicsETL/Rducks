@@ -16,12 +16,13 @@ rducks_value_semantics(x = NULL)
 
 - x:
 
-  Optional scalar type tokens or constructed `rducks_type` objects. When
-  `NULL`, all currently implemented scalar-mode scalar type semantics
-  are returned. Constructed descriptors such as `DECIMAL(10, 2)`,
-  `ENUM(c("a", "b"))`, `UNION(i = INTEGER, s = VARCHAR)`, `INTEGER[]`,
-  `INTEGER[3]`, `STRUCT(a = INTEGER)`, and `MAP(VARCHAR, INTEGER)` can
-  be requested explicitly.
+  Optional scalar type tokens or constructed `rducks_type` descriptors.
+  When `NULL`, all currently implemented scalar-mode scalar type
+  semantics are returned. Constructed descriptors such as
+  `DECIMAL(10, 2)`, `ENUM(c("a", "b"))`,
+  `UNION(i = INTEGER, s = VARCHAR)`, `INTEGER[]`, `INTEGER[3]`,
+  `STRUCT(a = INTEGER)`, and `MAP(VARCHAR, INTEGER)` can be requested
+  explicitly.
 
 ## Value
 
@@ -34,11 +35,11 @@ semantics.
 
 With `null_handling = "default"`, top-level SQL `NULL` inputs
 short-circuit to SQL `NULL` and the R function is not called. The
-`sql_null_input_special` column describes what the R function receives
+`special_null_argument` column describes what the R function receives
 with `null_handling = "special"`.
 
 Return semantics are stated from R back to DuckDB. In scalar mode,
 top-level `NULL` returns map to SQL `NULL`; type-specific R `NA` values
 also map to SQL `NULL` where a missing representation exists. `NaN` and
 `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date, time,
-timestamp, exact, and exotic value classes reject non-finite values.
+timestamp, and exact Rducks value classes reject non-finite values.

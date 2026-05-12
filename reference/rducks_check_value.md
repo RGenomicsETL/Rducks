@@ -1,8 +1,8 @@
 # Check that an R value is compatible with a DuckDB type
 
-This is a pre-marshalling guard for Rducks type objects. It checks the R
-value shape that the marshaller expects for scalar, decimal, enum, list,
-array, struct, map, and union descriptors.
+This is a pre-marshalling guard for Rducks type descriptors. It checks
+the R value shape that the marshaller expects for scalar, decimal, enum,
+list, array, struct, map, and union descriptors.
 
 ## Usage
 
@@ -18,8 +18,8 @@ rducks_check_return(type, x)
 
 - type:
 
-  A `rducks_type` object such as `INTEGER`, `INTEGER[]`,
-  `STRUCT(a = INTEGER)`, or a character type token accepted by
+  A `rducks_type` descriptor such as `INTEGER`, `INTEGER[]`,
+  `STRUCT(a = INTEGER)`, or a character scalar token accepted by
   [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md).
 
 - x:
