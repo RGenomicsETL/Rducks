@@ -284,9 +284,14 @@ rducks_table_registration_spec <- function(name, fun, returns, chunk_size) {
 #'
 #' This is intentionally separate from scalar/vectorized UDF registration: table
 #' functions have their own bind/init/scan state and currently support only the
-#' one-shot finite table shape. Use `rducks_enable(con, threads = "single")` or
-#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before
-#' registration and execution; worker-thread calls into R are rejected.
+#' one-shot finite table shape. DuckDB table functions can have bind-time dynamic
+#' schemas and overloaded input signatures, but this first Rducks API requires a
+#' declared `returns` schema and no SQL arguments. If you already have a static R
+#' data frame to expose as a virtual table, prefer `duckdb::duckdb_register()`;
+#' DuckDB's R package routes that through its native data-frame scan path rather
+#' than through Rducks result marshalling. Use `rducks_enable(con, threads =
+#' "single")` or otherwise set `external_threads=1` plus `PRAGMA threads=1`
+#' before registration and execution; worker-thread calls into R are rejected.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.

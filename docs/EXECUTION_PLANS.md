@@ -31,6 +31,33 @@ then calls the R function once on the recorded calling R thread and emits its
 returned data-frame/list columns in chunks. Worker-thread calls into R are
 rejected; use `rducks_enable(con, threads = "single")` for this path.
 
+DuckDB table functions are more general than this first slice. Their bind phase
+can inspect constant input arguments, decide the output schema dynamically, and
+DuckDB's function catalog can contain overloads with distinct input signatures.
+Rducks should not model table functions as inherently declared-schema or
+zero-argument; those are only the limits of the initial R-backed API.
+
+DuckDB's R package is the important registration-time no-materialization
+precedent for static R data frames. `duckdb_register()` creates a DuckDB view
+over `r_dataframe_scan(POINTER(df), ...)`; the `r_dataframe_scan` bind callback
+inspects the R `data.frame`, builds DuckDB column names/types from the R
+columns, stores protected references plus raw column data pointers in bind data,
+and fills projected DuckDB chunks from those R vectors. Environment scans use
+replacement-scan rewriting to produce the same table-function call. That route
+avoids Rducks' per-value result marshalling and should remain the recommended
+path when the table already exists as an R data frame at registration time.
+
+For future Rducks table-function slices, prefer one of these designs over simply
+widening the current scalar-output loop:
+
+- a bind-time dynamic-schema path that evaluates a main-thread R producer,
+  records the resulting column buffers/types, and scans column segments directly;
+- an Arrow ArrayStream/nanoarrow path for data-frame or batch producers, with
+  explicit lifetime and main-thread callback rules;
+- overload-aware registration where each SQL input signature is an explicit
+  DuckDB table-function registration and backend choice does not redefine SQL
+  type/null/result semantics.
+
 ## Strict-plan rule
 
 A registered UDF resolves to one engine:

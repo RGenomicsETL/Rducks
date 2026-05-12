@@ -36,7 +36,11 @@ on completion or error.
 \details{
 This is intentionally separate from scalar/vectorized UDF registration: table
 functions have their own bind/init/scan state and currently support only the
-one-shot finite table shape. Use \code{rducks_enable(con, threads = "single")} or
-otherwise set \code{external_threads=1} plus \verb{PRAGMA threads=1} before
-registration and execution; worker-thread calls into R are rejected.
+one-shot finite table shape. DuckDB table functions can have bind-time dynamic
+schemas and overloaded input signatures, but this first Rducks API requires a
+declared \code{returns} schema and no SQL arguments. If you already have a static R
+data frame to expose as a virtual table, prefer \code{duckdb::duckdb_register()};
+DuckDB's R package routes that through its native data-frame scan path rather
+than through Rducks result marshalling. Use \code{rducks_enable(con, threads = "single")} or otherwise set \code{external_threads=1} plus \verb{PRAGMA threads=1}
+before registration and execution; worker-thread calls into R are rejected.
 }
