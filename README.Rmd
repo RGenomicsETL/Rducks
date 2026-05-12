@@ -319,6 +319,14 @@ reg_make_array <- rducks_register(
   returns = INTEGER[]
 )
 
+reg_make_map <- rducks_register(
+  con,
+  name = "r_make_map",
+  fun = function(x) list(keys = c("a", "b"), values = c(x, x + 1L)),
+  args = INTEGER,
+  returns = MAP(VARCHAR, INTEGER)
+)
+
 dbGetQuery(con, "
   SELECT
     r_list_len([1,2,3]::INTEGER[]) AS list_len,
@@ -326,7 +334,8 @@ dbGetQuery(con, "
     r_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS struct_sum,
     r_map_sum(map(['a','b'], [20,22])) AS map_sum,
     (r_make_struct(41::INTEGER)).b AS struct_return,
-    list_sum(r_make_array(20::INTEGER)) AS array_return
+    list_sum(r_make_array(20::INTEGER)) AS array_return,
+    map_extract_value(r_make_map(20::INTEGER), 'b') AS map_return
 ")
 ```
 
