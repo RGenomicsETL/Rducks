@@ -388,7 +388,13 @@ rducks_register_runtime_anchor <- function(conn_ref, db_token, token) {
   assign(token, db_token, envir = rducks_connection_runtime_token_store())
   if (!exists(token, envir = anchor_env, inherits = FALSE)) {
     assign(token, TRUE, envir = anchor_env)
-    reg.finalizer(conn_ref, rducks_runtime_anchor_finalizer(db_token, token), onexit = TRUE)
+    # onexit = FALSE: do not run this finalizer during R session exit.
+    # Mirai daemon processes are children of the main R process and are
+    # terminated automatically by the OS when R exits.  Running the finalizer
+    # at exit calls nanonext C code on AIO objects that may already have been
+    # garbage-collected, causing crashes.  Mid-session GC (e.g. after an
+    # explicit dbDisconnect) is safe and will still trigger this finalizer.
+    reg.finalizer(conn_ref, rducks_runtime_anchor_finalizer(db_token, token), onexit = FALSE)
   }
   invisible(db_token)
 }

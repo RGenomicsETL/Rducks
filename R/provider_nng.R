@@ -459,9 +459,6 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
     if (isTRUE(state$started) && !isTRUE(state$external_endpoints)) {
       tasks <- state$tasks
       endpoints <- state$endpoints
-      unresolved <- function(task) {
-        tryCatch(mirai::unresolved(task), error = function(e) TRUE)
-      }
       for (endpoint in endpoints) {
         req <- rducks_nng_wire_encode_request(rducks_nng_wire_type_stop)
         sent <- tryCatch({
@@ -478,6 +475,9 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         if (isTRUE(sent)) shutdown_status$stop_requests_sent <- shutdown_status$stop_requests_sent + 1L
       }
       if (length(tasks)) {
+        unresolved <- function(task) {
+          tryCatch(mirai::unresolved(task), error = function(e) TRUE)
+        }
         deadline <- unname(proc.time()[["elapsed"]]) + max(0, as.numeric(timeout))
         while (any(vapply(tasks, unresolved, logical(1))) &&
                unname(proc.time()[["elapsed"]]) < deadline) {

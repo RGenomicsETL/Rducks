@@ -18,7 +18,12 @@ rducks_main_thread_token <- function() {
 .onLoad <- function(libname, pkgname) {
   .rducks_state$main_thread_token <- .Call(RDUCKS_current_thread_token)
   reg.finalizer(.rducks_state, function(env) {
-    rducks_nng_stop_all_providers(quiet = TRUE)
+    # This finalizer runs at R session exit.  Mirai daemon processes are
+    # children of R and are killed by the OS on exit, so we do not need to
+    # send NNG stop requests.  Calling nanonext at this point is unsafe:
+    # its C-level AIO objects may already be garbage-collected, causing
+    # crashes.  Skip the NNG cleanup here; only call it during a mid-session
+    # forced teardown (e.g. rducks_nng_stop_all_providers() from user code).
     invisible(NULL)
   }, onexit = TRUE)
   S7::methods_register()
