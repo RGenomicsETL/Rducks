@@ -105,6 +105,72 @@ types such as `UUID`, `BIT`, `HUGEINT`/`UHUGEINT`,
 DuckDB values or SQL evaluation; it only affects DuckDB-to-Arrow
 conversion used at the Rducks boundary.
 
+## What you can register
+
+Rducks installs a package-managed DuckDB extension, loads it into DuckDB
+with
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
+and registers scalar or vectorized R UDFs with
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
+
+Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
+`SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`,
+`FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`,
+`HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
+`DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`. Composite
+inputs and outputs are accepted as constructed type objects such as
+`TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
+supported child types.
+
+Enum descriptors work in the same-process plans (`arrow_r` and
+`arrow_c`). They are deliberately rejected by the native `arrow_ipc` NNG
+path for now: Rducks owns the outer NNG frame, but the chunk payload is
+still an Arrow IPC stream written with vendored nanoarrow C/IPC; DuckDB
+exports enums as Arrow dictionary arrays and that writer rejects
+dictionary arrays. Rducks has an enum-storage sidecar design for
+declared `ENUM(...)` types, but the README does not claim IPC enum
+support until native input/output rewriting converts declared enums to
+ordinary integer arrays.
+
+Rducks also provides explicit R value classes for exact or
+DuckDB-specific values:
+[`rducks_bigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bigint.md),
+[`rducks_ubigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ubigint.md),
+[`rducks_uuid()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uuid.md),
+[`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md),
+[`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md),
+[`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md),
+[`rducks_uhugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uhugeint.md),
+[`rducks_bits()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md),
+[`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md),
+and
+[`rducks_union()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_union.md).
+Constructed DuckDB type objects are formal S7-backed descriptors with
+structural validation via
+[`rducks_is_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md).
+
+## Type descriptors
+
+``` r
+
+nested_type <- STRUCT(
+  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
+  amount = DECIMAL(10, 2),
+  tags = LIST(ENUM(c("red", "blue")))
+)
+
+rducks_is_type(nested_type)
+#> [1] TRUE
+rducks_type_kind(nested_type)
+#> [1] "struct"
+rducks_type_sql(nested_type)
+#> [1] "STRUCT(payload UNION(code INTEGER, label ENUM('red', 'blue')), amount DECIMAL(10, 2), tags ENUM('red', 'blue')[])"
+rducks_type_child_names(nested_type)
+#> [1] "payload" "amount"  "tags"
+rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
+rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
+```
+
 ## Scalar and vectorized modes
 
 Scalar mode calls the R function once per DuckDB row. Vectorized mode
@@ -150,242 +216,9 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        309ms      3.21    1.97MB
-#> 2 vectorized    246ms      4.04    2.34MB
+#> 1 scalar        287ms      3.46    1.97MB
+#> 2 vectorized    230ms      4.34    2.34MB
 ```
-
-## Execution plans
-
-Execution plans choose the default marshalling implementation and
-concurrency contract for future registrations through a connection.
-Registration remains semantic: name, function, mode, types, NULL
-handling, exception handling, and side-effect flag. The plan active at
-[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
-freezes the UDF’s native evaluator/marshalling metadata; later plan
-changes do not retarget already-registered UDFs.
-
-| Plan | Scalar | Vectorized | Notes |
-|----|----|----|----|
-| `arrow_r + serial` | implemented | implemented | reference implementation |
-| `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
-| `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
-| `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
-| `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` generates `abstract` (Linux abstract IPC), `ipc` (NNG IPC), `unix` (POSIX Unix-domain alias), `tcp`, or `ws` endpoints; optional explicit `ipc_endpoints`; strict plan |
-
-`arrow_r + serial` is the semantic reference. Other implemented plans
-are tested against it and use exactly their selected marshalling path.
-Use
-[`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-to inspect the plan and native counters for a registered UDF.
-
-``` r
-
-rducks_explain_udf(con, "r_vec_plus_one")[, c(
-  "name", "mode", "plan_id", "native_marshalling",
-  "evaluator", "arrow_r_chunks", "arrow_c_chunks", "arrow_ipc_chunks"
-)]
-#>             name       mode        plan_id native_marshalling evaluator
-#> 1 r_vec_plus_one vectorized arrow_r+serial            arrow_r         R
-#>   arrow_r_chunks arrow_c_chunks arrow_ipc_chunks
-#> 1             21              0                0
-```
-
-## In-process queued execution
-
-[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-lets DuckDB worker threads enqueue same-process R calls while the
-recorded main R thread drains the queue. This is for safety and
-liveness, not automatic speed: R API work still runs on the main thread.
-
-``` r
-
-rducks_register(
-  con,
-  name = "r_inproc_plus_one",
-  fun = function(x) x + 1,
-  args = DOUBLE,
-  returns = DOUBLE
-)
-#> <rducks_registration>
-#>   registered: yes
-#>   name:       r_inproc_plus_one
-#>   mode:       scalar
-#>   plan:       arrow_r+serial
-#>   signature:  r_inproc_plus_one(DOUBLE) -> DOUBLE
-
-rducks_enable_inproc(con, threads = 4, external_threads = 1)
-dbExecute(con, "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)")
-#> [1] 2e+05
-dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
-#>         total
-#> 1 20000100000
-rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain_batches")]
-#>   submitted executed pending_max main_drain_batches
-#> 1        38       38           1                 38
-rducks_disable_inproc(con, threads = 1)
-```
-
-## Multiprocess Arrow IPC execution
-
-`arrow_ipc + multiprocess_parallel` uses the native NNG/Arrow IPC path.
-The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code,
-sends owned request bytes over native NNG, and imports owned Arrow IPC
-result bytes back into DuckDB callback output. By default Rducks
-launches local worker loops with mirai daemons and Rducks-generated
-nanonext endpoint URLs; `ipc_transport` selects the generated endpoint
-transport: `abstract` is Linux abstract IPC, `ipc` is NNG IPC, `unix` is
-the POSIX Unix-domain alias, and `tcp` / `ws` use loopback TCP /
-WebSocket endpoints. `ipc_endpoints` may instead point at externally
-managed NNG worker loops using endpoint URLs directly. The plan errors
-rather than changing to same-process execution, generic process
-backends, R serialization, or path-loaded symbols from another R package
-shared library.
-
-The example below registers the same vectorized R function three ways
-and then runs a small chunk-level comparison over several CSV files.
-Multiple input files make DuckDB’s scanner eligible for threaded work;
-the IPC row reports `ripc_inflight_max = 2` when two chunks were
-concurrently in flight to the worker processes. `ipc_workers` is the
-number of persistent R worker processes. `threads` is DuckDB’s query
-execution thread count: keep it at `1` while registering so catalog
-setup and R-owned evaluator configuration happen on the recorded main R
-thread, then raise it for the IPC query phase so DuckDB can fan chunks
-out to the IPC workers. `external_threads = 1` keeps DuckDB’s
-external-thread budget conservative; the IPC R workers are separate
-processes, not DuckDB external threads. The in-process queue row is kept
-single-threaded because that plan serializes R API work on the recorded
-main R thread; it is a same-process safety path, not the multiprocess
-throughput path.
-
-``` r
-
-chunk_plus_one <- function(x) {
-  Sys.sleep(0.05) # visible chunk work for the comparison, not required by Rducks
-  x + 1L
-}
-
-csv_dir <- file.path(tempdir(), paste0("rducks-ipc-csv-", Sys.getpid()))
-dir.create(csv_dir, showWarnings = FALSE)
-rows_per_file <- 4096L
-parts <- 8L
-for (part in seq_len(parts)) {
-  values <- seq.int((part - 1L) * rows_per_file, part * rows_per_file - 1L)
-  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
-}
-csv_glob <- file.path(csv_dir, "part-*.csv")
-
-serial_plan <- rducks_execution_plan("arrow_r", "serial")
-inproc_plan <- rducks_execution_plan("arrow_r", "inproc_concurrent")
-ipc_workers <- 2L
-ipc_plan <- rducks_execution_plan(
-  "arrow_ipc", "multiprocess_parallel",
-  ipc_transport = "tcp",
-  ipc_workers = ipc_workers,
-  ipc_timeout = 30
-)
-
-register_for_plan <- function(name, plan) {
-  rducks_set_execution_plan(con, plan, threads = 1, external_threads = 1)
-  invisible(rducks_register(
-    con,
-    name = name,
-    fun = chunk_plus_one,
-    args = INTEGER,
-    returns = INTEGER,
-    mode = "vectorized",
-    side_effects = TRUE
-  ))
-}
-
-register_for_plan("r_cmp_serial", serial_plan)
-register_for_plan("r_cmp_inproc", inproc_plan)
-register_for_plan("r_cmp_ipc", ipc_plan)
-
-run_comparison <- function(label, name, plan, threads) {
-  rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
-  elapsed <- system.time({
-    result <- dbGetQuery(con, sprintf(
-      "SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)",
-      DBI::dbQuoteIdentifier(con, name),
-      DBI::dbQuoteString(con, csv_glob)
-    ))
-  })[["elapsed"]]
-  info <- rducks_explain_udf(con, name)
-  data.frame(
-    plan = label,
-    threads = threads,
-    total = result$total[[1]],
-    elapsed_sec = round(unname(elapsed), 3),
-    evaluator = info$evaluator[[1]],
-    arrow_r_chunks = info$arrow_r_chunks[[1]],
-    arrow_ipc_chunks = info$arrow_ipc_chunks[[1]],
-    ripc_inflight_max = info$ripc_inflight_max[[1]],
-    stringsAsFactors = FALSE
-  )
-}
-
-comparison <- rbind(
-  run_comparison("sequential arrow_r", "r_cmp_serial", serial_plan, threads = 1),
-  run_comparison("in-process queue", "r_cmp_inproc", inproc_plan, threads = 1),
-  run_comparison("2-process Arrow IPC", "r_cmp_ipc", ipc_plan, threads = ipc_workers)
-)
-comparison
-#>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.917         R             16
-#> 2    in-process queue       1 536887296       1.867         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.072      RIPC              0
-#>   arrow_ipc_chunks ripc_inflight_max
-#> 1                0                 0
-#> 2                0                 0
-#> 3               16                 2
-
-unlink(csv_dir, recursive = TRUE, force = TRUE)
-rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
-```
-
-## Current scope
-
-Rducks currently builds `rducks.duckdb_extension` at install time, loads
-it into DuckDB with
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
-and registers scalar or vectorized R UDFs with
-[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
-
-The input/output type set is `BOOLEAN`, `TINYINT`, `UTINYINT`,
-`SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`,
-`FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`,
-`HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`,
-`DECIMAL(width, scale)`, `ENUM(levels)`, and `UNION(...)`. Composite
-inputs and outputs are accepted as constructed type objects such as
-`TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
-supported child types.
-
-Enum types are supported by the implemented same-process plans
-(`arrow_r` and `arrow_c`). They are not yet enabled for the native
-`arrow_ipc` NNG path. Rducks owns the outer NNG frame, but the chunk
-payload is still an Arrow IPC stream written with vendored nanoarrow
-C/IPC; DuckDB currently exports enums as Arrow dictionary arrays and
-that writer rejects dictionary arrays. Rducks has a planned enum-storage
-sidecar convention for declared `ENUM(...)` types, but it is not claimed
-until native input/output rewriting converts declared enums to ordinary
-integer arrays.
-
-Rducks also provides explicit R value classes for exact or
-DuckDB-specific values:
-[`rducks_bigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bigint.md),
-[`rducks_ubigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ubigint.md),
-[`rducks_uuid()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uuid.md),
-[`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md),
-[`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md),
-[`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md),
-[`rducks_uhugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_uhugeint.md),
-[`rducks_bits()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md),
-[`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md),
-and
-[`rducks_union()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_union.md).
-Constructed DuckDB type objects are formal S7-backed descriptors with
-structural validation via
-[`rducks_is_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md).
 
 ## Execution mode semantics
 
@@ -397,29 +230,7 @@ The table below is produced by
 | scalar | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values | one output value per R function call | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
 | vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument | one R vector/list of values compatible with the declared return type | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet |
 
-## Type descriptors
-
-``` r
-
-nested_type <- STRUCT(
-  payload = UNION(code = INTEGER, label = ENUM(c("red", "blue"))),
-  amount = DECIMAL(10, 2),
-  tags = LIST(ENUM(c("red", "blue")))
-)
-
-rducks_is_type(nested_type)
-#> [1] TRUE
-rducks_type_kind(nested_type)
-#> [1] "struct"
-rducks_type_sql(nested_type)
-#> [1] "STRUCT(payload UNION(code INTEGER, label ENUM('red', 'blue')), amount DECIMAL(10, 2), tags ENUM('red', 'blue')[])"
-rducks_type_child_names(nested_type)
-#> [1] "payload" "amount"  "tags"
-rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label", "ok"))
-rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
-```
-
-### Argument values passed to R functions
+## Argument values passed to R functions
 
 Expand for argument values passed to R functions
 
@@ -447,7 +258,7 @@ nested composite `NULL` values are represented as R `NULL`.
 | enum\<red\|blue\> | ENUM(‘red’, ‘blue’) | enum | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | factor with enum levels |
 | union\<code:i32;label:varchar\> | UNION(code INTEGER, label VARCHAR) | union | rducks_union | rducks_union object | NULL | boxed exact Rducks value object | FALSE | FALSE | FALSE | tagged value object |
 
-### NULL, NA, NaN, Inf, and value-class semantics
+## NULL, NA, NaN, Inf, and value-class semantics
 
 Expand for NULL, NA, NaN, Inf, and value-class semantics
 
@@ -634,6 +445,195 @@ dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 #> 1 0.2655087
 #> 2 0.3721239
 #> 3 0.5728534
+```
+
+## Execution plans
+
+Execution plans choose the default marshalling implementation and
+concurrency contract for future registrations through a connection.
+Registration remains semantic: name, function, mode, types, NULL
+handling, exception handling, and side-effect flag. The plan active at
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+freezes the UDF’s native evaluator/marshalling metadata; later plan
+changes do not retarget already-registered UDFs.
+
+| Plan | Scalar | Vectorized | Notes |
+|----|----|----|----|
+| `arrow_r + serial` | implemented | implemented | reference implementation |
+| `arrow_r + inproc_concurrent` | implemented | implemented | queued same-process callbacks; R API work stays on the recorded main R thread |
+| `arrow_c + serial` | implemented | implemented | direct native evaluator tokens `RC`/`RCV` |
+| `arrow_c + inproc_concurrent` | implemented | implemented | queued same-process callbacks with direct `arrow_c` marshalling |
+| `arrow_ipc + multiprocess_parallel` | implemented | implemented | native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; `ipc_transport` generates `abstract` (Linux abstract IPC), `ipc` (NNG IPC), `unix` (POSIX Unix-domain alias), `tcp`, or `ws` endpoints; optional explicit `ipc_endpoints`; strict plan |
+
+`arrow_r + serial` is the semantic reference. Other implemented plans
+are tested against it and use exactly their selected marshalling path.
+Use
+[`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+to inspect the plan and native counters for a registered UDF.
+
+``` r
+
+rducks_explain_udf(con, "r_vec_plus_one")[, c(
+  "name", "mode", "plan_id", "native_marshalling",
+  "evaluator", "arrow_r_chunks", "arrow_c_chunks", "arrow_ipc_chunks"
+)]
+#>             name       mode        plan_id native_marshalling evaluator
+#> 1 r_vec_plus_one vectorized arrow_r+serial            arrow_r         R
+#>   arrow_r_chunks arrow_c_chunks arrow_ipc_chunks
+#> 1             21              0                0
+```
+
+## In-process queued execution
+
+[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
+lets DuckDB worker threads enqueue same-process R calls while the
+recorded main R thread drains the queue. This is for safety and
+liveness, not automatic speed: R API work still runs on the main thread.
+
+``` r
+
+rducks_register(
+  con,
+  name = "r_inproc_plus_one",
+  fun = function(x) x + 1,
+  args = DOUBLE,
+  returns = DOUBLE
+)
+#> <rducks_registration>
+#>   registered: yes
+#>   name:       r_inproc_plus_one
+#>   mode:       scalar
+#>   plan:       arrow_r+serial
+#>   signature:  r_inproc_plus_one(DOUBLE) -> DOUBLE
+
+rducks_enable_inproc(con, threads = 4, external_threads = 1)
+dbExecute(con, "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)")
+#> [1] 2e+05
+dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
+#>         total
+#> 1 20000100000
+rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain_batches")]
+#>   submitted executed pending_max main_drain_batches
+#> 1        38       38           1                 38
+rducks_disable_inproc(con, threads = 1)
+```
+
+## Multiprocess Arrow IPC execution
+
+`arrow_ipc + multiprocess_parallel` uses the native NNG/Arrow IPC path.
+The extension encodes DuckDB chunks with vendored nanoarrow C/IPC code,
+sends owned request bytes over native NNG, and imports owned Arrow IPC
+result bytes back into DuckDB callback output. By default Rducks
+launches local worker loops with mirai daemons and Rducks-generated
+nanonext endpoint URLs; `ipc_transport` selects the generated endpoint
+transport: `abstract` is Linux abstract IPC, `ipc` is NNG IPC, `unix` is
+the POSIX Unix-domain alias, and `tcp` / `ws` use loopback TCP /
+WebSocket endpoints. `ipc_endpoints` may instead point at externally
+managed NNG worker loops using endpoint URLs directly. The plan errors
+rather than changing to same-process execution, generic process
+backends, R serialization, or path-loaded symbols from another R package
+shared library.
+
+The example below registers the same vectorized R function three ways
+and then runs a small chunk-level comparison over several CSV files.
+Multiple input files make DuckDB’s scanner eligible for threaded work;
+inspect `ripc_inflight_max` to see whether more than one IPC request was
+in flight during the query. The exact value is scheduler- and
+machine-dependent. `ipc_workers` is the number of persistent R worker
+processes. `threads` is DuckDB’s query execution thread count: keep it
+at `1` while registering so catalog setup and R-owned evaluator
+configuration happen on the recorded main R thread, then raise it for
+the IPC query phase so DuckDB can fan chunks out to the IPC workers.
+`external_threads = 1` keeps DuckDB’s external-thread budget
+conservative; the IPC R workers are separate processes, not DuckDB
+external threads. The in-process queue row is kept single-threaded
+because that plan serializes R API work on the recorded main R thread;
+it is a same-process safety path, not the multiprocess throughput path.
+
+``` r
+
+chunk_plus_one <- function(x) {
+  Sys.sleep(0.05) # visible chunk work for the comparison, not required by Rducks
+  x + 1L
+}
+
+csv_dir <- file.path(tempdir(), paste0("rducks-ipc-csv-", Sys.getpid()))
+dir.create(csv_dir, showWarnings = FALSE)
+rows_per_file <- 4096L
+parts <- 8L
+for (part in seq_len(parts)) {
+  values <- seq.int((part - 1L) * rows_per_file, part * rows_per_file - 1L)
+  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
+}
+csv_glob <- file.path(csv_dir, "part-*.csv")
+
+serial_plan <- rducks_execution_plan("arrow_r", "serial")
+inproc_plan <- rducks_execution_plan("arrow_r", "inproc_concurrent")
+ipc_workers <- 2L
+ipc_plan <- rducks_execution_plan(
+  "arrow_ipc", "multiprocess_parallel",
+  ipc_transport = "tcp",
+  ipc_workers = ipc_workers,
+  ipc_timeout = 30
+)
+
+register_for_plan <- function(name, plan) {
+  rducks_set_execution_plan(con, plan, threads = 1, external_threads = 1)
+  invisible(rducks_register(
+    con,
+    name = name,
+    fun = chunk_plus_one,
+    args = INTEGER,
+    returns = INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+}
+
+register_for_plan("r_cmp_serial", serial_plan)
+register_for_plan("r_cmp_inproc", inproc_plan)
+register_for_plan("r_cmp_ipc", ipc_plan)
+
+run_comparison <- function(label, name, plan, threads) {
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
+  elapsed <- system.time({
+    result <- dbGetQuery(con, sprintf(
+      "SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)",
+      DBI::dbQuoteIdentifier(con, name),
+      DBI::dbQuoteString(con, csv_glob)
+    ))
+  })[["elapsed"]]
+  info <- rducks_explain_udf(con, name)
+  data.frame(
+    plan = label,
+    threads = threads,
+    total = result$total[[1]],
+    elapsed_sec = round(unname(elapsed), 3),
+    evaluator = info$evaluator[[1]],
+    arrow_r_chunks = info$arrow_r_chunks[[1]],
+    arrow_ipc_chunks = info$arrow_ipc_chunks[[1]],
+    ripc_inflight_max = info$ripc_inflight_max[[1]],
+    stringsAsFactors = FALSE
+  )
+}
+
+comparison <- rbind(
+  run_comparison("sequential arrow_r", "r_cmp_serial", serial_plan, threads = 1),
+  run_comparison("in-process queue", "r_cmp_inproc", inproc_plan, threads = 1),
+  run_comparison("2-process Arrow IPC", "r_cmp_ipc", ipc_plan, threads = ipc_workers)
+)
+comparison
+#>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
+#> 1  sequential arrow_r       1 536887296       1.847         R             16
+#> 2    in-process queue       1 536887296       1.819         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.024      RIPC              0
+#>   arrow_ipc_chunks ripc_inflight_max
+#> 1                0                 0
+#> 2                0                 0
+#> 3               16                 2
+
+unlink(csv_dir, recursive = TRUE, force = TRUE)
+rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 ```
 
 ## Build notes
