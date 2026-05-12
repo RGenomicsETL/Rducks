@@ -53,22 +53,28 @@ rducks_execution_plan(
   Arrow IPC worker options. By default (`ipc_globals = "auto"`), Rducks
   discovers UDF globals once at registration-wrapper creation and
   broadcasts them to each NNG worker when the UDF is registered with the
-  shared provider pool. Use `ipc_packages` for packages that workers
-  should attach, `ipc_globals = FALSE` to rely only on the serialized
-  UDF closure and explicit task state, or a character vector / named
-  list for explicit extra globals. `ipc_timeout` is the positive finite
-  provider wait timeout in seconds; `NULL` uses a finite default of 30
-  seconds. `ipc_endpoints` optionally supplies NNG endpoint URLs for
-  worker processes that the caller starts and stops; those processes
-  must run the Rducks NNG worker loop. Any NNG URL transport supported
-  by both endpoints is allowed. When endpoints are not supplied,
-  `ipc_transport` selects the transport used for the mirai-launched
-  local worker endpoints and must be left as `NULL` when explicit
-  `ipc_endpoints` are supplied. `"abstract"` means Linux abstract IPC,
-  `"ipc"` means NNG IPC (Unix-domain sockets on POSIX and named pipes on
-  Windows), `"unix"` means the POSIX Unix-domain alias, and `"tcp"` /
-  `"ws"` use loopback TCP / WebSocket endpoints. The default is
-  `"abstract"` on Linux and `"ipc"` elsewhere.
+  shared provider pool. Automatic capture estimates the serialized
+  globals payload and warns when it exceeds option
+  `rducks.ipc_globals.warn_bytes` (8 MiB by default); option
+  `rducks.ipc_globals.max_bytes` can set a hard byte limit. Use
+  `ipc_packages` for packages that workers should attach,
+  `ipc_globals = FALSE` to rely only on the serialized UDF closure and
+  explicit task state, or a character vector / named list for explicit
+  extra globals. `ipc_timeout` is the positive finite provider wait
+  timeout in seconds; `NULL` uses a finite default of 30 seconds.
+  `ipc_endpoints` optionally supplies NNG endpoint URLs for worker
+  processes that the caller starts and stops; those processes must run
+  the Rducks NNG worker loop. Any NNG URL transport supported by both
+  endpoints is allowed. When endpoints are not supplied, `ipc_transport`
+  selects the transport used for the mirai-launched local worker
+  endpoints and must be left as `NULL` when explicit `ipc_endpoints` are
+  supplied. Rducks retries local TCP/WebSocket startup with fresh
+  endpoint bundles after startup-ping failure; caller-supplied endpoints
+  remain caller-owned and fail fast. `"abstract"` means Linux abstract
+  IPC, `"ipc"` means NNG IPC (Unix-domain sockets on POSIX and named
+  pipes on Windows), `"unix"` means the POSIX Unix-domain alias, and
+  `"tcp"` / `"ws"` use loopback TCP / WebSocket endpoints. The default
+  is `"abstract"` on Linux and `"ipc"` elsewhere.
 
 - ipc_provider:
 
