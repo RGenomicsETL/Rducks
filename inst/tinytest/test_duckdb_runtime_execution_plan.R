@@ -88,4 +88,34 @@ local({
   expect_true(explain_ipc$arrow_ipc_chunks >= 1)
   expect_equal(explain_ipc$arrow_r_chunks, 0)
   expect_equal(explain_ipc$arrow_c_chunks, 0)
+
+  reg_ipc_enum <- rducks_register(
+    con, "plan_ipc_enum", function(x) x,
+    ENUM(c("red", "blue")), ENUM(c("red", "blue")),
+    mode = "vectorized",
+    side_effects = TRUE
+  )
+  expect_equal(reg_ipc_enum$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+  result_ipc_enum <- DBI::dbGetQuery(
+    con,
+    "SELECT plan_ipc_enum(x)::VARCHAR AS x FROM (VALUES ('red'::ENUM('red','blue')), ('blue'::ENUM('red','blue'))) t(x)"
+  )
+  expect_equal(result_ipc_enum$x, c("red", "blue"))
+
+  invisible(rducks_register(
+    con, "plan_ipc_enum_struct", function(x) data.frame(label = x, code = seq_along(x)),
+    ENUM(c("red", "blue")), STRUCT(label = ENUM(c("red", "blue")), code = INTEGER),
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  result_ipc_enum_struct <- DBI::dbGetQuery(
+    con,
+    paste(
+      "SELECT s.label::VARCHAR AS label, s.code AS code",
+      "FROM (SELECT plan_ipc_enum_struct(x) AS s",
+      "FROM (VALUES ('red'::ENUM('red','blue')), ('blue'::ENUM('red','blue'))) t(x)) q"
+    )
+  )
+  expect_equal(result_ipc_enum_struct$label, c("red", "blue"))
+  expect_equal(result_ipc_enum_struct$code, 1:2)
 })

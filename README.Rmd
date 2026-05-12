@@ -125,14 +125,11 @@ Composite inputs and outputs are accepted as constructed type objects such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over supported
 child types.
 
-Enum descriptors work in the same-process plans (`arrow_r` and `arrow_c`).
-They are deliberately rejected by the native `arrow_ipc` NNG path for now:
-Rducks owns the outer NNG frame, but the chunk payload is still an Arrow IPC
-stream written with vendored nanoarrow C/IPC; DuckDB exports enums as Arrow
-dictionary arrays and that writer rejects dictionary arrays. Rducks has an
-enum-storage sidecar design for declared `ENUM(...)` types, but the README does
-not claim IPC enum support until native input/output rewriting converts declared
-enums to ordinary integer arrays.
+Declared `ENUM(...)` descriptors are supported by all implemented execution
+plans. On the native `arrow_ipc` NNG path, Rducks does not depend on Arrow IPC
+dictionary transport for enums: declared enum levels are registration metadata,
+and the IPC payload carries the underlying DuckDB enum index storage as Arrow
+integer buffers.
 
 Rducks also provides explicit R value classes for exact or DuckDB-specific
 values: `rducks_bigint()`, `rducks_ubigint()`, `rducks_uuid()`,
@@ -267,7 +264,11 @@ knitr::kable(rducks_value_semantics(list(
 
 Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL
 `NULL` elements represented as typed `NA` values. Structs are passed as named
-lists, and maps are passed as `list(keys = ..., values = ...)`.
+lists, and maps are passed as `list(keys = ..., values = ...)`. A `data.frame`
+return is not a table-valued UDF here; the scalar UDF type equivalent is
+`STRUCT(...)`. In vectorized mode, a `STRUCT(...)` return may be supplied as a
+`data.frame` with columns matching the struct fields, yielding one struct-valued
+SQL result per row.
 
 ```{r composite-inputs}
 reg_list_len <- rducks_register(

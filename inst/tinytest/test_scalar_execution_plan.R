@@ -78,10 +78,7 @@ expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 enum_spec <- Rducks:::rducks_registration_spec(
   "enum_ipc", function(x) x, ENUM(c("red", "blue")), ENUM(c("red", "blue")), mode = "vectorized"
 )
-expect_error(
-  Rducks:::rducks_validate_execution_plan_for_registration(ipc, enum_spec),
-  "cannot use Arrow IPC marshalling"
-)
+expect_silent(Rducks:::rducks_validate_execution_plan_for_registration(ipc, enum_spec))
 
 expect_error(
   rducks_execution_plan("arrow_ipc", "serial"),

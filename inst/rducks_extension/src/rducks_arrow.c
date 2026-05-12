@@ -239,6 +239,148 @@ static int rducks_fill_input_arrow_array(rducks_runtime_entry_t *runtime, SEXP a
     return rducks_fill_input_arrow_array_native(runtime, nanoarrow_output_array_from_xptr(array_xptr), input, err_msg, err_cap);
 }
 
+typedef struct rducks_arrow_dict_detach {
+    struct ArrowSchema **schema_slot;
+    struct ArrowSchema *schema_dict;
+    struct ArrowArray **array_slot;
+    struct ArrowArray *array_dict;
+} rducks_arrow_dict_detach_t;
+
+typedef struct rducks_arrow_dict_detach_list {
+    rducks_arrow_dict_detach_t *items;
+    size_t count;
+    size_t capacity;
+} rducks_arrow_dict_detach_list_t;
+
+static void rducks_arrow_restore_dictionaries(rducks_arrow_dict_detach_list_t *list) {
+    if (!list) return;
+    for (size_t i = list->count; i > 0U; i--) {
+        rducks_arrow_dict_detach_t *item = &list->items[i - 1U];
+        if (item->schema_slot) *item->schema_slot = item->schema_dict;
+        if (item->array_slot) *item->array_slot = item->array_dict;
+    }
+    free(list->items);
+    list->items = NULL;
+    list->count = 0U;
+    list->capacity = 0U;
+}
+
+static int rducks_arrow_detach_dictionary(rducks_arrow_dict_detach_list_t *list,
+                                          struct ArrowSchema **schema_slot,
+                                          struct ArrowArray **array_slot,
+                                          char *err_msg, size_t err_cap) {
+    rducks_arrow_dict_detach_t *items;
+    size_t capacity;
+
+    if (!list || (!schema_slot && !array_slot)) return 1;
+    if ((!schema_slot || !*schema_slot) && (!array_slot || !*array_slot)) return 1;
+    if (list->count == list->capacity) {
+        capacity = list->capacity ? list->capacity * 2U : 8U;
+        if (capacity <= list->capacity || capacity > SIZE_MAX / sizeof(*items)) {
+            snprintf(err_msg, err_cap, "too many Arrow dictionary fields in RIPC enum input");
+            return 0;
+        }
+        items = (rducks_arrow_dict_detach_t *)rducks_realloc_array(list->items, capacity, sizeof(*items));
+        if (!items) {
+            snprintf(err_msg, err_cap, "out of memory recording RIPC enum dictionary fields");
+            return 0;
+        }
+        list->items = items;
+        list->capacity = capacity;
+    }
+
+    list->items[list->count++] = (rducks_arrow_dict_detach_t){
+        .schema_slot = schema_slot,
+        .schema_dict = schema_slot ? *schema_slot : NULL,
+        .array_slot = array_slot,
+        .array_dict = array_slot ? *array_slot : NULL
+    };
+    if (schema_slot) *schema_slot = NULL;
+    if (array_slot) *array_slot = NULL;
+    return 1;
+}
+
+static int rducks_arrow_schema_array_child(struct ArrowSchema *schema, struct ArrowArray *array,
+                                           int64_t index, const char *what,
+                                           struct ArrowSchema **schema_child,
+                                           struct ArrowArray **array_child,
+                                           char *err_msg, size_t err_cap) {
+    if (!schema || !array || index < 0 || index >= schema->n_children || index >= array->n_children ||
+        !schema->children || !array->children || !schema->children[index] || !array->children[index]) {
+        snprintf(err_msg, err_cap, "Arrow C Data for %s is missing an expected child", what);
+        return 0;
+    }
+    *schema_child = schema->children[index];
+    *array_child = array->children[index];
+    return 1;
+}
+
+static int rducks_arrow_detach_enum_dictionaries_for_type(const rducks_type_desc_t *desc,
+                                                          struct ArrowSchema *schema,
+                                                          struct ArrowArray *array,
+                                                          rducks_arrow_dict_detach_list_t *list,
+                                                          char *err_msg, size_t err_cap) {
+    struct ArrowSchema *schema_child;
+    struct ArrowArray *array_child;
+    struct ArrowSchema *entries_schema;
+    struct ArrowArray *entries_array;
+
+    if (!desc) return 1;
+    switch (desc->kind) {
+    case RDUCKS_KIND_ENUM:
+        return rducks_arrow_detach_dictionary(list,
+                                              schema ? &schema->dictionary : NULL,
+                                              array ? &array->dictionary : NULL,
+                                              err_msg, err_cap);
+    case RDUCKS_KIND_LIST:
+    case RDUCKS_KIND_ARRAY:
+        if (!rducks_arrow_schema_array_child(schema, array, 0, "list/array enum storage",
+                                             &schema_child, &array_child, err_msg, err_cap)) return 0;
+        return rducks_arrow_detach_enum_dictionaries_for_type(desc->child, schema_child, array_child,
+                                                              list, err_msg, err_cap);
+    case RDUCKS_KIND_STRUCT:
+    case RDUCKS_KIND_UNION:
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (!rducks_arrow_schema_array_child(schema, array, (int64_t)i, "struct/union enum storage",
+                                                 &schema_child, &array_child, err_msg, err_cap)) return 0;
+            if (!rducks_arrow_detach_enum_dictionaries_for_type(desc->field_types[i], schema_child, array_child,
+                                                                list, err_msg, err_cap)) return 0;
+        }
+        return 1;
+    case RDUCKS_KIND_MAP:
+        if (!rducks_arrow_schema_array_child(schema, array, 0, "map entries enum storage",
+                                             &entries_schema, &entries_array, err_msg, err_cap)) return 0;
+        if (!rducks_arrow_schema_array_child(entries_schema, entries_array, 0, "map key enum storage",
+                                             &schema_child, &array_child, err_msg, err_cap)) return 0;
+        if (!rducks_arrow_detach_enum_dictionaries_for_type(desc->key, schema_child, array_child,
+                                                            list, err_msg, err_cap)) return 0;
+        if (!rducks_arrow_schema_array_child(entries_schema, entries_array, 1, "map value enum storage",
+                                             &schema_child, &array_child, err_msg, err_cap)) return 0;
+        return rducks_arrow_detach_enum_dictionaries_for_type(desc->value, schema_child, array_child,
+                                                              list, err_msg, err_cap);
+    default:
+        return 1;
+    }
+}
+
+static int rducks_arrow_detach_input_enum_dictionaries(rducks_r_scalar_meta_t *meta,
+                                                       struct ArrowSchema *schema,
+                                                       struct ArrowArray *array,
+                                                       rducks_arrow_dict_detach_list_t *list,
+                                                       char *err_msg, size_t err_cap) {
+    struct ArrowSchema *schema_child;
+    struct ArrowArray *array_child;
+
+    if (!meta || meta->arity == 0U) return 1;
+    for (size_t i = 0; i < meta->arity; i++) {
+        if (!rducks_arrow_schema_array_child(schema, array, (int64_t)i, "RIPC input enum storage",
+                                             &schema_child, &array_child, err_msg, err_cap)) return 0;
+        if (!rducks_arrow_detach_enum_dictionaries_for_type(meta->args[i], schema_child, array_child,
+                                                            list, err_msg, err_cap)) return 0;
+    }
+    return 1;
+}
+
 static SEXP rducks_arrow_array_schema_or_expected_xptr(SEXP array_xptr, SEXP expected_schema_xptr) {
     /* Result arrays produced by some nanoarrow/R helpers carry their schema in
      * the external-pointer tag. When they do not, use the explicit schema that
@@ -727,14 +869,17 @@ static int rducks_arrow_ipc_encode_input_chunk_native(rducks_runtime_entry_t *ru
                                                       char *err_msg, size_t err_cap) {
     struct ArrowSchema schema;
     struct ArrowArray array;
+    rducks_arrow_dict_detach_list_t detached = {0};
     int ok = 0;
     memset(&schema, 0, sizeof(schema));
     memset(&array, 0, sizeof(array));
     if (!rducks_fill_input_arrow_schema_native(runtime, &schema, meta, err_msg, err_cap)) goto cleanup;
     if (!rducks_fill_input_arrow_array_native(runtime, &array, input, err_msg, err_cap)) goto cleanup;
+    if (!rducks_arrow_detach_input_enum_dictionaries(meta, &schema, &array, &detached, err_msg, err_cap)) goto cleanup;
     if (!rducks_arrow_ipc_encode_borrowed_array(&schema, &array, &payload->data, &payload->size, err_msg, err_cap)) goto cleanup;
     ok = 1;
 cleanup:
+    rducks_arrow_restore_dictionaries(&detached);
     rducks_release_arrow_array_if_set(&array);
     rducks_release_arrow_schema_if_set(&schema);
     return ok;

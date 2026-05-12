@@ -71,14 +71,12 @@ Unsupported combinations must fail. They must not silently switch:
 | `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | yes | yes | Queued direct marshalling; inputs/results use owned state before crossing threads. |
 | `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | yes | yes | Native NNG request/reply with owned Arrow IPC bytes and persistent workers. |
 
-## Arrow IPC limits
+## Arrow IPC enum storage
 
-The current native Arrow IPC path rejects declared `ENUM(...)` descriptors,
-including nested enum children. Rducks owns the NNG frame, but the chunk payload
-is still an Arrow IPC stream written with vendored nanoarrow C/IPC; DuckDB exports
-enums as dictionary arrays and that writer does not accept the dictionary layout
-used here. Do not document enum support for `arrow_ipc` until native input/output
-rewriting converts declared enums to a supported storage representation.
+Declared `ENUM(...)` levels are part of the Rducks registration type descriptor.
+For `arrow_ipc`, Rducks transports enum columns as their underlying DuckDB enum
+index storage, with Arrow dictionaries removed at the IPC boundary. The worker
+reconstructs `rducks_enum` values from the declared levels and storage indexes.
 
 ## Validation expectations
 

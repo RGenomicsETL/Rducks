@@ -531,11 +531,8 @@ rducks_arrow_ipc_unsupported_types <- function(type) {
   if (identical(kind, "scalar")) {
     return(if (rducks_type_token(type) %in% rducks_all_scalar_type_names()) character() else rducks_type_duckdb_sql(type))
   }
-  if (identical(kind, "decimal")) {
+  if (identical(kind, "decimal") || identical(kind, "enum")) {
     return(character())
-  }
-  if (identical(kind, "enum")) {
-    return(rducks_type_duckdb_sql(type))
   }
   if (kind %in% c("list", "array", "struct", "map", "union")) {
     children <- rducks_type_children(type)
