@@ -41,6 +41,8 @@ LinkingTo:
     nanoarrow
 Suggests:
     bench,
+    globals (>= 0.18.0),
+    mori,
     tinytest
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

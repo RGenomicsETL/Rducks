@@ -679,7 +679,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
   }
   engine$mode <- mode
   opts <- engine$plan$ipc_options %||% rducks_ipc_options()
-  worker_state <- rducks_ipc_worker_globals(engine$fun, opts$globals)
+  worker_state <- rducks_ipc_worker_globals(engine$fun, opts$globals, share = opts$globals_share %||% "none")
   provider <- NULL
   provider_registered <- FALSE
   udf_id <- rducks_next_nng_udf_id()

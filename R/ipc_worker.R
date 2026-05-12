@@ -85,13 +85,50 @@ rducks_ipc_package_env_name <- function(env) {
   NA_character_
 }
 
-rducks_ipc_globals_for_function <- function(fun) {
+rducks_ipc_ignored_global_name <- function(name) {
+  name %in% c("...", "::", ":::", "{", "(", "if", "for", "while", "repeat", "function")
+}
+
+rducks_ipc_globals_from_globals_package <- function(fun) {
+  if (!requireNamespace("globals", quietly = TRUE) ||
+      !"method" %in% names(formals(globals::findGlobals))) {
+    return(NULL)
+  }
+  found <- globals::globalsOf(
+    fun,
+    envir = environment(fun) %||% parent.frame(),
+    method = "dfs",
+    recursive = TRUE,
+    mustExist = FALSE,
+    unlist = TRUE
+  )
+
+  where <- attr(found, "where", exact = TRUE) %||% list()
+  globals <- list()
+  packages <- character()
+  for (name in names(found)) {
+    if (rducks_ipc_ignored_global_name(name)) next
+    binding_env <- where[[name]]
+    if (is.null(binding_env)) next
+    pkg <- rducks_ipc_package_env_name(binding_env)
+    if (!is.na(pkg)) {
+      if (!pkg %in% c("base", "Autoloads")) packages <- unique(c(packages, pkg))
+      next
+    }
+    globals[name] <- list(found[[name]])
+  }
+  list(globals = globals, packages = unique(packages))
+}
+
+rducks_ipc_find_globals_codetools <- function(fun) {
   if (!requireNamespace("codetools", quietly = TRUE)) {
-    stop("ipc_globals = 'auto' requires the codetools package", call. = FALSE)
+    stop("ipc_globals = 'auto' requires the globals or codetools package", call. = FALSE)
   }
-  if (!is.function(fun)) {
-    stop("ipc_globals = 'auto' requires an R function", call. = FALSE)
-  }
+  found <- codetools::findGlobals(fun, merge = FALSE)
+  unique(c(found$variables %||% character(), found$functions %||% character()))
+}
+
+rducks_ipc_globals_for_function_codetools <- function(fun) {
   globals <- list()
   packages <- character()
   queue <- list(fun)
@@ -106,11 +143,10 @@ rducks_ipc_globals_for_function <- function(fun) {
     if (exists(current_key, envir = seen, inherits = FALSE)) next
     assign(current_key, TRUE, envir = seen)
 
-    found <- codetools::findGlobals(current, merge = FALSE)
-    names <- unique(c(found$variables %||% character(), found$functions %||% character()))
+    names <- rducks_ipc_find_globals_codetools(current)
     env <- environment(current) %||% parent.frame()
     for (name in names) {
-      if (name %in% c("...", "::", ":::", "{", "(", "if", "for", "while", "repeat", "function")) next
+      if (rducks_ipc_ignored_global_name(name)) next
       binding_env <- rducks_ipc_find_binding_env(name, env)
       if (is.null(binding_env)) next
 
@@ -130,6 +166,15 @@ rducks_ipc_globals_for_function <- function(fun) {
   }
 
   list(globals = globals, packages = unique(packages))
+}
+
+rducks_ipc_globals_for_function <- function(fun) {
+  if (!is.function(fun)) {
+    stop("ipc_globals = 'auto' requires an R function", call. = FALSE)
+  }
+  globals <- rducks_ipc_globals_from_globals_package(fun)
+  if (!is.null(globals)) return(globals)
+  rducks_ipc_globals_for_function_codetools(fun)
 }
 
 rducks_ipc_format_bytes <- function(bytes) {
@@ -165,8 +210,21 @@ rducks_ipc_globals_serialized_size <- function(globals, what) {
   ))
 }
 
-rducks_ipc_check_auto_globals_size <- function(globals) {
-  bytes <- rducks_ipc_globals_serialized_size(globals, "automatically discovered ipc_globals")
+rducks_ipc_share_globals <- function(globals, share = "none") {
+  share <- rducks_validate_ipc_globals_share(share)
+  if (identical(share, "none") || !length(globals)) return(globals)
+  if (!requireNamespace("mori", quietly = TRUE)) {
+    stop("ipc_globals_share = 'mori' requires the mori package", call. = FALSE)
+  }
+  out <- globals
+  for (name in names(globals)) {
+    out[name] <- list(mori::share(globals[[name]]))
+  }
+  out
+}
+
+rducks_ipc_check_auto_globals_size <- function(globals, what = "automatically discovered ipc_globals") {
+  bytes <- rducks_ipc_globals_serialized_size(globals, what)
   max_bytes <- rducks_ipc_byte_option(
     "rducks.ipc_globals.max_bytes",
     Inf,
@@ -198,9 +256,14 @@ rducks_ipc_check_auto_globals_size <- function(globals) {
   invisible(bytes)
 }
 
-rducks_ipc_worker_globals <- function(fun, globals) {
+rducks_ipc_worker_globals <- function(fun, globals, share = "none") {
+  share <- rducks_validate_ipc_globals_share(share)
   if (identical(globals, "auto") || isTRUE(globals)) {
     worker_globals <- rducks_ipc_globals_for_function(fun)
+    worker_globals$globals <- rducks_ipc_share_globals(worker_globals$globals, share)
+    if (identical(share, "mori") && length(worker_globals$globals)) {
+      worker_globals$packages <- unique(c(worker_globals$packages, "mori"))
+    }
     rducks_ipc_check_auto_globals_size(worker_globals$globals)
     return(worker_globals)
   }
@@ -217,14 +280,18 @@ rducks_ipc_worker_globals <- function(fun, globals) {
       stop("ipc_globals names not found in the UDF environment: ", paste(missing, collapse = ", "), call. = FALSE)
     }
     values <- mget(globals, envir = env, inherits = TRUE)
-    return(list(globals = values, packages = character()))
+    values <- rducks_ipc_share_globals(values, share)
+    packages <- if (identical(share, "mori") && length(values)) "mori" else character()
+    return(list(globals = values, packages = packages))
   }
   if (is.list(globals)) {
     names <- names(globals)
     if (length(globals) && (is.null(names) || anyNA(names) || any(!nzchar(names)) || anyDuplicated(names))) {
       stop("ipc_globals supplied as a list must have unique non-empty names", call. = FALSE)
     }
-    return(list(globals = globals, packages = character()))
+    globals <- rducks_ipc_share_globals(globals, share)
+    packages <- if (identical(share, "mori") && length(globals)) "mori" else character()
+    return(list(globals = globals, packages = packages))
   }
   stop("ipc_globals must be 'auto', TRUE, FALSE, a character vector, or a named list", call. = FALSE)
 }

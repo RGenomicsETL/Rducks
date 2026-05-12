@@ -29,6 +29,7 @@ expect_false(ipc$in_process)
 expect_false(ipc$uses_r_thread)
 expect_equal(ipc$ipc_options$packages, "Rducks")
 expect_equal(ipc$ipc_options$globals, "auto")
+expect_equal(ipc$ipc_options$globals_share, "none")
 expect_equal(ipc$ipc_options$timeout, 30)
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 0),
@@ -54,6 +55,14 @@ expect_error(
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = c("ok", NA_character_)),
   "ipc_globals"
+)
+expect_equal(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals_share = "mori")$ipc_options$globals_share,
+  "mori"
+)
+expect_error(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals_share = "bogus"),
+  "ipc_globals_share"
 )
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_packages = ""),

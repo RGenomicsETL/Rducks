@@ -51,7 +51,9 @@ Unsupported combinations must fail. They must not silently switch:
 - `arrow_ipc`: owned Arrow IPC request/result bytes. This is only valid with
   `multiprocess_parallel`. The current NNG provider is one request to exactly
   one result record batch; multi-batch or streaming results are rejected rather
-  than concatenated implicitly.
+  than concatenated implicitly. Selected UDF globals may be serialized normally
+  or, with `ipc_globals_share = "mori"`, sent as same-host mori shared-memory
+  references for large read-only R objects.
 
 ## Concurrency choices
 

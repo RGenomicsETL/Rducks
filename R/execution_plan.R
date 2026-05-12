@@ -58,6 +58,14 @@ rducks_validate_ipc_packages <- function(packages) {
   unique(packages)
 }
 
+rducks_validate_ipc_globals_share <- function(share) {
+  if (is.null(share)) share <- "none"
+  if (!is.character(share) || length(share) != 1L || is.na(share) || !share %in% c("none", "mori")) {
+    stop("ipc_globals_share must be one of: none, mori", call. = FALSE)
+  }
+  share
+}
+
 rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng") {
   key <- paste(marshalling, concurrency, sep = "+")
   if (identical(key, "arrow_ipc+multiprocess_parallel")) {
@@ -97,9 +105,11 @@ rducks_ipc_options <- function(globals = "auto",
                                 packages = NULL,
                                 timeout = NULL,
                                 endpoints = NULL,
-                                transport = NULL) {
+                                transport = NULL,
+                                globals_share = "none") {
   globals <- rducks_validate_ipc_globals(globals)
   packages <- rducks_validate_ipc_packages(packages)
+  globals_share <- rducks_validate_ipc_globals_share(globals_share)
   timeout <- rducks_nng_check_seconds(timeout, "ipc_timeout", default = rducks_ipc_default_timeout())
   endpoints <- rducks_nng_validate_endpoints(endpoints)
   if (!is.null(endpoints) && !is.null(transport)) {
@@ -111,7 +121,8 @@ rducks_ipc_options <- function(globals = "auto",
     packages = unique(c("Rducks", packages)),
     timeout = timeout,
     endpoints = endpoints,
-    transport = transport
+    transport = transport,
+    globals_share = globals_share
   )
 }
 
@@ -159,11 +170,13 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   the UDF is registered with the shared provider pool. Automatic capture
 #'   estimates the serialized globals payload and warns when it exceeds option
 #'   `rducks.ipc_globals.warn_bytes` (8 MiB by default); option
-#'   `rducks.ipc_globals.max_bytes` can set a hard byte limit. Use
-#'   `ipc_packages` for packages that workers should attach,
-#'   `ipc_globals = FALSE` to rely only on the serialized UDF closure and
-#'   explicit task state, or a character vector / named list for explicit extra
-#'   globals. `ipc_timeout` is the positive finite
+#'   `rducks.ipc_globals.max_bytes` can set a hard byte limit. Set
+#'   `ipc_globals_share = "mori"` to pass selected globals through mori shared
+#'   memory references for same-host workers; Rducks keeps the shared objects
+#'   anchored for the registered UDF lifetime. Use `ipc_packages` for packages
+#'   that workers should attach, `ipc_globals = FALSE` to rely only on the
+#'   serialized UDF closure and explicit task state, or a character vector /
+#'   named list for explicit extra globals. `ipc_timeout` is the positive finite
 #'   provider wait timeout in seconds; `NULL` uses a finite default of 30 seconds.
 #'   `ipc_endpoints` optionally supplies NNG endpoint URLs for worker processes
 #'   that the caller starts and stops; those processes must run the Rducks NNG
@@ -178,11 +191,18 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   `"unix"` means the POSIX Unix-domain alias, and `"tcp"` / `"ws"` use
 #'   loopback TCP / WebSocket endpoints. The default is `"abstract"` on Linux
 #'   and `"ipc"` elsewhere.
+#' @param ipc_globals_share How selected IPC globals are represented before
+#'   worker broadcast. `"none"` serializes them into the registration payload.
+#'   `"mori"` applies `mori::share()` to each selected global before
+#'   serialization, which can turn large atomic vectors, lists, and data frames
+#'   into same-host shared-memory references. This requires the optional mori
+#'   package and workers on the same machine.
 #' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
 #'   Only `"nng"` is supported. The NNG provider broadcasts each registered UDF
 #'   closure plus discovered globals/packages to every worker in the shared
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
-#'   environments unless that memory cost is intended.
+#'   environments unless that memory cost is intended or `ipc_globals_share =
+#'   "mori"` is appropriate.
 #' @param ipc_workers Number of persistent NNG workers.
 #' @param ipc_max_pending Maximum simultaneous native NNG requests admitted per
 #'   registered UDF client pool. The current provider still uses synchronous
@@ -198,6 +218,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
                                   ipc_timeout = NULL,
                                   ipc_endpoints = NULL,
                                   ipc_transport = NULL,
+                                  ipc_globals_share = "none",
                                   ipc_provider = "nng",
                                   ipc_workers = 1L,
                                   ipc_max_pending = 64L) {
@@ -228,7 +249,8 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       packages = ipc_packages,
       timeout = ipc_timeout,
       endpoints = ipc_endpoints,
-      transport = ipc_transport
+      transport = ipc_transport,
+      globals_share = ipc_globals_share
     )
   } else {
     NULL

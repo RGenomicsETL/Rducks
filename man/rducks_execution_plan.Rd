@@ -12,6 +12,7 @@ rducks_execution_plan(
   ipc_timeout = NULL,
   ipc_endpoints = NULL,
   ipc_transport = NULL,
+  ipc_globals_share = "none",
   ipc_provider = "nng",
   ipc_workers = 1L,
   ipc_max_pending = 64L
@@ -38,11 +39,13 @@ registration-wrapper creation and broadcasts them to each NNG worker when
 the UDF is registered with the shared provider pool. Automatic capture
 estimates the serialized globals payload and warns when it exceeds option
 \code{rducks.ipc_globals.warn_bytes} (8 MiB by default); option
-\code{rducks.ipc_globals.max_bytes} can set a hard byte limit. Use
-\code{ipc_packages} for packages that workers should attach,
-\code{ipc_globals = FALSE} to rely only on the serialized UDF closure and
-explicit task state, or a character vector / named list for explicit extra
-globals. \code{ipc_timeout} is the positive finite
+\code{rducks.ipc_globals.max_bytes} can set a hard byte limit. Set
+\code{ipc_globals_share = "mori"} to pass selected globals through mori shared
+memory references for same-host workers; Rducks keeps the shared objects
+anchored for the registered UDF lifetime. Use \code{ipc_packages} for packages
+that workers should attach, \code{ipc_globals = FALSE} to rely only on the
+serialized UDF closure and explicit task state, or a character vector /
+named list for explicit extra globals. \code{ipc_timeout} is the positive finite
 provider wait timeout in seconds; \code{NULL} uses a finite default of 30 seconds.
 \code{ipc_endpoints} optionally supplies NNG endpoint URLs for worker processes
 that the caller starts and stops; those processes must run the Rducks NNG
@@ -58,11 +61,18 @@ means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
 loopback TCP / WebSocket endpoints. The default is \code{"abstract"} on Linux
 and \code{"ipc"} elsewhere.}
 
+\item{ipc_globals_share}{How selected IPC globals are represented before
+worker broadcast. \code{"none"} serializes them into the registration payload.
+\code{"mori"} applies \code{mori::share()} to each selected global before
+serialization, which can turn large atomic vectors, lists, and data frames
+into same-host shared-memory references. This requires the optional mori
+package and workers on the same machine.}
+
 \item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
 Only \code{"nng"} is supported. The NNG provider broadcasts each registered UDF
 closure plus discovered globals/packages to every worker in the shared
 database-runtime provider pool, so avoid capturing large objects in UDF
-environments unless that memory cost is intended.}
+environments unless that memory cost is intended or \code{ipc_globals_share = "mori"} is appropriate.}
 
 \item{ipc_workers}{Number of persistent NNG workers.}
 

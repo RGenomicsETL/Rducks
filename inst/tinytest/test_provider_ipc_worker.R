@@ -24,6 +24,25 @@ local({
     Rducks:::rducks_ipc_worker_globals(function() helper_offset, list(1L)),
     "must have unique non-empty names"
   )
+
+  if (requireNamespace("globals", quietly = TRUE)) {
+    masked_global <- 42L
+    dfs_globals <- Rducks:::rducks_ipc_worker_globals(function() {
+      local_value <- masked_global
+      masked_global <- 1L
+      local_value
+    }, "auto")
+    expect_equal(dfs_globals$globals$masked_global, 42L)
+
+    outer_x <- 2L
+    nested_globals <- Rducks:::rducks_ipc_worker_globals(function() {
+      local({
+        h <- function(outer_x) -outer_x
+        h(outer_x)
+      })
+    }, "auto")
+    expect_equal(nested_globals$globals$outer_x, 2L)
+  }
 })
 
 local({
@@ -53,6 +72,23 @@ local({
     Rducks:::rducks_ipc_worker_globals(function() length(large_global), "auto"),
     "rducks.ipc_globals.max_bytes"
   )
+})
+
+local({
+  if (requireNamespace("mori", quietly = TRUE)) {
+    large_global <- rnorm(10000)
+    plain <- Rducks:::rducks_ipc_worker_globals(function() large_global[[1L]], "auto")
+    shared <- Rducks:::rducks_ipc_worker_globals(function() large_global[[1L]], "auto", share = "mori")
+    plain_size <- length(serialize(plain$globals, NULL, xdr = FALSE))
+    shared_size <- length(serialize(shared$globals, NULL, xdr = FALSE))
+    expect_true(shared_size < plain_size / 10)
+    expect_true("mori" %in% shared$packages)
+  } else {
+    expect_error(
+      Rducks:::rducks_ipc_worker_globals(function() 1L, list(x = 1L), share = "mori"),
+      "mori package"
+    )
+  }
 })
 
 local({
