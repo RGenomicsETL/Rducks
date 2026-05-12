@@ -11,12 +11,7 @@
 
 #include <nanoarrow/r.h>
 
-/* Compile the vendored nanoarrow C/IPC implementation into the R package
- * shared library too. This is deliberately not a dlopen/dlsym path into the
- * nanoarrow R package shared object.
- */
-#include "../inst/rducks_extension/src/rducks_vendor_nanoarrow.c"
-#include "../inst/rducks_extension/src/rducks_vendor_ipc_helpers.h"
+#include "rducks_ipc_vendor.h"
 
 typedef struct rducks_ipc_encode_result {
     uint8_t *bytes;
@@ -64,7 +59,7 @@ SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr) {
     array = nanoarrow_array_from_xptr(array_xptr);
     schema = nanoarrow_schema_from_xptr(schema_xptr);
 
-    if (!rducks_arrow_ipc_encode_borrowed_array(schema, array, &result.bytes, &result.size, err, sizeof(err))) {
+    if (!rducks_r_arrow_ipc_encode_borrowed_array(schema, array, &result.bytes, &result.size, err, sizeof(err))) {
         Rf_error("Arrow IPC encoding failed: %s", err[0] ? err : "unknown error");
     }
 

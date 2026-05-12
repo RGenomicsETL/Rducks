@@ -2,7 +2,15 @@
 #ifndef RDUCKS_VENDOR_IPC_HELPERS_H
 #define RDUCKS_VENDOR_IPC_HELPERS_H
 
+#include <errno.h>
 #include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <nanoarrow/nanoarrow.h>
+#include <nanoarrow/nanoarrow_ipc.h>
 
 #ifndef RDUCKS_IPC_ERROR_SIZE
 #define RDUCKS_IPC_ERROR_SIZE 512

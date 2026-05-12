@@ -1,89 +1,56 @@
 # Rducks Support Matrix And Ownership Notes
 
-This document is the checklist companion to `docs/EXECUTION_PLANS.md`. It keeps
-public claims about supported plans, type families, and lifetime semantics in one
-place.
+This document summarizes the supported execution-plan surface. The code-level
+truth is the plan/type validation predicates and the generated marshalling matrix.
 
 ## Execution engines
 
-| Engine ID | Public plan | Scalar UDFs | Vectorized UDFs | Notes |
+| Public plan | Engine ID | Scalar | Vectorized | Notes |
 | --- | --- | --- | --- | --- |
-| `arrow_r_serial` | `arrow_r + serial` | supported/reference | supported/reference | Uses Arrow C Data plus nanoarrow/R materialization. |
-| `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | supported | supported | DuckDB worker callbacks queue work; R evaluation runs on the recorded main R thread. |
-| `arrow_c_direct_serial` | `arrow_c + serial` | supported | supported | Direct native DuckDB-vector marshalling only; unsupported signatures fail. |
-| `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | supported | supported | Same direct marshalling as serial, with queued main-thread R evaluation. |
-| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | implemented/experimental | implemented/experimental | Persistent R worker processes preload evaluator/schema state and use owned Arrow IPC request/result bytes over synchronous NNG request/reply. Rducks starts local mirai daemons by default; `ipc_transport` generates `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints (`ipc` is the cross-platform local IPC transport), and explicit endpoints are passed through as NNG URLs. |
+| `arrow_r + serial` | `arrow_r_serial` | supported | supported | Reference path through Arrow C Data and nanoarrow/R. |
+| `arrow_r + inproc_concurrent` | `arrow_r_main_queue` | supported | supported | Queued same-process callbacks; R work stays on the recorded R thread. |
+| `arrow_c + serial` | `arrow_c_direct_serial` | supported | supported | Direct DuckDB-vector marshalling for supported signatures. |
+| `arrow_c + inproc_concurrent` | `arrow_c_direct_main_queue` | supported | supported | Same direct marshalling with owned queued input/result state. |
+| `arrow_ipc + multiprocess_parallel` | `ipc_nng_pool` | supported | supported | Persistent worker processes, native NNG request/reply, owned Arrow IPC bytes. |
 
-Invalid combinations are intentionally rejected rather than mapped to another
-engine.
+Invalid marshalling/concurrency pairs fail validation.
 
 ## Type-family support
 
-| Type family | Examples | `arrow_r` | `arrow_c` direct | `arrow_ipc` | Notes |
+| Type family | Examples | `arrow_r` | `arrow_c` | `arrow_ipc` | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Boolean/numeric scalars | `BOOL`, signed/unsigned integers, `FLOAT`, `DOUBLE` | yes | yes | experimental yes | Scalar inputs are materialized as R values/vectors; no hidden pointer aliasing is promised. |
-| String/binary | `VARCHAR`, `BLOB`, `BIT` | yes | yes | experimental yes | Returned strings/buffers are copied into the destination representation. |
-| Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | experimental yes | Rducks conversion helpers define the R-side value classes. |
-| Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | experimental yes | Represented with Rducks value classes where base R has no exact scalar type. |
-| Decimal | `DECIMAL(width, scale)` | yes | yes | experimental yes | Must use `DECIMAL()` type constructors, not quoted SQL strings. |
-| Enum | `ENUM(c("a", "b"))` | yes | yes | not yet | The current native Arrow IPC path still receives DuckDB enum dictionary arrays from `duckdb_data_chunk_to_arrow()`, and the vendored nanoarrow C IPC writer rejects dictionary arrays. Rducks has a planned enum-storage sidecar convention, but it is not enabled for the native NNG path until native input/output rewriting is implemented. |
-| Lists/arrays | `LIST(I32)`, `ARRAY(F64, 3)` | yes | yes | experimental yes | Nested child descriptors are validated before registration. |
-| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes | experimental yes, except enum children | Direct UNION support depends on the pinned DuckDB C-vector layout and is covered by generated matrix tests. The native Arrow IPC validator rejects any nested `ENUM(...)` child until the enum-storage sidecar convention is implemented natively. |
-
-The generated marshalling matrix is the operational truth for claimed type
-coverage. CI runs the full reference/direct matrix by default; scheduled and
-manual-dispatch matrix runs also include Arrow IPC cases because they start
-worker processes and exercise the native NNG runtime. Unsupported signatures
-must fail at registration/plan validation time where possible.
+| Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | yes | Values are materialized/copied as R values or vectors. |
+| String/binary/bit | `VARCHAR`, `BLOB`, `BIT` | yes | yes | yes | Returned data is copied into DuckDB-owned output storage. |
+| Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
+| Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
+| Decimal | `DECIMAL(width, scale)` | yes | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. |
+| Enum | `ENUM(c("a", "b"))` | yes | yes | no | Rejected by `arrow_ipc`, including nested enum children. |
+| Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes | yes where direct predicate accepts child | yes except enum children | Child descriptors are validated recursively. |
+| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes where direct predicate accepts children | yes except enum children | Direct support depends on native DuckDB-vector handling for the child types. |
 
 ## NULL and error semantics
 
 | Option | Supported values | Contract |
 | --- | --- | --- |
-| `null_handling` | `"default"`, `"special"` | Default skips rows with NULL arguments where possible; special passes the declared R-side NULL/NA shapes to the UDF. |
-| `exception_handling` | `"rethrow"`, `"return_null"` | R errors are caught inside callback fences and converted to DuckDB errors or NULL results according to policy. |
-| Running queued timeout | not supported | Once a queued same-process request is running, the stack request and callback-owned output vector prevent safe cancellation. Queued direct `arrow_c` inputs are now snapshotted, but diagnostics still report `running_timeout_supported = FALSE`. |
+| `null_handling` | `"default"`, `"special"` | Default skips rows with SQL NULL inputs when possible. Special passes the declared R-side missing shape. |
+| `exception_handling` | `"rethrow"`, `"return_null"` | User R errors become DuckDB errors or SQL NULLs according to policy. Type/marshalling bugs should still fail loudly. |
+| queued running cancellation | not supported | Once a same-process queued request is running, callback-owned state must remain live until writeback completes. |
 
 ## Scope and lifetime
 
 | Scope | Owns | Release behavior |
 | --- | --- | --- |
-| R process/package | recorded main R thread, preserved-object release queue, provider factories, package diagnostics | Process-global; safe drain points release queued preserved objects on the main R thread. |
-| DuckDB database/catalog runtime | registered SQL functions, evaluator handles, preserved closures while catalog metadata refers to them, per-UDF counters and frozen engine metadata | Database-scoped; sibling DBI connections to the same database share catalog functions. |
-| DBI connection attachment | current/default plan for future registrations, attachment/finalizer bookkeeping, R-side registry view | `rducks_release(con)`/detach clears only this scope and must not drop catalog functions. |
-
-Preserved R closures are not owned by the DBI connection that registered them.
-They live while database-catalog UDF metadata refers to the evaluator handle.
-Native destructors that cannot safely call the R API enqueue preserved objects for
-release on the recorded main R thread.
-
-`rducks_explain_udf()` includes `r_side_record` to distinguish an ordinary
-current-session R registry record from native UDF metadata that remains after the
-R-side registry view has been detached.
+| R process/package | recorded R-thread identity, provider factories, release queues, diagnostics | Process-global. Safe drain points release preserved objects on the R thread. |
+| DuckDB database runtime/catalog | SQL UDFs, evaluator handles, preserved closures, counters, frozen engine metadata | Database-scoped and visible to sibling DBI connections. |
+| DBI connection attachment | default plan for future registrations, finalizer bookkeeping, R-side registry view | `rducks_release(con)` clears this scope only. |
 
 ## Copy/borrow expectations
 
-- Rducks does not expose a zero-copy return contract. Returned scalars, strings,
-  nested values, and Arrow-imported result chunks are copied/materialized into
-  DuckDB-owned callback output storage.
-- Same-process queued direct `arrow_c` scalar/vectorized requests copy input
-  vectors into an owned DuckDB data chunk on the worker before the request is
-  submitted to the recorded main R thread. For queued direct `arrow_c` UDFs with
-  supported scalar returns (bool, integer widths, floating point,
-  date/time/timestamp, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT,
-  and INTERVAL), return values are copied into an owned Arrow C Data result chunk
-  on the recorded main R thread and the waiting worker writes the DuckDB output
-  vector from those Arrow buffers without touching `SEXP`s or nanoarrow R
-  external pointers. Composite direct `arrow_c` returns are written into an owned
-  DuckDB result chunk on the recorded main R thread and copied into callback
-  output by the waiting worker. Other same-process return paths still write
-  output on the recorded main R thread. Running cancellation remains unsupported
-  because the stack request and callback-owned output vector must stay live until
-  the main thread and any worker-side writeback finish.
-- Arrow IPC payloads are owned raw-byte payloads intended to cross process
-  boundaries. The per-UDF registration bundle is serialized once to initialize
-  worker process state, but per-chunk request/result payloads must not use R
-  `serialize()` or raw external `SEXP` pointers as a hidden transport alternate
-  path.
-- `arrow_c` means direct native conversion. Any Arrow/R bridge or helper path
-  must be a separately named plan if reintroduced.
+- Rducks does not expose a zero-copy return contract.
+- Borrowed DuckDB vectors/data chunks are callback-local.
+- Same-process queued `arrow_c` requests copy inputs into owned native state
+  before crossing to the recorded R thread.
+- Queued results are written into owned result state before a waiting worker
+  writes callback output.
+- Arrow IPC request/result payloads are owned raw bytes and must not hide R
+  `serialize()` payloads or process-local pointers.

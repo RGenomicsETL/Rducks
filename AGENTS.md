@@ -1,33 +1,50 @@
 # Rducks Repo Guidelines
 
-Rducks is an R package plus DuckDB extension bridge for registering R UDFs in DuckDB.
+Rducks is an R package that builds and loads a DuckDB C extension for
+registering R functions as DuckDB SQL UDFs.
 
 ## Scope
 
 This repo owns:
 
-- R package wrappers for enabling the extension and registering R UDFs
-- DuckDB extension registration and execution bridge
-- native scalar-mode UDF registration and R function marshalling
-- nanoarrow scalar adapter over DuckDB Arrow C Data
+- R wrappers for loading/enabling the extension and registering R UDFs
+- DuckDB C extension registration, runtime state, SQL surfaces, and callbacks
+- execution-plan selection and validation
+- scalar and vectorized R UDF marshalling
+- type descriptors, value classes, NULL/error semantics, and diagnostics
+- native NNG/Arrow IPC worker transport used by the `arrow_ipc` plan
 
 ## Rules
 
-- Do not manually edit generated `.Rd` files. Update roxygen comments and run `make rd`.
-- Keep the native DuckDB extension contract canonical; R wrappers should not redefine SQL semantics.
-- Do not call R APIs from DuckDB worker threads. Use calling-R-thread direct calls or the explicit extension-owned in-process queue; never use a package-side pump or hidden DuckDB progress callback.
-- Treat R function lifetime explicitly: preserve R functions while native code can call them.
-- Keep in-process marshalling paths via DuckDB Arrow C Data and nanoarrow, not Arrow IPC.
-- Use Arrow IPC only for explicit serialized/out-of-process transports such as a future mirai-backed compute plan.
-- Prefer small staged native modules over a monolithic extension source.
+- Do not manually edit generated `.Rd` files. Update roxygen comments and run
+  `make rd`.
+- Keep DuckDB SQL semantics canonical in the native extension. R wrappers should
+  validate and select plans, not redefine DuckDB behavior.
+- Do not call R APIs from DuckDB worker threads. Use only the recorded R thread
+  directly or the explicit extension-owned in-process queue.
+- Do not silently change execution plans. Unsupported plan/type/mode
+  combinations must fail instead of falling back to another engine.
+- Use DuckDB Arrow C Data plus nanoarrow for in-process marshalling. Use Arrow
+  IPC only where bytes intentionally cross a process/transport boundary.
+- Treat R function lifetime explicitly. Preserve objects while native metadata
+  can call them; release only through paths that are safe for the R thread.
+- Keep docs factual. Mark unsupported and experimental behavior plainly; remove
+  old design notes once they no longer describe the code.
 
 ## Style discipline
 
-- Write C as a BSD kernel programmer rather than a Java programmer that failed upwards; this is about ownership, control flow, allocation, error paths, and byte-level clarity, not just indentation.
-- Write R as a r-lib programmer rather than a Python programmer that failed upwards; this is about API shape, vector semantics, conditions, dependencies, and package discipline, not just indentation.
+- C: small functions, explicit ownership, checked allocation/size arithmetic,
+  single cleanup paths where useful, and byte-level validation at boundaries.
+  Do not let borrowed DuckDB vectors, transient `SEXP`s, or unchecked raw buffers
+  escape their lifetime.
+- R: package-style APIs with clear argument validation, vector semantics,
+  explicit condition messages, minimal global state, and no hidden side effects
+  in examples or tests.
 
 ## Architecture notes
 
-- See `docs/ARCHITECTURE.md` for the package/extension split.
-- See `docs/BUILD.md` for the install-time DuckDB extension build and header-fetch workflow.
-- See `docs/NANOARROW.md` for nanoarrow dependency policy.
+- `docs/ARCHITECTURE.md`: package/extension split and thread boundaries.
+- `docs/BUILD.md`: install-time extension build and DuckDB header vendoring.
+- `docs/EXECUTION_PLANS.md`: plan semantics and strict-plan rule.
+- `docs/SUPPORT_MATRIX.md`: supported plan/type combinations and ownership
+  notes.

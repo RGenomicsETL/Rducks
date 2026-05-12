@@ -1,36 +1,30 @@
-# Rducks WebAssembly / webR Support Level
+# WebAssembly / webR Status
 
-Rducks contains build scaffolding for WebAssembly-oriented experiments, but the
-current supported runtime target is a regular R process with a DuckDB extension
-loaded from the local filesystem.
+Rducks has WebAssembly-oriented build and smoke-test scaffolding, but the
+supported runtime target is a regular R process that can load the package-managed
+DuckDB extension from the local filesystem.
 
-Current status:
+## Current status
 
-- WebAssembly builds are **experimental**.
-- A browser webR runtime smoke harness is committed in
-  `scripts/start_webr_local_test.sh`, `scripts/webr-local-test.html`, and
-  `scripts/run_webr_browser_smoke.mjs`.
-- `.github/workflows/webr-smoke.yaml` runs the harness with Chromium/Playwright
-  against a locally served webR package repository on push, pull request, and
-  manual dispatch.
-- Same-process queued execution relies on native thread/condition-variable
-  primitives and a recorded main R thread; browser/webR runtimes may not provide
-  equivalent threading or blocking semantics.
-- `arrow_ipc + multiprocess_parallel` relies on NNG/nanonext worker processes
-  and should not be assumed to work in webR.
-- The package should not claim browser/webR runtime support unless the CI smoke
-  test is green for the target runtime and proves extension load, UDF
-  registration, and query execution. If the webR DuckDB runtime lacks extension
-  support, the smoke reports an explicit skip for that DuckDB-specific portion.
+- WebAssembly/webR use is experimental.
+- The browser smoke harness lives in:
+  - `scripts/start_webr_local_test.sh`
+  - `scripts/webr-local-test.html`
+  - `scripts/run_webr_browser_smoke.mjs`
+- `.github/workflows/webr-smoke.yaml` runs that harness with Chromium/Playwright.
+- Passing package-load checks are not the same as DuckDB extension support.
+- Same-process queued execution depends on native threading/blocking primitives.
+- `arrow_ipc + multiprocess_parallel` depends on worker processes and NNG; do
+  not assume it works in browser/webR runtimes.
 
-Local smoke workflow:
+## Local smoke
 
 ```sh
 scripts/start_webr_local_test.sh
 ```
 
-Then open the printed browser URL and click **Run smoke test**. For an automated
-browser run against that local server, use:
+Open the printed browser URL and click **Run smoke test**. For an automated
+browser run against the local server:
 
 ```sh
 npm install --no-save playwright
@@ -38,21 +32,16 @@ npx playwright install chromium
 node scripts/run_webr_browser_smoke.mjs
 ```
 
-The page installs
-the locally built `.tgz` from a tiny local webR repository, loads Rducks in webR,
-runs public type/mode helpers, and attempts a minimal `rducks_enable()` +
-`rducks_register()` + SQL query when the webR DuckDB runtime supports extension
-loading. If DuckDB is unavailable in that runtime, the page reports an explicit
-skip instead of treating package-load success as extension support.
+## Claiming support
 
-Checklist before changing this status:
+Do not claim webR/browser support unless the target runtime proves all of the
+following:
 
-1. Build the extension and R package for the target wasm/webR runtime.
-2. Verify the extension artifact can be found and loaded by DuckDB in that
-   runtime.
-3. Run a minimal `rducks_enable()` + `rducks_register()` + SQL query smoke test.
-4. Run at least one strict-plan counter check for the claimed execution plan.
-5. Keep the browser smoke workflow green for the target runtime instead of
-   relying only on the local harness.
-6. Document unsupported plans explicitly, especially same-process queued and
-   multiprocess worker modes.
+1. Rducks package load.
+2. DuckDB availability in that runtime.
+3. Rducks extension artifact discovery and load.
+4. `rducks_enable()`.
+5. UDF registration and a SQL query using that UDF.
+6. A strict-plan counter check for each claimed execution plan.
+
+Unsupported plans must be documented explicitly.

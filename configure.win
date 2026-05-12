@@ -10,9 +10,9 @@ SRC_FILE="${EXT_DIR}/rducks_extension.c"
 BUILD_DIR="${EXT_DIR}/build"
 RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
 FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
-VENDOR_DIR="${EXT_DIR}/vendor"
-VENDOR_NNG_DIR="${EXT_DIR}/third_party/nng"
-VENDOR_NANOARROW_DIR="${EXT_DIR}/tp/na"
+VENDOR_DIR="${EXT_DIR}/third_party"
+VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
+VENDOR_NANOARROW_DIR="${VENDOR_DIR}/na"
 
 if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
   echo "ERROR: DuckDB C API header not found at ${DUCKDB_CAPI_HEADER}"
@@ -25,7 +25,7 @@ if [ ! -f "${SRC_FILE}" ]; then
 fi
 if [ ! -f "${VENDOR_NANOARROW_DIR}/src/nanoarrow/nanoarrow.h" ] || \
    [ ! -f "${VENDOR_NANOARROW_DIR}/src/nanoarrow/nanoarrow_ipc.h" ] || \
-   [ ! -f "${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include/flatcc/flatcc_builder.h" ]; then
+   [ ! -f "${VENDOR_NANOARROW_DIR}/flatcc/include/flatcc/flatcc_builder.h" ]; then
   echo "ERROR: vendored nanoarrow C/IPC sources are missing"
   exit 1
 fi
@@ -142,7 +142,7 @@ if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
 fi
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/thirdparty/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
 SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
 
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(rducks_vendor_nng C)
+project(rducks_third_party_nng C)
 
 # Build NNG as a static, position-independent implementation detail of the
 # Rducks DuckDB extension. Mbed TLS sources are vendored next to NNG for the
@@ -8,7 +8,7 @@ project(rducks_vendor_nng C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-set(RDUCKS_VENDOR_ROOT "${CMAKE_CURRENT_LIST_DIR}/../third_party")
+set(RDUCKS_VENDOR_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
 set(NNG_DISABLE_PACKAGE_CONFIG_AND_INSTALL ON CACHE BOOL "" FORCE)
 set(NNG_TESTS OFF CACHE BOOL "" FORCE)

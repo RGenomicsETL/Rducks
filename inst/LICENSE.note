@@ -27,22 +27,22 @@ License:
 Bundled component: Apache Arrow nanoarrow C/IPC
 Upstream repository: https://github.com/apache/arrow-nanoarrow
 Bundled version: 0.9.0.dev-4639910
-Bundled path: inst/rducks_extension/tp/na
+Bundled path: inst/rducks_extension/third_party/na
 Copyright:
 - The Apache Software Foundation
 License:
 - Apache License 2.0
-- See inst/rducks_extension/tp/na/LICENSE.txt for the complete bundled
+- See inst/rducks_extension/third_party/na/LICENSE.txt for the complete bundled
   license text.
 
 Bundled component: flatcc runtime
 Upstream repository: https://github.com/dvidelabs/flatcc
-Bundled path: inst/rducks_extension/tp/na/thirdparty/flatcc
+Bundled path: inst/rducks_extension/third_party/na/flatcc
 Copyright:
 - flatcc contributors and copyright holders
 License:
 - Apache License 2.0
-- See inst/rducks_extension/tp/na/thirdparty/flatcc/LICENSE for the complete
+- See inst/rducks_extension/third_party/na/flatcc/LICENSE for the complete
   bundled license text.
 
 This notice documents bundled third-party components and does not modify the

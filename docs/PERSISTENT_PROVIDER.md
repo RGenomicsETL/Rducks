@@ -1,36 +1,31 @@
 # Persistent IPC Provider
 
-Rducks has one IPC provider shape for `arrow_ipc + multiprocess_parallel`:
-`ipc_nng_pool`.
+`arrow_ipc + multiprocess_parallel` currently uses one provider: `ipc_nng_pool`.
 
-The current implementation is intentionally narrower than a general task queue:
-workers are persistent, but each DuckDB scalar-UDF callback performs one
-synchronous NNG request/reply through a native per-UDF client pool. Native code
-uses persistent request sockets, sends a v1 frame, waits under `ipc_timeout`,
-imports the Arrow IPC result into DuckDB, and then returns from the callback.
-There is no collect-many queue, task id, or chunk id yet. `ipc_max_pending` is
-enforced as a native pending/in-flight admission limit for this synchronous
-callback path, not as a queued submit/collect scheduler.
+The provider is not a general task queue. Each DuckDB UDF callback sends one
+synchronous native NNG request/reply through a per-UDF client pool, waits under
+`ipc_timeout`, imports the Arrow IPC result into the callback-owned DuckDB output
+vector, and returns.
 
-The provider contract is explicit:
+## Contract
 
-- workers are persistent R processes reachable over NNG/nanonext endpoints;
-  Rducks can launch local worker loops with mirai daemons using generated
-  `abstract`, `ipc`, `unix`, `tcp`, or `ws` endpoints, or use explicit
-  externally managed NNG endpoint URLs directly;
-- each UDF is registered once per provider pool;
-- workers receive the UDF closure, declared types, NULL/error policy, output
-  schema description, packages, and discovered globals at registration time;
-- each v1 chunk request carries a request type, UDF id, row count, and owned
-  Arrow IPC input bytes;
-- each v1 response returns status, plain error text, and owned Arrow IPC result
-  bytes;
-- DuckDB scalar callbacks fill callback-owned DuckDB output before returning and
-  do not call the R API on DuckDB worker threads.
+- Workers are persistent R processes reachable through NNG/nanonext endpoints.
+- Rducks can launch local worker loops with mirai daemons, or use explicit
+  externally managed NNG endpoint URLs.
+- Each UDF is registered once per provider pool. Registration sends the closure,
+  declared types, NULL/error policy, output schema description, packages, and
+  selected globals to workers.
+- Each chunk request carries request type, UDF id, row count, and owned Arrow IPC
+  input bytes.
+- Each response carries status, plain error text, and owned Arrow IPC result
+  bytes.
+- DuckDB worker callbacks do not call the R API.
 
-`ipc_max_pending` bounds the number of native requests admitted to a registered
-UDF's NNG client pool. It is not a task queue size and does not add collect-many
-semantics.
+## Non-contracts
 
-Rducks does not silently route IPC work through a different provider or fall
-back to same-process evaluation.
+- `ipc_max_pending` is an admission bound for simultaneous native requests. It
+  is not a queued scheduler size.
+- There is no collect-many protocol, task id, chunk id, or out-of-order result
+  reassembly in the current provider.
+- IPC work must not silently fall back to same-process execution or R
+  serialization.
