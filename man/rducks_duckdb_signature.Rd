@@ -9,9 +9,9 @@ rducks_duckdb_signature(name, args, returns)
 \arguments{
 \item{name}{SQL function name.}
 
-\item{args}{Argument type tokens.}
+\item{args}{Argument type descriptors.}
 
-\item{returns}{Return type token.}
+\item{returns}{Return type descriptor.}
 }
 \value{
 Character scalar signature such as \code{f(INTEGER) -> DOUBLE}.

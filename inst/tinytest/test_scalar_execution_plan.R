@@ -100,6 +100,15 @@ expect_equal(
   Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"),
   "RCV"
 )
+zero_arg_vectorized_spec <- Rducks:::rducks_registration_spec(
+  "vec0", function() integer(), NULL, INTEGER, mode = "vectorized"
+)
+expect_error(
+  Rducks:::rducks_validate_execution_plan_for_registration(
+    rducks_execution_plan("arrow_r", "serial"), zero_arg_vectorized_spec
+  ),
+  "requires at least one declared argument"
+)
 
 input <- data.frame(x = 1:3, y = c("a", "b", "c"))
 expect_error(

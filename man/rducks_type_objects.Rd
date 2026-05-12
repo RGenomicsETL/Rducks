@@ -32,7 +32,7 @@
 \alias{ARRAY}
 \alias{MAP}
 \alias{STRUCT}
-\title{Rducks DuckDB type objects and constructors}
+\title{Rducks DuckDB type descriptors and constructors}
 \format{
 An object of class \code{rducks_bool_type} (inherits from \code{rducks_logical_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
@@ -142,7 +142,7 @@ STRUCT(...)
 
 \item{levels}{Character vector of enum dictionary values for \code{ENUM()}.}
 
-\item{...}{Named field types for \code{STRUCT()}/\code{UNION()} or type objects for \code{c()}.}
+\item{...}{Named field types for \code{STRUCT()}/\code{UNION()} or descriptors for \code{c()}.}
 
 \item{type}{Child type for \code{LIST()} or \code{ARRAY()}.}
 
@@ -151,11 +151,10 @@ STRUCT(...)
 \item{key, value}{Key and value types for \code{MAP()}.}
 }
 \value{
-A formal S7/S3-compatible \code{rducks_type} object, or a
-\code{rducks_type_list} from \code{c()}.
+A formal S7 \code{rducks_type} descriptor, or a \code{rducks_type_list} from \code{c()}.
 }
 \description{
-Use these objects and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid string type
+Use these descriptors and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid quoted type
 specifications. Examples include \code{args = INTEGER}, \code{args = c(INTEGER, DOUBLE)}, \code{args = INTEGER[]}, \code{args = INTEGER[3]},
 \code{args = STRUCT(a = INTEGER, b = VARCHAR)}, and
 \code{args = MAP(VARCHAR, INTEGER)}.

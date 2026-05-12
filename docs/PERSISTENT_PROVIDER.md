@@ -10,8 +10,9 @@ vector, and returns.
 ## Contract
 
 - Workers are persistent R processes reachable through NNG/nanonext endpoints.
-- Rducks can launch local worker loops with mirai daemons, or use explicit
-  externally managed NNG endpoint URLs.
+- Rducks can launch local worker loops with mirai daemons. If explicit
+  `ipc_endpoints` are supplied, Rducks connects to worker URLs that the caller
+  starts and stops.
 - Each UDF is registered once per provider pool. Registration sends the closure,
   declared types, NULL/error policy, output schema description, packages, and
   selected globals to workers.

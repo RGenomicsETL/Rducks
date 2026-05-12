@@ -7,14 +7,14 @@
 rducks_argument_type_mapping(x = NULL)
 }
 \arguments{
-\item{x}{Optional scalar type tokens or constructed \code{rducks_type} objects.
+\item{x}{Optional scalar type tokens or constructed \code{rducks_type} descriptors.
 When \code{NULL}, all currently implemented scalar-mode scalar argument mappings
 are returned. Composite mappings should be requested with constructors such
 as \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, and
 \code{MAP(VARCHAR, INTEGER)}.}
 }
 \value{
-A data frame with one row per requested type token.
+A data frame with one row per requested type descriptor.
 }
 \description{
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
@@ -25,16 +25,16 @@ marshalling adapter.
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
 to a SQL \code{NULL} result and the R function is not called. The
-\code{sql_null_in_function} column describes the value passed only when
+\code{special_null_argument} column describes the value passed only when
 \code{null_handling = "special"}. This value is type-specific: ordinary R scalar
-types receive typed \code{NA} values, while exact/exotic value classes, binary
+types receive typed \code{NA} values, while exact Rducks value classes, binary
 values, and top-level composite values receive R \code{NULL}. Within homogeneous
 scalar lists/arrays, SQL \code{NULL} elements are represented as typed \code{NA} values
 where the child type has an R \code{NA} representation; nested composite \code{NULL}
 values are represented as R \code{NULL}.
 
-The default table contains all scalar types supported by the nanoarrow scalar
-marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
-descriptors can be requested explicitly to inspect their recursive R
-R function shapes.
+The default table contains all scalar descriptors supported by the nanoarrow
+scalar marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
+descriptors can be requested explicitly to inspect their recursive R function
+shapes.
 }

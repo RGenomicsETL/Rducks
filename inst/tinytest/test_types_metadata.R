@@ -51,39 +51,43 @@ printed_type <- capture.output(print(UNION(i = INTEGER, s = VARCHAR)))
 expect_true(any(grepl("children", printed_type, fixed = TRUE)))
 printed_type_list <- capture.output(print(c(INTEGER, DOUBLE)))
 expect_true(any(grepl("rducks_type_list", printed_type_list, fixed = TRUE)))
-expect_equal(rducks_argument_type_mapping(UUID)$argument_kind, "exotic")
-expect_equal(rducks_argument_type_mapping(STRUCT(x = DECIMAL(10, 2)))$argument_kind, "struct")
+expect_equal(rducks_argument_type_mapping(UUID)$descriptor_kind, "scalar")
+expect_equal(rducks_argument_type_mapping(STRUCT(x = DECIMAL(10, 2)))$descriptor_kind, "struct")
 bad_type <- INTEGER
 attr(bad_type, "kind") <- "wat"
 expect_false(rducks_is_type(bad_type))
 
 scalar_mapping <- rducks_argument_type_mapping()
 expect_equal(
-  scalar_mapping$rducks_type,
-  c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid", "interval", "bit")
+  scalar_mapping$duckdb_type,
+  c("BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP", "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT")
 )
-expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "i64"], "rducks_bigint")
-expect_equal(scalar_mapping$r_type[scalar_mapping$rducks_type == "u64"], "rducks_ubigint")
-expect_equal(scalar_mapping$copy_semantics[scalar_mapping$rducks_type == "i64"], "boxed exact Rducks value object")
-expect_equal(scalar_mapping$sql_null_in_function[scalar_mapping$rducks_type == "date"], "Date NA")
-expect_equal(scalar_mapping$sql_null_in_function[scalar_mapping$rducks_type == "timestamp"], "POSIXct NA")
-expect_equal(rducks_duckdb_types(scalar_mapping$rducks_type), scalar_mapping$duckdb_sql)
+expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "BIGINT"], "rducks_bigint")
+expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "UBIGINT"], "rducks_ubigint")
+expect_equal(scalar_mapping$copy_semantics[scalar_mapping$duckdb_type == "BIGINT"], "boxed exact Rducks value")
+expect_equal(scalar_mapping$special_null_argument[scalar_mapping$duckdb_type == "DATE"], "Date NA")
+expect_equal(scalar_mapping$special_null_argument[scalar_mapping$duckdb_type == "TIMESTAMP"], "POSIXct NA")
 expect_true(all(c(
+  "duckdb_type", "descriptor_kind", "r_value_class", "r_argument_shape",
+  "special_null_argument", "copy_semantics", "integer_uses_r_double",
+  "float32_widens_to_r_double", "precision_may_be_lost", "notes"
+) %in% names(scalar_mapping)))
+expect_false(any(c(
   "rducks_type", "duckdb_sql", "argument_kind", "r_type",
-  "r_value_passed_to_fun", "sql_null_in_function", "copy_semantics",
-  "uses_r_double_for_integer", "uses_r_double_for_float", "precision_may_be_lost",
-  "notes"
+  "r_value_passed_to_fun", "sql_null_in_function", "uses_r_double_for_integer",
+  "uses_r_double_for_float"
 ) %in% names(scalar_mapping)))
 
 value_semantics <- rducks_value_semantics()
-expect_true(all(scalar_mapping$rducks_type %in% value_semantics$rducks_type))
+expect_true(all(scalar_mapping$duckdb_type %in% value_semantics$duckdb_type))
 expect_true(all(c(
-  "rducks_type", "duckdb_sql", "kind", "r_type", "sql_null_input_default",
-  "sql_null_input_special", "sql_nan_inf_input", "r_null_return", "r_na_return",
+  "duckdb_type", "descriptor_kind", "r_value_class", "default_null_input",
+  "special_null_argument", "sql_nan_inf_input", "r_null_return", "r_na_return",
   "r_nan_return", "r_inf_return", "binary_ops", "error_semantics", "notes"
 ) %in% names(value_semantics)))
-expect_equal(value_semantics$r_nan_return[value_semantics$rducks_type == "f64"], "preserved as DuckDB NaN")
-expect_equal(value_semantics$r_inf_return[value_semantics$rducks_type == "i32"], "error")
+expect_false(any(c("rducks_type", "duckdb_sql", "kind", "r_type", "sql_null_input_special") %in% names(value_semantics)))
+expect_equal(value_semantics$r_nan_return[value_semantics$duckdb_type == "DOUBLE"], "preserved as DuckDB NaN")
+expect_equal(value_semantics$r_inf_return[value_semantics$duckdb_type == "INTEGER"], "error")
 custom_semantics <- rducks_value_semantics(list(BIGINT, DECIMAL(5, 2), INTERVAL, BIT, UNION(i = INTEGER)))
 expect_true(any(grepl("rducks_bigint", custom_semantics$binary_ops, fixed = TRUE)))
 expect_true(any(grepl("rducks_decimal", custom_semantics$binary_ops, fixed = TRUE)))
@@ -94,18 +98,18 @@ expect_true(any(grepl("selected child", custom_semantics$r_na_return, fixed = TR
 composite_types <- list(LIST(INTEGER), INTEGER[], BIGINT[3], STRUCT(a = INTEGER, b = VARCHAR), MAP(VARCHAR, INTEGER))
 composite_mapping <- rducks_argument_type_mapping(composite_types)
 expect_equal(
-  composite_mapping$duckdb_sql,
+  composite_mapping$duckdb_type,
   c("INTEGER[]", "INTEGER[]", "BIGINT[3]", "STRUCT(a INTEGER, b VARCHAR)", "MAP(VARCHAR, INTEGER)")
 )
-expect_equal(composite_mapping$argument_kind, c("list", "list", "array", "struct", "map"))
-expect_equal(composite_mapping$r_value_passed_to_fun[[1L]], "integer vector")
-expect_equal(composite_mapping$r_value_passed_to_fun[[3L]], "rducks_bigint vector of length 3")
+expect_equal(composite_mapping$descriptor_kind, c("list", "list", "array", "struct", "map"))
+expect_equal(composite_mapping$r_argument_shape[[1L]], "integer vector")
+expect_equal(composite_mapping$r_argument_shape[[3L]], "rducks_bigint vector of length 3")
 expect_false(composite_mapping$precision_may_be_lost[[3L]])
 
-for (type in c(as.list(scalar_mapping$rducks_type), composite_types)) {
-  token <- rducks_type_normalize(type)
+for (type in c(as.list(c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid", "interval", "bit")), composite_types)) {
+  duckdb_type <- rducks_type_sql(if (inherits(type, "rducks_type")) type else Rducks:::rducks_type_object(type))
   mapping <- rducks_argument_type_mapping(type)
-  expect_equal(mapping$rducks_type, token)
+  expect_equal(mapping$duckdb_type, duckdb_type)
 }
 mode_semantics <- rducks_mode_semantics()
 expect_equal(mode_semantics$mode, c("scalar", "vectorized"))

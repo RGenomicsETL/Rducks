@@ -7,7 +7,7 @@
 rducks_value_semantics(x = NULL)
 }
 \arguments{
-\item{x}{Optional scalar type tokens or constructed \code{rducks_type} objects.
+\item{x}{Optional scalar type tokens or constructed \code{rducks_type} descriptors.
 When \code{NULL}, all currently implemented scalar-mode scalar type semantics are
 returned. Constructed descriptors such as \code{DECIMAL(10, 2)},
 \code{ENUM(c("a", "b"))}, \code{UNION(i = INTEGER, s = VARCHAR)}, \code{INTEGER[]},
@@ -28,12 +28,12 @@ contract close to the type descriptors used by the marshaller.
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
 to SQL \code{NULL} and the R function is not called. The
-\code{sql_null_input_special} column describes what the R function receives with
+\code{special_null_argument} column describes what the R function receives with
 \code{null_handling = "special"}.
 
 Return semantics are stated from R back to DuckDB. In scalar mode, top-level
 \code{NULL} returns map to SQL \code{NULL}; type-specific R \code{NA} values also map to SQL
 \code{NULL} where a missing representation exists. \code{NaN} and \code{Inf} are values only
-for \code{FLOAT} and \code{DOUBLE}; integer, date, time, timestamp, exact, and exotic
+for \code{FLOAT} and \code{DOUBLE}; integer, date, time, timestamp, and exact Rducks
 value classes reject non-finite values.
 }

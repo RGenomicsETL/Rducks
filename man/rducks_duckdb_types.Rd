@@ -2,16 +2,16 @@
 % Please edit documentation in R/types.R
 \name{rducks_duckdb_types}
 \alias{rducks_duckdb_types}
-\title{Convert Rducks type tokens to DuckDB SQL types}
+\title{Convert Rducks type descriptors to DuckDB SQL types}
 \usage{
 rducks_duckdb_types(x)
 }
 \arguments{
-\item{x}{Character vector of type tokens.}
+\item{x}{Character scalar tokens, \code{rducks_type} descriptors, or a list of descriptors.}
 }
 \value{
 Character vector of DuckDB SQL type names.
 }
 \description{
-Convert Rducks type tokens to DuckDB SQL types
+Convert Rducks type descriptors to DuckDB SQL types
 }

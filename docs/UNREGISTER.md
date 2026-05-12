@@ -10,11 +10,19 @@ consequences.
 
 ## Current behavior
 
-- `rducks_release(con)` and detach paths are non-destructive.
+- `rducks_release(con)` and detach paths are non-destructive for the DuckDB
+  catalog.
 - Release clears connection-local default plans, finalizer bookkeeping, and the
   R-side registry view for that attachment.
+- For `arrow_ipc + multiprocess_parallel`, releasing the last Rducks attachment
+  to a runtime also closes native client pools for Rducks-launched local workers
+  and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
+  those URLs name user-owned worker processes; Rducks does not send stop
+  requests to them during release.
 - Registered DuckDB catalog functions remain callable while their catalog
-  metadata exists.
+  metadata exists; after last-anchor cleanup of a Rducks-launched local IPC
+  provider, IPC UDFs need a live IPC route from a new registration before they
+  can execute again.
 - Preserved R closures remain owned by native UDF metadata while that metadata
   can call them.
 - Re-registering the same SQL name/signature replaces the callable

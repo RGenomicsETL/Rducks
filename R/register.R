@@ -114,7 +114,7 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @param name SQL function name.
 #' @param fun R function.
 #' @param args Argument type specification. Use `NULL` for a zero-argument
-#'   scalar UDF. Otherwise use exported DuckDB-style type objects such as
+#'   scalar UDF. Otherwise use exported DuckDB-style type descriptors such as
 #'   `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
 #'   `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.

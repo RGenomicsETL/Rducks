@@ -40,9 +40,10 @@ packages that workers should attach, \code{ipc_globals = FALSE} to rely only on
 the serialized UDF closure and explicit task state, or a character vector /
 named list for explicit extra globals. \code{ipc_timeout} is the positive finite
 provider wait timeout in seconds; \code{NULL} uses a finite default of 30 seconds.
-\code{ipc_endpoints} optionally supplies NNG endpoint URLs for externally
-managed worker processes running the Rducks NNG worker loop; any NNG URL
-transport supported by both endpoints is allowed. When endpoints are not
+\code{ipc_endpoints} optionally supplies NNG endpoint URLs for worker processes
+that the caller starts and stops; those processes must run the Rducks NNG
+worker loop. Any NNG URL transport supported by both endpoints is allowed.
+When endpoints are not
 supplied, \code{ipc_transport} selects the transport used for the mirai-launched
 local worker endpoints and must be left as \code{NULL} when explicit
 \code{ipc_endpoints} are supplied. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}

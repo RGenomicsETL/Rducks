@@ -114,6 +114,11 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' native-owned R closures that are still referenced by database-scoped catalog
 #' metadata. If sibling DBI connections are attached to the same DuckDB database
 #' runtime, their database-scoped Rducks registration metadata remains visible.
+#' For `arrow_ipc + multiprocess_parallel`, releasing the last Rducks attachment
+#' to a runtime also closes native client pools for Rducks-launched local workers
+#' and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
+#' those URLs name user-owned worker processes; Rducks does not send stop
+#' requests to them during release.
 #'
 #' Rducks deliberately keeps the plain `duckdb_connection` object and does not
 #' override DBI's `dbDisconnect()` method. Call `rducks_release(con)` explicitly

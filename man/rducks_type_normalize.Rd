@@ -7,14 +7,14 @@
 rducks_type_normalize(x)
 }
 \arguments{
-\item{x}{Character scalar scalar-type token or a \code{rducks_type} object.}
+\item{x}{Character scalar scalar-type token or a \code{rducks_type} descriptor.}
 }
 \value{
-Canonical scalar token for character input, or the object's wire
+Canonical scalar token for character input, or the descriptor's wire
 token for a \code{rducks_type}.
 }
 \description{
 Character input is limited to canonical scalar tokens such as \code{i32}, \code{f64},
 and \code{varchar}. Composite, DECIMAL, ENUM, and UNION types are represented by
-constructed \code{rducks_type} objects rather than quoted type strings.
+constructed \code{rducks_type} descriptors rather than quoted type strings.
 }

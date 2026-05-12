@@ -25,7 +25,7 @@ rducks_type_size(x, ...)
 rducks_type_parameters(x, ...)
 }
 \arguments{
-\item{x}{A \code{rducks_type} object.}
+\item{x}{A \code{rducks_type} descriptor.}
 
 \item{...}{Reserved for methods.}
 }
@@ -37,6 +37,6 @@ helpers return descriptor metadata.
 }
 \description{
 These generic helpers expose the formal DuckDB type descriptor carried by
-objects such as \code{INTEGER}, \code{INTEGER[]}, \code{STRUCT(...)}, \code{DECIMAL(...)},
-\code{ENUM(...)}, and \code{UNION(...)}.
+\code{rducks_type} descriptors such as \code{INTEGER}, \code{INTEGER[]}, \code{STRUCT(...)},
+\code{DECIMAL(...)}, \code{ENUM(...)}, and \code{UNION(...)}.
 }

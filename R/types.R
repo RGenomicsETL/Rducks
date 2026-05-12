@@ -1,44 +1,44 @@
 rducks_scalar_type_table <- data.frame(
-  rducks_type = c(
+  type_token = c(
     "bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
     "f32", "f64", "varchar", "blob", "date", "time", "timestamp",
     "hugeint", "uhugeint", "uuid", "interval", "bit"
   ),
-  duckdb_sql = c(
+  duckdb_type = c(
     "BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER",
     "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP",
     "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT"
   ),
-  argument_kind = c(rep("scalar", 16L), rep("exotic", 5L)),
-  r_type = c(
+  descriptor_kind = rep("scalar", 21L),
+  r_value_class = c(
     "logical", "integer", "integer", "integer", "integer", "integer", "numeric",
     "rducks_bigint", "rducks_ubigint", "numeric", "numeric", "character", "raw",
     "Date", "numeric", "POSIXct", "rducks_hugeint", "rducks_uhugeint",
     "rducks_uuid", "rducks_interval", "rducks_bits"
   ),
-  r_value_passed_to_fun = c(
-    "logical(1)", "integer(1)", "integer(1)", "integer(1)", "integer(1)", "integer(1)",
-    "numeric(1)", "rducks_bigint scalar", "rducks_ubigint scalar", "numeric(1)",
-    "numeric(1)", "character(1)", "raw vector", "Date scalar", "numeric(1) seconds",
-    "POSIXct scalar", "rducks_hugeint", "rducks_uhugeint", "rducks_uuid",
-    "rducks_interval", "rducks_bits"
+  r_argument_shape = c(
+    "logical scalar", "integer scalar", "integer scalar", "integer scalar", "integer scalar", "integer scalar",
+    "numeric scalar", "rducks_bigint scalar", "rducks_ubigint scalar", "numeric scalar",
+    "numeric scalar", "character scalar", "raw vector", "Date scalar", "numeric seconds scalar",
+    "POSIXct scalar", "rducks_hugeint scalar", "rducks_uhugeint scalar", "rducks_uuid scalar",
+    "rducks_interval scalar", "rducks_bits scalar"
   ),
-  sql_null_in_function = c(
+  special_null_argument = c(
     "NA", rep("NA_integer_", 5L), "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_",
     "NA_character_", "NULL", "Date NA", "NA_real_", "POSIXct NA",
     rep("NULL", 5L)
   ),
   copy_semantics = c(
-    rep("boxed scalar", 7L), rep("boxed exact Rducks value object", 2L), rep("boxed scalar", 2L),
+    rep("boxed scalar", 7L), rep("boxed exact Rducks value", 2L), rep("boxed scalar", 2L),
     "string copied into R", "bytes copied into R", rep("boxed scalar", 3L),
-    rep("boxed exact Rducks value object", 5L)
+    rep("boxed exact Rducks value", 5L)
   ),
-  uses_r_double_for_integer = c(rep(FALSE, 6L), TRUE, rep(FALSE, 14L)),
-  uses_r_double_for_float = c(rep(FALSE, 9L), TRUE, rep(FALSE, 11L)),
+  integer_uses_r_double = c(rep(FALSE, 6L), TRUE, rep(FALSE, 14L)),
+  float32_widens_to_r_double = c(rep(FALSE, 9L), TRUE, rep(FALSE, 11L)),
   precision_may_be_lost = FALSE,
   notes = c(
-    "", "", "", "", "", "", "R double", "exact signed 64-bit integer string",
-    "exact unsigned 64-bit integer string", "widened to R double", "", "string copied into R",
+    "", "", "", "", "", "", "uses R numeric because UINTEGER exceeds R integer range", "exact signed 64-bit integer value",
+    "exact unsigned 64-bit integer value", "DuckDB FLOAT is widened to R numeric", "", "string copied into R",
     "bytes copied into R", "days since 1970-01-01", "microseconds converted to seconds",
     "microseconds converted to seconds", rep("exact Rducks value class", 5L)
   ),
@@ -48,13 +48,13 @@ rducks_scalar_type_table <- data.frame(
 
 rducks_scalar_type_row <- function(token) {
   token <- rducks_type_normalize_scalar(token)
-  row <- rducks_scalar_type_table[rducks_scalar_type_table$rducks_type == token, , drop = FALSE]
+  row <- rducks_scalar_type_table[rducks_scalar_type_table$type_token == token, , drop = FALSE]
   row.names(row) <- NULL
   row
 }
 
 rducks_all_scalar_type_names <- function() {
-  rducks_scalar_type_table$rducks_type
+  rducks_scalar_type_table$type_token
 }
 
 rducks_type_normalize_scalar <- function(token, original = token) {
@@ -66,7 +66,7 @@ rducks_type_normalize_scalar <- function(token, original = token) {
 }
 
 rducks_scalar_duckdb_sql <- function(token) {
-  rducks_scalar_type_row(token)$duckdb_sql[[1L]]
+  rducks_scalar_type_row(token)$duckdb_type[[1L]]
 }
 
 rducks_reject_character_composite_type <- function(token) {
@@ -82,10 +82,10 @@ rducks_reject_character_composite_type <- function(token) {
 #'
 #' Character input is limited to canonical scalar tokens such as `i32`, `f64`,
 #' and `varchar`. Composite, DECIMAL, ENUM, and UNION types are represented by
-#' constructed `rducks_type` objects rather than quoted type strings.
+#' constructed `rducks_type` descriptors rather than quoted type strings.
 #'
-#' @param x Character scalar scalar-type token or a `rducks_type` object.
-#' @return Canonical scalar token for character input, or the object's wire
+#' @param x Character scalar scalar-type token or a `rducks_type` descriptor.
+#' @return Canonical scalar token for character input, or the descriptor's wire
 #'   token for a `rducks_type`.
 #' @export
 rducks_type_normalize <- function(x) {
@@ -93,7 +93,7 @@ rducks_type_normalize <- function(x) {
     return(rducks_type_token(x))
   }
   if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
-    stop("type must be a non-empty scalar token or rducks_type object", call. = FALSE)
+    stop("type must be a non-empty scalar token or rducks_type descriptor", call. = FALSE)
   }
   chars <- strsplit(x, "", fixed = TRUE)[[1L]]
   if (any(chars %in% c("<", ">", "[", "]", "(", ")", ":", ";", ","))) {
@@ -118,14 +118,14 @@ rducks_as_type_list <- function(x) {
   }
   if (inherits(x, "rducks_type_list") || is.list(x)) {
     if (!all(vapply(x, inherits, logical(1), what = "rducks_type"))) {
-      stop("type lists must contain only rducks_type objects", call. = FALSE)
+      stop("type lists must contain only rducks_type descriptors", call. = FALSE)
     }
     return(unclass(x))
   }
   if (is.character(x)) {
     return(lapply(x, rducks_type_object))
   }
-  stop("types must be scalar tokens, a rducks_type object, or a list of rducks_type objects", call. = FALSE)
+  stop("types must be scalar tokens, a rducks_type descriptor, or a list of rducks_type descriptors", call. = FALSE)
 }
 
 rducks_type_scalar_leaves <- function(type) {
@@ -177,9 +177,9 @@ rducks_enum_level_token <- function(levels) {
   paste(levels, collapse = "|")
 }
 
-#' Rducks DuckDB type objects and constructors
+#' Rducks DuckDB type descriptors and constructors
 #'
-#' Use these objects and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid string type
+#' Use these descriptors and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid quoted type
 #' specifications. Examples include `args = INTEGER`, `args = c(INTEGER,
 #' DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
 #' `args = STRUCT(a = INTEGER, b = VARCHAR)`, and
@@ -190,10 +190,9 @@ rducks_enum_level_token <- function(levels) {
 #' @param key,value Key and value types for `MAP()`.
 #' @param width,scale DuckDB decimal width and scale for `DECIMAL()`.
 #' @param levels Character vector of enum dictionary values for `ENUM()`.
-#' @param ... Named field types for `STRUCT()`/`UNION()` or type objects for `c()`.
+#' @param ... Named field types for `STRUCT()`/`UNION()` or descriptors for `c()`.
 #' @param x Object to test with `rducks_is_type()`.
-#' @return A formal S7/S3-compatible `rducks_type` object, or a
-#'   `rducks_type_list` from `c()`.
+#' @return A formal S7 `rducks_type` descriptor, or a `rducks_type_list` from `c()`.
 #' @name rducks_type_objects
 NULL
 
@@ -492,7 +491,7 @@ print.rducks_type <- function(x, ...) {
 c.rducks_type <- function(..., recursive = FALSE) {
   out <- list(...)
   if (!all(vapply(out, inherits, logical(1), what = "rducks_type"))) {
-    stop("all values must be rducks_type objects", call. = FALSE)
+    stop("all values must be rducks_type descriptors", call. = FALSE)
   }
   rducks_type_list_class(out)
 }
@@ -516,7 +515,9 @@ print.rducks_type_list <- function(x, ...) {
 
 rducks_scalar_argument_mapping_row <- function(token) {
   token <- rducks_type_normalize_scalar(token)
-  rducks_scalar_type_row(token)
+  row <- rducks_scalar_type_row(token)
+  row$type_token <- NULL
+  row
 }
 
 rducks_scalar_vector_description <- function(token, len = NULL) {
@@ -693,15 +694,14 @@ rducks_composite_argument_mapping_row <- function(token) {
   }
   leaf_rows <- if (length(leaves)) do.call(rbind, lapply(leaves, rducks_scalar_argument_mapping_row)) else NULL
   data.frame(
-    rducks_type = token,
-    duckdb_sql = duckdb_sql,
-    argument_kind = kind,
-    r_type = r_type,
-    r_value_passed_to_fun = r_value,
-    sql_null_in_function = "NULL",
-    copy_semantics = if (kind %in% c("decimal", "enum", "union")) "boxed exact Rducks value object" else if (identical(r_type, "vector")) "R vector allocation" else "recursive R allocation",
-    uses_r_double_for_integer = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_integer),
-    uses_r_double_for_float = if (is.null(leaf_rows)) FALSE else any(leaf_rows$uses_r_double_for_float),
+    duckdb_type = duckdb_sql,
+    descriptor_kind = kind,
+    r_value_class = r_type,
+    r_argument_shape = r_value,
+    special_null_argument = "NULL",
+    copy_semantics = if (kind %in% c("decimal", "enum", "union")) "boxed exact Rducks value" else if (identical(r_type, "vector")) "R vector allocation" else "recursive R allocation",
+    integer_uses_r_double = if (is.null(leaf_rows)) FALSE else any(leaf_rows$integer_uses_r_double),
+    float32_widens_to_r_double = if (is.null(leaf_rows)) FALSE else any(leaf_rows$float32_widens_to_r_double),
     precision_may_be_lost = if (is.null(leaf_rows)) FALSE else any(leaf_rows$precision_may_be_lost),
     notes = notes,
     stringsAsFactors = FALSE,
@@ -711,29 +711,13 @@ rducks_composite_argument_mapping_row <- function(token) {
 
 rducks_check_argument_type_mapping <- function(mapping) {
   required <- c(
-    "rducks_type", "duckdb_sql", "argument_kind", "r_type",
-    "r_value_passed_to_fun", "sql_null_in_function", "copy_semantics",
-    "uses_r_double_for_integer", "uses_r_double_for_float", "precision_may_be_lost",
-    "notes"
+    "duckdb_type", "descriptor_kind", "r_value_class", "r_argument_shape",
+    "special_null_argument", "copy_semantics", "integer_uses_r_double",
+    "float32_widens_to_r_double", "precision_may_be_lost", "notes"
   )
   missing <- setdiff(required, names(mapping))
   if (length(missing)) {
     stop("argument type mapping is missing columns: ", paste(missing, collapse = ", "), call. = FALSE)
-  }
-  if (nrow(mapping)) {
-    for (i in seq_len(nrow(mapping))) {
-      token <- mapping$rducks_type[[i]]
-      if (!token %in% rducks_all_scalar_type_names() || !mapping$argument_kind[[i]] %in% c("scalar", "exotic")) {
-        next
-      }
-      row <- rducks_scalar_type_row(token)
-      if (!identical(mapping$duckdb_sql[[i]], row$duckdb_sql[[1L]])) {
-        stop("DuckDB SQL mapping mismatch for scalar type: ", token, call. = FALSE)
-      }
-      if (!identical(mapping$r_type[[i]], row$r_type[[1L]])) {
-        stop("R type mapping mismatch for scalar type: ", token, call. = FALSE)
-      }
-    }
   }
   invisible(TRUE)
 }
@@ -747,25 +731,25 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
 #' to a SQL `NULL` result and the R function is not called. The
-#' `sql_null_in_function` column describes the value passed only when
+#' `special_null_argument` column describes the value passed only when
 #' `null_handling = "special"`. This value is type-specific: ordinary R scalar
-#' types receive typed `NA` values, while exact/exotic value classes, binary
+#' types receive typed `NA` values, while exact Rducks value classes, binary
 #' values, and top-level composite values receive R `NULL`. Within homogeneous
 #' scalar lists/arrays, SQL `NULL` elements are represented as typed `NA` values
 #' where the child type has an R `NA` representation; nested composite `NULL`
 #' values are represented as R `NULL`.
 #'
-#' The default table contains all scalar types supported by the nanoarrow scalar
-#' marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
-#' descriptors can be requested explicitly to inspect their recursive R
-#' R function shapes.
+#' The default table contains all scalar descriptors supported by the nanoarrow
+#' scalar marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
+#' descriptors can be requested explicitly to inspect their recursive R function
+#' shapes.
 #'
-#' @param x Optional scalar type tokens or constructed `rducks_type` objects.
+#' @param x Optional scalar type tokens or constructed `rducks_type` descriptors.
 #'   When `NULL`, all currently implemented scalar-mode scalar argument mappings
 #'   are returned. Composite mappings should be requested with constructors such
 #'   as `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, and
 #'   `MAP(VARCHAR, INTEGER)`.
-#' @return A data frame with one row per requested type token.
+#' @return A data frame with one row per requested type descriptor.
 #' @export
 rducks_argument_type_mapping <- function(x = NULL) {
   items <- if (is.null(x)) {
@@ -785,12 +769,11 @@ rducks_argument_type_mapping <- function(x = NULL) {
   })
   out <- if (length(rows)) do.call(rbind, rows) else {
     data.frame(
-      rducks_type = character(), duckdb_sql = character(), argument_kind = character(),
-      r_type = character(), r_value_passed_to_fun = character(),
-      sql_null_in_function = character(), copy_semantics = character(),
-      uses_r_double_for_integer = logical(), uses_r_double_for_float = logical(),
-      precision_may_be_lost = logical(), notes = character(),
-      stringsAsFactors = FALSE, check.names = FALSE
+      duckdb_type = character(), descriptor_kind = character(), r_value_class = character(),
+      r_argument_shape = character(), special_null_argument = character(),
+      copy_semantics = character(), integer_uses_r_double = logical(),
+      float32_widens_to_r_double = logical(), precision_may_be_lost = logical(),
+      notes = character(), stringsAsFactors = FALSE, check.names = FALSE
     )
   }
   row.names(out) <- NULL
@@ -798,9 +781,9 @@ rducks_argument_type_mapping <- function(x = NULL) {
   out
 }
 
-#' Convert Rducks type tokens to DuckDB SQL types
+#' Convert Rducks type descriptors to DuckDB SQL types
 #'
-#' @param x Character vector of type tokens.
+#' @param x Character scalar tokens, `rducks_type` descriptors, or a list of descriptors.
 #' @return Character vector of DuckDB SQL type names.
 #' @export
 rducks_duckdb_types <- function(x) {
@@ -811,8 +794,8 @@ rducks_duckdb_types <- function(x) {
 #' Format a DuckDB scalar function signature
 #'
 #' @param name SQL function name.
-#' @param args Argument type tokens.
-#' @param returns Return type token.
+#' @param args Argument type descriptors.
+#' @param returns Return type descriptor.
 #' @return Character scalar signature such as `f(INTEGER) -> DOUBLE`.
 #' @export
 rducks_duckdb_signature <- function(name, args, returns) {

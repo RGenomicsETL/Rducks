@@ -34,7 +34,7 @@ rducks_validate_type_s7 <- function(self) {
     parameters <- list()
   }
   if (length(children) && !all(vapply(children, inherits, logical(1), what = "rducks_type"))) {
-    errors <- c(errors, "@children must contain only rducks_type objects")
+    errors <- c(errors, "@children must contain only rducks_type descriptors")
   }
 
   if (is.character(kind) && length(kind) == 1L && !is.na(kind)) {
@@ -128,7 +128,7 @@ rducks_bit_type_class <- S7::new_class("rducks_bit_type", package = NULL, parent
 
 rducks_validate_type_list_s7 <- function(self) {
   if (!all(vapply(unclass(self), inherits, logical(1), what = "rducks_type"))) {
-    "all elements must be rducks_type objects"
+    "all elements must be rducks_type descriptors"
   }
 }
 
@@ -207,16 +207,16 @@ rducks_type_prop <- function(x, name) {
 }
 
 rducks_type_method_error <- function(x, method) {
-  stop(method, " requires a rducks_type object, not: ", paste(class(x), collapse = ", "), call. = FALSE)
+  stop(method, " requires a rducks_type descriptor, not: ", paste(class(x), collapse = ", "), call. = FALSE)
 }
 
 #' Rducks type descriptor helpers
 #'
 #' These generic helpers expose the formal DuckDB type descriptor carried by
-#' objects such as `INTEGER`, `INTEGER[]`, `STRUCT(...)`, `DECIMAL(...)`,
-#' `ENUM(...)`, and `UNION(...)`.
+#' `rducks_type` descriptors such as `INTEGER`, `INTEGER[]`, `STRUCT(...)`,
+#' `DECIMAL(...)`, `ENUM(...)`, and `UNION(...)`.
 #'
-#' @param x A `rducks_type` object.
+#' @param x A `rducks_type` descriptor.
 #' @param ... Reserved for methods.
 #' @return `rducks_type_token()` returns the internal wire token;
 #'   `rducks_type_sql()` returns the DuckDB SQL spelling;

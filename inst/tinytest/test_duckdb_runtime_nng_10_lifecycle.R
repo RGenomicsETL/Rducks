@@ -34,6 +34,15 @@ local({
     "NNG request failed|nng_"
   )
 
+  runtime_token <- Rducks:::rducks_runtime_token(con)
+  provider_records <- function() {
+    store <- Rducks:::.rducks_state$nng_providers
+    if (is.null(store)) return(list())
+    records <- mget(ls(store, all.names = TRUE), envir = store, inherits = FALSE)
+    records <- Filter(function(record) identical(record$runtime_token, runtime_token), records)
+    Filter(function(record) isTRUE(record$provider$stats()$started[[1L]]), records)
+  }
+
   plan_one <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
     ipc_workers = 1L,
@@ -48,13 +57,26 @@ local({
   )
   expect_equal(reg_one$execution_plan$ipc_workers, 1L)
   expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_one(41::INTEGER) AS x")$x, 42L)
+  records_one <- provider_records()
+  expect_equal(length(records_one), 1L)
+  compute_one <- records_one[[1L]]$provider$stats()$compute[[1L]]
 
-  # Quiesce native client pools before stopping the provider process. The old
-  # catalog UDF remains in DuckDB, but this test does not call it after replacing
-  # the plan/provider.
-  rducks_release(con)
-  Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
-  rducks_enable(con, threads = "single")
+  plan_one_timeout <- rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    ipc_workers = 1L,
+    ipc_timeout = 2
+  )
+  rducks_set_execution_plan(con, plan_one_timeout, threads = 1L, external_threads = 1L)
+  invisible(rducks_register(
+    con, "nng_lifecycle_timeout", function(x) x + 2L,
+    INTEGER, INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  ))
+  expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_timeout(40::INTEGER) AS x")$x, 42L)
+  records_timeout <- provider_records()
+  expect_equal(length(records_timeout), 1L)
+  expect_equal(records_timeout[[1L]]$provider$stats()$compute[[1L]], compute_one)
 
   plan_two <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
@@ -62,22 +84,22 @@ local({
   )
   rducks_set_execution_plan(con, plan_two, threads = 1L, external_threads = 1L)
   reg_two <- rducks_register(
-    con, "nng_lifecycle_two", function(x) x + 2L,
+    con, "nng_lifecycle_two", function(x) x + 3L,
     INTEGER, INTEGER,
     mode = "vectorized",
     side_effects = TRUE
   )
   expect_equal(reg_two$execution_plan$ipc_workers, 2L)
-  expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_two(i::INTEGER) AS x FROM range(4) t(i)")$x, 2:5)
+  expect_equal(DBI::dbGetQuery(con, "SELECT nng_lifecycle_two(i::INTEGER) AS x FROM range(4) t(i)")$x, 3:6)
+  expect_equal(length(provider_records()), 2L)
 
-  stats <- Rducks:::rducks_nng_provider_for_runtime(
-    runtime_token = Rducks:::rducks_runtime_token(con),
-    workers = 2L,
-    max_pending = 64L,
-    endpoints = NULL,
-    transport = Rducks:::rducks_nng_default_transport()
-  )$stats()
-  expect_equal(stats$workers, 2L)
+  rducks_release(con)
+  expect_equal(length(provider_records()), 0L)
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT nng_lifecycle_one(41::INTEGER) AS x"),
+    "RIPC client pool is not configured"
+  )
+  Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
 })
 
 local({
@@ -112,5 +134,6 @@ local({
   ))
   expect_equal(DBI::dbGetQuery(con, "SELECT nng_external_release_alive(39::INTEGER) AS x")$x, 42L)
   rducks_release(con)
+  expect_true(external_provider$stats()$started[[1L]])
   expect_equal(DBI::dbGetQuery(con, "SELECT nng_external_release_alive(39::INTEGER) AS x")$x, 42L)
 })

@@ -3,12 +3,11 @@ rducks_value_semantics_scalar <- function(type) {
   input_mapping <- rducks_argument_type_mapping(type)
 
   base <- list(
-    rducks_type = token,
-    duckdb_sql = rducks_type_duckdb_sql(type),
-    kind = rducks_type_kind(type),
-    r_type = input_mapping$r_type[[1L]],
-    sql_null_input_default = "short-circuit to SQL NULL result; R function is not called",
-    sql_null_input_special = input_mapping$sql_null_in_function[[1L]],
+    duckdb_type = rducks_type_duckdb_sql(type),
+    descriptor_kind = rducks_type_kind(type),
+    r_value_class = input_mapping$r_value_class[[1L]],
+    default_null_input = "short-circuit to SQL NULL result; R function is not called",
+    special_null_argument = input_mapping$special_null_argument[[1L]],
     sql_nan_inf_input = "not representable for this DuckDB type",
     r_null_return = "SQL NULL",
     r_na_return = "SQL NULL when represented by the declared R type",
@@ -133,12 +132,11 @@ rducks_value_semantics_constructed <- function(type) {
   kind <- rducks_type_kind(type)
   input_mapping <- rducks_argument_type_mapping(type)
   base <- list(
-    rducks_type = rducks_type_token(type),
-    duckdb_sql = rducks_type_duckdb_sql(type),
-    kind = kind,
-    r_type = input_mapping$r_type[[1L]],
-    sql_null_input_default = "short-circuit to SQL NULL result; R function is not called",
-    sql_null_input_special = input_mapping$sql_null_in_function[[1L]],
+    duckdb_type = rducks_type_duckdb_sql(type),
+    descriptor_kind = kind,
+    r_value_class = input_mapping$r_value_class[[1L]],
+    default_null_input = "short-circuit to SQL NULL result; R function is not called",
+    special_null_argument = input_mapping$special_null_argument[[1L]],
     sql_nan_inf_input = "recursive: only FLOAT/DOUBLE children can carry NaN/Inf",
     r_null_return = "SQL NULL for the top-level value; nested NULLs map recursively",
     r_na_return = "recursive child semantics",
@@ -207,11 +205,12 @@ rducks_value_semantics_row <- function(type) {
 
 rducks_value_semantics_empty <- function() {
   data.frame(
-    rducks_type = character(), duckdb_sql = character(), kind = character(), r_type = character(),
-    sql_null_input_default = character(), sql_null_input_special = character(), sql_nan_inf_input = character(),
-    r_null_return = character(), r_na_return = character(), r_nan_return = character(), r_inf_return = character(),
-    binary_ops = character(), error_semantics = character(), notes = character(),
-    stringsAsFactors = FALSE, check.names = FALSE
+    duckdb_type = character(), descriptor_kind = character(), r_value_class = character(),
+    default_null_input = character(), special_null_argument = character(),
+    sql_nan_inf_input = character(), r_null_return = character(), r_na_return = character(),
+    r_nan_return = character(), r_inf_return = character(), binary_ops = character(),
+    error_semantics = character(), notes = character(), stringsAsFactors = FALSE,
+    check.names = FALSE
   )
 }
 
@@ -224,16 +223,16 @@ rducks_value_semantics_empty <- function() {
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
 #' to SQL `NULL` and the R function is not called. The
-#' `sql_null_input_special` column describes what the R function receives with
+#' `special_null_argument` column describes what the R function receives with
 #' `null_handling = "special"`.
 #'
 #' Return semantics are stated from R back to DuckDB. In scalar mode, top-level
 #' `NULL` returns map to SQL `NULL`; type-specific R `NA` values also map to SQL
 #' `NULL` where a missing representation exists. `NaN` and `Inf` are values only
-#' for `FLOAT` and `DOUBLE`; integer, date, time, timestamp, exact, and exotic
+#' for `FLOAT` and `DOUBLE`; integer, date, time, timestamp, and exact Rducks
 #' value classes reject non-finite values.
 #'
-#' @param x Optional scalar type tokens or constructed `rducks_type` objects.
+#' @param x Optional scalar type tokens or constructed `rducks_type` descriptors.
 #'   When `NULL`, all currently implemented scalar-mode scalar type semantics are
 #'   returned. Constructed descriptors such as `DECIMAL(10, 2)`,
 #'   `ENUM(c("a", "b"))`, `UNION(i = INTEGER, s = VARCHAR)`, `INTEGER[]`,

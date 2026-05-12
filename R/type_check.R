@@ -181,12 +181,12 @@ rducks_check_union_value <- function(type, x, what) {
 
 #' Check that an R value is compatible with a DuckDB type
 #'
-#' This is a pre-marshalling guard for Rducks type objects. It checks the R value
-#' shape that the marshaller expects for scalar, decimal, enum, list, array,
-#' struct, map, and union descriptors.
+#' This is a pre-marshalling guard for Rducks type descriptors. It checks the R
+#' value shape that the marshaller expects for scalar, decimal, enum, list,
+#' array, struct, map, and union descriptors.
 #'
-#' @param type A `rducks_type` object such as `INTEGER`, `INTEGER[]`,
-#'   `STRUCT(a = INTEGER)`, or a character type token accepted by
+#' @param type A `rducks_type` descriptor such as `INTEGER`, `INTEGER[]`,
+#'   `STRUCT(a = INTEGER)`, or a character scalar token accepted by
 #'   \code{\link[=rducks_type_normalize]{rducks_type_normalize()}}.
 #' @param x R value to check.
 #' @param size Optional exact length for scalar/vector checks.

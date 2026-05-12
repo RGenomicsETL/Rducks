@@ -13,8 +13,8 @@ rducks_check_argument(type, x, name = "argument")
 rducks_check_return(type, x)
 }
 \arguments{
-\item{type}{A \code{rducks_type} object such as \code{INTEGER}, \code{INTEGER[]},
-\code{STRUCT(a = INTEGER)}, or a character type token accepted by
+\item{type}{A \code{rducks_type} descriptor such as \code{INTEGER}, \code{INTEGER[]},
+\code{STRUCT(a = INTEGER)}, or a character scalar token accepted by
 \code{\link[=rducks_type_normalize]{rducks_type_normalize()}}.}
 
 \item{x}{R value to check.}
@@ -30,7 +30,7 @@ messages.}
 \code{x}, invisibly, on success.
 }
 \description{
-This is a pre-marshalling guard for Rducks type objects. It checks the R value
-shape that the marshaller expects for scalar, decimal, enum, list, array,
-struct, map, and union descriptors.
+This is a pre-marshalling guard for Rducks type descriptors. It checks the R
+value shape that the marshaller expects for scalar, decimal, enum, list,
+array, struct, map, and union descriptors.
 }

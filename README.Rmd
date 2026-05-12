@@ -31,8 +31,8 @@ outputs move through explicit execution plans:
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker loops with
   mirai daemons and Rducks-generated NNG endpoint URLs; `ipc_transport` selects
-  the generated transport and explicit `ipc_endpoints` can target externally
-  managed workers.
+  the generated transport. If `ipc_endpoints` is supplied, Rducks connects to
+  worker URLs that the caller starts and stops.
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row; `mode = "vectorized"` means
@@ -83,13 +83,17 @@ database catalog.
 ### Release and disconnect
 
 `rducks_release(con)` detaches connection-local Rducks state such as the current
-default plan and R-side runtime anchor. It is non-destructive: it does not drop
-DuckDB catalog functions and does not release closures still owned by native
-catalog metadata. Call it before `DBI::dbDisconnect(con)` when you want
-deterministic R-side cleanup. Rducks does not provide `rducks_unregister()`;
-registered catalog UDFs and their preserved R closures are intentionally retained
-for the database/runtime lifetime or until the same SQL name/signature is
-replaced.
+default plan and R-side runtime anchor. It is non-destructive for the DuckDB
+catalog: it does not drop catalog functions and does not release closures still
+owned by native catalog metadata. For `arrow_ipc + multiprocess_parallel`, the
+last Rducks attachment to a runtime also closes native client pools for
+Rducks-launched local workers and stops those local mirai/NNG workers. If
+`ipc_endpoints` was supplied, those URLs name user-owned worker processes;
+Rducks does not send stop requests to them during release. Call
+`rducks_release(con)` before `DBI::dbDisconnect(con)` when you want deterministic
+R-side cleanup. Rducks does not provide `rducks_unregister()`; registered catalog
+UDFs and their preserved R closures are intentionally retained for the
+database/runtime lifetime or until the same SQL name/signature is replaced.
 
 ```{r release-example}
 release_con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
@@ -121,9 +125,9 @@ Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`,
 `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`, `DECIMAL(width, scale)`,
 `ENUM(levels)`, and `UNION(...)`.
-Composite inputs and outputs are accepted as constructed type objects such as
-`TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over supported
-child types.
+Composite inputs and outputs are accepted as constructed type descriptors such
+as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
+supported child types.
 
 Declared `ENUM(...)` descriptors are supported by all implemented execution
 plans. On the native `arrow_ipc` NNG path, Rducks does not depend on Arrow IPC
@@ -135,8 +139,8 @@ Rducks also provides explicit R value classes for exact or DuckDB-specific
 values: `rducks_bigint()`, `rducks_ubigint()`, `rducks_uuid()`,
 `rducks_interval()`, `rducks_decimal()`, `rducks_hugeint()`,
 `rducks_uhugeint()`, `rducks_bits()`, `rducks_enum()`, and `rducks_union()`.
-Constructed DuckDB type objects are formal S7-backed descriptors with structural
-validation via `rducks_is_type()`.
+Constructed DuckDB type descriptors use the formal S7 `rducks_type` class and
+structural validation via `rducks_is_type()`.
 
 ## Type descriptors
 
@@ -209,9 +213,9 @@ knitr::kable(rducks_mode_semantics(), format = "markdown")
 The table is produced by the exported `rducks_argument_type_mapping()` helper
 and reflects the currently implemented nanoarrow scalar marshalling path. With
 `null_handling = "default"`, any top-level SQL `NULL` input makes DuckDB return
-SQL `NULL` without calling the R function. The `SQL NULL in function` column
+SQL `NULL` without calling the R function. The `special_null_argument` column
 below applies when `null_handling = "special"`. It is type-specific: ordinary
-R scalar types receive typed `NA` values, while exact/exotic value classes,
+R scalar types receive typed `NA` values, while exact Rducks value classes,
 binary values, and top-level composite values receive R `NULL`. Within
 homogeneous scalar lists/arrays, SQL `NULL` elements are represented as typed
 `NA` values where the child type has an R `NA` representation; nested composite
@@ -242,8 +246,8 @@ The table below is produced by `rducks_value_semantics()`, the exported schema
 that Rducks uses to document scalar-mode missing and non-finite value behavior.
 Top-level R `NULL` returns map to SQL `NULL`. R `NA` values map to SQL `NULL`
 when represented by the declared R type. `NaN` and `Inf` are values only for
-`FLOAT` and `DOUBLE`; integer, date, time, timestamp, exact, and exotic return
-paths reject them.
+`FLOAT` and `DOUBLE`; integer, date, time, timestamp, and exact Rducks value
+classes reject them.
 
 ```{r value-semantics, echo=FALSE, results="asis"}
 knitr::kable(rducks_value_semantics(list(
@@ -473,8 +477,8 @@ rducks_disable_inproc(con, threads = 1)
 `arrow_ipc + multiprocess_parallel` is the native NNG/Arrow IPC path: DuckDB
 chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and
 Arrow IPC result bytes are imported back into DuckDB output vectors. Local
-workers are mirai daemons running Rducks worker loops; `ipc_endpoints` can point
-at externally managed NNG workers instead.
+workers are mirai daemons running Rducks worker loops. If `ipc_endpoints` is
+supplied, Rducks connects to worker URLs that the caller starts and stops.
 
 Operationally:
 
@@ -487,9 +491,11 @@ Operationally:
   endpoint/transport choice. Registering another function with the same IPC
   provider key reuses the existing workers; changing that key starts another
   provider. Changing the default plan does not stop old providers.
-- `rducks_release(con)` stops local providers when the last Rducks anchor for
-  the DuckDB runtime is released. `rducks_nng_quiesce()` is lower-level: it only
-  closes native client pools.
+- `rducks_release(con)` stops Rducks-launched local providers when the last
+  Rducks anchor for the DuckDB runtime is released. For caller-supplied
+  `ipc_endpoints`, release closes Rducks bookkeeping but does not send stop
+  requests to the processes listening at those URLs. `rducks_nng_quiesce()` is
+  lower-level: it only closes native client pools for local IPC providers.
 
 The example below registers the same vectorized R function three ways. Keep
 `threads = 1` while registering; raise DuckDB `threads` for the IPC query phase

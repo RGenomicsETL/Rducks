@@ -78,4 +78,8 @@ phase has produced owned result data.
 
 `rducks_release(con)` clears connection-local Rducks state. It is not an
 unregister operation and must not drop database-catalog UDFs that sibling
-connections can still call.
+connections can still call. For `arrow_ipc + multiprocess_parallel`, releasing
+the last Rducks attachment to a runtime also closes native client pools for
+Rducks-launched local workers and stops those local mirai/NNG workers. If
+`ipc_endpoints` was supplied, those URLs name user-owned worker processes;
+Rducks does not send stop requests to them during release.
