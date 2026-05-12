@@ -35,10 +35,14 @@ mirai daemons; otherwise the endpoint URLs are passed through unchanged.}
 \item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{Arrow IPC worker options.
 By default (\code{ipc_globals = "auto"}), Rducks discovers UDF globals once at
 registration-wrapper creation and broadcasts them to each NNG worker when
-the UDF is registered with the shared provider pool. Use \code{ipc_packages} for
-packages that workers should attach, \code{ipc_globals = FALSE} to rely only on
-the serialized UDF closure and explicit task state, or a character vector /
-named list for explicit extra globals. \code{ipc_timeout} is the positive finite
+the UDF is registered with the shared provider pool. Automatic capture
+estimates the serialized globals payload and warns when it exceeds option
+\code{rducks.ipc_globals.warn_bytes} (8 MiB by default); option
+\code{rducks.ipc_globals.max_bytes} can set a hard byte limit. Use
+\code{ipc_packages} for packages that workers should attach,
+\code{ipc_globals = FALSE} to rely only on the serialized UDF closure and
+explicit task state, or a character vector / named list for explicit extra
+globals. \code{ipc_timeout} is the positive finite
 provider wait timeout in seconds; \code{NULL} uses a finite default of 30 seconds.
 \code{ipc_endpoints} optionally supplies NNG endpoint URLs for worker processes
 that the caller starts and stops; those processes must run the Rducks NNG
@@ -46,7 +50,9 @@ worker loop. Any NNG URL transport supported by both endpoints is allowed.
 When endpoints are not
 supplied, \code{ipc_transport} selects the transport used for the mirai-launched
 local worker endpoints and must be left as \code{NULL} when explicit
-\code{ipc_endpoints} are supplied. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}
+\code{ipc_endpoints} are supplied. Rducks retries local TCP/WebSocket startup
+with fresh endpoint bundles after startup-ping failure; caller-supplied
+endpoints remain caller-owned and fail fast. \code{"abstract"} means Linux abstract IPC, \code{"ipc"}
 means NNG IPC (Unix-domain sockets on POSIX and named pipes on Windows),
 \code{"unix"} means the POSIX Unix-domain alias, and \code{"tcp"} / \code{"ws"} use
 loopback TCP / WebSocket endpoints. The default is \code{"abstract"} on Linux

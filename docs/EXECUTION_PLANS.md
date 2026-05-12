@@ -49,7 +49,9 @@ Unsupported combinations must fail. They must not silently switch:
 - `arrow_c`: direct DuckDB-vector materialization for signatures accepted by the
   direct support predicate. Unsupported signatures fail validation.
 - `arrow_ipc`: owned Arrow IPC request/result bytes. This is only valid with
-  `multiprocess_parallel`.
+  `multiprocess_parallel`. The current NNG provider is one request to exactly
+  one result record batch; multi-batch or streaming results are rejected rather
+  than concatenated implicitly.
 
 ## Concurrency choices
 

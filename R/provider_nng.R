@@ -31,7 +31,9 @@ rducks_nng_defaults <- list(
   control_retries = 200L,
   retry_sleep = 0.01,
   per_attempt_timeout = 0.25,
-  worker_send_timeout = 5
+  worker_send_timeout = 5,
+  startup_attempts = 3L,
+  startup_retry_sleep = 0.05
 )
 
 rducks_nng_check_seconds <- function(x, what, default = NULL, minimum = 0) {
@@ -46,6 +48,13 @@ rducks_nng_check_seconds <- function(x, what, default = NULL, minimum = 0) {
 rducks_nng_timeout_ms <- function(seconds, what = "timeout") {
   seconds <- rducks_nng_check_seconds(seconds, what)
   as.integer(max(1L, ceiling(seconds * 1000)))
+}
+
+rducks_nng_startup_attempts <- function(transport) {
+  attempts <- getOption("rducks.nng.startup_attempts", rducks_nng_defaults$startup_attempts)
+  attempts <- suppressWarnings(as.integer(attempts))
+  if (length(attempts) != 1L || is.na(attempts) || attempts < 1L) attempts <- 1L
+  if (transport %in% c("tcp", "ws")) attempts else 1L
 }
 
 rducks_nng_validate_endpoints <- function(endpoints, workers = NULL, allow_null = TRUE,
@@ -449,31 +458,18 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
   provider$start <- function(plan = NULL) {
     if (isTRUE(state$started)) return(invisible(provider))
     rducks_nng_provider_trace(paste0(state$transport, ":start:begin"))
-    tryCatch({
-      if (!isTRUE(state$external_endpoints)) {
-        mirai::daemons(state$workers, dispatcher = FALSE, .compute = state$compute)
-        setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = state$compute)
-        setup_value <- mirai::collect_mirai(setup)
-        if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
-        bundle <- rducks_nng_endpoint_bundle(state$workers, state$transport)
-        if (length(bundle$endpoints) != state$workers) {
-          stop(
-            "Rducks NNG endpoint bundle returned a worker count mismatch",
-            call. = FALSE
-          )
-        }
-        tasks <- vector("list", length(bundle$endpoints))
-        worker_loop <- rducks_nng_worker_loop
-        for (i in seq_along(bundle$endpoints)) {
-          endpoint <- bundle$endpoints[[i]]
-          tasks[[i]] <- mirai::mirai({
-            worker_loop(endpoint)
-          }, endpoint = endpoint, worker_loop = worker_loop, .compute = state$compute)
-        }
-        state$endpoints <- bundle$endpoints
-        state$cleanup_paths <- bundle$cleanup_paths
-        state$tasks <- tasks
-      }
+
+    cleanup_local_attempt <- function() {
+      if (isTRUE(state$external_endpoints)) return(invisible(NULL))
+      try(mirai::daemons(0L, .compute = state$compute), silent = TRUE)
+      unlink(state$cleanup_paths %||% character(), force = TRUE)
+      state$cleanup_paths <- character()
+      state$tasks <- list()
+      state$endpoints <- character()
+      invisible(NULL)
+    }
+
+    ping_endpoints <- function() {
       ping <- rducks_nng_wire_encode_request(rducks_nng_wire_type_ping)
       for (endpoint in state$endpoints) {
         rducks_nng_provider_trace(paste0(state$transport, ":start:ping:start"))
@@ -482,17 +478,66 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
         decoded <- rducks_nng_decode_response_checked(resp, endpoint, "startup ping")
         if (!identical(decoded$status, "ok")) stop(decoded$error, call. = FALSE)
       }
+      invisible(TRUE)
+    }
+
+    start_local_once <- function() {
+      mirai::daemons(state$workers, dispatcher = FALSE, .compute = state$compute)
+      setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = state$compute)
+      setup_value <- mirai::collect_mirai(setup)
+      if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
+      bundle <- rducks_nng_endpoint_bundle(state$workers, state$transport)
+      if (length(bundle$endpoints) != state$workers) {
+        stop(
+          "Rducks NNG endpoint bundle returned a worker count mismatch",
+          call. = FALSE
+        )
+      }
+      tasks <- vector("list", length(bundle$endpoints))
+      worker_loop <- rducks_nng_worker_loop
+      for (i in seq_along(bundle$endpoints)) {
+        endpoint <- bundle$endpoints[[i]]
+        tasks[[i]] <- mirai::mirai({
+          worker_loop(endpoint)
+        }, endpoint = endpoint, worker_loop = worker_loop, .compute = state$compute)
+      }
+      state$endpoints <- bundle$endpoints
+      state$cleanup_paths <- bundle$cleanup_paths
+      state$tasks <- tasks
+      ping_endpoints()
+      invisible(TRUE)
+    }
+
+    tryCatch({
+      if (isTRUE(state$external_endpoints)) {
+        ping_endpoints()
+      } else {
+        attempts <- rducks_nng_startup_attempts(state$transport)
+        last_error <- NULL
+        ok <- FALSE
+        for (attempt in seq_len(attempts)) {
+          rducks_nng_provider_trace(paste0(state$transport, ":start:attempt:", attempt, "/", attempts))
+          ok <- tryCatch({
+            start_local_once()
+            TRUE
+          }, error = function(e) {
+            last_error <<- conditionMessage(e)
+            rducks_nng_provider_trace(paste0(state$transport, ":start:attempt:error:", last_error))
+            cleanup_local_attempt()
+            FALSE
+          })
+          if (isTRUE(ok)) break
+          if (attempt < attempts) {
+            Sys.sleep(rducks_nng_defaults$startup_retry_sleep)
+          }
+        }
+        if (!isTRUE(ok)) stop(last_error %||% "Rducks NNG provider startup failed", call. = FALSE)
+      }
       state$started <- TRUE
       rducks_nng_provider_trace(paste0(state$transport, ":start:done"))
       invisible(provider)
     }, error = function(e) {
-      if (!isTRUE(state$external_endpoints)) {
-        try(mirai::daemons(0L, .compute = state$compute), silent = TRUE)
-        unlink(state$cleanup_paths %||% character(), force = TRUE)
-        state$cleanup_paths <- character()
-        state$tasks <- list()
-        state$endpoints <- character()
-      }
+      cleanup_local_attempt()
       state$started <- FALSE
       stop(conditionMessage(e), call. = FALSE)
     })

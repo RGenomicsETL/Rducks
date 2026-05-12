@@ -132,9 +132,77 @@ rducks_ipc_globals_for_function <- function(fun) {
   list(globals = globals, packages = unique(packages))
 }
 
+rducks_ipc_format_bytes <- function(bytes) {
+  bytes <- as.numeric(bytes)
+  units <- c("bytes", "KiB", "MiB", "GiB")
+  unit <- 1L
+  while (is.finite(bytes) && bytes >= 1024 && unit < length(units)) {
+    bytes <- bytes / 1024
+    unit <- unit + 1L
+  }
+  if (unit == 1L) {
+    return(paste0(format(round(bytes), trim = TRUE, scientific = FALSE), " ", units[[unit]]))
+  }
+  paste0(format(round(bytes, 1), trim = TRUE, scientific = FALSE), " ", units[[unit]])
+}
+
+rducks_ipc_byte_option <- function(name, default, what) {
+  value <- getOption(name, default)
+  if (is.null(value) || identical(value, FALSE)) return(Inf)
+  value <- suppressWarnings(as.numeric(value))
+  if (length(value) != 1L || is.na(value) || value < 0 || (!is.finite(value) && !is.infinite(value))) {
+    stop(what, " must be a non-negative finite byte count, Inf, NULL, or FALSE", call. = FALSE)
+  }
+  value
+}
+
+rducks_ipc_globals_serialized_size <- function(globals, what) {
+  length(tryCatch(
+    serialize(globals, NULL, xdr = FALSE),
+    error = function(e) {
+      stop("failed to serialize ", what, ": ", conditionMessage(e), call. = FALSE)
+    }
+  ))
+}
+
+rducks_ipc_check_auto_globals_size <- function(globals) {
+  bytes <- rducks_ipc_globals_serialized_size(globals, "automatically discovered ipc_globals")
+  max_bytes <- rducks_ipc_byte_option(
+    "rducks.ipc_globals.max_bytes",
+    Inf,
+    "option rducks.ipc_globals.max_bytes"
+  )
+  warn_bytes <- rducks_ipc_byte_option(
+    "rducks.ipc_globals.warn_bytes",
+    8 * 1024^2,
+    "option rducks.ipc_globals.warn_bytes"
+  )
+
+  if (is.finite(max_bytes) && bytes > max_bytes) {
+    stop(
+      "ipc_globals = 'auto' captured ", rducks_ipc_format_bytes(bytes),
+      ", which exceeds option rducks.ipc_globals.max_bytes = ",
+      rducks_ipc_format_bytes(max_bytes),
+      ". Use explicit ipc_globals, reduce the UDF closure environment, or raise the limit.",
+      call. = FALSE
+    )
+  }
+  if (is.finite(warn_bytes) && bytes > warn_bytes) {
+    warning(
+      "ipc_globals = 'auto' captured ", rducks_ipc_format_bytes(bytes),
+      " of globals to broadcast to each IPC worker. Use explicit ipc_globals ",
+      "or set option rducks.ipc_globals.warn_bytes to adjust this warning.",
+      call. = FALSE
+    )
+  }
+  invisible(bytes)
+}
+
 rducks_ipc_worker_globals <- function(fun, globals) {
   if (identical(globals, "auto") || isTRUE(globals)) {
-    return(rducks_ipc_globals_for_function(fun))
+    worker_globals <- rducks_ipc_globals_for_function(fun)
+    rducks_ipc_check_auto_globals_size(worker_globals$globals)
+    return(worker_globals)
   }
   if (identical(globals, FALSE) || is.null(globals)) {
     return(list(globals = list(), packages = character()))
