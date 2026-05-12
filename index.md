@@ -122,15 +122,11 @@ inputs and outputs are accepted as constructed type objects such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types.
 
-Enum descriptors work in the same-process plans (`arrow_r` and
-`arrow_c`). They are deliberately rejected by the native `arrow_ipc` NNG
-path for now: Rducks owns the outer NNG frame, but the chunk payload is
-still an Arrow IPC stream written with vendored nanoarrow C/IPC; DuckDB
-exports enums as Arrow dictionary arrays and that writer rejects
-dictionary arrays. Rducks has an enum-storage sidecar design for
-declared `ENUM(...)` types, but the README does not claim IPC enum
-support until native input/output rewriting converts declared enums to
-ordinary integer arrays.
+Declared `ENUM(...)` descriptors are supported by all implemented
+execution plans. On the native `arrow_ipc` NNG path, Rducks does not
+depend on Arrow IPC dictionary transport for enums: declared enum levels
+are registration metadata, and the IPC payload carries the underlying
+DuckDB enum index storage as Arrow integer buffers.
 
 Rducks also provides explicit R value classes for exact or
 DuckDB-specific values:
@@ -216,8 +212,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        287ms      3.46    1.97MB
-#> 2 vectorized    230ms      4.34    2.34MB
+#> 1 scalar        288ms      3.47    1.97MB
+#> 2 vectorized    234ms      4.27    2.34MB
 ```
 
 ## Execution mode semantics
@@ -286,6 +282,10 @@ time, timestamp, exact, and exotic return paths reject them.
 Homogeneous scalar lists and arrays are passed as atomic R vectors with
 SQL `NULL` elements represented as typed `NA` values. Structs are passed
 as named lists, and maps are passed as `list(keys = ..., values = ...)`.
+A `data.frame` return is not a table-valued UDF here; the scalar UDF
+type equivalent is `STRUCT(...)`. In vectorized mode, a `STRUCT(...)`
+return may be supplied as a `data.frame` with columns matching the
+struct fields, yielding one struct-valued SQL result per row.
 
 ``` r
 
@@ -624,9 +624,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.847         R             16
-#> 2    in-process queue       1 536887296       1.819         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.024      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.861         R             16
+#> 2    in-process queue       1 536887296       1.838         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.048      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
