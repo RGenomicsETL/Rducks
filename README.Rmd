@@ -39,8 +39,10 @@ outputs move through explicit execution plans:
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row; `mode = "vectorized"` means
 one R call per DuckDB chunk. Table functions use a separate first-slice API,
-`rducks_register_table()`, for finite zero-argument scans whose R function
-returns a data frame or named list matching a declared output schema.
+`rducks_register_table()`, for finite scans whose positional SQL argument count
+is inferred from the R function formals and whose input types are registered as
+DuckDB `ANY`; the output schema is inferred during DuckDB bind and the result is
+imported through nanoarrow Arrow C Data before scanning.
 
 ## Quick start
 
