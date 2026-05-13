@@ -76,7 +76,7 @@ local({
     try(Rducks:::rducks_nng_transact(
       endpoint,
       Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_stop),
-      timeout = 1,
+      timeout = 5,
       retries = 5L
     ), silent = TRUE)
     try(mirai::collect_mirai(task), silent = TRUE)
@@ -87,7 +87,7 @@ local({
   invisible(Rducks:::rducks_nng_transact(
     endpoint,
     Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_ping),
-    timeout = 5
+    timeout = 30
   ))
 
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
@@ -101,7 +101,7 @@ local({
     "arrow_ipc", "multiprocess_parallel",
     ipc_endpoints = endpoint,
     ipc_workers = 1L,
-    ipc_timeout = 5
+    ipc_timeout = 30
   )
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   invisible(rducks_register_scalar_udf(

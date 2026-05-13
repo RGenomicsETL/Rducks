@@ -31,6 +31,8 @@ The user-facing API separates three concepts:
   (`mode = "scalar"`) or one R call per DuckDB chunk (`mode = "vectorized"`).
 - Rducks execution plan: the marshalling and concurrency implementation used by
   DuckDB scalar UDFs.
+- R-side query consumption: `rducks_query_stream()` exposes explicit
+  connection-bound query batches; it is not a SQL UDF registration surface.
 
 R-backed DuckDB scalar UDF inputs and outputs move through explicit execution
 plans:
@@ -53,7 +55,9 @@ the recorded R thread. `rducks_register_table()` covers finite scans whose
 positional SQL argument count is inferred from the R function formals and whose
 input types are registered as DuckDB `ANY`; the output schema is inferred during
 DuckDB bind and the result is imported through nanoarrow Arrow C Data before
-scanning.
+scanning. For R callers that want query results incrementally,
+`rducks_query_stream()` provides a connection-bound query-batch API with
+explicit `next_batch()` and `close()` methods.
 
 ## Quick start
 
