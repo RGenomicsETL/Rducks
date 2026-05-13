@@ -50,7 +50,9 @@ is imported through nanoarrow Arrow C Data before scanning. For R
 callers that want query results incrementally,
 [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
 provides a connection-bound query-batch API with explicit `next_batch()`
-and [`close()`](https://rdrr.io/r/base/connections.html) methods.
+and [`close()`](https://rdrr.io/r/base/connections.html) methods. Query
+streams fetch DuckDB native chunks and import them through Arrow C
+Data/nanoarrow without requiring the heavy `arrow` R package.
 
 ## Quick start
 
@@ -256,8 +258,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        292ms      3.38    1.97MB
-#> 2 vectorized    247ms      4.07    2.34MB
+#> 1 scalar        292ms      3.39    1.97MB
+#> 2 vectorized    241ms      4.18    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -595,11 +597,12 @@ than one eager
 result. The query runs through the Rducks extension’s DuckDB streaming
 result handle; fetched DuckDB chunks are exported through DuckDB Arrow C
 Data and materialized with the same Rducks/nanoarrow conversion helpers
-used by scalar-UDF marshalling. Because execution uses the
-extension-owned DuckDB connection, database-scoped objects are visible,
-while caller-connection temporary tables/views are not part of the
-stream query scope. The returned stream is connection-bound for
-lifecycle and has `next_batch()`,
+used by scalar-UDF marshalling. This path does not page over an already
+materialized DBI result and does not require the heavy `arrow` R
+package. Because execution uses the extension-owned DuckDB connection,
+database-scoped objects are visible, while caller-connection temporary
+tables/views are not part of the stream query scope. The returned stream
+is connection-bound for lifecycle and has `next_batch()`,
 [`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
 methods; `next_batch()` returns a data frame or `NULL` at end-of-stream.
 Each non-empty batch carries the stream’s nanoarrow schema in the
@@ -856,9 +859,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.856         R             16
-#> 2    in-process queue       1 536887296       1.756         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.052      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.783         R             16
+#> 2    in-process queue       1 536887296       1.790         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.069      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

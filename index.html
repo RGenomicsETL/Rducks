@@ -67,7 +67,7 @@
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops. Large same-host read-only R globals can optionally be sent as mori shared-memory references with <code>ipc_globals_share = "mori"</code>.</li>
 </ul>
-<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning. For R callers that want query results incrementally, <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> provides a connection-bound query-batch API with explicit <code>next_batch()</code> and <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code> methods.</p>
+<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning. For R callers that want query results incrementally, <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> provides a connection-bound query-batch API with explicit <code>next_batch()</code> and <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code> methods. Query streams fetch DuckDB native chunks and import them through Arrow C Data/nanoarrow without requiring the heavy <code>arrow</code> R package.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -184,8 +184,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        292ms      3.38    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    247ms      4.07    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        292ms      3.39    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    241ms      4.18    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -752,7 +752,7 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="streaming-query-batches">Streaming query batches<a class="anchor" aria-label="anchor" href="#streaming-query-batches"></a>
 </h2>
-<p>Use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> when an R caller wants explicit batch-by-batch query consumption rather than one eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result. The query runs through the Rducks extension’s DuckDB streaming result handle; fetched DuckDB chunks are exported through DuckDB Arrow C Data and materialized with the same Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. Because execution uses the extension-owned DuckDB connection, database-scoped objects are visible, while caller-connection temporary tables/views are not part of the stream query scope. The returned stream is connection-bound for lifecycle and has <code>next_batch()</code>, <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code>, and <code>is_closed()</code> methods; <code>next_batch()</code> returns a data frame or <code>NULL</code> at end-of-stream. Each non-empty batch carries the stream’s nanoarrow schema in the <code>"rducks_nanoarrow_schema"</code> attribute, and <code>rducks_release(con)</code> closes streams attached to that connection.</p>
+<p>Use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> when an R caller wants explicit batch-by-batch query consumption rather than one eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result. The query runs through the Rducks extension’s DuckDB streaming result handle; fetched DuckDB chunks are exported through DuckDB Arrow C Data and materialized with the same Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. This path does not page over an already materialized DBI result and does not require the heavy <code>arrow</code> R package. Because execution uses the extension-owned DuckDB connection, database-scoped objects are visible, while caller-connection temporary tables/views are not part of the stream query scope. The returned stream is connection-bound for lifecycle and has <code>next_batch()</code>, <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code>, and <code>is_closed()</code> methods; <code>next_batch()</code> returns a data frame or <code>NULL</code> at end-of-stream. Each non-empty batch carries the stream’s nanoarrow schema in the <code>"rducks_nanoarrow_schema"</code> attribute, and <code>rducks_release(con)</code> closes streams attached to that connection.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -976,9 +976,9 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.856         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.756         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.052      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.783         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.790         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.069      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
