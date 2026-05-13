@@ -22,7 +22,11 @@ local({
 
   old_defaults <- Rducks:::rducks_nng_defaults
   test_defaults <- old_defaults
-  test_defaults$startup_timeout <- 1
+  test_defaults$startup_timeout <- if (identical(Sys.info()[["sysname"]], "Windows")) {
+    max(10, old_defaults$startup_timeout)
+  } else {
+    1
+  }
   test_defaults$startup_retry_sleep <- 0
   invisible(rducks_test_replace_namespace_value("rducks_nng_defaults", test_defaults))
   on.exit(invisible(rducks_test_replace_namespace_value("rducks_nng_defaults", old_defaults)), add = TRUE)
