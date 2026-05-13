@@ -57,7 +57,9 @@ input types are registered as DuckDB `ANY`; the output schema is inferred during
 DuckDB bind and the result is imported through nanoarrow Arrow C Data before
 scanning. For R callers that want query results incrementally,
 `rducks_query_stream()` provides a connection-bound query-batch API with
-explicit `next_batch()` and `close()` methods.
+explicit `next_batch()` and `close()` methods. Query streams fetch DuckDB native
+chunks and import them through Arrow C Data/nanoarrow without requiring the
+heavy `arrow` R package.
 
 ## Quick start
 
@@ -528,10 +530,11 @@ Use `rducks_query_stream()` when an R caller wants explicit batch-by-batch query
 consumption rather than one eager `DBI::dbGetQuery()` result. The query runs
 through the Rducks extension's DuckDB streaming result handle; fetched DuckDB
 chunks are exported through DuckDB Arrow C Data and materialized with the same
-Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. Because
-execution uses the extension-owned DuckDB connection, database-scoped objects are
-visible, while caller-connection temporary tables/views are not part of the
-stream query scope. The returned stream is connection-bound for lifecycle and has
+Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. This path
+does not page over an already materialized DBI result and does not require the
+heavy `arrow` R package. Because execution uses the extension-owned DuckDB
+connection, database-scoped objects are visible, while caller-connection
+temporary tables/views are not part of the stream query scope. The returned stream is connection-bound for lifecycle and has
 `next_batch()`, `close()`, and `is_closed()` methods; `next_batch()` returns a
 data frame or `NULL` at end-of-stream. Each non-empty batch carries the stream's
 nanoarrow schema in the `"rducks_nanoarrow_schema"` attribute, and
