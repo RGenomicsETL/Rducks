@@ -261,6 +261,7 @@ rducks_arrow_timestamp_array <- function(values, schema) {
 
 rducks_arrow_string_array_to_character <- function(array) {
   n <- as.integer(array$length)
+  if (identical(n, 0L)) return(character())
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
   offsets <- as.integer(as.vector(array$buffers[[2L]]))
@@ -283,6 +284,7 @@ rducks_arrow_string_array <- function(values, schema) {
 
 rducks_arrow_binary_array_to_values <- function(array) {
   n <- as.integer(array$length)
+  if (identical(n, 0L)) return(vector("list", 0L))
   offset <- as.integer(array$offset %||% 0L)
   valid <- rducks_arrow_validity(array, n)
   offsets <- as.integer(as.vector(array$buffers[[2L]]))

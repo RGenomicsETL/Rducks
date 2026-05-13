@@ -44,6 +44,30 @@ local({
   expect_error(early$next_batch(), "closed")
   expect_false(isTRUE(early$close()))
 
+  exotic <- rducks_query_stream(
+    con,
+    paste(
+      "SELECT 12.34::DECIMAL(8,2) AS dec,",
+      "'123e4567-e89b-12d3-a456-426614174000'::UUID AS id,",
+      "blob 'abc' AS payload,",
+      "[1,2,3]::INTEGER[] AS ints,",
+      "{'a': 1::INTEGER, 'b': 'x'::VARCHAR} AS rec,",
+      "MAP(['a','b'], [1,2]) AS lookup"
+    ),
+    batch_size = 1L
+  )
+  exotic_batch <- exotic$next_batch()
+  expect_true(inherits(exotic_batch$dec, "rducks_decimal"))
+  expect_equal(as.character(exotic_batch$dec), "12.34")
+  expect_true(inherits(exotic_batch$id, "rducks_uuid"))
+  expect_equal(as.character(exotic_batch$id), "123e4567-e89b-12d3-a456-426614174000")
+  expect_equal(exotic_batch$payload[[1L]], charToRaw("abc"))
+  expect_equal(exotic_batch$ints[[1L]], 1:3)
+  expect_equal(exotic_batch$rec[[1L]], list(a = 1L, b = "x"))
+  expect_equal(exotic_batch$lookup[[1L]], list(keys = c("a", "b"), values = 1:2))
+  expect_null(exotic$next_batch())
+  expect_true(isTRUE(exotic$close()))
+
   expect_error(
     rducks_query_stream(con, "SELECT * FROM rducks_missing_stream_table"),
     "rducks_missing_stream_table|Catalog|does not exist"

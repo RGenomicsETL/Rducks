@@ -32,9 +32,13 @@ callbacks require the recorded calling R thread (`external_threads=1` and
 ## Streaming queries
 
 `rducks_query_stream()` is a connection-bound R-side result/session API. It
-returns data-frame batches, records a nanoarrow schema from DuckDB's zero-row
-prototype, closes its DBI result on `close()`, finalization, or
-`rducks_release(con)`, and does not survive connection release.
+opens a native DuckDB streaming result through the Rducks extension, fetches
+DuckDB data chunks with `duckdb_stream_fetch_chunk()`, exports them through
+DuckDB Arrow C Data, and materializes data-frame batches with Rducks' existing
+nanoarrow conversion helpers. The stream query scope is the database-scoped
+extension connection, not caller-connection temporary tables/views. It closes the
+native streaming result on `close()`, finalization, or `rducks_release(con)`, and
+does not survive connection release.
 
 ## Type-family support
 

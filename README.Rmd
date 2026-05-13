@@ -525,11 +525,17 @@ dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
 ## Streaming query batches
 
 Use `rducks_query_stream()` when an R caller wants explicit batch-by-batch query
-consumption rather than one eager `DBI::dbGetQuery()` result. The returned stream
-is connection-bound and has `next_batch()`, `close()`, and `is_closed()` methods;
-`next_batch()` returns a data frame or `NULL` at end-of-stream. Each non-empty
-batch carries the stream's nanoarrow schema in the `"rducks_nanoarrow_schema"`
-attribute, and `rducks_release(con)` closes streams attached to that connection.
+consumption rather than one eager `DBI::dbGetQuery()` result. The query runs
+through the Rducks extension's DuckDB streaming result handle; fetched DuckDB
+chunks are exported through DuckDB Arrow C Data and materialized with the same
+Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. Because
+execution uses the extension-owned DuckDB connection, database-scoped objects are
+visible, while caller-connection temporary tables/views are not part of the
+stream query scope. The returned stream is connection-bound for lifecycle and has
+`next_batch()`, `close()`, and `is_closed()` methods; `next_batch()` returns a
+data frame or `NULL` at end-of-stream. Each non-empty batch carries the stream's
+nanoarrow schema in the `"rducks_nanoarrow_schema"` attribute, and
+`rducks_release(con)` closes streams attached to that connection.
 
 ```{r streaming-query}
 stream <- rducks_query_stream(

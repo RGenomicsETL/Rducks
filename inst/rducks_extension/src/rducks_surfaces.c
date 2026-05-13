@@ -691,6 +691,210 @@ static bool rducks_register_runtime_token(duckdb_connection con, rducks_runtime_
                                            rducks_runtime_token_scalar, false);
 }
 
+static void rducks_query_stream_open_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                            duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector sql_vector = duckdb_data_chunk_get_vector(input, 0);
+    duckdb_string_t *sql_values = (duckdb_string_t *)duckdb_vector_get_data(sql_vector);
+    uint64_t *validity = duckdb_vector_get_validity(sql_vector);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+    for (idx_t i = 0; i < n; i++) {
+        char *sql;
+        const char *token = NULL;
+        char err[512];
+        err[0] = '\0';
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            duckdb_scalar_function_set_error(info, "Rducks query stream SQL must not be NULL");
+            return;
+        }
+        sql = rducks_copy_duckdb_string(&sql_values[i]);
+        if (!sql) {
+            duckdb_scalar_function_set_error(info, "out of memory opening Rducks query stream");
+            return;
+        }
+        if (!rducks_query_stream_open_native(runtime, sql, &token, err, sizeof(err))) {
+            free(sql);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to open Rducks query stream");
+            return;
+        }
+        duckdb_vector_assign_string_element(output, i, token ? token : "");
+        free(sql);
+    }
+}
+
+static void rducks_query_stream_schema_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                              duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector token_vector = duckdb_data_chunk_get_vector(input, 0);
+    duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(token_vector);
+    uint64_t *validity = duckdb_vector_get_validity(token_vector);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+    for (idx_t i = 0; i < n; i++) {
+        char *token;
+        char err[512];
+        err[0] = '\0';
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            duckdb_scalar_function_set_error(info, "Rducks query stream token must not be NULL");
+            return;
+        }
+        token = rducks_copy_duckdb_string(&tokens[i]);
+        if (!token) {
+            duckdb_scalar_function_set_error(info, "out of memory reading Rducks query stream schema");
+            return;
+        }
+        if (!rducks_query_stream_schema_native(runtime, token, err, sizeof(err))) {
+            free(token);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to read Rducks query stream schema");
+            return;
+        }
+        out[i] = true;
+        free(token);
+    }
+}
+
+static void rducks_query_stream_next_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                            duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector token_vector = duckdb_data_chunk_get_vector(input, 0);
+    duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(token_vector);
+    uint64_t *validity = duckdb_vector_get_validity(token_vector);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+    for (idx_t i = 0; i < n; i++) {
+        char *token;
+        int has_batch = 0;
+        char err[512];
+        err[0] = '\0';
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            duckdb_scalar_function_set_error(info, "Rducks query stream token must not be NULL");
+            return;
+        }
+        token = rducks_copy_duckdb_string(&tokens[i]);
+        if (!token) {
+            duckdb_scalar_function_set_error(info, "out of memory fetching Rducks query stream batch");
+            return;
+        }
+        if (!rducks_query_stream_next_native(runtime, token, &has_batch, err, sizeof(err))) {
+            free(token);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to fetch Rducks query stream batch");
+            return;
+        }
+        out[i] = has_batch ? true : false;
+        free(token);
+    }
+}
+
+static void rducks_query_stream_close_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                             duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector token_vector = duckdb_data_chunk_get_vector(input, 0);
+    duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(token_vector);
+    uint64_t *validity = duckdb_vector_get_validity(token_vector);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    if (!runtime) {
+        duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
+        return;
+    }
+    {
+        char err[256];
+        err[0] = '\0';
+        if (!rducks_allow_calling_thread_r_execution(runtime, err, sizeof(err))) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks query stream close reached a non-calling DuckDB execution thread");
+            return;
+        }
+    }
+    for (idx_t i = 0; i < n; i++) {
+        char *token;
+        int closed = 0;
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            out[i] = false;
+            continue;
+        }
+        token = rducks_copy_duckdb_string(&tokens[i]);
+        if (!token) {
+            duckdb_scalar_function_set_error(info, "out of memory closing Rducks query stream");
+            return;
+        }
+        rducks_query_stream_close_native(runtime, token, &closed);
+        out[i] = closed ? true : false;
+        free(token);
+    }
+}
+
+static bool rducks_register_query_stream_surfaces(duckdb_connection con, rducks_runtime_entry_t *runtime) {
+    duckdb_scalar_function open_fn = NULL;
+    duckdb_scalar_function schema_fn = NULL;
+    duckdb_scalar_function next_fn = NULL;
+    duckdb_scalar_function close_fn = NULL;
+    duckdb_logical_type varchar_type = NULL;
+    duckdb_logical_type bool_type = NULL;
+    bool ok = false;
+
+    open_fn = duckdb_create_scalar_function();
+    schema_fn = duckdb_create_scalar_function();
+    next_fn = duckdb_create_scalar_function();
+    close_fn = duckdb_create_scalar_function();
+    varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
+    bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
+    if (!open_fn || !schema_fn || !next_fn || !close_fn || !varchar_type || !bool_type) goto cleanup;
+
+    duckdb_scalar_function_set_name(open_fn, "rducks_query_stream_open");
+    duckdb_scalar_function_add_parameter(open_fn, varchar_type);
+    duckdb_scalar_function_set_return_type(open_fn, varchar_type);
+    duckdb_scalar_function_set_volatile(open_fn);
+    duckdb_scalar_function_set_extra_info(open_fn, runtime, NULL);
+    duckdb_scalar_function_set_function(open_fn, rducks_query_stream_open_scalar);
+    if (duckdb_register_scalar_function(con, open_fn) != DuckDBSuccess) goto cleanup;
+
+    duckdb_scalar_function_set_name(schema_fn, "rducks_query_stream_schema");
+    duckdb_scalar_function_add_parameter(schema_fn, varchar_type);
+    duckdb_scalar_function_set_return_type(schema_fn, bool_type);
+    duckdb_scalar_function_set_volatile(schema_fn);
+    duckdb_scalar_function_set_extra_info(schema_fn, runtime, NULL);
+    duckdb_scalar_function_set_function(schema_fn, rducks_query_stream_schema_scalar);
+    if (duckdb_register_scalar_function(con, schema_fn) != DuckDBSuccess) goto cleanup;
+
+    duckdb_scalar_function_set_name(next_fn, "rducks_query_stream_next");
+    duckdb_scalar_function_add_parameter(next_fn, varchar_type);
+    duckdb_scalar_function_set_return_type(next_fn, bool_type);
+    duckdb_scalar_function_set_volatile(next_fn);
+    duckdb_scalar_function_set_extra_info(next_fn, runtime, NULL);
+    duckdb_scalar_function_set_function(next_fn, rducks_query_stream_next_scalar);
+    if (duckdb_register_scalar_function(con, next_fn) != DuckDBSuccess) goto cleanup;
+
+    duckdb_scalar_function_set_name(close_fn, "rducks_query_stream_close");
+    duckdb_scalar_function_add_parameter(close_fn, varchar_type);
+    duckdb_scalar_function_set_return_type(close_fn, bool_type);
+    duckdb_scalar_function_set_volatile(close_fn);
+    duckdb_scalar_function_set_extra_info(close_fn, runtime, NULL);
+    duckdb_scalar_function_set_function(close_fn, rducks_query_stream_close_scalar);
+    if (duckdb_register_scalar_function(con, close_fn) != DuckDBSuccess) goto cleanup;
+
+    ok = true;
+cleanup:
+    if (open_fn) duckdb_destroy_scalar_function(&open_fn);
+    if (schema_fn) duckdb_destroy_scalar_function(&schema_fn);
+    if (next_fn) duckdb_destroy_scalar_function(&next_fn);
+    if (close_fn) duckdb_destroy_scalar_function(&close_fn);
+    if (varchar_type) duckdb_destroy_logical_type(&varchar_type);
+    if (bool_type) duckdb_destroy_logical_type(&bool_type);
+    return ok;
+}
+
 static bool rducks_register_version(duckdb_connection con) {
     return rducks_register_noarg_scalar(con, "rducks_version", DUCKDB_TYPE_VARCHAR, rducks_version_scalar, false);
 }
@@ -711,6 +915,7 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
         duckdb_disconnect(&new_connection);
         return 0;
     }
+    rducks_query_stream_close_all(runtime);
     rducks_runtime_forget_udf_registry(runtime);
     rducks_runtime_lock();
     old_connection = runtime->connection;
@@ -762,7 +967,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             !rducks_register_main_thread_token_surface(connection, runtime) ||
             !rducks_register_execution_backend_surface(connection, runtime) || !rducks_register_udf_stat_surface(connection, runtime) ||
             !rducks_register_scalar_surface(connection, runtime) || !rducks_register_table_surface(connection, runtime) ||
-            !rducks_register_aggregate_surface(connection, runtime)) {
+            !rducks_register_aggregate_surface(connection, runtime) || !rducks_register_query_stream_surfaces(connection, runtime)) {
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");
             }

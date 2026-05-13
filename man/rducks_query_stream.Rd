@@ -7,11 +7,13 @@
 rducks_query_stream(con, sql, batch_size = 1024L)
 }
 \arguments{
-\item{con}{A \code{duckdb_connection}.}
+\item{con}{A \code{duckdb_connection} with Rducks enabled.}
 
 \item{sql}{SQL query string.}
 
-\item{batch_size}{Default number of rows requested by \code{next_batch()}.}
+\item{batch_size}{Maximum number of rows returned by \code{next_batch()} when its
+\code{n} argument is \code{NULL}. DuckDB may fetch a larger native chunk internally;
+Rducks buffers any remainder for later \code{next_batch()} calls.}
 }
 \value{
 Object of class \code{rducks_query_stream} with \code{next_batch(n = NULL)},
@@ -19,14 +21,19 @@ Object of class \code{rducks_query_stream} with \code{next_batch(n = NULL)},
 }
 \description{
 Opens a connection-bound query stream with explicit \code{next_batch()} and
-\code{close()} methods. This is an R-side streaming result/session API; it is not
+\code{close()} methods. The query itself is executed by the Rducks DuckDB extension
+using DuckDB's native streaming result and data-chunk APIs; Rducks converts
+each fetched DuckDB chunk through DuckDB Arrow C Data and the package's
+nanoarrow materializers. This is an R-side result/session API; it is not
 inferred from scalar UDF IPC behavior and does not use the R-backed SQL table
-function path.
+function path. Because execution uses the extension-owned DuckDB connection,
+database-scoped objects are visible but temporary tables/views that exist only
+on the caller's DBI connection are not part of the stream query scope.
 }
 \details{
 \code{next_batch()} returns the next data-frame batch or \code{NULL} at end-of-stream.
-Returned batches carry the stream's inferred nanoarrow schema as the
-\code{"rducks_nanoarrow_schema"} attribute. \code{close()} clears the underlying DBI
+Returned batches carry the stream's DuckDB/nanoarrow schema as the
+\code{"rducks_nanoarrow_schema"} attribute. \code{close()} clears the native streaming
 result; it is safe to call more than once. A finalizer also closes unclosed
 streams, and \code{rducks_release(con)} closes streams registered on that
 connection before detaching connection-local state.

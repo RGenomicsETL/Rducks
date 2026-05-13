@@ -105,6 +105,7 @@ typedef enum rducks_type_kind {
 typedef struct rducks_udf_request rducks_udf_request_t;
 typedef struct rducks_r_scalar_meta rducks_r_scalar_meta_t;
 typedef struct rducks_nng_client_pool rducks_nng_client_pool_t;
+typedef struct rducks_query_stream_entry rducks_query_stream_entry_t;
 
 typedef struct rducks_type_desc {
     rducks_type_kind_t kind;
@@ -156,6 +157,8 @@ typedef struct rducks_runtime_entry {
     pthread_cond_t queue_cond;
 #endif
     int queue_initialized;
+    rducks_query_stream_entry_t *query_streams;
+    uint64_t query_stream_next_id;
 } rducks_runtime_entry_t;
 
 struct rducks_r_scalar_meta {
@@ -486,6 +489,7 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #include "src/rducks_runtime.c"
 #include "src/rducks_nng.c"
 #include "src/rducks_arrow.c"
+#include "src/rducks_query_stream.c"
 #include "src/rducks_rc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"

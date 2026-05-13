@@ -27,7 +27,10 @@
   `rducks_nng_self_test()`.
 - Added `rducks_query_stream()` as a connection-bound R-side streaming query
   object with explicit `next_batch()`, `close()`, schema/prototype metadata,
-  finalizer cleanup, and `rducks_release()` integration.
+  finalizer cleanup, and `rducks_release()` integration. Query streams now use
+  DuckDB's native streaming result/data-chunk APIs through the Rducks extension
+  and materialize fetched chunks via DuckDB Arrow C Data plus the existing
+  Rducks/nanoarrow conversion helpers, without requiring the `arrow` package.
 - Clarified IPC shared-memory capability metadata and design notes: mori is a
   same-host path for long-lived globals, while built-in backends still report no
   SQL chunk shared-memory handle support. Added a diagnostic data-plane
