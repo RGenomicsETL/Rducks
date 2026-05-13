@@ -24,6 +24,13 @@ The plan active at registration time is frozen into that registered DuckDB
 catalog UDF. Changing a connection's default plan later affects only future
 registrations.
 
+Aggregate functions registered with `rducks_register_aggregate()` are also
+separate from the scalar/vectorized execution-plan matrix. Their first-slice
+state contract is explicit: DuckDB aggregate state stores copied raw bytes, not
+R object pointers; R `update()`/`combine()` callbacks must return raw state or
+`NULL`; `finalize()` returns the declared scalar result. R callbacks are
+single-threaded and require the recorded calling R thread.
+
 Table functions registered with `rducks_register_table()` are separate from this
 scalar/vectorized execution-plan matrix. The current first slice is a one-shot,
 finite table function: Rducks infers the positional SQL argument count from the

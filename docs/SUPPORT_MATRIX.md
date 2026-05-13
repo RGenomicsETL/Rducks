@@ -15,6 +15,16 @@ truth is the plan/type validation predicates and the generated marshalling matri
 
 Invalid marshalling/concurrency pairs fail validation.
 
+## Aggregate functions
+
+`rducks_register_aggregate()` is a separate first-slice SQL aggregate surface,
+not an execution-plan variant of scalar/vectorized UDFs. The only supported
+state representation is native DuckDB aggregate memory containing a copied R
+`raw` vector. `update()` and optional `combine()` must return raw state or
+`NULL`; `finalize()` returns the declared scalar result. Registration and R
+callbacks require the recorded calling R thread (`external_threads=1` and
+`PRAGMA threads=1`); parallel worker-thread R callbacks are rejected.
+
 ## Streaming queries
 
 `rducks_query_stream()` is a connection-bound R-side result/session API. It

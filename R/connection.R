@@ -493,9 +493,9 @@ rducks_assert_single_thread <- function(con) {
   external_threads <- rducks_connection_external_threads(con)
   if (!identical(threads, 1L) || !identical(external_threads, 1L)) {
     stop(
-      "Rducks scalar UDFs require DuckDB to execute R code on the calling R thread; ",
+      "Rducks R-backed functions require DuckDB to execute R code on the calling R thread; ",
       "call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 ",
-      "before registering R UDFs",
+      "before registering R-backed functions",
       call. = FALSE
     )
   }

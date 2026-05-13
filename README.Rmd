@@ -38,11 +38,14 @@ outputs move through explicit execution plans:
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row; `mode = "vectorized"` means
-one R call per DuckDB chunk. Table functions use a separate first-slice API,
-`rducks_register_table()`, for finite scans whose positional SQL argument count
-is inferred from the R function formals and whose input types are registered as
-DuckDB `ANY`; the output schema is inferred during DuckDB bind and the result is
-imported through nanoarrow Arrow C Data before scanning.
+one R call per DuckDB chunk. Aggregate and table functions use separate
+first-slice APIs. `rducks_register_aggregate()` stores only native raw-byte
+aggregate state and calls R for serialized update/finalize phases on the
+recorded R thread. `rducks_register_table()` covers finite scans whose
+positional SQL argument count is inferred from the R function formals and whose
+input types are registered as DuckDB `ANY`; the output schema is inferred during
+DuckDB bind and the result is imported through nanoarrow Arrow C Data before
+scanning.
 
 ## Quick start
 
@@ -190,6 +193,46 @@ top-level SQL NULL inputs and scatters SQL NULLs back into the result.
 `null_handling = "special"` passes all rows using the same NA/NULL shapes as
 scalar mode. The return length must match the number of evaluated rows.
 Vectorized mode currently requires at least one declared argument.
+
+## Aggregate functions
+
+`rducks_register_aggregate()` registers serialized R-backed aggregates. The
+state stored in DuckDB is a native copy of the raw vector returned by
+`update(state, ...)`; R object pointers are not stored in aggregate state.
+`finalize(state)` receives the final raw state or `NULL` for a group with no
+non-NULL inputs and returns a scalar compatible with the declared return type.
+This first slice is deliberately single-threaded: registration requires
+`rducks_enable(con, threads = "single")`, and execution rejects attempts to call
+R from DuckDB worker threads.
+
+```{r aggregate-mode}
+pack_state <- function(x) serialize(x, NULL, version = 2)
+unpack_state <- function(state) {
+  if (is.null(state)) list(sum = 0L, n = 0L) else unserialize(state)
+}
+
+reg_r_sum <- rducks_register_aggregate(
+  con,
+  name = "r_sum_i32",
+  update = function(state, x) {
+    s <- unpack_state(state)
+    s$sum <- as.integer(s$sum + x)
+    s$n <- as.integer(s$n + 1L)
+    pack_state(s)
+  },
+  finalize = function(state) {
+    s <- unpack_state(state)
+    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
+  },
+  args = INTEGER,
+  returns = INTEGER
+)
+
+dbGetQuery(
+  con,
+  "SELECT r_sum_i32(i) AS s FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+)
+```
 
 A tiny benchmark with `bench` can show the call-shape difference for simple R
 work. The result is illustrative rather than a performance guarantee.

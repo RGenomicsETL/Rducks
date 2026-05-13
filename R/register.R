@@ -380,3 +380,124 @@ print.rducks_table_registration <- function(x, ...) {
   cat("  signature:  ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }
+
+rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine) {
+  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+    stop("name must be a non-empty character scalar", call. = FALSE)
+  }
+  if (!is.function(update)) {
+    stop("update must be a function", call. = FALSE)
+  }
+  if (!is.function(finalize)) {
+    stop("finalize must be a function", call. = FALSE)
+  }
+  if (!is.null(combine) && !is.function(combine)) {
+    stop("combine must be NULL or a function", call. = FALSE)
+  }
+  arg_types <- rducks_as_type_list(args)
+  if (!length(arg_types)) {
+    stop("Rducks aggregate UDFs require at least one input argument", call. = FALSE)
+  }
+  return_type <- rducks_as_type(returns)
+  list(
+    name = name,
+    args = vapply(arg_types, rducks_type_token, character(1), USE.NAMES = FALSE),
+    returns = rducks_type_token(return_type),
+    arg_types = arg_types,
+    return_type = return_type,
+    signature = paste0(
+      name,
+      "(",
+      paste(vapply(arg_types, rducks_type_duckdb_sql, character(1), USE.NAMES = FALSE), collapse = ", "),
+      ") -> ",
+      rducks_type_duckdb_sql(return_type)
+    )
+  )
+}
+
+#' Register an R aggregate function in DuckDB
+#'
+#' Registers a first-slice R-backed DuckDB aggregate. The aggregate state stored
+#' inside DuckDB is native memory containing bytes from an R `raw` vector, never
+#' an R object pointer. For each non-NULL input row, Rducks calls
+#' `update(state, ...)`, where `state` is the previous raw state or `NULL` and
+#' `...` are the row's scalar input values. `update()` must return the next raw
+#' state or `NULL`. At finalization Rducks calls `finalize(state)` and marshals
+#' that scalar result to the declared DuckDB return type.
+#'
+#' This API is deliberately serialized. Registration requires
+#' `rducks_enable(con, threads = "single")` or equivalent
+#' `external_threads=1` plus `PRAGMA threads=1`, and execution rejects attempts
+#' to call R from non-calling DuckDB worker threads. If DuckDB combines partial
+#' states, Rducks can copy a source state into an empty target; merging two
+#' non-empty states requires `combine(left, right)` and must still run on the
+#' recorded R thread. Cross-thread R aggregate execution is future work.
+#'
+#' With `null_handling = "default"`, rows with any top-level SQL `NULL` input
+#' do not call `update()`. Groups with no non-NULL rows therefore pass `NULL` to
+#' `finalize()`. With `null_handling = "special"`, `update()` receives the
+#' declared type's R missing-value shape for NULL inputs.
+#'
+#' @param con A `duckdb_connection`.
+#' @param name SQL aggregate function name.
+#' @param update R function called as `update(state, ...)`; must return a raw
+#'   vector state or `NULL`.
+#' @param finalize R function called as `finalize(state)`; must return a scalar
+#'   compatible with `returns` or `NULL` for SQL `NULL`.
+#' @param args Input type specification. Use exported DuckDB-style descriptors
+#'   such as `INTEGER`, `DOUBLE`, or `VARCHAR`.
+#' @param returns Return type specification.
+#' @param combine Optional R function called as `combine(left, right)` when two
+#'   non-empty partial raw states must be merged. It must return a raw vector
+#'   state or `NULL`.
+#' @param null_handling Either `"default"` to skip rows with top-level NULL
+#'   inputs, or `"special"` to pass missing values to `update()`.
+#' @return Object of class `rducks_aggregate_registration` containing the
+#'   connection and normalized aggregate signature. The aggregate remains
+#'   registered in DuckDB even if this object is discarded.
+#' @export
+rducks_register_aggregate <- function(con, name, update, finalize, args, returns,
+                                      combine = NULL,
+                                      null_handling = c("default", "special")) {
+  null_handling <- match.arg(null_handling)
+  if (!inherits(con, "duckdb_connection")) {
+    stop("con must be a duckdb_connection", call. = FALSE)
+  }
+  spec <- rducks_aggregate_registration_spec(name, update, finalize, args, returns, combine)
+  rducks_assert_single_thread(con)
+  rducks_attach_runtime_anchor(con)
+  bundle <- list(update = update, combine = combine, finalize = finalize)
+  eval_ref_handle <- rducks_evaluator_ref_put(bundle)
+  on.exit(rducks_evaluator_ref_remove(eval_ref_handle), add = TRUE)
+  sql <- sprintf(
+    "SELECT rducks_register_aggregate(%s, %s, %s, %s, %s, %s) AS ok",
+    rducks_sql_string(name),
+    rducks_sql_string(eval_ref_handle$id),
+    rducks_sql_string(eval_ref_handle$token),
+    rducks_sql_string(paste(spec$args, collapse = ",")),
+    rducks_sql_string(spec$returns),
+    rducks_sql_string(null_handling)
+  )
+  res <- DBI::dbGetQuery(con, sql)
+  if (!NROW(res) || !isTRUE(res$ok[[1]])) {
+    stop("native Rducks aggregate registration failed for SQL function: ", name, call. = FALSE)
+  }
+  structure(
+    list(
+      connection = con,
+      spec = spec,
+      null_handling = null_handling,
+      registered = TRUE
+    ),
+    class = "rducks_aggregate_registration"
+  )
+}
+
+#' @export
+print.rducks_aggregate_registration <- function(x, ...) {
+  cat("<rducks_aggregate_registration>\n")
+  cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
+  cat("  name:       ", x$spec$name, "\n", sep = "")
+  cat("  signature:  ", x$spec$signature, "\n", sep = "")
+  invisible(x)
+}
