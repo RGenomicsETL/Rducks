@@ -4,14 +4,18 @@ inside DuckDB is native memory containing bytes from an R raw vector, never
 an R object pointer. For each non-NULL input row, Rducks calls
 update(state, ...), where state is the previous raw state or NULL and
 ... are the row's scalar input values. update() must return the next raw
-state or NULL. At finalization Rducks calls finalize(state) and marshals
-that scalar result to the declared DuckDB return type."><meta property="og:description" content="Registers an R-backed DuckDB aggregate. The aggregate state stored
+state or NULL. raw(0) is a valid non-NULL state; return NULL only
+when the aggregate intentionally has no state. At finalization Rducks calls
+finalize(state) and marshals that scalar result to the declared DuckDB
+return type."><meta property="og:description" content="Registers an R-backed DuckDB aggregate. The aggregate state stored
 inside DuckDB is native memory containing bytes from an R raw vector, never
 an R object pointer. For each non-NULL input row, Rducks calls
 update(state, ...), where state is the previous raw state or NULL and
 ... are the row's scalar input values. update() must return the next raw
-state or NULL. At finalization Rducks calls finalize(state) and marshals
-that scalar result to the declared DuckDB return type."></head><body>
+state or NULL. raw(0) is a valid non-NULL state; return NULL only
+when the aggregate intentionally has no state. At finalization Rducks calls
+finalize(state) and marshals that scalar result to the declared DuckDB
+return type."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -51,8 +55,10 @@ inside DuckDB is native memory containing bytes from an R <code>raw</code> vecto
 an R object pointer. For each non-NULL input row, Rducks calls
 <code>update(state, ...)</code>, where <code>state</code> is the previous raw state or <code>NULL</code> and
 <code>...</code> are the row's scalar input values. <code><a href="https://rdrr.io/r/stats/update.html" class="external-link">update()</a></code> must return the next raw
-state or <code>NULL</code>. At finalization Rducks calls <code>finalize(state)</code> and marshals
-that scalar result to the declared DuckDB return type.</p>
+state or <code>NULL</code>. <code>raw(0)</code> is a valid non-<code>NULL</code> state; return <code>NULL</code> only
+when the aggregate intentionally has no state. At finalization Rducks calls
+<code>finalize(state)</code> and marshals that scalar result to the declared DuckDB
+return type.</p>
     </div>
 
     <div class="section level2">
@@ -102,7 +108,7 @@ such as <code>INTEGER</code>, <code>DOUBLE</code>, or <code>VARCHAR</code>.</p><
 
 <dt id="arg-combine">combine<a class="anchor" aria-label="anchor" href="#arg-combine"></a></dt>
 <dd><p>Optional R function called as <code>combine(left, right)</code> when two
-non-empty partial raw states must be merged. It must return a raw vector
+non-<code>NULL</code> partial raw states must be merged. It must return a raw vector
 state or <code>NULL</code>.</p></dd>
 
 
@@ -124,7 +130,7 @@ registered in DuckDB even if this object is discarded.</p>
 <code>external_threads=1</code> plus <code>PRAGMA threads=1</code>, and execution rejects attempts
 to call R from non-calling DuckDB worker threads. If DuckDB combines partial
 states, Rducks can copy a source state into an empty target; merging two
-non-empty states requires <code>combine(left, right)</code> and must still run on the
+non-<code>NULL</code> states requires <code>combine(left, right)</code> and must still run on the
 recorded R thread. Cross-thread R aggregate execution is future work.</p>
 <p>With <code>null_handling = "default"</code>, rows with any top-level SQL <code>NULL</code> input
 do not call <code><a href="https://rdrr.io/r/stats/update.html" class="external-link">update()</a></code>. Groups with no non-NULL rows therefore pass <code>NULL</code> to

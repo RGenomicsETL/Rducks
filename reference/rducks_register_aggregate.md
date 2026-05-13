@@ -6,8 +6,10 @@ never an R object pointer. For each non-NULL input row, Rducks calls
 `update(state, ...)`, where `state` is the previous raw state or `NULL`
 and `...` are the row's scalar input values.
 [`update()`](https://rdrr.io/r/stats/update.html) must return the next
-raw state or `NULL`. At finalization Rducks calls `finalize(state)` and
-marshals that scalar result to the declared DuckDB return type.
+raw state or `NULL`. `raw(0)` is a valid non-`NULL` state; return `NULL`
+only when the aggregate intentionally has no state. At finalization
+Rducks calls `finalize(state)` and marshals that scalar result to the
+declared DuckDB return type.
 
 ## Usage
 
@@ -56,7 +58,7 @@ rducks_register_aggregate(
 - combine:
 
   Optional R function called as `combine(left, right)` when two
-  non-empty partial raw states must be merged. It must return a raw
+  non-`NULL` partial raw states must be merged. It must return a raw
   vector state or `NULL`.
 
 - null_handling:
@@ -78,8 +80,8 @@ This API is deliberately serialized. Registration requires
 `external_threads=1` plus `PRAGMA threads=1`, and execution rejects
 attempts to call R from non-calling DuckDB worker threads. If DuckDB
 combines partial states, Rducks can copy a source state into an empty
-target; merging two non-empty states requires `combine(left, right)` and
-must still run on the recorded R thread. Cross-thread R aggregate
+target; merging two non-`NULL` states requires `combine(left, right)`
+and must still run on the recorded R thread. Cross-thread R aggregate
 execution is future work.
 
 With `null_handling = "default"`, rows with any top-level SQL `NULL`
