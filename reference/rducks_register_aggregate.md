@@ -1,10 +1,10 @@
 # Register an R aggregate function in DuckDB
 
-Registers a first-slice R-backed DuckDB aggregate. The aggregate state
-stored inside DuckDB is native memory containing bytes from an R `raw`
-vector, never an R object pointer. For each non-NULL input row, Rducks
-calls `update(state, ...)`, where `state` is the previous raw state or
-`NULL` and `...` are the row's scalar input values.
+Registers an R-backed DuckDB aggregate. The aggregate state stored
+inside DuckDB is native memory containing bytes from an R `raw` vector,
+never an R object pointer. For each non-NULL input row, Rducks calls
+`update(state, ...)`, where `state` is the previous raw state or `NULL`
+and `...` are the row's scalar input values.
 [`update()`](https://rdrr.io/r/stats/update.html) must return the next
 raw state or `NULL`. At finalization Rducks calls `finalize(state)` and
 marshals that scalar result to the declared DuckDB return type.

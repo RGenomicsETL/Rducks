@@ -2,25 +2,25 @@
 
 ## Rducks 0.0.1
 
-- Added a first-slice
+- Added
   [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
-  API for serialized R-backed DuckDB aggregate functions. Aggregate
-  state is native raw-byte storage copied from R `raw` vectors,
+  for serialized R-backed DuckDB aggregate functions. Aggregate state is
+  native raw-byte storage copied from R `raw` vectors,
   [`update()`](https://rdrr.io/r/stats/update.html)/`combine()` must
   return raw state or `NULL`, `finalize()` returns the declared scalar
   result, default NULL handling skips rows with top-level NULL inputs,
   and execution is explicitly restricted to the recorded calling R
   thread.
-- Added a first-slice
+- Added
   [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
-  API for finite R-backed DuckDB table functions. The native
-  table-function path infers positional SQL argument count from the R
-  function formals, registers those inputs as DuckDB `ANY`, converts
-  actual SQL bind values to R values, calls the R function during DuckDB
-  bind on the recorded calling R thread, infers the output schema from
-  the returned data frame/list, imports the result through nanoarrow
-  Arrow C Data, emits slices of the imported DuckDB chunk, and reports
-  schema, length, and R errors through DuckDB.
+  for finite R-backed DuckDB table functions. The native table-function
+  path infers positional SQL argument count from the R function formals,
+  registers those inputs as DuckDB `ANY`, converts actual SQL bind
+  values to R values, calls the R function during DuckDB bind on the
+  recorded calling R thread, infers the output schema from the returned
+  data frame/list, imports the result through nanoarrow Arrow C Data,
+  emits row batches from the imported DuckDB chunk, and reports schema,
+  length, and R errors through DuckDB.
 - Added vendored NNG/Mbed TLS source management for the native
   worker-provider foundation. `tools/vendor_nng_mbedtls.R` pins and
   refreshes the vendored sources, source builds can statically link a

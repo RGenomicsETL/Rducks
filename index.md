@@ -7,8 +7,8 @@ Rducks registers R functions as DuckDB SQL functions using a DuckDB C
 extension, including a small set of unstable DuckDB C extension API
 functions. The extension records the DuckDB database instance handle at
 initialization and keeps an extension-owned connection associated with
-that runtime. UDF inputs and outputs move through explicit execution
-plans:
+that runtime. Scalar/vectorized UDF inputs and outputs move through
+explicit execution plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
 - `arrow_c`: native extension path for supported scalar and vectorized
@@ -21,10 +21,12 @@ plans:
   stops. Large same-host read-only R globals can optionally be sent as
   mori shared-memory references with `ipc_globals_share = "mori"`.
 
-The user-facing UDF semantics are separate from the execution plan:
-`mode = "scalar"` means one R call per logical row;
-`mode = "vectorized"` means one R call per DuckDB chunk. Aggregate and
-table functions use separate first-slice APIs.
+For scalar/vectorized UDFs, the user-facing semantics are separate from
+the execution plan: `mode = "scalar"` means one R call per logical row,
+and `mode = "vectorized"` means one R call per DuckDB chunk. Aggregate
+and table functions use separate APIs with a single execution mode: R
+callbacks on the recorded R thread, not `mode = "scalar"` or
+`mode = "vectorized"`.
 [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
 stores only native raw-byte aggregate state and calls R for serialized
 update/finalize phases on the recorded R thread.
@@ -123,11 +125,17 @@ conversion used at the Rducks boundary.
 
 ## What you can register
 
-Rducks installs a package-managed DuckDB extension, loads it into DuckDB
-with
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
-and registers scalar or vectorized R UDFs with
-[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
+Rducks installs a package-managed DuckDB extension and loads it into
+DuckDB with
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md).
+The type descriptors below are used by
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+for scalar/vectorized UDFs and by
+[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+for aggregate inputs and returns. Table functions registered with
+[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+infer their output schema dynamically from the returned data frame or
+named list instead of taking declared type descriptors.
 
 Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`,
@@ -183,7 +191,7 @@ rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label"
 rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
 ```
 
-## Scalar and vectorized modes
+## Scalar/vectorized UDFs (`rducks_register()`)
 
 Scalar mode calls the R function once per DuckDB row. Vectorized mode
 calls the R function once per DuckDB chunk with one R vector/list-column
@@ -213,80 +221,12 @@ NA/NULL shapes as scalar mode. The return length must match the number
 of evaluated rows. Vectorized mode currently requires at least one
 declared argument.
 
-## Aggregate functions
+### Scalar/vectorized UDF benchmark
 
-[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
-registers serialized R-backed aggregates. The state stored in DuckDB is
-a native copy of the raw vector returned by `update(state, ...)`; R
-object pointers are not stored in aggregate state. `finalize(state)`
-receives the final raw state or `NULL` for a group with no non-NULL
-inputs and returns a scalar compatible with the declared return type.
-This first slice is deliberately single-threaded: registration requires
-`rducks_enable(con, threads = "single")`, and execution rejects attempts
-to call R from DuckDB worker threads.
-
-``` r
-
-pack_state <- function(x) serialize(x, NULL, version = 2)
-unpack_state <- function(state) {
-  if (is.null(state)) list(sum = 0L, n = 0L) else unserialize(state)
-}
-
-reg_r_sum <- rducks_register_aggregate(
-  con,
-  name = "r_sum_i32",
-  update = function(state, x) {
-    s <- unpack_state(state)
-    s$sum <- as.integer(s$sum + x)
-    s$n <- as.integer(s$n + 1L)
-    pack_state(s)
-  },
-  finalize = function(state) {
-    s <- unpack_state(state)
-    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
-  },
-  args = INTEGER,
-  returns = INTEGER
-)
-
-dbGetQuery(
-  con,
-  "SELECT r_sum_i32(i) AS s FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
-)
-#>   s
-#> 1 3
-```
-
-## Table functions
-
-[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
-registers finite R-backed table functions. The number of positional SQL
-arguments comes from `formals(fun)`, each input is registered as DuckDB
-`ANY`, and the output schema is inferred from the data frame or named
-list returned during DuckDB bind.
-
-``` r
-
-reg_rows <- rducks_register_table(
-  con,
-  name = "r_rows",
-  fun = function(n, prefix) {
-    i <- seq_len(as.integer(n))
-    data.frame(i = i, label = paste0(prefix, i))
-  },
-  chunk_size = 2L
-)
-
-dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
-#>   i label
-#> 1 1 row-1
-#> 2 2 row-2
-#> 3 3 row-3
-```
-
-A tiny benchmark with `bench` can show the call-shape difference for
-simple R work. The result is illustrative rather than a performance
-guarantee.
+A tiny benchmark with `bench` can show the
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+call-shape difference for simple R work. The result is illustrative
+rather than a performance guarantee.
 
 ``` r
 
@@ -299,27 +239,29 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        282ms      3.54    1.96MB
-#> 2 vectorized    222ms      4.47    2.34MB
+#> 1 scalar        286ms      3.47    1.97MB
+#> 2 vectorized    233ms      4.29    2.34MB
 ```
 
-## Execution mode semantics
+## Scalar/vectorized UDF mode semantics
 
 The table below is produced by
-[`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md).
+[`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
+and applies to scalar/vectorized UDFs registered with
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
 
 | mode | status | call_granularity | input_shape | return_shape | null_semantics | length_semantics | error_semantics | threading | copy_semantics | notes |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
 | scalar | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values | one output value per R function call | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
 | vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument | one R vector/list of values compatible with the declared return type | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet |
 
-## Argument values passed to R functions
+## Scalar/vectorized UDF argument values passed to R functions
 
-Expand for argument values passed to R functions
+Expand for scalar/vectorized UDF argument values passed to R functions
 
 The table is produced by the exported
 [`rducks_argument_type_mapping()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_argument_type_mapping.md)
-helper and reflects the currently implemented nanoarrow scalar
+helper and reflects the currently implemented scalar/vectorized UDF
 marshalling path. With `null_handling = "default"`, any top-level SQL
 `NULL` input makes DuckDB return SQL `NULL` without calling the R
 function. The `special_null_argument` column below applies when
@@ -341,17 +283,19 @@ nested composite `NULL` values are represented as R `NULL`.
 | ENUM(‘red’, ‘blue’) | enum | rducks_enum | rducks_enum scalar | NULL | boxed exact Rducks value | FALSE | FALSE | FALSE | factor with enum levels |
 | UNION(code INTEGER, label VARCHAR) | union | rducks_union | rducks_union object | NULL | boxed exact Rducks value | FALSE | FALSE | FALSE | tagged value object |
 
-## NULL, NA, NaN, Inf, and value-class semantics
+## Scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 
-Expand for NULL, NA, NaN, Inf, and value-class semantics
+Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class
+semantics
 
 The table below is produced by
 [`rducks_value_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_semantics.md),
-the exported schema that Rducks uses to document scalar-mode missing and
-non-finite value behavior. Top-level R `NULL` returns map to SQL `NULL`.
-R `NA` values map to SQL `NULL` when represented by the declared R type.
-`NaN` and `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date,
-time, timestamp, and exact Rducks value classes reject them.
+the exported schema that Rducks uses to document scalar/vectorized UDF
+missing and non-finite value behavior. Top-level R `NULL` returns map to
+SQL `NULL`. R `NA` values map to SQL `NULL` when represented by the
+declared R type. `NaN` and `Inf` are values only for `FLOAT` and
+`DOUBLE`; integer, date, time, timestamp, and exact Rducks value classes
+reject them.
 
 | duckdb_type | descriptor_kind | r_value_class | default_null_input | special_null_argument | sql_nan_inf_input | r_null_return | r_na_return | r_nan_return | r_inf_return | binary_ops | error_semantics | notes |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
@@ -364,7 +308,7 @@ time, timestamp, and exact Rducks value classes reject them.
 | UNION(code INTEGER, label VARCHAR) | union | rducks_union | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE union members can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | no missing tag; NA in the selected child follows that child semantics | recursive selected-child semantics | recursive selected-child semantics | no Rducks-specific UNION binary ops | missing, empty, or unknown tags and selected-child mismatches error | tagged value object |
 | MAP(VARCHAR, INTEGER) | map | list | short-circuit to SQL NULL result; R function is not called | NULL | recursive: only FLOAT/DOUBLE children can carry NaN/Inf | SQL NULL for the top-level value; nested NULLs map recursively | values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error | recursive child semantics | recursive child semantics | no descriptor-level Rducks binary ops; child value classes keep their own ops | keys/values length mismatch, NULL/NA keys, and child type mismatches error | keys and values use sequence mapping |
 
-## Composite input examples
+## Scalar/vectorized UDF composite input examples
 
 Homogeneous scalar lists and arrays are passed as atomic R vectors with
 SQL `NULL` elements represented as typed `NA` values. Structs are passed
@@ -446,10 +390,11 @@ dbGetQuery(con, "
 #> 1        3         6         42      42            42           41         21
 ```
 
-## NULL handling
+## Scalar/vectorized UDF NULL handling
 
-By default, Rducks uses NULL-in/NULL-out handling: if any input is SQL
-`NULL`, the R function is not called and the SQL result is `NULL`.
+For scalar/vectorized UDFs, Rducks uses NULL-in/NULL-out handling by
+default: if any input is SQL `NULL`, the R function is not called and
+the SQL result is `NULL`.
 
 Use `null_handling = "special"` to pass the type-specific missing value
 shown in
@@ -474,11 +419,12 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 #> 1 5
 ```
 
-## Exceptions and side effects
+## Scalar/vectorized UDF exceptions and side effects
 
-Set `exception_handling = "return_null"` to turn errors thrown by the
-user R function into SQL `NULL`. Return type-checking and marshalling
-errors still abort the query so type bugs are not hidden as NULLs.
+For scalar/vectorized UDFs, set `exception_handling = "return_null"` to
+turn errors thrown by the user R function into SQL `NULL`. Return
+type-checking and marshalling errors still abort the query so type bugs
+are not hidden as NULLs.
 
 ``` r
 
@@ -496,8 +442,9 @@ dbGetQuery(con, "SELECT r_error_null(1::INTEGER) AS x")
 #> 1 NA
 ```
 
-Set `side_effects = TRUE` for functions with counters, randomness, I/O,
-or mutation so DuckDB reruns the function for each row.
+For scalar/vectorized UDFs, set `side_effects = TRUE` for functions with
+counters, randomness, I/O, or mutation so DuckDB reruns the function for
+each row.
 
 ``` r
 
@@ -543,12 +490,125 @@ dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 #> 3 0.5728534
 ```
 
+## Aggregate functions
+
+[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+registers serialized R-backed aggregates. The state stored in DuckDB is
+a native copy of the raw vector returned by `update(state, ...)`; R
+object pointers are not stored in aggregate state. `finalize(state)`
+receives the final raw state or `NULL` for a group with no non-NULL
+inputs and returns a scalar compatible with the declared return type.
+Aggregate functions expose a single execution mode: serialized R
+callbacks on the recorded R thread. They do not have scalar/vectorized
+modes and are not controlled by scalar UDF execution plans. Registration
+requires `rducks_enable(con, threads = "single")`, and execution rejects
+attempts to call R from DuckDB worker threads.
+
+``` r
+
+pack_state <- function(x) serialize(x, NULL, version = 2)
+unpack_state <- function(state) {
+  if (is.null(state)) list(sum = 0L, n = 0L) else unserialize(state)
+}
+
+reg_r_sum <- rducks_register_aggregate(
+  con,
+  name = "r_sum_i32",
+  update = function(state, x) {
+    s <- unpack_state(state)
+    s$sum <- as.integer(s$sum + x)
+    s$n <- as.integer(s$n + 1L)
+    pack_state(s)
+  },
+  finalize = function(state) {
+    s <- unpack_state(state)
+    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
+  },
+  args = INTEGER,
+  returns = INTEGER
+)
+
+dbGetQuery(
+  con,
+  "SELECT r_sum_i32(i) AS s FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+)
+#>   s
+#> 1 3
+```
+
+## Table functions
+
+[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+registers finite R-backed table functions. The number of positional SQL
+arguments comes from `formals(fun)`, each input is registered as DuckDB
+`ANY`, and the output schema is inferred from the data frame or named
+list returned during DuckDB bind. Table functions expose a single
+execution mode: R callbacks on the recorded R thread. They do not have
+scalar/vectorized modes and are not controlled by scalar UDF execution
+plans; register and execute them with
+`rducks_enable(con, threads = "single")`.
+
+``` r
+
+reg_rows <- rducks_register_table(
+  con,
+  name = "r_rows",
+  fun = function(n, prefix) {
+    i <- seq_len(as.integer(n))
+    data.frame(i = i, label = paste0(prefix, i))
+  },
+  chunk_size = 2L
+)
+
+dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
+#>   i label
+#> 1 1 row-1
+#> 2 2 row-2
+#> 3 3 row-3
+```
+
+## Streaming query batches
+
+Use
+[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+when an R caller wants explicit batch-by-batch query consumption rather
+than one eager
+[`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
+result. The returned stream is connection-bound and has `next_batch()`,
+[`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
+methods; `next_batch()` returns a data frame or `NULL` at end-of-stream.
+Each non-empty batch carries the stream’s nanoarrow schema in the
+`"rducks_nanoarrow_schema"` attribute, and `rducks_release(con)` closes
+streams attached to that connection.
+
+``` r
+
+stream <- rducks_query_stream(
+  con,
+  "SELECT i::INTEGER AS i FROM range(1, 6) t(i)",
+  batch_size = 2L
+)
+stream$next_batch()
+#>   i
+#> 1 1
+#> 2 2
+stream$next_batch()
+#>   i
+#> 1 3
+#> 2 4
+stream$close()
+```
+
 ## Execution plans
 
 Execution plans choose the default marshalling implementation and
-concurrency contract for future registrations through a connection.
-Registration remains semantic: name, function, mode, types, NULL
-handling, exception handling, and side-effect flag. The plan active at
+concurrency contract for future scalar/vectorized UDF registrations
+through
+[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
+They do not control aggregate functions, table functions, or query
+streams. Registration remains semantic: name, function, mode, types,
+NULL handling, exception handling, and side-effect flag. The plan active
+at
 [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
 freezes the UDF’s native evaluator/marshalling metadata; later plan
 changes do not retarget already-registered UDFs.
@@ -612,38 +672,6 @@ rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain
 #>   submitted executed pending_max main_drain_batches
 #> 1        38       38           1                 38
 rducks_disable_inproc(con, threads = 1)
-```
-
-## Streaming query batches
-
-Use
-[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
-when an R caller wants explicit batch-by-batch query consumption rather
-than one eager
-[`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
-result. The returned stream is connection-bound and has `next_batch()`,
-[`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
-methods; `next_batch()` returns a data frame or `NULL` at end-of-stream.
-Each non-empty batch carries the stream’s nanoarrow schema in the
-`"rducks_nanoarrow_schema"` attribute, and `rducks_release(con)` closes
-streams attached to that connection.
-
-``` r
-
-stream <- rducks_query_stream(
-  con,
-  "SELECT i::INTEGER AS i FROM range(1, 6) t(i)",
-  batch_size = 2L
-)
-stream$next_batch()
-#>   i
-#> 1 1
-#> 2 2
-stream$next_batch()
-#>   i
-#> 1 3
-#> 2 4
-stream$close()
 ```
 
 ## Multiprocess Arrow IPC execution
@@ -803,9 +831,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.865         R             16
-#> 2    in-process queue       1 536887296       1.811         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.045      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.867         R             16
+#> 2    in-process queue       1 536887296       1.830         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.069      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
