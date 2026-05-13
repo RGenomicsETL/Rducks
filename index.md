@@ -262,8 +262,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.43    1.97MB
-#> 2 vectorized    238ms      4.16    2.34MB
+#> 1 scalar        315ms      3.22    1.97MB
+#> 2 vectorized    257ms      3.72    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -708,7 +708,7 @@ dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
 #> 1 20000100000
 rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain_batches")]
 #>   submitted executed pending_max main_drain_batches
-#> 1        38       38           1                 38
+#> 1        38       38           1                 37
 rducks_disable_inproc(con, threads = 1)
 ```
 
@@ -869,9 +869,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.847         R             16
-#> 2    in-process queue       1 536887296       1.796         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.034      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.859         R             16
+#> 2    in-process queue       1 536887296       1.780         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

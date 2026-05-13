@@ -184,8 +184,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        288ms      3.43    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    238ms      4.16    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        315ms      3.22    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    257ms      3.72    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -858,7 +858,7 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt; 1 20000100000</span></span>
 <span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"submitted"</span>, <span class="st">"executed"</span>, <span class="st">"pending_max"</span>, <span class="st">"main_drain_batches"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   submitted executed pending_max main_drain_batches</span></span>
-<span><span class="co">#&gt; 1        38       38           1                 38</span></span>
+<span><span class="co">#&gt; 1        38       38           1                 37</span></span>
 <span><span class="fu"><a href="reference/rducks_disable_inproc.html">rducks_disable_inproc</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
@@ -976,9 +976,9 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.847         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.796         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.034      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.859         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.780         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
