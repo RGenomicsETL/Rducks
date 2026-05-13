@@ -18,6 +18,10 @@ The user-facing API separates three concepts:
   (`mode = "vectorized"`).
 - Rducks execution plan: the marshalling and concurrency implementation
   used by DuckDB scalar UDFs.
+- R-side query consumption:
+  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+  exposes explicit connection-bound query batches; it is not a SQL UDF
+  registration surface.
 
 R-backed DuckDB scalar UDF inputs and outputs move through explicit
 execution plans:
@@ -42,7 +46,11 @@ update/finalize phases on the recorded R thread.
 covers finite scans whose positional SQL argument count is inferred from
 the R function formals and whose input types are registered as DuckDB
 `ANY`; the output schema is inferred during DuckDB bind and the result
-is imported through nanoarrow Arrow C Data before scanning.
+is imported through nanoarrow Arrow C Data before scanning. For R
+callers that want query results incrementally,
+[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+provides a connection-bound query-batch API with explicit `next_batch()`
+and [`close()`](https://rdrr.io/r/base/connections.html) methods.
 
 ## Quick start
 
@@ -248,8 +256,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        290ms      3.46    1.97MB
-#> 2 vectorized    231ms      4.30    2.34MB
+#> 1 scalar        288ms      3.43    1.97MB
+#> 2 vectorized    238ms      4.21    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -841,9 +849,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.856         R             16
-#> 2    in-process queue       1 536887296       1.821         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.033      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.815         R             16
+#> 2    in-process queue       1 536887296       1.694         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.019      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

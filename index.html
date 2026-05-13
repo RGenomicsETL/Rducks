@@ -56,6 +56,7 @@
 <li>DuckDB function kind: scalar UDF, aggregate function, or table function.</li>
 <li>Rducks evaluation mode for DuckDB scalar UDFs: one R call per row (<code>mode = "scalar"</code>) or one R call per DuckDB chunk (<code>mode = "vectorized"</code>).</li>
 <li>Rducks execution plan: the marshalling and concurrency implementation used by DuckDB scalar UDFs.</li>
+<li>R-side query consumption: <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> exposes explicit connection-bound query batches; it is not a SQL UDF registration surface.</li>
 </ul>
 <p>R-backed DuckDB scalar UDF inputs and outputs move through explicit execution plans:</p>
 <ul>
@@ -66,7 +67,7 @@
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops. Large same-host read-only R globals can optionally be sent as mori shared-memory references with <code>ipc_globals_share = "mori"</code>.</li>
 </ul>
-<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning.</p>
+<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning. For R callers that want query results incrementally, <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> provides a connection-bound query-batch API with explicit <code>next_batch()</code> and <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code> methods.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -183,8 +184,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        290ms      3.46    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    231ms      4.30    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        288ms      3.43    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    238ms      4.21    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -975,9 +976,9 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.856         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.821         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.033      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.815         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.694         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.019      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
