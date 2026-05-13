@@ -10,23 +10,27 @@
   concepts.
 - Added
   [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
-  for serialized R-backed DuckDB aggregate functions. Aggregate state is
-  native raw-byte storage copied from R `raw` vectors,
-  [`update()`](https://rdrr.io/r/stats/update.html)/`combine()` must
-  return raw state or `NULL`, `finalize()` returns the declared scalar
-  result, default NULL handling skips rows with top-level NULL inputs,
-  and execution is explicitly restricted to the recorded calling R
-  thread.
+  for R-backed DuckDB aggregate functions. Aggregate state can now be an
+  arbitrary preserved R object rather than only serialized `raw` bytes,
+  row-wise callbacks use `update(state, ...)` / `combine(left, right)` /
+  `finalize(state)`, optional chunk callbacks use
+  `update_chunk(states, group_id, ...)`,
+  `combine_chunk(left_states, right_states)`, and
+  `finalize_chunk(states)`, default NULL handling skips rows with
+  top-level NULL inputs, and execution is explicitly restricted to the
+  recorded calling R thread.
 - Added
   [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
-  for finite R-backed DuckDB table functions. The native table-function
-  path infers positional SQL argument count from the R function formals,
-  registers those inputs as DuckDB `ANY`, converts actual SQL bind
-  values to R values, calls the R function during DuckDB bind on the
-  recorded calling R thread, infers the output schema from the returned
-  data frame/list, imports the result through nanoarrow Arrow C Data,
-  emits row batches from the imported DuckDB chunk, and reports schema,
-  length, and R errors through DuckDB.
+  support for both finite and streaming R-backed table functions. The
+  native table-function path infers positional SQL argument count from
+  the R function formals, registers those inputs as DuckDB `ANY`,
+  converts actual SQL bind values to R values, and calls the R function
+  during DuckDB bind on the recorded calling R thread. Finite results
+  still infer the output schema from a returned data frame/list and
+  import the full result through nanoarrow Arrow C Data, while
+  [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+  adds a scan-time `next_batch()` path driven by a bind-time prototype,
+  optional cardinality metadata, and projection-aware output copying.
 - Added vendored NNG/Mbed TLS source management for the native
   worker-provider foundation. `tools/vendor_nng_mbedtls.R` pins and
   refreshes the vendored sources, source builds can statically link a
@@ -40,11 +44,13 @@
   schema/prototype metadata, finalizer cleanup, and
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   integration. Query streams now use DuckDB’s native streaming
-  result/data-chunk APIs through the Rducks extension, export fetched
-  chunks via DuckDB Arrow C Data, and either return owned nanoarrow
-  record batches (`format = "record_batch"`) or materialize through the
-  existing Rducks/nanoarrow conversion helpers, without requiring the
-  `arrow` package.
+  result/data-chunk APIs through a dedicated extension-owned
+  query-stream connection, keeping dynamic scalar, table, and aggregate
+  registration on the separate runtime connection. Fetched chunks are
+  exported via DuckDB Arrow C Data and either returned as owned
+  nanoarrow record batches (`format = "record_batch"`) or materialized
+  through the existing Rducks/nanoarrow conversion helpers, without
+  requiring the `arrow` package.
 - Clarified IPC shared-memory capability metadata and design notes: mori
   is a same-host path for long-lived globals, while built-in backends
   still report no SQL chunk shared-memory handle support. Added a

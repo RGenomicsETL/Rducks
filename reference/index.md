@@ -77,6 +77,8 @@
   : Inspect native runtime registry counters
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
   : Set the Rducks execution plan for a connection
+- [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+  : Create a streaming result for an Rducks table function
 - [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md)
   : Normalize an Rducks type token
 - [`rducks_is_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)

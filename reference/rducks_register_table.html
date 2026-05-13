@@ -3,23 +3,15 @@
 table function infers its positional SQL argument count from formals(fun)
 and registers those arguments with DuckDB's dynamic ANY type. During
 DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-scalars/lists, calls fun(...) on the recorded calling R thread, and infers
-the DuckDB output schema from the returned data frame or named list of
-equal-length columns. It then converts the result through a nanoarrow Arrow C
-Data stream, imports it into a DuckDB chunk, and emits row batches from
-that imported chunk during table-function scans. Scans honor DuckDB
-projection pushdown, so unreferenced columns are not copied from the imported
-chunk into the output chunk."><meta property="og:description" content="Registers an R-backed DuckDB table function. The registered SQL
+scalars/lists and calls fun(...) on the recorded calling R thread. fun()
+may return either a finite data frame/named list or a
+rducks_table_stream() object."><meta property="og:description" content="Registers an R-backed DuckDB table function. The registered SQL
 table function infers its positional SQL argument count from formals(fun)
 and registers those arguments with DuckDB's dynamic ANY type. During
 DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-scalars/lists, calls fun(...) on the recorded calling R thread, and infers
-the DuckDB output schema from the returned data frame or named list of
-equal-length columns. It then converts the result through a nanoarrow Arrow C
-Data stream, imports it into a DuckDB chunk, and emits row batches from
-that imported chunk during table-function scans. Scans honor DuckDB
-projection pushdown, so unreferenced columns are not copied from the imported
-chunk into the output chunk."></head><body>
+scalars/lists and calls fun(...) on the recorded calling R thread. fun()
+may return either a finite data frame/named list or a
+rducks_table_stream() object."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -58,13 +50,9 @@ chunk into the output chunk."></head><body>
 table function infers its positional SQL argument count from <code>formals(fun)</code>
 and registers those arguments with DuckDB's dynamic <code>ANY</code> type. During
 DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-scalars/lists, calls <code>fun(...)</code> on the recorded calling R thread, and infers
-the DuckDB output schema from the returned data frame or named list of
-equal-length columns. It then converts the result through a nanoarrow Arrow C
-Data stream, imports it into a DuckDB chunk, and emits row batches from
-that imported chunk during table-function scans. Scans honor DuckDB
-projection pushdown, so unreferenced columns are not copied from the imported
-chunk into the output chunk.</p>
+scalars/lists and calls <code>fun(...)</code> on the recorded calling R thread. <code>fun()</code>
+may return either a finite data frame/named list or a
+<code><a href="rducks_table_stream.html">rducks_table_stream()</a></code> object.</p>
     </div>
 
     <div class="section level2">
@@ -85,10 +73,11 @@ chunk into the output chunk.</p>
 
 
 <dt id="arg-fun">fun<a class="anchor" aria-label="anchor" href="#arg-fun"></a></dt>
-<dd><p>R function returning a data frame or named list of columns. Its
-finite formal argument count defines the SQL positional argument count;
-each positional argument is registered as DuckDB <code>ANY</code> and converted at
-bind time from the actual SQL value.</p></dd>
+<dd><p>R function returning a data frame, named list of columns, or
+<code><a href="rducks_table_stream.html">rducks_table_stream()</a></code>. Its finite formal
+argument count defines the SQL positional argument count; each positional
+argument is registered as DuckDB <code>ANY</code> and converted at bind time from the
+actual SQL value.</p></dd>
 
 
 <dt id="arg-chunk-size">chunk_size<a class="anchor" aria-label="anchor" href="#arg-chunk-size"></a></dt>
@@ -104,19 +93,22 @@ registered in DuckDB even if this object is discarded.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>This is intentionally separate from DuckDB scalar-UDF registration through
+    <p>For finite results, Rducks imports the full result into one DuckDB data chunk
+during bind and then emits row batches during scan. For streaming results,
+bind uses only the stream prototype to define the DuckDB schema; scan calls
+<code>next_batch()</code> repeatedly and imports one returned batch at a time. Both
+paths honor DuckDB projection pushdown, so unreferenced columns are not copied
+from imported chunks into DuckDB output chunks.</p>
+<p>This is intentionally separate from DuckDB scalar-UDF registration through
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>: table
-functions have their own bind/init/scan state and currently support only the
-one-shot finite table shape. DuckDB table functions can have bind-time dynamic
-schemas and broad input signatures; this Rducks API follows that model
-for output schemas and positional input types, while the number of SQL
-arguments is fixed by the R function's formal argument count. Variadic <code>...</code>
-arguments are not supported. If you already have a static R data frame to
-expose as a virtual table, prefer <code><a href="https://r.duckdb.org/reference/duckdb_register.html" class="external-link">duckdb::duckdb_register()</a></code>; DuckDB's R
-package routes that through its native data-frame scan path. Use
-<code>rducks_enable(con, threads = "single")</code> or otherwise set <code>external_threads=1</code>
-plus <code>PRAGMA threads=1</code> before registration and execution; worker-thread calls
-into R are rejected.</p>
+functions have their own bind/init/scan state, bind-time dynamic schemas, and
+positional SQL arguments fixed by the R function's finite formal argument
+count. Variadic <code>...</code> arguments are not supported. If you already have a
+static R data frame to expose as a virtual table, prefer
+<code><a href="https://r.duckdb.org/reference/duckdb_register.html" class="external-link">duckdb::duckdb_register()</a></code>; DuckDB's R package routes that through its native
+data-frame scan path. Use <code>rducks_enable(con, threads = "single")</code> or
+otherwise set <code>external_threads=1</code> plus <code>PRAGMA threads=1</code> before registration
+and execution; worker-thread calls into R are rejected.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
