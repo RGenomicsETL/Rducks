@@ -50,7 +50,7 @@ rducks_query_stream_batch_key <- function(native_token) {
   paste0("batch::", native_token)
 }
 
-rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_names) {
+rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_names, type_objects = NULL) {
   if (!nanoarrow::nanoarrow_pointer_is_valid(array)) {
     stop("query stream nanoarrow array pointer is not valid", call. = FALSE)
   }
@@ -62,6 +62,14 @@ rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_na
   if (length(type_specs) != length(column_names) || length(type_specs) != length(array$children)) {
     stop("query stream Arrow schema does not match native type metadata", call. = FALSE)
   }
+  if (is.null(type_objects)) {
+    type_objects <- lapply(type_specs, rducks_query_stream_type_from_native_spec)
+  } else {
+    type_objects <- as.list(type_objects)
+    if (length(type_objects) != length(type_specs)) {
+      stop("query stream type metadata does not match native type metadata", call. = FALSE)
+    }
+  }
   # DuckDB's Arrow C Data export filled `array`, and nanoarrow's owning
   # external pointer finalizer will call the ArrowArray release callback.
   # Attach the schema so callers can consume the struct array as a nanoarrow
@@ -72,6 +80,7 @@ rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_na
       array = array,
       schema = schema,
       type_specs = type_specs,
+      type_objects = type_objects,
       column_names = column_names
     ),
     class = "rducks_query_stream_arrow_batch"
@@ -120,23 +129,35 @@ rducks_query_stream_type_from_native_spec <- function(spec) {
   )
 }
 
-rducks_query_stream_materialize_arrow_batch <- function(array, schema, type_specs, column_names) {
+rducks_query_stream_materialize_arrow_batch <- function(array, schema, type_specs, column_names, type_objects = NULL) {
   if (!nanoarrow::nanoarrow_pointer_is_valid(array)) {
     stop("query stream nanoarrow array pointer is not valid", call. = FALSE)
   }
   if (!nanoarrow::nanoarrow_pointer_is_valid(schema)) {
     stop("query stream nanoarrow schema pointer is not valid", call. = FALSE)
   }
-  n <- as.integer(array$length)
+  n_raw <- as.numeric(array$length)
+  if (!is.finite(n_raw) || n_raw < 0 || n_raw > .Machine$integer.max || n_raw != floor(n_raw)) {
+    stop("query stream batch is too large to materialize as an R data frame", call. = FALSE)
+  }
+  n <- as.integer(n_raw)
   type_specs <- as.list(type_specs)
   column_names <- as.character(column_names)
   if (length(type_specs) != length(column_names) || length(type_specs) != length(array$children)) {
     stop("query stream Arrow schema does not match native type metadata", call. = FALSE)
   }
+  if (is.null(type_objects)) {
+    type_objects <- lapply(type_specs, rducks_query_stream_type_from_native_spec)
+  } else {
+    type_objects <- as.list(type_objects)
+    if (length(type_objects) != length(type_specs)) {
+      stop("query stream type metadata does not match native type metadata", call. = FALSE)
+    }
+  }
 
   columns <- vector("list", length(type_specs))
   for (i in seq_along(type_specs)) {
-    type <- rducks_query_stream_type_from_native_spec(type_specs[[i]])
+    type <- type_objects[[i]]
     if (is.null(type)) {
       values <- rep(NA, n)
     } else {
@@ -150,7 +171,7 @@ rducks_query_stream_materialize_arrow_batch <- function(array, schema, type_spec
   names(columns) <- column_names
   out <- structure(columns, class = "data.frame", row.names = .set_row_names(n))
   attr(out, "rducks_nanoarrow_schema") <- schema
-  attr(out, "rducks_query_stream_types") <- lapply(type_specs, rducks_query_stream_type_from_native_spec)
+  attr(out, "rducks_query_stream_types") <- type_objects
   out
 }
 
@@ -159,19 +180,24 @@ rducks_query_stream_materialize_stored_arrow_batch <- function(batch) {
     batch$array,
     batch$schema,
     batch$type_specs,
-    batch$column_names
+    batch$column_names,
+    type_objects = batch$type_objects
   )
 }
 
 rducks_query_stream_arrow_batch_nrow <- function(batch) {
   if (is.null(batch)) return(0L)
-  as.integer(batch$array$length)
+  n <- as.numeric(batch$array$length)
+  if (!is.finite(n) || n < 0 || n > .Machine$integer.max || n != floor(n)) {
+    stop("query stream batch row count is too large for R", call. = FALSE)
+  }
+  as.integer(n)
 }
 
 rducks_query_stream_record_batch_array <- function(batch) {
   array <- batch$array
   attr(array, "rducks_nanoarrow_schema") <- batch$schema
-  attr(array, "rducks_query_stream_types") <- lapply(batch$type_specs, rducks_query_stream_type_from_native_spec)
+  attr(array, "rducks_query_stream_types") <- batch$type_objects
   attr(array, "rducks_query_stream_column_names") <- batch$column_names
   array
 }
@@ -207,7 +233,13 @@ rducks_query_stream_slice_arrow_batch <- function(batch, start = 1L, n = rducks_
     list(offset = 0L, length = n, children = children),
     validate = FALSE
   )
-  rducks_query_stream_arrow_batch(array, batch$schema, batch$type_specs, batch$column_names)
+  rducks_query_stream_arrow_batch(
+    array,
+    batch$schema,
+    batch$type_specs,
+    batch$column_names,
+    type_objects = batch$type_objects
+  )
 }
 
 rducks_query_stream_check_format <- function(format) {
@@ -311,8 +343,9 @@ rducks_query_stream_register <- function(con, state) {
 
 rducks_query_stream_check_batch_size <- function(batch_size, what = "batch_size") {
   if (!is.numeric(batch_size) || length(batch_size) != 1L || is.na(batch_size) ||
-      !is.finite(batch_size) || batch_size < 1L || batch_size != as.integer(batch_size)) {
-    stop(what, " must be a positive integer", call. = FALSE)
+      !is.finite(batch_size) || batch_size < 1L || batch_size > .Machine$integer.max ||
+      batch_size != floor(batch_size)) {
+    stop(what, " must be a positive integer no larger than .Machine$integer.max", call. = FALSE)
   }
   as.integer(batch_size)
 }
@@ -343,15 +376,16 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
 
   pending_rows <- rducks_query_stream_arrow_batch_nrow(state$pending)
   take <- min(n, pending_rows)
-  out_batch <- rducks_query_stream_slice_arrow_batch(state$pending, start = 1L, n = take)
-  if (take < pending_rows) {
+  if (take == pending_rows) {
+    out_batch <- state$pending
+    state$pending <- NULL
+  } else {
+    out_batch <- rducks_query_stream_slice_arrow_batch(state$pending, start = 1L, n = take)
     state$pending <- rducks_query_stream_slice_arrow_batch(
       state$pending,
       start = take + 1L,
       n = pending_rows - take
     )
-  } else {
-    state$pending <- NULL
   }
   rducks_query_stream_format_batch(out_batch, format)
 }

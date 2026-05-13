@@ -3,6 +3,7 @@
 typedef struct rducks_r_aggregate_state {
     uint8_t *data;
     size_t size;
+    int is_null;
 } rducks_r_aggregate_state_t;
 
 typedef struct rducks_r_aggregate_meta {
@@ -23,6 +24,7 @@ static void rducks_r_aggregate_state_reset(rducks_r_aggregate_state_t *state) {
     free(state->data);
     state->data = NULL;
     state->size = 0;
+    state->is_null = 1;
 }
 
 static int rducks_r_aggregate_state_copy(rducks_r_aggregate_state_t *dst,
@@ -33,7 +35,15 @@ static int rducks_r_aggregate_state_copy(rducks_r_aggregate_state_t *dst,
         snprintf(err, err_cap, "invalid Rducks aggregate state copy");
         return 0;
     }
+    if (src->is_null) {
+        rducks_r_aggregate_state_reset(dst);
+        return 1;
+    }
     if (src->size > 0U) {
+        if (!src->data) {
+            snprintf(err, err_cap, "invalid non-empty Rducks aggregate state");
+            return 0;
+        }
         copy = (uint8_t *)malloc(src->size);
         if (!copy) {
             snprintf(err, err_cap, "out of memory copying Rducks aggregate state");
@@ -44,17 +54,18 @@ static int rducks_r_aggregate_state_copy(rducks_r_aggregate_state_t *dst,
     free(dst->data);
     dst->data = copy;
     dst->size = src->size;
+    dst->is_null = 0;
     return 1;
 }
 
 static SEXP rducks_r_aggregate_state_to_raw(const rducks_r_aggregate_state_t *state) {
     SEXP out;
-    if (!state || !state->data || state->size == 0U) return R_NilValue;
+    if (!state || state->is_null) return R_NilValue;
     if (state->size > (size_t)R_XLEN_T_MAX) {
         Rf_error("Rducks aggregate state is too large to materialize in R");
     }
     out = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)state->size));
-    memcpy(RAW(out), state->data, state->size);
+    if (state->size > 0U) memcpy(RAW(out), state->data, state->size);
     UNPROTECT(1);
     return out;
 }
@@ -91,6 +102,7 @@ static int rducks_r_aggregate_state_from_raw(rducks_r_aggregate_state_t *state, 
     free(state->data);
     state->data = copy;
     state->size = (size_t)n;
+    state->is_null = 0;
     return 1;
 }
 
@@ -189,6 +201,7 @@ static void rducks_r_aggregate_init(duckdb_function_info info, duckdb_aggregate_
     if (!agg_state) return;
     agg_state->data = NULL;
     agg_state->size = 0;
+    agg_state->is_null = 1;
 }
 
 static void rducks_r_aggregate_destroy(duckdb_aggregate_state *states, idx_t count) {
@@ -333,8 +346,8 @@ static void rducks_r_aggregate_combine(duckdb_function_info info, duckdb_aggrega
     for (idx_t i = 0; i < count; i++) {
         rducks_r_aggregate_state_t *src = (rducks_r_aggregate_state_t *)source[i];
         rducks_r_aggregate_state_t *dst = (rducks_r_aggregate_state_t *)target[i];
-        if (!src || !dst || src->size == 0U) continue;
-        if (dst->size == 0U) {
+        if (!src || !dst || src->is_null) continue;
+        if (dst->is_null) {
             if (!rducks_r_aggregate_state_copy(dst, src, err, sizeof(err))) {
                 rducks_r_aggregate_set_error(info, "combine", err);
                 return;

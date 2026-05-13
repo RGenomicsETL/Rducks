@@ -32,7 +32,7 @@ such as \code{INTEGER}, \code{DOUBLE}, or \code{VARCHAR}.}
 \item{returns}{Return type specification.}
 
 \item{combine}{Optional R function called as \code{combine(left, right)} when two
-non-empty partial raw states must be merged. It must return a raw vector
+non-\code{NULL} partial raw states must be merged. It must return a raw vector
 state or \code{NULL}.}
 
 \item{null_handling}{Either \code{"default"} to skip rows with top-level NULL
@@ -49,8 +49,10 @@ inside DuckDB is native memory containing bytes from an R \code{raw} vector, nev
 an R object pointer. For each non-NULL input row, Rducks calls
 \code{update(state, ...)}, where \code{state} is the previous raw state or \code{NULL} and
 \code{...} are the row's scalar input values. \code{update()} must return the next raw
-state or \code{NULL}. At finalization Rducks calls \code{finalize(state)} and marshals
-that scalar result to the declared DuckDB return type.
+state or \code{NULL}. \code{raw(0)} is a valid non-\code{NULL} state; return \code{NULL} only
+when the aggregate intentionally has no state. At finalization Rducks calls
+\code{finalize(state)} and marshals that scalar result to the declared DuckDB
+return type.
 }
 \details{
 This API is deliberately serialized. Registration requires
@@ -58,7 +60,7 @@ This API is deliberately serialized. Registration requires
 \code{external_threads=1} plus \verb{PRAGMA threads=1}, and execution rejects attempts
 to call R from non-calling DuckDB worker threads. If DuckDB combines partial
 states, Rducks can copy a source state into an empty target; merging two
-non-empty states requires \code{combine(left, right)} and must still run on the
+non-\code{NULL} states requires \code{combine(left, right)} and must still run on the
 recorded R thread. Cross-thread R aggregate execution is future work.
 
 With \code{null_handling = "default"}, rows with any top-level SQL \code{NULL} input

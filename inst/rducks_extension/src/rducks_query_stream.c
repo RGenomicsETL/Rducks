@@ -10,8 +10,20 @@ struct rducks_query_stream_entry {
     idx_t column_count;
     duckdb_logical_type *types;
     char **names;
+    SEXP schema_xptr;
+    SEXP type_specs;
+    SEXP column_names_sexp;
     struct rducks_query_stream_entry *next;
 };
+
+static void rducks_query_stream_release_preserved(rducks_runtime_entry_t *runtime, SEXP object) {
+    if (!object || object == R_NilValue) return;
+    if (rducks_is_main_thread(runtime)) {
+        rducks_preserved_release_now(object);
+    } else {
+        rducks_preserved_release_enqueue(object);
+    }
+}
 
 static void rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry) {
     if (!entry) return;
@@ -29,6 +41,12 @@ static void rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry
     }
     free(entry->types);
     free(entry->names);
+    rducks_query_stream_release_preserved(entry->runtime, entry->schema_xptr);
+    rducks_query_stream_release_preserved(entry->runtime, entry->type_specs);
+    rducks_query_stream_release_preserved(entry->runtime, entry->column_names_sexp);
+    entry->schema_xptr = R_NilValue;
+    entry->type_specs = R_NilValue;
+    entry->column_names_sexp = R_NilValue;
     free(entry->token);
     memset(entry, 0, sizeof(*entry));
     free(entry);
@@ -386,6 +404,43 @@ cleanup:
     return ok;
 }
 
+static int rducks_query_stream_cache_r_metadata(rducks_runtime_entry_t *runtime,
+                                                rducks_query_stream_entry_t *entry,
+                                                char *err_msg, size_t err_cap) {
+    int protect_count = 0;
+    SEXP schema_xptr = R_NilValue;
+    SEXP type_specs = R_NilValue;
+    SEXP column_names = R_NilValue;
+
+    if (!runtime || !entry) {
+        snprintf(err_msg, err_cap, "invalid Rducks query stream metadata state");
+        return 0;
+    }
+    if (!rducks_allow_calling_thread_r_execution(runtime, err_msg, err_cap)) return 0;
+
+    schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
+    protect_count++;
+    if (!rducks_query_stream_fill_arrow_schema(runtime, entry, nanoarrow_output_schema_from_xptr(schema_xptr),
+                                               err_msg, err_cap)) {
+        goto error;
+    }
+    if (!rducks_query_stream_type_specs(entry, &type_specs, &protect_count, err_msg, err_cap)) goto error;
+    column_names = rducks_query_stream_column_names(entry, &protect_count);
+
+    R_PreserveObject(schema_xptr);
+    R_PreserveObject(type_specs);
+    R_PreserveObject(column_names);
+    entry->schema_xptr = schema_xptr;
+    entry->type_specs = type_specs;
+    entry->column_names_sexp = column_names;
+    UNPROTECT(protect_count);
+    return 1;
+
+error:
+    if (protect_count > 0) UNPROTECT(protect_count);
+    return 0;
+}
+
 static void rducks_query_stream_r_error(SEXP err_obj, const char *fallback, char *err_msg, size_t err_cap) {
     int r_err = 0;
     const char *cur_error;
@@ -434,18 +489,19 @@ static int rducks_query_stream_store_chunk(rducks_runtime_entry_t *runtime,
         return 0;
     }
     if (!rducks_allow_calling_thread_r_execution(runtime, err_msg, err_cap)) return 0;
+    if (entry->schema_xptr == R_NilValue || entry->type_specs == R_NilValue || entry->column_names_sexp == R_NilValue) {
+        snprintf(err_msg, err_cap, "Rducks query stream cached metadata is missing");
+        return 0;
+    }
 
-    schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
-    protect_count++;
-    if (!rducks_query_stream_fill_arrow_schema(runtime, entry, nanoarrow_output_schema_from_xptr(schema_xptr), err_msg, err_cap)) goto cleanup;
+    schema_xptr = entry->schema_xptr;
+    type_specs = entry->type_specs;
+    column_names = entry->column_names_sexp;
 
     array_xptr = PROTECT(nanoarrow_array_owning_xptr());
     protect_count++;
     if (!rducks_fill_input_arrow_array(runtime, array_xptr, chunk, err_msg, err_cap)) goto cleanup;
     R_SetExternalPtrTag(array_xptr, schema_xptr);
-
-    if (!rducks_query_stream_type_specs(entry, &type_specs, &protect_count, err_msg, err_cap)) goto cleanup;
-    column_names = rducks_query_stream_column_names(entry, &protect_count);
 
     pkg = PROTECT(Rf_mkString("Rducks"));
     protect_count++;
@@ -477,6 +533,7 @@ cleanup:
 static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, const char *sql,
                                            const char **token_out, char *err_msg, size_t err_cap) {
     duckdb_prepared_statement stmt = NULL;
+    duckdb_pending_result pending = NULL;
     rducks_query_stream_entry_t *entry = NULL;
     duckdb_state rc;
 
@@ -497,6 +554,9 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
         return 0;
     }
     entry->runtime = runtime;
+    entry->schema_xptr = R_NilValue;
+    entry->type_specs = R_NilValue;
+    entry->column_names_sexp = R_NilValue;
     memset(&entry->result, 0, sizeof(entry->result));
 
     if (!rducks_query_stream_make_token(runtime, &entry->token, err_msg, err_cap)) goto error;
@@ -507,10 +567,19 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
         goto error;
     }
 
-    rc = duckdb_execute_prepared_streaming(stmt, &entry->result);
-    entry->result_initialized = 1;
+    rc = duckdb_pending_prepared_streaming(stmt, &pending);
     duckdb_destroy_prepare(&stmt);
     stmt = NULL;
+    if (rc == DuckDBError) {
+        const char *msg = pending ? duckdb_pending_error(pending) : NULL;
+        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to create pending query stream");
+        goto error;
+    }
+
+    rc = duckdb_execute_pending(pending, &entry->result);
+    entry->result_initialized = 1;
+    duckdb_destroy_pending(&pending);
+    pending = NULL;
     if (rc == DuckDBError) {
         const char *msg = duckdb_result_error(&entry->result);
         snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to open query stream");
@@ -521,6 +590,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
         goto error;
     }
     if (!rducks_query_stream_capture_schema(entry, err_msg, err_cap)) goto error;
+    if (!rducks_query_stream_cache_r_metadata(runtime, entry, err_msg, err_cap)) goto error;
 
     rducks_runtime_lock();
     entry->next = runtime->query_streams;
@@ -530,26 +600,10 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     return 1;
 
 error:
+    if (pending) duckdb_destroy_pending(&pending);
     if (stmt) duckdb_destroy_prepare(&stmt);
     rducks_query_stream_entry_destroy(entry);
     return 0;
-}
-
-static void rducks_query_stream_drain_entry(rducks_query_stream_entry_t *entry) {
-    if (!entry || entry->done || !entry->result_initialized) return;
-    for (;;) {
-        duckdb_data_chunk chunk = duckdb_stream_fetch_chunk(entry->result);
-        if (!chunk) {
-            entry->done = 1;
-            break;
-        }
-        if (duckdb_data_chunk_get_size(chunk) == 0) {
-            duckdb_destroy_data_chunk(&chunk);
-            entry->done = 1;
-            break;
-        }
-        duckdb_destroy_data_chunk(&chunk);
-    }
 }
 
 static int rducks_query_stream_close_native(rducks_runtime_entry_t *runtime, const char *token,
@@ -568,7 +622,6 @@ static int rducks_query_stream_close_native(rducks_runtime_entry_t *runtime, con
     rducks_runtime_unlock();
 
     if (!entry) return 1;
-    rducks_query_stream_drain_entry(entry);
     rducks_query_stream_entry_destroy(entry);
     if (closed_out) *closed_out = 1;
     return 1;

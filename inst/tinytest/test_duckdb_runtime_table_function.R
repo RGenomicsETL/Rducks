@@ -33,6 +33,22 @@ local({
   multi <- DBI::dbGetQuery(con, "SELECT * FROM rducks_table_multichunk() ORDER BY i")
   expect_equal(multi$i, 1:5)
 
+  projection_calls <- 0L
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_projection",
+    function() {
+      projection_calls <<- projection_calls + 1L
+      data.frame(i = 1:5, keep = letters[1:5], expensive = paste0("x", 1:5))
+    },
+    chunk_size = 2L
+  ))
+  projected <- DBI::dbGetQuery(con, "SELECT keep FROM rducks_table_projection() WHERE i <= 3 ORDER BY keep")
+  expect_equal(projected$keep, letters[1:3])
+  counted <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM rducks_table_projection()")
+  expect_equal(as.integer(counted$n), 5L)
+  expect_true(projection_calls >= 2L)
+
   invisible(rducks_register_table(
     con,
     "rducks_table_empty",

@@ -62,6 +62,32 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
+  update_empty_raw <- function(state, x) {
+    if (is.null(state)) raw(0) else state
+  }
+  finalize_empty_raw <- function(state) {
+    if (is.null(state)) -1L else as.integer(length(state))
+  }
+  invisible(rducks_register_aggregate(
+    con,
+    "rducks_r_empty_raw_state",
+    update_empty_raw,
+    finalize_empty_raw,
+    INTEGER,
+    INTEGER
+  ))
+  out <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_r_empty_raw_state(i) AS n FROM (VALUES (1::INTEGER), (2::INTEGER)) t(i)"
+  )
+  expect_equal(out$n, 0L)
+})
+
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+
   seen_nulls <- 0L
   update_special <- function(state, x) {
     s <- rducks_agg_unpack(state, list(total = 0, nulls = 0L))

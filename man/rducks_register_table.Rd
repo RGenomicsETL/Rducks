@@ -33,7 +33,9 @@ scalars/lists, calls \code{fun(...)} on the recorded calling R thread, and infer
 the DuckDB output schema from the returned data frame or named list of
 equal-length columns. It then converts the result through a nanoarrow Arrow C
 Data stream, imports it into a DuckDB chunk, and emits row batches from
-that imported chunk during table-function scans.
+that imported chunk during table-function scans. Scans honor DuckDB
+projection pushdown, so unreferenced columns are not copied from the imported
+chunk into the output chunk.
 }
 \details{
 This is intentionally separate from DuckDB scalar-UDF registration through

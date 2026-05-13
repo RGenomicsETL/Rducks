@@ -322,7 +322,9 @@ rducks_table_as_arrow_array <- function(result) {
 #' the DuckDB output schema from the returned data frame or named list of
 #' equal-length columns. It then converts the result through a nanoarrow Arrow C
 #' Data stream, imports it into a DuckDB chunk, and emits row batches from
-#' that imported chunk during table-function scans.
+#' that imported chunk during table-function scans. Scans honor DuckDB
+#' projection pushdown, so unreferenced columns are not copied from the imported
+#' chunk into the output chunk.
 #'
 #' This is intentionally separate from DuckDB scalar-UDF registration through
 #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
@@ -431,15 +433,17 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #' an R object pointer. For each non-NULL input row, Rducks calls
 #' `update(state, ...)`, where `state` is the previous raw state or `NULL` and
 #' `...` are the row's scalar input values. `update()` must return the next raw
-#' state or `NULL`. At finalization Rducks calls `finalize(state)` and marshals
-#' that scalar result to the declared DuckDB return type.
+#' state or `NULL`. `raw(0)` is a valid non-`NULL` state; return `NULL` only
+#' when the aggregate intentionally has no state. At finalization Rducks calls
+#' `finalize(state)` and marshals that scalar result to the declared DuckDB
+#' return type.
 #'
 #' This API is deliberately serialized. Registration requires
 #' `rducks_enable(con, threads = "single")` or equivalent
 #' `external_threads=1` plus `PRAGMA threads=1`, and execution rejects attempts
 #' to call R from non-calling DuckDB worker threads. If DuckDB combines partial
 #' states, Rducks can copy a source state into an empty target; merging two
-#' non-empty states requires `combine(left, right)` and must still run on the
+#' non-`NULL` states requires `combine(left, right)` and must still run on the
 #' recorded R thread. Cross-thread R aggregate execution is future work.
 #'
 #' With `null_handling = "default"`, rows with any top-level SQL `NULL` input
@@ -457,7 +461,7 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #'   such as `INTEGER`, `DOUBLE`, or `VARCHAR`.
 #' @param returns Return type specification.
 #' @param combine Optional R function called as `combine(left, right)` when two
-#'   non-empty partial raw states must be merged. It must return a raw vector
+#'   non-`NULL` partial raw states must be merged. It must return a raw vector
 #'   state or `NULL`.
 #' @param null_handling Either `"default"` to skip rows with top-level NULL
 #'   inputs, or `"special"` to pass missing values to `update()`.

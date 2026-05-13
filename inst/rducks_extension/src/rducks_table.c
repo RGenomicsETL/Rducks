@@ -23,6 +23,10 @@ typedef struct rducks_r_table_bind {
 typedef struct rducks_r_table_state {
     rducks_r_table_bind_t *bind;
     idx_t pos;
+    idx_t projected_count;
+    idx_t *projected_columns;
+    duckdb_selection_vector sel;
+    idx_t sel_capacity;
 } rducks_r_table_state_t;
 
 static void rducks_r_table_release_preserved(rducks_runtime_entry_t *runtime, SEXP object) {
@@ -63,6 +67,8 @@ static void rducks_r_table_bind_destroy(void *ptr) {
 static void rducks_r_table_state_destroy(void *ptr) {
     rducks_r_table_state_t *state = (rducks_r_table_state_t *)ptr;
     if (!state) return;
+    if (state->sel) duckdb_destroy_selection_vector(state->sel);
+    free(state->projected_columns);
     free(state);
 }
 
@@ -812,9 +818,57 @@ static void rducks_r_table_bind(duckdb_bind_info info) {
     UNPROTECT(2);
 }
 
+static int rducks_r_table_state_init_projection(rducks_r_table_state_t *state,
+                                                 duckdb_init_info info,
+                                                 char *err, size_t err_cap) {
+    idx_t projected_count;
+    idx_t sel_capacity;
+
+    if (!state || !state->bind || !info) {
+        snprintf(err, err_cap, "invalid Rducks table projection state");
+        return 0;
+    }
+
+    projected_count = duckdb_init_get_column_count(info);
+    state->projected_count = projected_count;
+    if (projected_count > 0) {
+        if ((uint64_t)projected_count > (uint64_t)(SIZE_MAX / sizeof(*state->projected_columns))) {
+            snprintf(err, err_cap, "Rducks table projection is too large");
+            return 0;
+        }
+        state->projected_columns = (idx_t *)rducks_calloc_array((size_t)projected_count, sizeof(*state->projected_columns));
+        if (!state->projected_columns) {
+            snprintf(err, err_cap, "out of memory allocating Rducks table projection state");
+            return 0;
+        }
+        for (idx_t i = 0; i < projected_count; i++) {
+            idx_t col = duckdb_init_get_column_index(info, i);
+            if (col >= (idx_t)state->bind->column_count) {
+                snprintf(err, err_cap, "Rducks table projection column is outside the table schema");
+                return 0;
+            }
+            state->projected_columns[i] = col;
+        }
+    }
+
+    if (projected_count > 0) {
+        sel_capacity = state->bind->meta ? state->bind->meta->chunk_size : 0;
+        if (sel_capacity < 1) sel_capacity = 1;
+        state->sel = duckdb_create_selection_vector(sel_capacity);
+        if (!state->sel) {
+            snprintf(err, err_cap, "failed to allocate DuckDB selection vector for Rducks table scan");
+            return 0;
+        }
+        state->sel_capacity = sel_capacity;
+    }
+    return 1;
+}
+
 static void rducks_r_table_init(duckdb_init_info info) {
     rducks_r_table_state_t *state;
+    char err[512];
     if (!info) return;
+    err[0] = '\0';
     state = (rducks_r_table_state_t *)rducks_calloc_array(1, sizeof(*state));
     if (!state) {
         duckdb_init_set_error(info, "out of memory allocating Rducks table state");
@@ -823,8 +877,13 @@ static void rducks_r_table_init(duckdb_init_info info) {
     state->bind = (rducks_r_table_bind_t *)duckdb_init_get_bind_data(info);
     state->pos = 0;
     if (!state->bind) {
-        free(state);
+        rducks_r_table_state_destroy(state);
         duckdb_init_set_error(info, "Rducks table bind data is missing");
+        return;
+    }
+    if (!rducks_r_table_state_init_projection(state, info, err, sizeof(err))) {
+        rducks_r_table_state_destroy(state);
+        duckdb_init_set_error(info, err[0] ? err : "failed to initialize Rducks table projection state");
         return;
     }
     duckdb_init_set_max_threads(info, 1);
@@ -837,6 +896,7 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
     rducks_r_table_meta_t *meta;
     idx_t remaining;
     idx_t count;
+    idx_t output_columns;
     char err[512];
     if (!info || !output) return;
     err[0] = '\0';
@@ -861,30 +921,44 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
 
     remaining = bind->rows - state->pos;
     count = remaining < meta->chunk_size ? remaining : meta->chunk_size;
-    if (!bind->imported_chunk) {
-        duckdb_function_set_error(info, "Rducks table imported Arrow chunk is missing");
+    output_columns = duckdb_data_chunk_get_column_count(output);
+    if (output_columns != state->projected_count) {
+        duckdb_function_set_error(info, "Rducks table output projection does not match DuckDB scan state");
         duckdb_data_chunk_set_size(output, 0);
         return;
     }
-    if (count > (idx_t)UINT32_MAX || state->pos > (idx_t)UINT32_MAX || state->pos + count > (idx_t)UINT32_MAX) {
-        duckdb_function_set_error(info, "Rducks table chunk offset is too large for DuckDB selection vector copy");
-        duckdb_data_chunk_set_size(output, 0);
-        return;
+    if (state->projected_count > 0) {
+        if (!bind->imported_chunk) {
+            duckdb_function_set_error(info, "Rducks table imported Arrow chunk is missing");
+            duckdb_data_chunk_set_size(output, 0);
+            return;
+        }
+        if (count > (idx_t)UINT32_MAX || state->pos > (idx_t)UINT32_MAX || state->pos + count > (idx_t)UINT32_MAX) {
+            duckdb_function_set_error(info, "Rducks table chunk offset is too large for DuckDB selection vector copy");
+            duckdb_data_chunk_set_size(output, 0);
+            return;
+        }
+        if (!state->sel || state->sel_capacity < count) {
+            if (state->sel) duckdb_destroy_selection_vector(state->sel);
+            state->sel = duckdb_create_selection_vector(count);
+            if (!state->sel) {
+                duckdb_function_set_error(info, "failed to allocate DuckDB selection vector for Rducks table scan");
+                duckdb_data_chunk_set_size(output, 0);
+                state->sel_capacity = 0;
+                return;
+            }
+            state->sel_capacity = count;
+        }
+        sel_t *sel_data = duckdb_selection_vector_get_data_ptr(state->sel);
+        for (idx_t row = 0; row < count; row++) sel_data[row] = (sel_t)(state->pos + row);
+        for (idx_t out_col = 0; out_col < state->projected_count; out_col++) {
+            idx_t src_col = state->projected_columns ? state->projected_columns[out_col] : out_col;
+            duckdb_vector imported = duckdb_data_chunk_get_vector(bind->imported_chunk, src_col);
+            duckdb_vector vector = duckdb_data_chunk_get_vector(output, out_col);
+            duckdb_vector_copy_sel(imported, vector, state->sel, count, 0, 0);
+        }
     }
-    duckdb_selection_vector sel = duckdb_create_selection_vector(count);
-    if (!sel) {
-        duckdb_function_set_error(info, "failed to allocate DuckDB selection vector for Rducks table scan");
-        duckdb_data_chunk_set_size(output, 0);
-        return;
-    }
-    sel_t *sel_data = duckdb_selection_vector_get_data_ptr(sel);
-    for (idx_t row = 0; row < count; row++) sel_data[row] = (sel_t)(state->pos + row);
-    for (size_t col = 0; col < bind->column_count; col++) {
-        duckdb_vector imported = duckdb_data_chunk_get_vector(bind->imported_chunk, (idx_t)col);
-        duckdb_vector vector = duckdb_data_chunk_get_vector(output, (idx_t)col);
-        duckdb_vector_copy_sel(imported, vector, sel, count, 0, 0);
-    }
-    duckdb_destroy_selection_vector(sel);
+
     state->pos += count;
     duckdb_data_chunk_set_size(output, count);
 }
@@ -949,6 +1023,7 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     duckdb_table_function_set_bind(fn, rducks_r_table_bind);
     duckdb_table_function_set_init(fn, rducks_r_table_init);
     duckdb_table_function_set_function(fn, rducks_r_table_function);
+    duckdb_table_function_supports_projection_pushdown(fn, true);
     rc = duckdb_register_table_function(runtime->connection, fn);
     duckdb_destroy_table_function(&fn);
     if (rc != DuckDBSuccess) {
