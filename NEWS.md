@@ -1,5 +1,10 @@
 # Rducks 0.0.1
 
+- Renamed the scalar-function registration API to
+  `rducks_register_scalar_udf()` and clarified terminology across the user
+  documentation: DuckDB function kind (scalar UDF, aggregate function, table
+  function), Rducks scalar-UDF evaluation mode, and Rducks execution plan are
+  distinct concepts.
 - Added `rducks_register_aggregate()` for serialized
   R-backed DuckDB aggregate functions. Aggregate state is native raw-byte
   storage copied from R `raw` vectors, `update()`/`combine()` must return raw
@@ -49,16 +54,16 @@
   into callback output instead of having the main thread write directly into the
   callback-owned output vector.
 - `rducks_explain_udf()` and `rducks_list_udfs()` now include `r_side_record`
-  to make detached/missing R-side registry metadata explicit. Native per-UDF
-  hot-path counters are updated with atomics rather than the process-global
-  runtime registry lock.
+  to make detached/missing R-side scalar-UDF registry metadata explicit. Native
+  per-UDF hot-path counters are updated with atomics rather than the
+  process-global runtime registry lock.
 - Added `rducks_native_execution_backend()` to cross-check the native
   database-scoped execution backend against the R-side current/default execution
   plan.
-- The Arrow IPC NNG path defaults to one-time UDF global discovery
-  (`ipc_globals = "auto"`) and then broadcasts explicit globals when the UDF is
-  registered with the provider pool. This avoids per-chunk automatic global
-  discovery while preserving common UDF globals; set `ipc_globals = TRUE`,
+- The Arrow IPC NNG path defaults to one-time scalar-UDF global discovery
+  (`ipc_globals = "auto"`) and then broadcasts explicit globals when the scalar
+  UDF is registered with the provider pool. This avoids per-chunk automatic global
+  discovery while preserving common scalar-UDF globals; set `ipc_globals = TRUE`,
   `FALSE`, a character vector, or a named list to override the behavior.
 - Execution plans now carry a concrete `engine_id` (for example
   `arrow_c_direct_serial`, `arrow_c_direct_main_queue`, or `ipc_nng_pool`), and
@@ -76,8 +81,8 @@
   `RDUCKS_DEV_SURFACES=true` is set before extension load. Production SQL
   surfaces keep only the registration, execution, and documented statistics
   helpers.
-- Direct `arrow_c` scalar/vectorized execution and the Arrow/R + Arrow IPC
-  callback paths are fenced with `R_tryCatchError()` plus `R_UnwindProtect()` so
+- Direct `arrow_c` scalar-UDF execution and the Arrow/R + Arrow IPC callback
+  paths are fenced with `R_tryCatchError()` plus `R_UnwindProtect()` so
   unexpected marshalling/allocation errors are converted into DuckDB UDF errors
   without installing a fresh R top-level context inside DuckDB callbacks. RIPC
   cleanup now releases preserved task/schema objects and decrements in-flight
@@ -89,8 +94,8 @@
   accepted by the direct `arrow_c` type matrix. Chunk arguments are materialized
   from DuckDB vectors in C, return rows are written back through the direct
   writer, and generated marshalling coverage verifies the selected native path.
-  Queued direct `arrow_c` scalar and vectorized UDFs
-  now copy input vectors into an owned DuckDB data chunk before the request is
+  Queued direct `arrow_c` row-wise and vectorized scalar UDFs now copy input
+  vectors into an owned DuckDB data chunk before the request is
   submitted to the recorded main R thread. With supported scalar returns, they
   then evaluate into an owned Arrow C Data result chunk; the waiting worker
   writes DuckDB output from those Arrow buffers without touching `SEXP`s or
@@ -101,8 +106,9 @@
   the owned DuckDB result-chunk path covers direct composite returns.
 - Added an internal `%||%` compatibility shim so the package works under the
   lowered R 4.3 dependency floor.
-- `arrow_c` is now a direct scalar and vectorized marshalling path. Unsupported
-  signatures fail explicitly instead of changing to Arrow/R helper marshalling.
+- `arrow_c` is now a direct marshalling path for row-wise and vectorized
+  scalar-UDF evaluation. Unsupported signatures fail explicitly instead of
+  changing to Arrow/R helper marshalling.
 - Added `rducks_explain_udf()` and `rducks_list_udfs()` with native per-UDF
   execution counters so users can inspect registration metadata and verify that
   `arrow_r`/`arrow_c` chunks ran through the requested evaluator. Added
@@ -118,16 +124,17 @@
   smoke harness under `scripts/`.
 - Added explicit execution-plan helpers `rducks_execution_plan()`,
   `rducks_set_execution_plan()`, and `rducks_current_execution_plan()` to
-  separate UDF semantics from connection-level marshalling/concurrency policy.
+  separate scalar-UDF semantics from connection-level marshalling/concurrency policy.
   The `arrow_r + serial` plan is the reference implementation; unsupported
   execution-plan combinations fail explicitly through plan validation.
-- Removed per-registration evaluator selection from `rducks_register()`. The
+- Removed per-registration evaluator selection from `rducks_register_scalar_udf()`. The
   evaluator is now derived from the active execution plan, so conformance tests
   compare plan-native registrations instead of mixing evaluator choices inside a
   single registration call.
-- Added `mode = "vectorized"` for R UDFs that should be called once per DuckDB
-  chunk with vector/list-column arguments. The vectorized adapter uses the same
-  Arrow C Data/nanoarrow bridge as scalar mode, enforces return length, defines
+- Added `mode = "vectorized"` for DuckDB scalar UDFs whose backing R function
+  should be called once per DuckDB chunk with vector/list-column arguments. The
+  vectorized adapter uses the same Arrow C Data/nanoarrow bridge as scalar
+  row-wise mode, enforces return length, defines
   default vs special NULL handling, and is covered by runtime tests.
 - Added an official in-process queued execution API for scalar UDFs:
   `rducks_enable_inproc()`, `rducks_disable_inproc()`,
@@ -136,7 +143,7 @@
   with timeout/error paths rather than a package-side pump or hidden progress
   callback.
 - Added native queue diagnostics and tests covering main-thread queue draining
-  and scalar/vectorized UDF execution through the queued path. `rducks_inproc_stats()`
+  and scalar-UDF execution through the queued path. `rducks_inproc_stats()`
   now reports the configured pending-request timeout and explicitly reports that running
   queued requests cannot be cancelled safely while they borrow DuckDB callback
   storage.

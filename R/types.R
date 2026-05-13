@@ -179,7 +179,8 @@ rducks_enum_level_token <- function(levels) {
 
 #' Rducks DuckDB type descriptors and constructors
 #'
-#' Use these descriptors and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid quoted type
+#' Use these descriptors and constructors in \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+#' and \code{\link[=rducks_register_aggregate]{rducks_register_aggregate()}} to avoid quoted type
 #' specifications. Examples include `args = INTEGER`, `args = c(INTEGER,
 #' DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
 #' `args = STRUCT(a = INTEGER, b = VARCHAR)`, and
@@ -645,7 +646,7 @@ rducks_composite_argument_mapping_row <- function(token) {
   kind <- rducks_type_kind(type)
   unsupported <- rducks_unsupported_duckdb_types(type)
   if (length(unsupported)) {
-    stop("scalar-mode argument marshalling is not available for ", paste(unsupported, collapse = ", "), call. = FALSE)
+    stop("DuckDB scalar-UDF argument marshalling is not available for ", paste(unsupported, collapse = ", "), call. = FALSE)
   }
   children <- rducks_type_children(type)
   duckdb_sql <- rducks_type_duckdb_sql(type)
@@ -687,7 +688,7 @@ rducks_composite_argument_mapping_row <- function(token) {
   unsupported_leaves <- leaves[!leaves %in% rducks_all_scalar_type_names()]
   if (length(unsupported_leaves)) {
     stop(
-      "scalar-mode argument marshalling is not available for ",
+      "DuckDB scalar-UDF argument marshalling is not available for ",
       paste(vapply(unsupported_leaves, rducks_scalar_duckdb_sql, character(1)), collapse = ", "),
       call. = FALSE
     )
@@ -726,8 +727,8 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #'
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
-#' function call. It is used by registration checks and the nanoarrow scalar
-#' marshalling adapter.
+#' function call. It is used by scalar-UDF registration checks and the
+#' nanoarrow scalar-UDF marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
 #' to a SQL `NULL` result and the R function is not called. The
@@ -740,13 +741,13 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' values are represented as R `NULL`.
 #'
 #' The default table contains all scalar descriptors supported by the nanoarrow
-#' scalar marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
+#' scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R function
 #' shapes.
 #'
 #' @param x Optional scalar type tokens or constructed `rducks_type` descriptors.
-#'   When `NULL`, all currently implemented scalar-mode scalar argument mappings
-#'   are returned. Composite mappings should be requested with constructors such
+#'   When `NULL`, all currently implemented DuckDB scalar-UDF scalar argument
+#'   mappings are returned. Composite mappings should be requested with constructors such
 #'   as `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, and
 #'   `MAP(VARCHAR, INTEGER)`.
 #' @return A data frame with one row per requested type descriptor.

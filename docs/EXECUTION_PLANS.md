@@ -1,40 +1,49 @@
 # Rducks Execution Plans
 
 Execution plans select the marshalling implementation and concurrency contract
-used by future UDF registrations on a connection. They do not change the user
-semantics of a UDF.
+used by future DuckDB scalar UDF registrations on a connection. They do not
+change the SQL semantics of a scalar UDF.
 
-## UDF semantics vs execution plan
+## DuckDB function kind vs Rducks evaluation mode vs execution plan
 
-These are UDF semantics and belong to `rducks_register()`:
+Rducks exposes distinct APIs for distinct DuckDB function kinds:
 
-- `mode = "scalar"` or `mode = "vectorized"`
+- `rducks_register_scalar_udf()` registers a DuckDB scalar UDF: one SQL result
+  value per logical input row.
+- `rducks_register_aggregate()` registers a DuckDB aggregate function.
+- `rducks_register_table()` registers a DuckDB table function.
+
+These are scalar-UDF registration semantics and belong to
+`rducks_register_scalar_udf()`:
+
+- Rducks evaluation mode: `mode = "scalar"` for one R call per row, or
+  `mode = "vectorized"` for one R call per DuckDB chunk
 - argument and return type descriptors
 - `null_handling`
 - `exception_handling`
 - `side_effects`
 
-These are execution-plan choices:
+These are execution-plan choices for scalar UDFs:
 
 - marshalling: `arrow_r`, `arrow_c`, or `arrow_ipc`
 - concurrency: `serial`, `inproc_concurrent`, or `multiprocess_parallel`
 - IPC worker options for `arrow_ipc + multiprocess_parallel`
 
 The plan active at registration time is frozen into that registered DuckDB
-catalog UDF. Changing a connection's default plan later affects only future
-registrations.
+scalar UDF's catalog metadata. Changing a connection's default plan later
+affects only future scalar-UDF registrations.
 
-Aggregate functions registered with `rducks_register_aggregate()` are also
-separate from the scalar/vectorized execution-plan matrix. Their state contract
+Aggregate functions registered with `rducks_register_aggregate()` are separate
+from the scalar-UDF evaluation-mode/execution-plan matrix. Their state contract
 is explicit: DuckDB aggregate state stores copied raw bytes, not R object
 pointers; R `update()`/`combine()` callbacks must return raw state or `NULL`;
 `finalize()` returns the declared scalar result. R callbacks are single-threaded
 and require the recorded calling R thread.
 
 Table functions registered with `rducks_register_table()` are separate from this
-scalar/vectorized execution-plan matrix. The current implementation is a one-shot,
-finite table function: Rducks infers the positional SQL argument count from the
-R function formals, registers those input slots as DuckDB `ANY`, converts the
+scalar-UDF evaluation-mode/execution-plan matrix. The current implementation is
+a one-shot, finite table function: Rducks infers the positional SQL argument
+count from the R function formals, registers those input slots as DuckDB `ANY`, converts the
 actual SQL bind values to R values, calls the R function during bind on the
 recorded calling R thread, infers the output schema dynamically from the
 returned data-frame/list columns, imports the result through nanoarrow Arrow C
@@ -70,12 +79,12 @@ registration and backend choice does not redefine SQL type/null/result semantics
 
 ## Strict-plan rule
 
-A registered UDF resolves to one engine:
+A registered DuckDB scalar UDF resolves to one engine:
 
 ```text
-registration spec + connection default plan
+scalar-UDF registration spec + connection default plan
   -> plan validation
-  -> frozen native UDF metadata
+  -> frozen native scalar-UDF metadata
   -> that engine for every invocation
 ```
 
@@ -95,9 +104,9 @@ Unsupported combinations must fail. They must not silently switch:
 - `arrow_ipc`: owned Arrow IPC request/result bytes. This is only valid with
   `multiprocess_parallel`. The current NNG provider is one request to exactly
   one result record batch; multi-batch or streaming results are rejected rather
-  than concatenated implicitly. Selected UDF globals may be serialized normally
-  or, with `ipc_globals_share = "mori"`, sent as same-host mori shared-memory
-  references for large read-only R objects.
+  than concatenated implicitly. Selected scalar-UDF globals may be serialized
+  normally or, with `ipc_globals_share = "mori"`, sent as same-host mori
+  shared-memory references for large read-only R objects.
 
 ## Concurrency choices
 
@@ -109,9 +118,9 @@ Unsupported combinations must fail. They must not silently switch:
 - `multiprocess_parallel`: chunk work is sent to persistent worker processes over
   the selected IPC provider. The current provider is `ipc_nng_pool`.
 
-## Implemented engines
+## Implemented scalar-UDF engines
 
-| Engine ID | Public plan | Scalar | Vectorized | Notes |
+| Engine ID | Public plan | Scalar evaluation mode | Vectorized evaluation mode | Notes |
 | --- | --- | --- | --- | --- |
 | `arrow_r_serial` | `arrow_r + serial` | yes | yes | Reference path. |
 | `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | yes | yes | Same-process queue; R work runs on the recorded R thread. |

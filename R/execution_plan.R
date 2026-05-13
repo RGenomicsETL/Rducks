@@ -140,9 +140,11 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'
 #' An execution plan describes how Rducks should marshal DuckDB chunks and what
 #' concurrency model is allowed. When stored on a connection it is the default
-#' for future \code{\link[=rducks_register]{rducks_register()}} calls; the selected evaluator/marshalling is
-#' frozen into each registered UDF's database-catalog metadata. It is separate
-#' from UDF registration semantics such as scalar versus vectorized call shape,
+#' for future \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+#' calls; the selected evaluator/marshalling is frozen into each registered
+#' scalar UDF's database-catalog metadata. It is separate from DuckDB function
+#' kind and from scalar-UDF registration semantics such as Rducks evaluation
+#' mode (`"scalar"` row calls versus `"vectorized"` chunk calls),
 #' argument/return types, NULL handling, error handling, and side effects.
 #'
 #' `arrow_r + serial` is the reference implementation used for conformance.
@@ -155,7 +157,7 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' @param marshalling Chunk marshalling implementation. `"arrow_r"` uses Arrow C
 #'   Data plus nanoarrow/R materialization and is the reference implementation.
 #'   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
-#'   scalar and vectorized registrations. `"arrow_ipc"` uses Arrow IPC bytes as
+#'   scalar-UDF evaluation modes. `"arrow_ipc"` uses Arrow IPC bytes as
 #'   the explicit task/result payload for the NNG multiprocess path.
 #' @param concurrency Concurrency contract. `"serial"` evaluates one chunk at a
 #'   time in the calling process. `"inproc_concurrent"` allows in-process DuckDB
@@ -165,15 +167,15 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   When `ipc_endpoints` is `NULL`, Rducks starts local worker loops with
 #'   mirai daemons; otherwise the endpoint URLs are passed through unchanged.
 #' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport Arrow IPC worker options.
-#'   By default (`ipc_globals = "auto"`), Rducks discovers UDF globals once at
-#'   registration-wrapper creation and broadcasts them to each NNG worker when
-#'   the UDF is registered with the shared provider pool. Automatic capture
+#'   By default (`ipc_globals = "auto"`), Rducks discovers scalar-UDF globals
+#'   once at registration-wrapper creation and broadcasts them to each NNG worker
+#'   when the scalar UDF is registered with the shared provider pool. Automatic capture
 #'   estimates the serialized globals payload and warns when it exceeds option
 #'   `rducks.ipc_globals.warn_bytes` (8 MiB by default); option
 #'   `rducks.ipc_globals.max_bytes` can set a hard byte limit. Set
 #'   `ipc_globals_share = "mori"` to pass selected globals through mori shared
 #'   memory references for same-host workers; Rducks keeps the shared objects
-#'   anchored for the registered UDF lifetime. Use `ipc_packages` for packages
+#'   anchored for the registered scalar UDF lifetime. Use `ipc_packages` for packages
 #'   that workers should attach, `ipc_globals = FALSE` to rely only on the
 #'   serialized UDF closure and explicit task state, or a character vector /
 #'   named list for explicit extra globals. `ipc_timeout` is the positive finite
@@ -198,14 +200,14 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   into same-host shared-memory references. This requires the optional mori
 #'   package and workers on the same machine.
 #' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
-#'   Only `"nng"` is supported. The NNG provider broadcasts each registered UDF
+#'   Only `"nng"` is supported. The NNG provider broadcasts each registered scalar UDF
 #'   closure plus discovered globals/packages to every worker in the shared
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
 #'   environments unless that memory cost is intended or `ipc_globals_share =
 #'   "mori"` is appropriate.
 #' @param ipc_workers Number of persistent NNG workers.
 #' @param ipc_max_pending Maximum simultaneous native NNG requests admitted per
-#'   registered UDF client pool. The current provider still uses synchronous
+#'   registered scalar-UDF client pool. The current provider still uses synchronous
 #'   request/reply per callback rather than collect-many batching, but this value
 #'   is enforced as a bounded pending/in-flight guard before a callback enters
 #'   the native request path.

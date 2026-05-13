@@ -154,7 +154,8 @@ STRUCT(...)
 A formal S7 \code{rducks_type} descriptor, or a \code{rducks_type_list} from \code{c()}.
 }
 \description{
-Use these descriptors and constructors in \code{\link[=rducks_register]{rducks_register()}} to avoid quoted type
+Use these descriptors and constructors in \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+and \code{\link[=rducks_register_aggregate]{rducks_register_aggregate()}} to avoid quoted type
 specifications. Examples include \code{args = INTEGER}, \code{args = c(INTEGER, DOUBLE)}, \code{args = INTEGER[]}, \code{args = INTEGER[3]},
 \code{args = STRUCT(a = INTEGER, b = VARCHAR)}, and
 \code{args = MAP(VARCHAR, INTEGER)}.

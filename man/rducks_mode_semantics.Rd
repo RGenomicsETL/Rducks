@@ -2,23 +2,27 @@
 % Please edit documentation in R/mode_semantics.R
 \name{rducks_mode_semantics}
 \alias{rducks_mode_semantics}
-\title{Describe Rducks execution mode semantics}
+\title{Describe Rducks scalar-UDF evaluation mode semantics}
 \usage{
 rducks_mode_semantics(mode = NULL)
 }
 \arguments{
-\item{mode}{Optional character vector of mode names. When \code{NULL}, all known
-modes are returned.}
+\item{mode}{Optional character vector of scalar-UDF evaluation mode names.
+When \code{NULL}, all known modes are returned.}
 }
 \value{
 A data frame describing status, call granularity, input and return
 shape, NULL handling, length checks, error behavior, threading, and copy
-semantics for each mode.
+semantics for each scalar-UDF evaluation mode.
 }
 \description{
-\code{rducks_mode_semantics()} is the package-level schema for execution-mode
-semantics. \code{mode = "scalar"} calls the R function once for each DuckDB row.
-\code{mode = "vectorized"} calls the R function once per DuckDB chunk with one R
-vector/list-column per declared argument. Vectorized mode is exposed for
-\code{arrow_r}, direct \code{arrow_c}, and worker-provider \code{arrow_ipc} plans.
+\code{rducks_mode_semantics()} is the package-level schema for Rducks evaluation
+modes used by DuckDB scalar UDFs registered with
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. This
+is distinct from DuckDB function kind (scalar, aggregate, or table) and from
+Rducks execution plans. \code{mode = "scalar"} calls the R function once for each
+DuckDB row. \code{mode = "vectorized"} calls the R function once per DuckDB chunk
+with one R vector/list-column per declared argument. Vectorized mode is
+exposed for \code{arrow_r}, direct \code{arrow_c}, and worker-provider \code{arrow_ipc}
+plans.
 }

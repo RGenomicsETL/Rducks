@@ -10,8 +10,8 @@ local({
   rducks_set_execution_plan(con_c, rducks_execution_plan("arrow_c", "serial"))
 
   register_pair <- function(name, fun, args, returns, ..., side_effects = TRUE) {
-    invisible(rducks_register(con_r, name, fun, args, returns, ..., side_effects = side_effects))
-    invisible(rducks_register(con_c, name, fun, args, returns, ..., side_effects = side_effects))
+    invisible(rducks_register_scalar_udf(con_r, name, fun, args, returns, ..., side_effects = side_effects))
+    invisible(rducks_register_scalar_udf(con_c, name, fun, args, returns, ..., side_effects = side_effects))
   }
 
   expect_plan_equal <- function(sql) {
@@ -100,9 +100,9 @@ local({
       register_pair(case[[1L]], case[[2L]], case[[3L]], case[[4L]])
       expect_plan_equal(case[[5L]])
     } else {
-      invisible(rducks_register(con_r, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE))
+      invisible(rducks_register_scalar_udf(con_r, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE))
       expect_error(
-        rducks_register(con_c, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE),
+        rducks_register_scalar_udf(con_c, case[[1L]], case[[2L]], case[[3L]], case[[4L]], side_effects = TRUE),
         "arrow_c direct marshalling is not implemented"
       )
       expect_true(NROW(DBI::dbGetQuery(con_r, case[[5L]])) >= 1L)
@@ -111,16 +111,16 @@ local({
 
   calls_default_r <- 0L
   calls_default_c <- 0L
-  invisible(rducks_register(con_r, "eval_null_default", function(x) { calls_default_r <<- calls_default_r + 1L; x }, INTEGER, INTEGER, side_effects = TRUE))
-  invisible(rducks_register(con_c, "eval_null_default", function(x) { calls_default_c <<- calls_default_c + 1L; x }, INTEGER, INTEGER, side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con_r, "eval_null_default", function(x) { calls_default_r <<- calls_default_r + 1L; x }, INTEGER, INTEGER, side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con_c, "eval_null_default", function(x) { calls_default_c <<- calls_default_c + 1L; x }, INTEGER, INTEGER, side_effects = TRUE))
   expect_plan_equal("SELECT eval_null_default(x) AS x FROM (VALUES (1::INTEGER), (NULL::INTEGER), (2::INTEGER)) t(x)")
   expect_equal(calls_default_r, 2L)
   expect_equal(calls_default_c, 2L)
 
   calls_special_r <- 0L
   calls_special_c <- 0L
-  invisible(rducks_register(con_r, "eval_null_special", function(x) { calls_special_r <<- calls_special_r + 1L; if (is.na(x)) 5L else x }, INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
-  invisible(rducks_register(con_c, "eval_null_special", function(x) { calls_special_c <<- calls_special_c + 1L; if (is.na(x)) 5L else x }, INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con_r, "eval_null_special", function(x) { calls_special_r <<- calls_special_r + 1L; if (is.na(x)) 5L else x }, INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con_c, "eval_null_special", function(x) { calls_special_c <<- calls_special_c + 1L; if (is.na(x)) 5L else x }, INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
   expect_plan_equal("SELECT eval_null_special(x) AS x FROM (VALUES (1::INTEGER), (NULL::INTEGER), (2::INTEGER)) t(x)")
   expect_equal(calls_special_r, 3L)
   expect_equal(calls_special_c, 3L)

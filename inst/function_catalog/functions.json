@@ -5,16 +5,16 @@
     "category": "connection",
     "signature": "rducks_enable(con, extension_path, threads)",
     "returns": "duckdb_connection invisibly",
-    "description": "Load the Rducks DuckDB extension into a connection. Scalar-mode R UDF registration requires explicit single-thread setup via threads = 'single'.",
+    "description": "Load the Rducks DuckDB extension into a connection. R-backed DuckDB scalar UDF, aggregate, and table registration require explicit single-thread setup via threads = 'single'.",
     "since": "0.0.0.9000"
   },
   {
-    "name": "rducks_register",
+    "name": "rducks_register_scalar_udf",
     "kind": "r-wrapper/native-extension",
     "category": "registration",
-    "signature": "rducks_register(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)",
-    "returns": "rducks_registration",
-    "description": "Register an R function as a DuckDB UDF. The implemented mode = 'scalar' preserves the R function in the loaded Rducks DuckDB extension and executes through the nanoarrow scalar adapter over DuckDB Arrow C Data. Supports default NULL-in/NULL-out or special NA-passing null handling, return-null exception handling, and DuckDB volatility via side_effects.",
+    "signature": "rducks_register_scalar_udf(con, name, fun, args, returns, mode, null_handling, exception_handling, side_effects)",
+    "returns": "rducks_scalar_udf_registration",
+    "description": "Register an R function as a DuckDB scalar UDF. In DuckDB terms the function returns one SQL value per logical input row; the Rducks mode controls whether R is called once per row or once per DuckDB chunk. Execution plans choose marshalling and concurrency without redefining SQL type, NULL, or result semantics.",
     "since": "0.0.0.9000"
   },
   {

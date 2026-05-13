@@ -13,7 +13,7 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_true("name" %in% names(empty))
   expect_true("r_side_record" %in% names(empty))
 
-  invisible(rducks_register(con, "explain_plus_one", function(x) x + 1L, INTEGER, INTEGER))
+  invisible(rducks_register_scalar_udf(con, "explain_plus_one", function(x) x + 1L, INTEGER, INTEGER))
   before <- rducks_explain_udf(con, "explain_plus_one")
   expect_true(before$r_side_record[[1L]])
   expect_equal(before$mode, "scalar")
@@ -41,7 +41,7 @@ if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietl
   expect_equal(reset_one$arrow_r_chunks, 0)
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
-  invisible(rducks_register(con, "explain_plus_two_c", function(x) x + 2L, INTEGER, INTEGER))
+  invisible(rducks_register_scalar_udf(con, "explain_plus_two_c", function(x) x + 2L, INTEGER, INTEGER))
   result_c <- DBI::dbGetQuery(con, "SELECT explain_plus_two_c(i::INTEGER) AS x FROM range(4) t(i)")
   expect_equal(result_c$x, 2:5)
   after_c <- rducks_explain_udf(con, "explain_plus_two_c")

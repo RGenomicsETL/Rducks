@@ -797,7 +797,7 @@ S7::method(rducks_arrow_scalar_array_to_values, rducks_bit_type_class) <- functi
 }
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_scalar_type_class) <- function(type, array, schema = NULL) {
-  stop("unsupported scalar type for Rducks scalar-mode nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
+  stop("unsupported scalar type for Rducks scalar-UDF nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
@@ -827,7 +827,7 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
   if (inherits(type, "rducks_union_type")) {
     return(rducks_arrow_union_array_to_values(type, array, schema))
   }
-  stop("unsupported Rducks type for scalar-mode nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
+  stop("unsupported Rducks type for scalar-UDF nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_value_at <- function(type, values, nulls, i) {
@@ -1039,7 +1039,7 @@ S7::method(rducks_arrow_scalar_values_to_array, rducks_blob_type_class) <- funct
 }
 
 S7::method(rducks_arrow_scalar_values_to_array, rducks_scalar_type_class) <- function(type, results, schema) {
-  stop("unsupported scalar type for Rducks scalar-mode nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)
+  stop("unsupported scalar type for Rducks scalar-UDF nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_map_array <- function(type, results, schema) {
@@ -1187,7 +1187,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
   if (inherits(type, "rducks_map_type")) {
     return(rducks_arrow_map_array(type, results, schema))
   }
-  stop("unsupported Rducks type for scalar-mode nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)
+  stop("unsupported Rducks type for scalar-UDF nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
 
 rducks_arrow_result_array <- function(type, results, output_schema, n) {

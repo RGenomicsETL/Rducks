@@ -29,9 +29,11 @@ concurrency, keep this smaller than \code{threads}.}
 }
 \description{
 Stores the R-side default execution plan used by subsequent
-\code{\link[=rducks_register]{rducks_register()}} calls through this connection and updates the native
-runtime backend needed by that plan. Registration still defines UDF semantics
-such as scalar versus vectorized call shape, declared types, NULL handling,
-error handling, and side effects. The selected evaluator/marshalling for an
-already-registered UDF remains frozen in its database-catalog metadata.
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}} calls
+through this connection and updates the native runtime backend needed by that
+plan. Scalar-UDF registration still defines Rducks evaluation semantics such
+as scalar row calls versus vectorized chunk calls, declared types, NULL
+handling, error handling, and side effects. The selected evaluator/marshalling
+for an already-registered scalar UDF remains frozen in its database-catalog
+metadata.
 }

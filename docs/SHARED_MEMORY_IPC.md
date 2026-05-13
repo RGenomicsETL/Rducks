@@ -7,7 +7,7 @@ merged into one capability flag because their ownership and failure modes differ
 
 | Track | Status | Contract |
 | --- | --- | --- |
-| Large read-only R globals | Implemented for managed local IPC workers with `ipc_globals_share = "mori"`. | Rducks applies `mori::share()` to selected globals before worker registration and keeps the shared references anchored for the registered UDF lifetime. |
+| Large read-only R globals | Implemented for managed local IPC workers with `ipc_globals_share = "mori"`. | Rducks applies `mori::share()` to selected globals before worker registration and keeps the shared references anchored for the registered scalar UDF lifetime. |
 | SQL chunk data plane | Not implemented. | Current `arrow_ipc + multiprocess_parallel` requests and responses carry owned Arrow IPC raw bytes over NNG. |
 
 The default managed mirai backend is same-host and can use mori-backed global

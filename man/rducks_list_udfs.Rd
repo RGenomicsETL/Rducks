@@ -2,7 +2,7 @@
 % Please edit documentation in R/explain.R
 \name{rducks_list_udfs}
 \alias{rducks_list_udfs}
-\title{List registered Rducks UDFs}
+\title{List registered Rducks scalar UDFs}
 \usage{
 rducks_list_udfs(con)
 }
@@ -10,13 +10,16 @@ rducks_list_udfs(con)
 \item{con}{A \code{duckdb_connection} with Rducks enabled.}
 }
 \value{
-A data frame with one row per Rducks UDF registered on \code{con}.
+A data frame with one row per Rducks scalar UDF registered on \code{con}.
 }
 \description{
-Returns one row per UDF registered through \code{\link[=rducks_register]{rducks_register()}} in the current
-DuckDB database runtime, including the same registration metadata and native
-counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}. This is an Rducks registry view, not a
-complete DuckDB catalog listing: functions registered by other extensions or
-raw SQL are not included. Because DuckDB's function catalog is database
-scoped, sibling DBI connections to the same database runtime share this view.
+Returns one row per DuckDB scalar UDF registered through
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}} in
+the current DuckDB database runtime, including the same registration metadata
+and native counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
+This is an Rducks scalar-UDF registry view, not a complete DuckDB catalog
+listing: aggregate functions, table functions, functions registered by other
+extensions, and raw SQL functions are not included. Because DuckDB's function
+catalog is database scoped, sibling DBI connections to the same database
+runtime share this view.
 }

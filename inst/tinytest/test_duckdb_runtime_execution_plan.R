@@ -26,20 +26,20 @@ local({
   expect_equal(current$plan_id, "arrow_c+serial")
   expect_equal(current$engine_id, "arrow_c_direct_serial")
 
-  reg <- rducks_register(con, "plan_plus_one", function(x) x + 1L, INTEGER, INTEGER)
+  reg <- rducks_register_scalar_udf(con, "plan_plus_one", function(x) x + 1L, INTEGER, INTEGER)
   expect_equal(reg$execution_plan$marshalling, "arrow_c")
   expect_equal(reg$execution_plan$plan_id, "arrow_c+serial")
   result <- DBI::dbGetQuery(con, "SELECT plan_plus_one(41::INTEGER) AS x")
   expect_equal(result$x, 42L)
 
-  reg_vec <- rducks_register(con, "plan_vec", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized")
+  reg_vec <- rducks_register_scalar_udf(con, "plan_vec", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized")
   expect_equal(reg_vec$execution_plan$marshalling, "arrow_c")
   result_vec <- DBI::dbGetQuery(con, "SELECT plan_vec(i::INTEGER) AS x FROM range(3) t(i)")
   expect_equal(result_vec$x, 1:3)
   expect_equal(rducks_explain_udf(con, "plan_vec")$evaluator, "RCV")
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
-  reg_r <- rducks_register(con, "plan_r_plus_one", function(x) x + 1L, INTEGER, INTEGER)
+  reg_r <- rducks_register_scalar_udf(con, "plan_r_plus_one", function(x) x + 1L, INTEGER, INTEGER)
   expect_equal(reg_r$execution_plan$marshalling, "arrow_r")
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
@@ -73,7 +73,7 @@ local({
   nng_enabled <- DBI::dbGetQuery(con, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
   expect_true(nng_enabled)
   rducks_set_execution_plan(con, ipc_plan, threads = 1L, external_threads = 1L)
-  reg_ipc <- rducks_register(
+  reg_ipc <- rducks_register_scalar_udf(
     con, "plan_ipc_vec", function(x) x + 1L,
     INTEGER, INTEGER,
     mode = "vectorized",
@@ -89,7 +89,7 @@ local({
   expect_equal(explain_ipc$arrow_r_chunks, 0)
   expect_equal(explain_ipc$arrow_c_chunks, 0)
 
-  reg_ipc_enum <- rducks_register(
+  reg_ipc_enum <- rducks_register_scalar_udf(
     con, "plan_ipc_enum", function(x) x,
     ENUM(c("red", "blue")), ENUM(c("red", "blue")),
     mode = "vectorized",
@@ -102,7 +102,7 @@ local({
   )
   expect_equal(result_ipc_enum$x, c("red", "blue"))
 
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "plan_ipc_enum_struct", function(x) data.frame(label = x, code = seq_along(x)),
     ENUM(c("red", "blue")), STRUCT(label = ENUM(c("red", "blue")), code = INTEGER),
     mode = "vectorized",

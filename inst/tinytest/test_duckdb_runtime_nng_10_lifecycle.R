@@ -89,7 +89,7 @@ local({
   )
   rducks_set_execution_plan(con, bad_plan, threads = 1L, external_threads = 1L)
   expect_error(
-    rducks_register(con, "nng_missing_endpoint", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized"),
+    rducks_register_scalar_udf(con, "nng_missing_endpoint", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized"),
     "NNG request failed|nng_"
   )
 
@@ -108,7 +108,7 @@ local({
     ipc_timeout = 1
   )
   rducks_set_execution_plan(con, plan_one, threads = 1L, external_threads = 1L)
-  reg_one <- rducks_register(
+  reg_one <- rducks_register_scalar_udf(
     con, "nng_lifecycle_one", function(x) x + 1L,
     INTEGER, INTEGER,
     mode = "vectorized",
@@ -126,7 +126,7 @@ local({
     ipc_timeout = 2
   )
   rducks_set_execution_plan(con, plan_one_timeout, threads = 1L, external_threads = 1L)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "nng_lifecycle_timeout", function(x) x + 2L,
     INTEGER, INTEGER,
     mode = "vectorized",
@@ -142,7 +142,7 @@ local({
     ipc_workers = 2L
   )
   rducks_set_execution_plan(con, plan_two, threads = 1L, external_threads = 1L)
-  reg_two <- rducks_register(
+  reg_two <- rducks_register_scalar_udf(
     con, "nng_lifecycle_two", function(x) x + 3L,
     INTEGER, INTEGER,
     mode = "vectorized",
@@ -185,7 +185,7 @@ local({
     ipc_timeout = 2
   )
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "nng_external_release_alive", function(x) x + 3L,
     INTEGER, INTEGER,
     mode = "vectorized",

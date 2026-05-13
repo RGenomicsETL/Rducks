@@ -71,7 +71,7 @@ local({
       rducks_nng_transport_trace(paste0("transport:", transport, ":plan:done"))
       name <- paste0("nng_transport_", gsub("[^[:alnum:]]+", "_", transport))
       rducks_nng_transport_trace(paste0("transport:", transport, ":register:start"))
-      reg <- rducks_register(
+      reg <- rducks_register_scalar_udf(
         con, name,
         function(x) x + 1L,
         INTEGER, INTEGER,

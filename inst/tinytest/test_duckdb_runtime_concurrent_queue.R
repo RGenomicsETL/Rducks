@@ -50,8 +50,8 @@ local({
   expect_true(after$main_drain_batches >= 1)
   expect_true(after$main_drain_max_batch >= 1)
 
-  invisible(rducks_register(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
-  invisible(rducks_register(con, "rducks_queue_plus_one_vec", function(x) x + 1, DOUBLE, DOUBLE,
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_vec", function(x) x + 1, DOUBLE, DOUBLE,
                             mode = "vectorized", side_effects = TRUE))
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_r+inproc_concurrent")
@@ -62,8 +62,8 @@ local({
   queued_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_vec_result$x, sum((0:9) + 1))
 
-  invisible(rducks_register(con, "rducks_queue_arrow_r_list", function(x) c(x, x + 1L), INTEGER, INTEGER[]))
-  invisible(rducks_register(con, "rducks_queue_arrow_r_struct", function(x) list(a = x, b = x + 1L), INTEGER, STRUCT(a = INTEGER, b = INTEGER)))
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_arrow_r_list", function(x) c(x, x + 1L), INTEGER, INTEGER[]))
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_arrow_r_struct", function(x) list(a = x, b = x + 1L), INTEGER, STRUCT(a = INTEGER, b = INTEGER)))
   queued_r_list_result <- DBI::dbGetQuery(
     con,
     "SELECT sum(list_sum(rducks_queue_arrow_r_list(i::INTEGER))) AS x FROM rducks_parallel_range(5::UBIGINT) AS t(i)"
@@ -93,8 +93,8 @@ local({
   rducks_enable(con, threads = "single")
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
 
-  invisible(rducks_register(con, "rducks_queue_plus_one_c", function(x) x + 1, DOUBLE, DOUBLE))
-  invisible(rducks_register(con, "rducks_queue_plus_one_c_vec", function(x) x + 1, DOUBLE, DOUBLE,
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_c", function(x) x + 1, DOUBLE, DOUBLE))
+  invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_c_vec", function(x) x + 1, DOUBLE, DOUBLE,
                             mode = "vectorized", side_effects = TRUE))
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+inproc_concurrent")
@@ -107,7 +107,7 @@ local({
     "SELECT rducks_queue_plus_one_c(CASE WHEN i = 1 THEN NULL::DOUBLE ELSE i::DOUBLE END) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_input_null_result$x, c(1, NA, 3))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_null_i32",
     function(x) if (identical(x, 1L)) NULL else x + 1L,
     INTEGER, INTEGER
@@ -117,7 +117,7 @@ local({
     "SELECT rducks_queue_arrow_c_null_i32(i::INTEGER) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_null_result$x, c(1L, NA_integer_, 3L))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_bool",
     function(x) x %% 2L == 0L,
     INTEGER, BOOLEAN
@@ -127,7 +127,7 @@ local({
     "SELECT rducks_queue_arrow_c_bool(i::INTEGER) AS x FROM rducks_parallel_range(4::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_bool_result$x, c(TRUE, FALSE, TRUE, FALSE))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_varchar",
     function(x) if (identical(x, 1L)) NA_character_ else if (identical(x, 0L)) "" else paste0("v", x),
     INTEGER, VARCHAR
@@ -137,7 +137,7 @@ local({
     "SELECT rducks_queue_arrow_c_varchar(i::INTEGER) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_varchar_result$x, c("", NA_character_, "v2"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_blob",
     function(x) as.raw(c(x, 255L)),
     INTEGER, BLOB
@@ -147,7 +147,7 @@ local({
     "SELECT hex(rducks_queue_arrow_c_blob(i::INTEGER)) AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_blob_result$x, c("00FF", "01FF", "02FF"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_bit",
     function(x) if (x %% 2L == 0L) rducks_bits(as.raw(0x80), length = 1L) else rducks_bits(as.raw(0x00), length = 1L),
     INTEGER, BIT
@@ -157,7 +157,7 @@ local({
     "SELECT rducks_queue_arrow_c_bit(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_bit_result$x, c("1", "0", "1"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_decimal",
     function(x) rducks_decimal(sprintf("%d.25", x), 10, 2),
     INTEGER, DECIMAL(10, 2)
@@ -167,7 +167,7 @@ local({
     "SELECT rducks_queue_arrow_c_decimal(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_decimal_result$x, c("0.25", "1.25", "2.25"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_enum",
     function(x) if (x %% 2L == 0L) "red" else "blue",
     INTEGER, ENUM(c("red", "blue"))
@@ -177,7 +177,7 @@ local({
     "SELECT rducks_queue_arrow_c_enum(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(3::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_enum_result$x, c("red", "blue", "red"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_uuid",
     function(x) rducks_uuid(if (x == 0L) "00000000-0000-0000-0000-000000000001" else "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
     INTEGER, UUID
@@ -187,7 +187,7 @@ local({
     "SELECT rducks_queue_arrow_c_uuid(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(2::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_uuid_result$x, c("00000000-0000-0000-0000-000000000001", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_hugeint",
     function(x) rducks_hugeint(if (x == 0L) "170141183460469231731687303715884105720" else "170141183460469231731687303715884105721"),
     INTEGER, HUGEINT
@@ -197,7 +197,7 @@ local({
     "SELECT rducks_queue_arrow_c_hugeint(i::INTEGER)::VARCHAR AS x FROM rducks_parallel_range(2::UBIGINT) AS t(i) ORDER BY i"
   )
   expect_equal(queued_c_hugeint_result$x, c("170141183460469231731687303715884105720", "170141183460469231731687303715884105721"))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_interval",
     function(x) rducks_interval(months = x, days = x + 1L, micros = as.character(x + 2L)),
     INTEGER, INTERVAL
@@ -209,7 +209,7 @@ local({
   expect_equal(queued_c_interval_result$x, c("1 day 00:00:00.000002", "1 month 2 days 00:00:00.000003"))
   queued_c_vec_result <- DBI::dbGetQuery(con, "SELECT sum(rducks_queue_plus_one_c_vec(i::DOUBLE)) AS x FROM rducks_parallel_range(10::UBIGINT) AS t(i)")
   expect_equal(queued_c_vec_result$x, sum((0:9) + 1))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_vec_varchar",
     function(x) ifelse(x == 1L, NA_character_, paste0("vec", x)),
     INTEGER, VARCHAR,
@@ -224,7 +224,7 @@ local({
   expect_equal(explain_vec_varchar$evaluator, "RCV")
   expect_true(explain_vec_varchar$arrow_c_chunks >= 1)
   expect_equal(explain_vec_varchar$arrow_r_chunks, 0)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_bad_i32",
     function(x) rep(NaN, length(x)),
     INTEGER, INTEGER,
@@ -258,23 +258,23 @@ local({
   rducks_enable(con, threads = "single")
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "inproc_concurrent"))
 
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_snapshot_varchar_input",
     function(x) if (is.na(x)) NA_integer_ else nchar(x, type = "bytes"),
     VARCHAR, INTEGER
   ))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_snapshot_vec_varchar_input",
     function(x) as.integer(nchar(x, type = "bytes")),
     VARCHAR, INTEGER,
     mode = "vectorized", side_effects = TRUE
   ))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_owned_list_result",
     function(x) c(x, x + 1L),
     INTEGER, INTEGER[]
   ))
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_owned_struct_result",
     function(x) data.frame(a = x, b = x + 1L),
     INTEGER, STRUCT(a = INTEGER, b = INTEGER),
@@ -367,7 +367,7 @@ if (rducks_test_stress_concurrency()) local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
-  invisible(rducks_register(con, "rducks_stress_plus_one", function(x) x + 1, DOUBLE, DOUBLE,
+  invisible(rducks_register_scalar_udf(con, "rducks_stress_plus_one", function(x) x + 1, DOUBLE, DOUBLE,
                             mode = "vectorized", side_effects = TRUE))
   rducks_enable_inproc(con, threads = threads, external_threads = 1L)
 

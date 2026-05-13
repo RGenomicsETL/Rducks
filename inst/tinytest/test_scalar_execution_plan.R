@@ -84,7 +84,7 @@ expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_glob
 expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = FALSE)$ipc_options$globals)
 expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 
-enum_spec <- Rducks:::rducks_registration_spec(
+enum_spec <- Rducks:::rducks_scalar_udf_registration_spec(
   "enum_ipc", function(x) x, ENUM(c("red", "blue")), ENUM(c("red", "blue")), mode = "vectorized"
 )
 expect_silent(Rducks:::rducks_validate_execution_plan_for_registration(ipc, enum_spec))
@@ -97,7 +97,7 @@ expect_error(
   rducks_execution_plan("arrow_r", "multiprocess_parallel"),
   "requires marshalling = 'arrow_ipc'"
 )
-vectorized_spec <- Rducks:::rducks_registration_spec(
+vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
   "vec", function(x) x, INTEGER, INTEGER, mode = "vectorized"
 )
 expect_silent(
@@ -109,7 +109,7 @@ expect_equal(
   Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"),
   "RCV"
 )
-zero_arg_vectorized_spec <- Rducks:::rducks_registration_spec(
+zero_arg_vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
   "vec0", function() integer(), NULL, INTEGER, mode = "vectorized"
 )
 expect_error(

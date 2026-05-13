@@ -9,7 +9,7 @@ execution.
 
 ### R package layer
 
-- validates `rducks_enable()`, `rducks_register()`, and execution-plan options
+- validates `rducks_enable()`, `rducks_register_scalar_udf()`, aggregate/table registration, and execution-plan options
 - builds normalized type descriptors and registration specs
 - records connection-local default plans and R-side diagnostics
 - prepares R wrapper functions used by the native evaluators
@@ -35,17 +35,27 @@ execution.
 - `arrow_ipc`: DuckDB chunk -> owned Arrow IPC request bytes -> worker process ->
   owned Arrow IPC result bytes -> DuckDB output
 
-## UDF call shapes
+## DuckDB function kind, evaluation mode, and execution plan
 
-`mode = "scalar"` calls the R function once per logical row. `mode =
-"vectorized"` calls the R function once per DuckDB chunk with R vectors or
-list-columns. Call shape is user semantics and is independent of the marshalling
-plan.
+DuckDB function kind is the SQL catalog shape: scalar UDF, aggregate function,
+or table function. `rducks_register_scalar_udf()` registers DuckDB scalar UDFs,
+`rducks_register_aggregate()` registers DuckDB aggregate functions, and
+`rducks_register_table()` registers DuckDB table functions.
+
+For DuckDB scalar UDFs only, `mode = "scalar"` calls the R function once per
+logical row and `mode = "vectorized"` calls the R function once per DuckDB chunk
+with R vectors or list-columns. This Rducks evaluation mode is user semantics
+and is independent of the execution plan.
+
+An execution plan chooses marshalling and concurrency (`arrow_r`, `arrow_c`, or
+`arrow_ipc`; `serial`, `inproc_concurrent`, or `multiprocess_parallel`) for
+future scalar-UDF registrations. It must not redefine DuckDB SQL type, NULL, or
+result semantics.
 
 ## Thread boundary
 
-DuckDB worker threads must not call the R API. In-process execution is legal only
-on the recorded R thread. If DuckDB invokes a UDF from another thread,
+DuckDB worker threads must not call the R API. In-process R execution is legal
+only on the recorded R thread. If DuckDB invokes a scalar UDF from another thread,
 `inproc_concurrent` submits a synchronous request to the extension-owned queue;
 the recorded R thread drains that request and performs all R work.
 
@@ -56,8 +66,8 @@ phase has produced owned result data.
 
 ## Ownership rules
 
-- Borrowed DuckDB vectors and data chunks are valid only during the UDF callback
-  that supplied them.
+- Borrowed DuckDB vectors and data chunks are valid only during the scalar-UDF,
+  aggregate, table-function, or query callback that supplied them.
 - Borrowed `SEXP` objects and nanoarrow R external pointers must not cross to a
   DuckDB worker thread.
 - Queued off-main requests must carry owned native input/result state or remain
@@ -80,7 +90,7 @@ phase has produced owned result data.
   finalizer bookkeeping, and the R-side registry view.
 
 `rducks_release(con)` clears connection-local Rducks state. It is not an
-unregister operation and must not drop database-catalog UDFs that sibling
+unregister operation and must not drop database-catalog functions that sibling
 connections can still call. For `arrow_ipc + multiprocess_parallel`, releasing
 the last Rducks attachment to a runtime also closes native client pools for
 Rducks-launched local workers and stops those local mirai/NNG workers. If

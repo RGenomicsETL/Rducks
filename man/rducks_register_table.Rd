@@ -36,7 +36,8 @@ Data stream, imports it into a DuckDB chunk, and emits row batches from
 that imported chunk during table-function scans.
 }
 \details{
-This is intentionally separate from scalar/vectorized UDF registration: table
+This is intentionally separate from DuckDB scalar-UDF registration through
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
 functions have their own bind/init/scan state and currently support only the
 one-shot finite table shape. DuckDB table functions can have bind-time dynamic
 schemas and broad input signatures; this Rducks API follows that model

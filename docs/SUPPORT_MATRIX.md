@@ -3,9 +3,13 @@
 This document summarizes the supported execution-plan surface. The code-level
 truth is the plan/type validation predicates and the generated marshalling matrix.
 
-## Execution engines
+## Scalar-UDF execution engines
 
-| Public plan | Engine ID | Scalar | Vectorized | Notes |
+These engines apply to DuckDB scalar UDFs registered with
+`rducks_register_scalar_udf()`. `Scalar` and `Vectorized` below are Rducks
+evaluation modes for the scalar UDF, not separate DuckDB function kinds.
+
+| Public plan | Engine ID | Scalar evaluation mode | Vectorized evaluation mode | Notes |
 | --- | --- | --- | --- | --- |
 | `arrow_r + serial` | `arrow_r_serial` | supported | supported | Reference path through Arrow C Data and nanoarrow/R. |
 | `arrow_r + inproc_concurrent` | `arrow_r_main_queue` | supported | supported | Queued same-process callbacks; R work stays on the recorded R thread. |
@@ -17,8 +21,8 @@ Invalid marshalling/concurrency pairs fail validation.
 
 ## Aggregate functions
 
-`rducks_register_aggregate()` is a separate SQL aggregate surface,
-not an execution-plan variant of scalar/vectorized UDFs. The only supported
+`rducks_register_aggregate()` is a separate DuckDB aggregate-function surface,
+not an execution-plan variant of DuckDB scalar UDFs. The only supported
 state representation is native DuckDB aggregate memory containing a copied R
 `raw` vector. `update()` and optional `combine()` must return raw state or
 `NULL`; `finalize()` returns the declared scalar result. Registration and R

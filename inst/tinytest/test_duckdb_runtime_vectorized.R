@@ -7,7 +7,7 @@ local({
 
   calls <- 0L
   sizes <- integer()
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "vec_plus_one",
     function(x) {
       calls <<- calls + 1L
@@ -30,9 +30,9 @@ local({
   expect_equal(sum(sizes), n)
   expect_true(max(sizes) > 1L)
 
-  invisible(rducks_register(con, "vec_conf_row_default", function(x) x + 1L,
+  invisible(rducks_register_scalar_udf(con, "vec_conf_row_default", function(x) x + 1L,
                             INTEGER, INTEGER, side_effects = TRUE))
-  invisible(rducks_register(con, "vec_conf_chunk_default", function(x) x + 1L,
+  invisible(rducks_register_scalar_udf(con, "vec_conf_chunk_default", function(x) x + 1L,
                             INTEGER, INTEGER, mode = "vectorized", side_effects = TRUE))
   conf_default <- DBI::dbGetQuery(con, paste(
     "WITH t(x) AS (VALUES (1::INTEGER), (NULL::INTEGER), (3::INTEGER))",
@@ -40,10 +40,10 @@ local({
   ))
   expect_true(conf_default$ok[[1L]])
 
-  invisible(rducks_register(con, "vec_conf_row_special",
+  invisible(rducks_register_scalar_udf(con, "vec_conf_row_special",
                             function(x) if (is.na(x)) 99L else x + 1L,
                             INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
-  invisible(rducks_register(con, "vec_conf_chunk_special",
+  invisible(rducks_register_scalar_udf(con, "vec_conf_chunk_special",
                             function(x) ifelse(is.na(x), 99L, x + 1L),
                             INTEGER, INTEGER, mode = "vectorized", null_handling = "special", side_effects = TRUE))
   conf_special <- DBI::dbGetQuery(con, paste(
@@ -53,7 +53,7 @@ local({
   expect_true(conf_special$ok[[1L]])
 
   seen_default <- list()
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "vec_default_null",
     function(x) {
       seen_default[[length(seen_default) + 1L]] <<- x
@@ -72,7 +72,7 @@ local({
   expect_equal(seen_default[[1L]], c(1L, 3L))
 
   calls_all_null <- 0L
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "vec_all_null_default",
     function(x) {
       calls_all_null <<- calls_all_null + 1L
@@ -90,7 +90,7 @@ local({
   expect_equal(calls_all_null, 0L)
 
   seen_special <- list()
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "vec_special_null",
     function(x) {
       seen_special[[length(seen_special) + 1L]] <<- x
@@ -109,9 +109,9 @@ local({
   expect_equal(length(seen_special), 1L)
   expect_equal(seen_special[[1L]], c(1L, NA_integer_, 3L))
 
-  invisible(rducks_register(con, "vec_scalar_null_return", function(x) NULL,
+  invisible(rducks_register_scalar_udf(con, "vec_scalar_null_return", function(x) NULL,
                             INTEGER, INTEGER, null_handling = "special", side_effects = TRUE))
-  invisible(rducks_register(con, "vec_chunk_null_return", function(x) vector("list", length(x)),
+  invisible(rducks_register_scalar_udf(con, "vec_chunk_null_return", function(x) vector("list", length(x)),
                             INTEGER, INTEGER, mode = "vectorized", null_handling = "special", side_effects = TRUE))
   null_return <- DBI::dbGetQuery(con, paste(
     "WITH t(i, x) AS (VALUES (1, 1::INTEGER), (2, NULL::INTEGER), (3, 3::INTEGER))",
@@ -120,7 +120,7 @@ local({
   expect_equal(null_return$row_y, c(NA_integer_, NA_integer_, NA_integer_))
   expect_equal(null_return$chunk_y, c(NA_integer_, NA_integer_, NA_integer_))
 
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "vec_bad_length",
     function(x) x[1L],
     INTEGER, INTEGER,
@@ -134,7 +134,7 @@ local({
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   seen_arrow_c <- list()
-  invisible(rducks_register(con, "vec_arrow_c_plus_one", function(x) {
+  invisible(rducks_register_scalar_udf(con, "vec_arrow_c_plus_one", function(x) {
     seen_arrow_c[[length(seen_arrow_c) + 1L]] <<- x
     x + 1L
   }, INTEGER, INTEGER, mode = "vectorized", side_effects = TRUE))
@@ -147,13 +147,13 @@ local({
   expect_true(arrow_c_explain$arrow_c_chunks >= 1)
   expect_equal(arrow_c_explain$arrow_r_chunks, 0)
   expect_error(
-    rducks_register(con, "vec_arrow_c_unsupported", function(x) x, BIGINT[], BIGINT[],
+    rducks_register_scalar_udf(con, "vec_arrow_c_unsupported", function(x) x, BIGINT[], BIGINT[],
                     mode = "vectorized", side_effects = TRUE),
     "arrow_c direct marshalling is not implemented"
   )
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
   expect_error(
-    rducks_register(con, "vec_no_arg_rejected", function() 1L, character(), INTEGER,
+    rducks_register_scalar_udf(con, "vec_no_arg_rejected", function() 1L, character(), INTEGER,
                     mode = "vectorized"),
     "at least one declared argument"
   )

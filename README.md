@@ -10,12 +10,24 @@ Rducks registers R functions as DuckDB SQL functions using a DuckDB C
 extension, including a small set of unstable DuckDB C extension API
 functions. The extension records the DuckDB database instance handle at
 initialization and keeps an extension-owned connection associated with
-that runtime. Scalar/vectorized UDF inputs and outputs move through
-explicit execution plans:
+that runtime.
+
+The user-facing API separates three concepts:
+
+- DuckDB function kind: scalar UDF, aggregate function, or table
+  function.
+- Rducks evaluation mode for DuckDB scalar UDFs: one R call per row
+  (`mode = "scalar"`) or one R call per DuckDB chunk
+  (`mode = "vectorized"`).
+- Rducks execution plan: the marshalling and concurrency implementation
+  used by DuckDB scalar UDFs.
+
+R-backed DuckDB scalar UDF inputs and outputs move through explicit
+execution plans:
 
 - `arrow_r`: reference path using DuckDB Arrow C Data plus nanoarrow/R.
-- `arrow_c`: native extension path for supported scalar and vectorized
-  calls with direct DuckDB-vector materialization.
+- `arrow_c`: native extension path for supported scalar-UDF evaluation
+  modes with direct DuckDB-vector materialization.
 - `arrow_ipc`: process-isolated R execution using native NNG plus owned
   Arrow IPC request/result bytes. By default Rducks launches worker
   loops with mirai daemons and Rducks-generated NNG endpoint URLs;
@@ -24,18 +36,15 @@ explicit execution plans:
   stops. Large same-host read-only R globals can optionally be sent as
   mori shared-memory references with `ipc_globals_share = "mori"`.
 
-For scalar/vectorized UDFs, the user-facing semantics are separate from
-the execution plan: `mode = "scalar"` means one R call per logical row,
-and `mode = "vectorized"` means one R call per DuckDB chunk. Aggregate
-and table functions use separate APIs with a single execution mode: R
-callbacks on the recorded R thread, not `mode = "scalar"` or
-`mode = "vectorized"`. `rducks_register_aggregate()` stores only native
-raw-byte aggregate state and calls R for serialized update/finalize
-phases on the recorded R thread. `rducks_register_table()` covers finite
-scans whose positional SQL argument count is inferred from the R
-function formals and whose input types are registered as DuckDB `ANY`;
-the output schema is inferred during DuckDB bind and the result is
-imported through nanoarrow Arrow C Data before scanning.
+Aggregate and table functions use separate APIs and are not scalar-UDF
+execution-plan variants. `rducks_register_aggregate()` stores only
+native raw-byte aggregate state and calls R for serialized
+update/finalize phases on the recorded R thread.
+`rducks_register_table()` covers finite scans whose positional SQL
+argument count is inferred from the R function formals and whose input
+types are registered as DuckDB `ANY`; the output schema is inferred
+during DuckDB bind and the result is imported through nanoarrow Arrow C
+Data before scanning.
 
 ## Quick start
 
@@ -47,7 +56,7 @@ library(Rducks)
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 
-reg_hello <- rducks_register(
+reg_hello <- rducks_register_scalar_udf(
   con,
   name = "r_hello",
   fun = function() "hello from R",
@@ -60,7 +69,7 @@ dbGetQuery(con, "SELECT r_hello() AS message")
 #>        message
 #> 1 hello from R
 
-reg_plus_one <- rducks_register(
+reg_plus_one <- rducks_register_scalar_udf(
   con,
   name = "r_plus_one",
   fun = function(x) x + 1,
@@ -77,11 +86,12 @@ dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
 Use `args = NULL` for a zero-argument scalar UDF. `null_handling` only
 affects SQL NULL inputs, so the default is appropriate for `r_hello()`.
 
-`rducks_register()` returns an `rducks_registration` object that records
-the connection, normalized signature, and registration options. You do
-not need to keep this object for the UDF to keep working in DuckDB.
-Registering the same SQL name/signature again replaces the callable
-implementation in the shared DuckDB database catalog.
+`rducks_register_scalar_udf()` returns an
+`rducks_scalar_udf_registration` object that records the connection,
+normalized signature, and registration options. You do not need to keep
+this object for the scalar UDF to keep working in DuckDB. Registering
+the same SQL name/signature again replaces the callable implementation
+in the shared DuckDB database catalog.
 
 ### Release and disconnect
 
@@ -96,9 +106,9 @@ supplied, those URLs name user-owned worker processes; Rducks does not
 send stop requests to them during release. Call `rducks_release(con)`
 before `DBI::dbDisconnect(con)` when you want deterministic R-side
 cleanup. Rducks does not provide `rducks_unregister()`; registered
-catalog UDFs and their preserved R closures are intentionally retained
-for the database/runtime lifetime or until the same SQL name/signature
-is replaced.
+catalog functions and their preserved R closures are intentionally
+retained for the database/runtime lifetime or until the same SQL
+name/signature is replaced.
 
 ``` r
 release_con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
@@ -124,11 +134,11 @@ conversion used at the Rducks boundary.
 
 Rducks installs a package-managed DuckDB extension and loads it into
 DuckDB with `rducks_enable()`. The type descriptors below are used by
-`rducks_register()` for scalar/vectorized UDFs and by
-`rducks_register_aggregate()` for aggregate inputs and returns. Table
-functions registered with `rducks_register_table()` infer their output
-schema dynamically from the returned data frame or named list instead of
-taking declared type descriptors.
+`rducks_register_scalar_udf()` for DuckDB scalar UDF arguments/returns
+and by `rducks_register_aggregate()` for aggregate inputs and returns.
+Table functions registered with `rducks_register_table()` infer their
+output schema dynamically from the returned data frame or named list
+instead of taking declared type descriptors.
 
 Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`,
@@ -174,14 +184,16 @@ rducks_check_return(UNION(code = INTEGER, label = VARCHAR), rducks_union("label"
 rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue")))
 ```
 
-## Scalar/vectorized UDFs (`rducks_register()`)
+## DuckDB scalar UDFs (`rducks_register_scalar_udf()`)
 
-Scalar mode calls the R function once per DuckDB row. Vectorized mode
-calls the R function once per DuckDB chunk with one R vector/list-column
-per declared argument.
+DuckDB scalar UDFs return one SQL value per logical input row. Rducks
+can evaluate the backing R function row-wise (`mode = "scalar"`) or
+chunk-wise (`mode = "vectorized"`). Vectorized mode calls the R function
+once per DuckDB chunk with one R vector/list-column per declared
+argument.
 
 ``` r
-reg_vec_plus_one <- rducks_register(
+reg_vec_plus_one <- rducks_register_scalar_udf(
   con,
   name = "r_vec_plus_one",
   fun = function(x) x + 1,
@@ -196,18 +208,18 @@ dbGetQuery(con, "SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i
 #> 1 15
 ```
 
-In vectorized mode, `null_handling = "default"` evaluates only rows with
-no top-level SQL NULL inputs and scatters SQL NULLs back into the
-result. `null_handling = "special"` passes all rows using the same
-NA/NULL shapes as scalar mode. The return length must match the number
-of evaluated rows. Vectorized mode currently requires at least one
-declared argument.
+In vectorized evaluation mode, `null_handling = "default"` evaluates
+only rows with no top-level SQL NULL inputs and scatters SQL NULLs back
+into the result. `null_handling = "special"` passes all rows using the
+same NA/NULL shapes as row-wise scalar evaluation. The return length
+must match the number of evaluated rows. Vectorized mode currently
+requires at least one declared argument.
 
-### Scalar/vectorized UDF benchmark
+### Scalar-UDF evaluation-mode benchmark
 
-A tiny benchmark with `bench` can show the `rducks_register()`
-call-shape difference for simple R work. The result is illustrative
-rather than a performance guarantee.
+A tiny benchmark with `bench` can show the row-wise versus chunk-wise R
+call shape for a DuckDB scalar UDF. The result is illustrative rather
+than a performance guarantee.
 
 ``` r
 bench::mark(
@@ -219,29 +231,29 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        286ms      3.47    1.97MB
-#> 2 vectorized    233ms      4.29    2.34MB
+#> 1 scalar        290ms      3.46    1.97MB
+#> 2 vectorized    231ms      4.30    2.34MB
 ```
 
-## Scalar/vectorized UDF mode semantics
+## Scalar-UDF evaluation-mode semantics
 
 The table below is produced by `rducks_mode_semantics()` and applies to
-scalar/vectorized UDFs registered with `rducks_register()`.
+DuckDB scalar UDFs registered with `rducks_register_scalar_udf()`.
 
 | mode       | status      | call_granularity            | input_shape                                        | return_shape                                                          | null_semantics                                                                                                                                                 | length_semantics                                                   | error_semantics                                                                                                                                  | threading                                                                                                                                                                     | copy_semantics                                                                                                                                                                                                                                  | notes                                                                                                                                                        |
 |:-----------|:------------|:----------------------------|:---------------------------------------------------|:----------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | scalar     | implemented | one R call per row          | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values                                                                      | one output value per R function call                               | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query                  | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding   | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport                                                                       | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
 | vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument     | one R vector/list of values compatible with the declared return type  | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet            |
 
-## Scalar/vectorized UDF argument values passed to R functions
+## Scalar-UDF argument values passed to R functions
 
 <details>
 <summary>
-Expand for scalar/vectorized UDF argument values passed to R functions
+Expand for scalar-UDF argument values passed to R functions
 </summary>
 
 The table is produced by the exported `rducks_argument_type_mapping()`
-helper and reflects the currently implemented scalar/vectorized UDF
+helper and reflects the currently implemented DuckDB scalar-UDF
 marshalling path. With `null_handling = "default"`, any top-level SQL
 `NULL` input makes DuckDB return SQL `NULL` without calling the R
 function. The `special_null_argument` column below applies when
@@ -265,16 +277,15 @@ nested composite `NULL` values are represented as R `NULL`.
 
 </details>
 
-## Scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
+## Scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 
 <details>
 <summary>
-Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class
-semantics
+Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 </summary>
 
 The table below is produced by `rducks_value_semantics()`, the exported
-schema that Rducks uses to document scalar/vectorized UDF missing and
+schema that Rducks uses to document DuckDB scalar-UDF missing and
 non-finite value behavior. Top-level R `NULL` returns map to SQL `NULL`.
 R `NA` values map to SQL `NULL` when represented by the declared R type.
 `NaN` and `Inf` are values only for `FLOAT` and `DOUBLE`; integer, date,
@@ -293,18 +304,19 @@ time, timestamp, and exact Rducks value classes reject them.
 
 </details>
 
-## Scalar/vectorized UDF composite input examples
+## Scalar-UDF composite input examples
 
 Homogeneous scalar lists and arrays are passed as atomic R vectors with
 SQL `NULL` elements represented as typed `NA` values. Structs are passed
 as named lists, and maps are passed as `list(keys = ..., values = ...)`.
 A `data.frame` return is not a table-valued UDF here; the scalar UDF
-type equivalent is `STRUCT(...)`. In vectorized mode, a `STRUCT(...)`
-return may be supplied as a `data.frame` with columns matching the
-struct fields, yielding one struct-valued SQL result per row.
+type equivalent is `STRUCT(...)`. In vectorized evaluation mode, a
+`STRUCT(...)` return may be supplied as a `data.frame` with columns
+matching the struct fields, yielding one struct-valued SQL result per
+row.
 
 ``` r
-reg_list_len <- rducks_register(
+reg_list_len <- rducks_register_scalar_udf(
   con,
   name = "r_list_len",
   fun = function(x) length(x),
@@ -312,7 +324,7 @@ reg_list_len <- rducks_register(
   returns = INTEGER
 )
 
-reg_array_sum <- rducks_register(
+reg_array_sum <- rducks_register_scalar_udf(
   con,
   name = "r_array_sum",
   fun = function(x) sum(x),
@@ -320,7 +332,7 @@ reg_array_sum <- rducks_register(
   returns = INTEGER
 )
 
-reg_struct_sum <- rducks_register(
+reg_struct_sum <- rducks_register_scalar_udf(
   con,
   name = "r_struct_sum",
   fun = function(x) x$a + x$b,
@@ -328,7 +340,7 @@ reg_struct_sum <- rducks_register(
   returns = INTEGER
 )
 
-reg_map_sum <- rducks_register(
+reg_map_sum <- rducks_register_scalar_udf(
   con,
   name = "r_map_sum",
   fun = function(x) sum(x$values),
@@ -336,7 +348,7 @@ reg_map_sum <- rducks_register(
   returns = INTEGER
 )
 
-reg_make_struct <- rducks_register(
+reg_make_struct <- rducks_register_scalar_udf(
   con,
   name = "r_make_struct",
   fun = function(x) list(a = x, b = x + 1L),
@@ -344,7 +356,7 @@ reg_make_struct <- rducks_register(
   returns = STRUCT(a = INTEGER, b = INTEGER)
 )
 
-reg_make_array <- rducks_register(
+reg_make_array <- rducks_register_scalar_udf(
   con,
   name = "r_make_array",
   fun = function(x) c(x, x + 1L),
@@ -352,7 +364,7 @@ reg_make_array <- rducks_register(
   returns = INTEGER[]
 )
 
-reg_make_map <- rducks_register(
+reg_make_map <- rducks_register_scalar_udf(
   con,
   name = "r_make_map",
   fun = function(x) list(keys = c("a", "b"), values = c(x, x + 1L)),
@@ -374,9 +386,9 @@ dbGetQuery(con, "
 #> 1        3         6         42      42            42           41         21
 ```
 
-## Scalar/vectorized UDF NULL handling
+## Scalar-UDF NULL handling
 
-For scalar/vectorized UDFs, Rducks uses NULL-in/NULL-out handling by
+For DuckDB scalar UDFs, Rducks uses NULL-in/NULL-out handling by
 default: if any input is SQL `NULL`, the R function is not called and
 the SQL result is `NULL`.
 
@@ -386,7 +398,7 @@ shown in `rducks_argument_type_mapping()` to the R function for SQL
 for exact/exotic, binary, and composite inputs it is R `NULL`.
 
 ``` r
-reg_null_special <- rducks_register(
+reg_null_special <- rducks_register_scalar_udf(
   con,
   name = "r_null_special",
   fun = function(x) if (is.na(x)) 5L else x,
@@ -400,15 +412,15 @@ dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
 #> 1 5
 ```
 
-## Scalar/vectorized UDF exceptions and side effects
+## Scalar-UDF exceptions and side effects
 
-For scalar/vectorized UDFs, set `exception_handling = "return_null"` to
-turn errors thrown by the user R function into SQL `NULL`. Return
+For DuckDB scalar UDFs, set `exception_handling = "return_null"` to turn
+errors thrown by the user R function into SQL `NULL`. Return
 type-checking and marshalling errors still abort the query so type bugs
 are not hidden as NULLs.
 
 ``` r
-reg_error_null <- rducks_register(
+reg_error_null <- rducks_register_scalar_udf(
   con,
   name = "r_error_null",
   fun = function(x) stop("boom"),
@@ -422,7 +434,7 @@ dbGetQuery(con, "SELECT r_error_null(1::INTEGER) AS x")
 #> 1 NA
 ```
 
-For scalar/vectorized UDFs, set `side_effects = TRUE` for functions with
+For DuckDB scalar UDFs, set `side_effects = TRUE` for functions with
 counters, randomness, I/O, or mutation so DuckDB reruns the function for
 each row.
 
@@ -435,7 +447,7 @@ counter <- local({
   }
 })
 
-reg_counter <- rducks_register(
+reg_counter <- rducks_register_scalar_udf(
   con,
   name = "r_counter",
   fun = counter,
@@ -453,7 +465,7 @@ dbGetQuery(con, "SELECT r_counter() AS x FROM range(5)")
 #> 5 5
 
 set.seed(1)
-reg_rng <- rducks_register(
+reg_rng <- rducks_register_scalar_udf(
   con,
   name = "r_rng",
   fun = function() runif(1),
@@ -476,11 +488,12 @@ The state stored in DuckDB is a native copy of the raw vector returned
 by `update(state, ...)`; R object pointers are not stored in aggregate
 state. `finalize(state)` receives the final raw state or `NULL` for a
 group with no non-NULL inputs and returns a scalar compatible with the
-declared return type. Aggregate functions expose a single execution
-mode: serialized R callbacks on the recorded R thread. They do not have
-scalar/vectorized modes and are not controlled by scalar UDF execution
-plans. Registration requires `rducks_enable(con, threads = "single")`,
-and execution rejects attempts to call R from DuckDB worker threads.
+declared return type. Aggregate functions expose a single aggregate
+execution path: serialized R callbacks on the recorded R thread. They do
+not have row-wise/vectorized scalar-UDF evaluation modes and are not
+controlled by scalar-UDF execution plans. Registration requires
+`rducks_enable(con, threads = "single")`, and execution rejects attempts
+to call R from DuckDB worker threads.
 
 ``` r
 pack_state <- function(x) serialize(x, NULL, version = 2)
@@ -519,10 +532,10 @@ dbGetQuery(
 number of positional SQL arguments comes from `formals(fun)`, each input
 is registered as DuckDB `ANY`, and the output schema is inferred from
 the data frame or named list returned during DuckDB bind. Table
-functions expose a single execution mode: R callbacks on the recorded R
-thread. They do not have scalar/vectorized modes and are not controlled
-by scalar UDF execution plans; register and execute them with
-`rducks_enable(con, threads = "single")`.
+functions expose a single table-function execution path: R callbacks on
+the recorded R thread. They do not have row-wise/vectorized scalar-UDF
+evaluation modes and are not controlled by scalar-UDF execution plans;
+register and execute them with `rducks_enable(con, threads = "single")`.
 
 ``` r
 reg_rows <- rducks_register_table(
@@ -573,13 +586,14 @@ stream$close()
 ## Execution plans
 
 Execution plans choose the default marshalling implementation and
-concurrency contract for future scalar/vectorized UDF registrations
-through `rducks_register()`. They do not control aggregate functions,
+concurrency contract for future DuckDB scalar UDF registrations through
+`rducks_register_scalar_udf()`. They do not control aggregate functions,
 table functions, or query streams. Registration remains semantic: name,
-function, mode, types, NULL handling, exception handling, and
-side-effect flag. The plan active at `rducks_register()` freezes the
-UDF’s native evaluator/marshalling metadata; later plan changes do not
-retarget already-registered UDFs.
+function, Rducks evaluation mode, types, NULL handling, exception
+handling, and side-effect flag. The plan active at
+`rducks_register_scalar_udf()` freezes the scalar UDF’s native
+evaluator/marshalling metadata; later plan changes do not retarget
+already-registered scalar UDFs.
 
 | Plan                                | Scalar      | Vectorized  | Notes                                                                                                                                                                                                                                                                  |
 |-------------------------------------|-------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -592,7 +606,7 @@ retarget already-registered UDFs.
 `arrow_r + serial` is the semantic reference. Other implemented plans
 are tested against it and use exactly their selected marshalling path.
 Use `rducks_explain_udf()` to inspect the plan and native counters for a
-registered UDF.
+registered scalar UDF.
 
 ``` r
 rducks_explain_udf(con, "r_vec_plus_one")[, c(
@@ -608,24 +622,24 @@ rducks_explain_udf(con, "r_vec_plus_one")[, c(
 ## In-process queued execution
 
 `rducks_enable_inproc()` lets DuckDB worker threads enqueue same-process
-R calls while the recorded main R thread drains the queue. This is for
-safety and liveness, not automatic speed: R API work still runs on the
-main thread.
+R calls for scalar UDFs while the recorded main R thread drains the
+queue. This is for safety and liveness, not automatic speed: R API work
+still runs on the main thread.
 
 ``` r
-rducks_register(
+rducks_register_scalar_udf(
   con,
   name = "r_inproc_plus_one",
   fun = function(x) x + 1,
   args = DOUBLE,
   returns = DOUBLE
 )
-#> <rducks_registration>
-#>   registered: yes
-#>   name:       r_inproc_plus_one
-#>   mode:       scalar
-#>   plan:       arrow_r+serial
-#>   signature:  r_inproc_plus_one(DOUBLE) -> DOUBLE
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_inproc_plus_one
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       r_inproc_plus_one(DOUBLE) -> DOUBLE
 
 rducks_enable_inproc(con, threads = 4, external_threads = 1)
 dbExecute(con, "CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)")
@@ -654,9 +668,9 @@ Operationally:
 - `ipc_transport` chooses local mirai worker endpoints: `abstract`,
   `ipc`, `unix`, `tcp`, or `ws`.
 - `ipc_timeout` is used for worker registration/control requests and for
-  native NNG send/receive on each UDF’s client pool.
+  native NNG send/receive on each scalar UDF’s client pool.
 - Worker providers are reused by runtime, worker count, max-pending
-  limit, and endpoint/transport choice. Registering another function
+  limit, and endpoint/transport choice. Registering another scalar UDF
   with the same IPC provider key reuses the existing workers; changing
   that key starts another provider. Changing the default plan does not
   stop old providers.
@@ -682,7 +696,7 @@ For production UDFs with large dependencies, prefer explicit
 global before worker registration so large atomic vectors, lists, and
 data frames travel as compact shared-memory references rather than full
 serialized copies. Rducks keeps those shared objects anchored for the
-registered UDF lifetime.
+registered scalar UDF lifetime.
 
 ``` r
 large_lookup <- rnorm(1e6)
@@ -695,7 +709,7 @@ mori_ipc_plan <- rducks_execution_plan(
 )
 rducks_set_execution_plan(con, mori_ipc_plan, threads = 1, external_threads = 1)
 
-rducks_register(
+rducks_register_scalar_udf(
   con,
   name = "r_with_large_lookup",
   fun = function(x) x + large_lookup[[1L]],
@@ -748,7 +762,7 @@ ipc_plan <- rducks_execution_plan(
 
 register_for_plan <- function(name, plan) {
   rducks_set_execution_plan(con, plan, threads = 1, external_threads = 1)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con,
     name = name,
     fun = chunk_plus_one,
@@ -793,9 +807,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.867         R             16
-#> 2    in-process queue       1 536887296       1.830         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.069      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.856         R             16
+#> 2    in-process queue       1 536887296       1.821         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.033      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

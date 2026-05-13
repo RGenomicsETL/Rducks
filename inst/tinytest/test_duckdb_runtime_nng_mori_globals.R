@@ -28,7 +28,7 @@ local({
   )
   expect_equal(plan$ipc_options$globals_share, "mori")
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_mori_global_offset",
     function(x) x + shared_offsets[[1L]],
     DOUBLE, DOUBLE,

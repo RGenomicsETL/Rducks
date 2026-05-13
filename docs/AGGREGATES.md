@@ -1,8 +1,8 @@
 # R-backed aggregate functions
 
 `rducks_register_aggregate()` is the Rducks aggregate-function API. It is
-separate from scalar/vectorized UDF execution plans because aggregate functions
-have state, update, combine, and finalize phases.
+separate from DuckDB scalar UDF registration and scalar-UDF execution plans
+because aggregate functions have state, update, combine, and finalize phases.
 
 ## State contract
 

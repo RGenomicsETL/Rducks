@@ -68,7 +68,7 @@ sql_compare_expr <- function(got, expected) {
 run_identity <- function(case) {
   maybe_stop_for_limit()
   name <- next_name("id")
-  invisible(rducks_register(con, name, function(x) x, case$type, case$type))
+  invisible(rducks_register_scalar_udf(con, name, function(x) x, case$type, case$type))
   got <- sprintf("%s(%s)", name, case$sql1)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, case$sql1)), paste0("identity ", case$name))
 }
@@ -77,7 +77,7 @@ run_return <- function(case) {
   maybe_stop_for_limit()
   name <- next_name("ret")
   value <- case$r1
-  invisible(rducks_register(con, name, function() value, character(), case$type))
+  invisible(rducks_register_scalar_udf(con, name, function() value, character(), case$type))
   got <- sprintf("%s()", name)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, case$sql1)), paste0("return ", case$name))
 }
@@ -122,8 +122,8 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
   maybe_stop_for_limit()
   row_name <- next_name(paste0(marshalling, "_row"))
   vec_name <- next_name(paste0(marshalling, "_vec"))
-  invisible(rducks_register(con, row_name, function(x) x, type, type, side_effects = TRUE))
-  invisible(rducks_register(con, vec_name, function(x) x, type, type, mode = "vectorized", side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con, row_name, function(x) x, type, type, side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con, vec_name, function(x) x, type, type, mode = "vectorized", side_effects = TRUE))
   row_expr <- sprintf("%s(x)", row_name)
   vec_expr <- sprintf("%s(x)", vec_name)
   default_label <- paste0(marshalling, " vectorized/default vs scalar ", label)
@@ -137,9 +137,9 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
     maybe_stop_for_limit()
     row_special_name <- next_name(paste0(marshalling, "_row_special"))
     vec_special_name <- next_name(paste0(marshalling, "_vec_special"))
-    invisible(rducks_register(con, row_special_name, function(x) x, type, type,
+    invisible(rducks_register_scalar_udf(con, row_special_name, function(x) x, type, type,
                               null_handling = "special", side_effects = TRUE))
-    invisible(rducks_register(con, vec_special_name, function(x) x, type, type,
+    invisible(rducks_register_scalar_udf(con, vec_special_name, function(x) x, type, type,
                               mode = "vectorized", null_handling = "special", side_effects = TRUE))
     row_special_expr <- sprintf("%s(x)", row_special_name)
     vec_special_expr <- sprintf("%s(x)", vec_special_name)
@@ -153,7 +153,7 @@ run_vectorized_row_conformance_one_plan <- function(marshalling, type, sql1, sql
 
   maybe_stop_for_limit()
   vec_error_name <- next_name(paste0(marshalling, "_vec_return_null"))
-  invisible(rducks_register(con, vec_error_name, function(x) stop("boom"), type, type,
+  invisible(rducks_register_scalar_udf(con, vec_error_name, function(x) stop("boom"), type, type,
                             mode = "vectorized", exception_handling = "return_null",
                             side_effects = TRUE))
   error_label <- paste0(marshalling, " vectorized/return_null ", label)
@@ -191,7 +191,7 @@ run_scalar_return_null_one_plan <- function(marshalling, type, sql1, sql2, label
 
   maybe_stop_for_limit()
   error_name <- next_name(paste0(marshalling, "_scalar_return_null"))
-  invisible(rducks_register(con, error_name, function(x) stop("boom"), type, type,
+  invisible(rducks_register_scalar_udf(con, error_name, function(x) stop("boom"), type, type,
                             exception_handling = "return_null", side_effects = TRUE))
   error_label <- paste0(marshalling, " scalar/return_null ", label)
   sql_ok(
@@ -224,7 +224,7 @@ run_arrow_c_scalar_strict_counters <- function(type, sql1, sql2, label, include_
 
   maybe_stop_for_limit()
   default_name <- next_name("arrow_c_scalar")
-  invisible(rducks_register(con, default_name, function(x) x, type, type, side_effects = TRUE))
+  invisible(rducks_register_scalar_udf(con, default_name, function(x) x, type, type, side_effects = TRUE))
   sql_ok(
     sprintf(
       "WITH data(x) AS (VALUES %s) SELECT bool_and(%s) AS ok FROM data",
@@ -238,7 +238,7 @@ run_arrow_c_scalar_strict_counters <- function(type, sql1, sql2, label, include_
   if (include_null) {
     maybe_stop_for_limit()
     special_name <- next_name("arrow_c_scalar_special")
-    invisible(rducks_register(con, special_name, function(x) x, type, type,
+    invisible(rducks_register_scalar_udf(con, special_name, function(x) x, type, type,
                               null_handling = "special", side_effects = TRUE))
     sql_ok(
       sprintf(
@@ -253,7 +253,7 @@ run_arrow_c_scalar_strict_counters <- function(type, sql1, sql2, label, include_
 
   maybe_stop_for_limit()
   error_name <- next_name("arrow_c_scalar_error")
-  invisible(rducks_register(con, error_name, function(x) stop("boom"), type, type,
+  invisible(rducks_register_scalar_udf(con, error_name, function(x) stop("boom"), type, type,
                             exception_handling = "return_null", side_effects = TRUE))
   sql_ok(
     sprintf("SELECT %s(%s) IS NULL AS ok", error_name, sql1),
@@ -301,7 +301,7 @@ run_composite_identity <- function(case, shape) {
     stop("unknown shape", call. = FALSE)
   )
   name <- next_name(shape)
-  invisible(rducks_register(con, name, function(x) x, spec$type, spec$type))
+  invisible(rducks_register_scalar_udf(con, name, function(x) x, spec$type, spec$type))
   got <- sprintf("%s(%s)", name, spec$sql)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got, spec$sql)), paste(shape, case$name))
   run_arrow_c_scalar_strict_counters(spec$type, spec$sql, spec$sql, paste(shape, case$name), include_null = !identical(case$name, "union"))
@@ -310,7 +310,7 @@ run_composite_identity <- function(case, shape) {
   maybe_stop_for_limit()
   ret_name <- next_name(paste0("ret_", shape))
   value <- spec$r
-  invisible(rducks_register(con, ret_name, function() value, character(), spec$type))
+  invisible(rducks_register_scalar_udf(con, ret_name, function() value, character(), spec$type))
   got_ret <- sprintf("%s()", ret_name)
   sql_ok(sprintf("SELECT %s AS ok", sql_compare_expr(got_ret, spec$sql)), paste("return", shape, case$name))
 }
@@ -373,7 +373,7 @@ run_arrow_c_unsupported_negative_cases <- function() {
   for (case in unsupported_cases) {
     fname <- next_name(paste0("arrow_c_unsupported_", case$name))
     expect_registration_error(
-      rducks_register(con, fname, function(x) x, list(case$args), case$returns),
+      rducks_register_scalar_udf(con, fname, function(x) x, list(case$args), case$returns),
       "arrow_c direct marshalling is not implemented",
       paste0("arrow_c unsupported ", case$name)
     )

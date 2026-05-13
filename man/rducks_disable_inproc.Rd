@@ -2,7 +2,7 @@
 % Please edit documentation in R/connection.R
 \name{rducks_disable_inproc}
 \alias{rducks_disable_inproc}
-\title{Disable in-process queued R UDF execution}
+\title{Disable in-process queued scalar-UDF execution}
 \usage{
 rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 }

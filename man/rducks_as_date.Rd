@@ -6,7 +6,7 @@
 \alias{rducks_as_time}
 \alias{rducks_as_interval}
 \alias{rducks_interval_between}
-\title{Convert R date/time values to Rducks scalar-mode shapes}
+\title{Convert R date/time values to Rducks scalar-UDF shapes}
 \usage{
 rducks_as_date(x, tz = "UTC", origin = "1970-01-01")
 
@@ -50,6 +50,6 @@ numeric seconds since midnight; \code{rducks_as_timestamp()} returns \code{POSIX
 }
 \description{
 These helpers normalize common R date/time inputs to the R value shapes used
-by Rducks scalar-mode marshalling for DuckDB \code{DATE}, \code{TIME}, \code{TIMESTAMP}, and
+by Rducks DuckDB scalar-UDF marshalling for \code{DATE}, \code{TIME}, \code{TIMESTAMP}, and
 \code{INTERVAL} values.
 }

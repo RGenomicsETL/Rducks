@@ -36,7 +36,7 @@ if (!repeat_enabled) {
       rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
 
       fn <- paste0("nng_ws_repeat_", sprintf("%02d", i))
-      rducks_register(
+      rducks_register_scalar_udf(
         con, fn,
         function(x) x + 1L,
         INTEGER,

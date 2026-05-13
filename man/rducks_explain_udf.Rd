@@ -2,25 +2,29 @@
 % Please edit documentation in R/explain.R
 \name{rducks_explain_udf}
 \alias{rducks_explain_udf}
-\title{Explain a registered Rducks UDF}
+\title{Explain a registered Rducks scalar UDF}
 \usage{
 rducks_explain_udf(con, name)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection} with Rducks enabled.}
 
-\item{name}{SQL function name registered with \code{\link[=rducks_register]{rducks_register()}}.}
+\item{name}{SQL scalar-UDF function name registered with
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}.}
 }
 \value{
-A one-row data frame with registration metadata and native counters.
+A one-row data frame with scalar-UDF registration metadata and native counters.
 }
 \description{
 Returns the R-side registration metadata together with native execution
-counters for a UDF registered by \code{\link[=rducks_register]{rducks_register()}}. The \code{r_side_record}
-column is \code{FALSE} when native catalog metadata is still present but the
-connection-local R registry view was detached or is otherwise unavailable.
-The native counters are
-useful for checking that a plan executed through its requested evaluator
-instead of silently switching engines: for example, an \code{arrow_c} scalar UDF should
-increment \code{arrow_c_chunks} and leave \code{arrow_r_chunks} unchanged.
+counters for a DuckDB scalar UDF registered by
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. The
+\code{mode} column is the Rducks scalar-UDF evaluation mode, while \code{plan_id},
+\code{marshalling}, and \code{concurrency} describe the frozen execution plan. The
+\code{r_side_record} column is \code{FALSE} when native catalog metadata is still
+present but the connection-local R registry view was detached or is otherwise
+unavailable. The native counters are useful for checking that a plan executed
+through its requested evaluator instead of silently switching engines: for
+example, an \code{arrow_c} scalar UDF should increment \code{arrow_c_chunks} and leave
+\code{arrow_r_chunks} unchanged.
 }

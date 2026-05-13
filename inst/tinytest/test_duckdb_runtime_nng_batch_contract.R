@@ -104,7 +104,7 @@ local({
     ipc_timeout = 5
   )
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con, "rducks_multibatch_result",
     function(x) x + 1L,
     INTEGER, INTEGER,

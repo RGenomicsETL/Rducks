@@ -532,7 +532,7 @@ if (tpch_available) {
 
 # Memory trend probes
 
-These loops repeat already-registered UDFs. They are intended to catch obvious
+These loops repeat already-registered scalar UDFs. They are intended to catch obvious
 per-call leaks in the execution path. They do not treat one-time registration
 state as a leak, and they do not prove allocator memory must return to the OS.
 Inspect the slope and the raw CSV in `bench_dir`.

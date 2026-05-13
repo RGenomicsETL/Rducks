@@ -112,7 +112,7 @@ Implemented behavior to preserve:
   `arrow_c_direct_main_queue`, `ipc_future_pool`, or `ipc_mirai_pool`. These
   engine ids are accepted as internal shortcuts while the user-facing pair API
   remains stable.
-- The active plan at `rducks_register()` chooses the native evaluator stored in
+- The active plan at `rducks_register_scalar_udf()` chooses the native evaluator stored in
   DuckDB UDF metadata (`R`, `RC`, `RCV`, or `RIPC`). Later plan changes alter the
   runtime concurrency backend, but do not retarget already-registered UDF
   marshalling.
@@ -194,7 +194,7 @@ Resolved decisions:
   process-local `(runtime_id, generation)` token, not a raw `duckdb_database`
   pointer, DuckDB connection id, or R object address.
 - **Registration-time marshalling:** the execution plan active at
-  `rducks_register()` freezes the UDF's evaluator/marshalling metadata. Later
+  `rducks_register_scalar_udf()` freezes the UDF's evaluator/marshalling metadata. Later
   plan changes affect connection defaults and the native concurrency backend;
   they do not retarget already-registered UDFs.
 - **`rducks_inproc_stats()` scope:** runtime-wide queue pressure counters live in
@@ -244,7 +244,7 @@ Still-open or blocked decisions:
     closures.
 
 - [x] Remove raw SEXP pointer-through-SQL evaluator registration.
-  - `rducks_register()` now stores the evaluator in a temporary R-side registry
+  - `rducks_register_scalar_udf()` now stores the evaluator in a temporary R-side registry
     and passes an opaque evaluator id/token to the DuckDB extension.
   - Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
     error instead of letting native code cast arbitrary integers to `SEXP`.
@@ -321,7 +321,7 @@ Still-open or blocked decisions:
     immediately only on the recorded main R thread; off-main destructors enqueue
     them for later safe release.
   - Safe drain points include `rducks_enable()`, `rducks_release()`,
-    `rducks_register()`, UDF execution, and metadata/stat queries.
+    `rducks_register_scalar_udf()`, UDF execution, and metadata/stat queries.
   - `rducks_release_stats()` exposes queued/released/failed/pending counters.
 
 - [x] Extend no-fallback assertions for `arrow_c` direct registration.

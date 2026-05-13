@@ -41,7 +41,7 @@ following:
 2. DuckDB availability in that runtime.
 3. Rducks extension artifact discovery and load.
 4. `rducks_enable()`.
-5. UDF registration and a SQL query using that UDF.
+5. Scalar-UDF registration and a SQL query using that UDF.
 6. A strict-plan counter check for each claimed execution plan.
 
 Unsupported plans must be documented explicitly.

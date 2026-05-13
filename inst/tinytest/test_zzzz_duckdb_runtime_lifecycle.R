@@ -15,7 +15,7 @@ rducks_runtime_lifecycle_body <- function() {
       con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
       rducks_enable(con, threads = "single")
       rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
-      reg <- rducks_register(con, "rducks_lifecycle_plus_one", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER)
+      reg <- rducks_register_scalar_udf(con, "rducks_lifecycle_plus_one", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER)
       conn_ref <- Rducks:::rducks_connection_ref(con)
       ref_key <- Rducks:::rducks_connection_ref_key(conn_ref)
       token <- Rducks:::rducks_connection_key(con)
@@ -46,7 +46,7 @@ rducks_runtime_lifecycle_body <- function() {
     on.exit(DBI::dbDisconnect(con_plain, shutdown = TRUE), add = TRUE)
 
     rducks_enable(con_enabled, threads = "single")
-    invisible(rducks_register(con_enabled, "rducks_lifecycle_enabled_only", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
+    invisible(rducks_register_scalar_udf(con_enabled, "rducks_lifecycle_enabled_only", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
     expect_equal(NROW(rducks_list_udfs(con_plain)), 0L)
     rducks_enable(con_plain, threads = "single")
     expect_true("rducks_lifecycle_enabled_only" %in% rducks_list_udfs(con_plain)$name)
@@ -91,8 +91,8 @@ rducks_runtime_lifecycle_body <- function() {
     expect_equal(rducks_current_execution_plan(con1)$plan_id, "arrow_c+serial")
     expect_equal(rducks_current_execution_plan(con2)$plan_id, "arrow_r+serial")
 
-    invisible(rducks_register(con1, "rducks_lifecycle_con1", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
-    invisible(rducks_register(con2, "rducks_lifecycle_con2", rducks_lifecycle_times_two_fun, INTEGER, INTEGER))
+    invisible(rducks_register_scalar_udf(con1, "rducks_lifecycle_con1", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
+    invisible(rducks_register_scalar_udf(con2, "rducks_lifecycle_con2", rducks_lifecycle_times_two_fun, INTEGER, INTEGER))
     expect_false(exists(token1, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
     expect_false(exists(token2, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
     expect_true(exists(db_token1, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
@@ -136,7 +136,7 @@ rducks_runtime_lifecycle_body <- function() {
       rducks_enable(con, threads = "single")
       rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
       name <- paste0("rducks_lifecycle_loop_", i)
-      invisible(rducks_register(con, name, rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
+      invisible(rducks_register_scalar_udf(con, name, rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
       expect_equal(DBI::dbGetQuery(con, sprintf("SELECT %s(41::INTEGER) AS x", name))$x, 42L)
 
       token <- Rducks:::rducks_connection_key(con)

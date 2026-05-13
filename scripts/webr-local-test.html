@@ -84,7 +84,7 @@
             con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = 'true')), dbdir = ':memory:')
             on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
             rducks_enable(con, threads = 'single')
-            rducks_register(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
+            rducks_register_scalar_udf(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
             out <- DBI::dbGetQuery(con, 'SELECT r_webr_plus_one(41::INTEGER) AS x')
             stopifnot(identical(out$x[[1]], 42L))
             cat('DuckDB extension smoke: ok\\n')

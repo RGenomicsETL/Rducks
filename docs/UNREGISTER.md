@@ -3,7 +3,7 @@
 Rducks does not expose `rducks_unregister()`.
 
 DuckDB function catalog entries registered by the extension are database-scoped.
-A UDF registered through one DBI connection can be visible to sibling connections
+A scalar UDF registered through one DBI connection can be visible to sibling connections
 using the same in-process DuckDB database. Removing it from one connection's
 cleanup path would be a destructive catalog operation with native/R lifetime
 consequences.
@@ -21,9 +21,9 @@ consequences.
   requests to them during release.
 - Registered DuckDB catalog functions remain callable while their catalog
   metadata exists; after last-anchor cleanup of a Rducks-launched local IPC
-  provider, IPC UDFs need a live IPC route from a new registration before they
+  provider, IPC scalar UDFs need a live IPC route from a new registration before they
   can execute again.
-- Preserved R closures remain owned by native UDF metadata while that metadata
+- Preserved R closures remain owned by native scalar-UDF metadata while that metadata
   can call them.
 - Re-registering the same SQL name/signature replaces the callable
   implementation.

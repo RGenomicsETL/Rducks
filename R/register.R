@@ -59,7 +59,7 @@ rducks_evaluator_ref_remove <- function(handle) {
   invisible(NULL)
 }
 
-rducks_registration_spec <- function(name, fun, args, returns, mode) {
+rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode) {
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
   }
@@ -87,7 +87,7 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
   unsupported <- unsupported[nzchar(unsupported)]
   if (length(unsupported)) {
     stop(
-      spec$mode, "-mode marshalling is not implemented yet for: ",
+      "DuckDB scalar-UDF ", spec$mode, " evaluation marshalling is not implemented yet for: ",
       paste(unique(unsupported), collapse = ", "),
       call. = FALSE
     )
@@ -95,20 +95,27 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
   invisible(NULL)
 }
 
-#' Register an R UDF in DuckDB
+#' Register an R-backed DuckDB scalar UDF
 #'
-#' Registers an R function as a DuckDB SQL function using the loaded Rducks
-#' extension. Registration requires `external_threads=1` plus
-#' `PRAGMA threads=1` so native registration and the default scalar execution
-#' path stay on the calling R thread. The active \code{\link[=rducks_execution_plan]{rducks_execution_plan()}}
-#' selects and freezes the marshalling implementation for this registration;
-#' unsupported plan/mode/type combinations fail instead of switching engines. If a
-#' later call registers the same SQL name/signature, the callable implementation
-#' is replaced in the shared DuckDB database catalog rather than being tied to
-#' the registering DBI connection. After registration, use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}}
-#' to opt into queued same-process execution. For `arrow_ipc` plans, the UDF
-#' closure and discovered globals are copied once to each NNG worker in the
-#' shared provider pool and retained for that pool's lifetime.
+#' Registers an R function as a DuckDB scalar SQL function using the loaded
+#' Rducks extension. In DuckDB terminology this is a scalar UDF: it returns one
+#' SQL value for each logical input row. The `mode` argument is Rducks'
+#' evaluation mode for that scalar UDF, not a DuckDB function kind:
+#' `"scalar"` calls the R function once per logical row, while `"vectorized"`
+#' calls the R function once per DuckDB chunk with vector/list-column inputs.
+#'
+#' Registration requires `external_threads=1` plus `PRAGMA threads=1` so native
+#' registration and the default scalar evaluation path stay on the calling R
+#' thread. The active \code{\link[=rducks_execution_plan]{rducks_execution_plan()}}
+#' selects and freezes the marshalling/concurrency implementation for this
+#' registration; unsupported plan/evaluation-mode/type combinations fail instead
+#' of switching engines. If a later call registers the same SQL name/signature,
+#' the callable implementation is replaced in the shared DuckDB database catalog
+#' rather than being tied to the registering DBI connection. After registration,
+#' use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
+#' queued same-process execution. For `arrow_ipc` plans, the UDF closure and
+#' discovered globals are copied once to each NNG worker in the shared provider
+#' pool and retained for that pool's lifetime.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -118,9 +125,10 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #'   `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
 #'   `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
-#' @param mode Registration mode. `"scalar"` calls the R function once per
-#'   DuckDB row. `"vectorized"` calls the R function once per DuckDB chunk with
-#'   one R vector/list-column per declared argument.
+#' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
+#'   calls the R function once per DuckDB row. `"vectorized"` calls the R
+#'   function once per DuckDB chunk with one R vector/list-column per declared
+#'   argument.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for
@@ -133,15 +141,15 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @param side_effects Logical scalar. Use `TRUE` for functions with randomness,
 #'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
 #'   function as pure.
-#' @return Object of class `rducks_registration` containing the connection,
-#'   normalized signature, and registration options. The UDF remains registered
-#'   in DuckDB even if this object is discarded.
+#' @return Object of class `rducks_scalar_udf_registration` containing the
+#'   connection, normalized signature, and registration options. The scalar UDF
+#'   remains registered in DuckDB even if this object is discarded.
 #' @export
-rducks_register <- function(con, name, fun, args, returns,
-                            mode = "scalar",
-                            null_handling = c("default", "special"),
-                            exception_handling = c("rethrow", "return_null"),
-                            side_effects = FALSE) {
+rducks_register_scalar_udf <- function(con, name, fun, args, returns,
+                                       mode = "scalar",
+                                       null_handling = c("default", "special"),
+                                       exception_handling = c("rethrow", "return_null"),
+                                       side_effects = FALSE) {
   mode <- rducks_match_mode(mode)
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
@@ -151,7 +159,7 @@ rducks_register <- function(con, name, fun, args, returns,
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
-  spec <- rducks_registration_spec(name, fun, args, returns, mode = mode)
+  spec <- rducks_scalar_udf_registration_spec(name, fun, args, returns, mode = mode)
   plan <- rducks_current_execution_plan(con)
   rducks_assert_arrow_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
@@ -212,22 +220,22 @@ rducks_register <- function(con, name, fun, args, returns,
       execution_plan = plan,
       registered = TRUE
     ),
-    class = "rducks_registration"
+    class = "rducks_scalar_udf_registration"
   )
   rducks_store_registration(registration)
   registration
 }
 
 #' @export
-print.rducks_registration <- function(x, ...) {
-  cat("<rducks_registration>\n")
-  cat("  registered: ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
-  cat("  name:       ", x$spec$name, "\n", sep = "")
-  cat("  mode:       ", x$spec$mode, "\n", sep = "")
+print.rducks_scalar_udf_registration <- function(x, ...) {
+  cat("<rducks_scalar_udf_registration>\n")
+  cat("  registered:      ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
+  cat("  name:            ", x$spec$name, "\n", sep = "")
+  cat("  evaluation_mode: ", x$spec$mode, "\n", sep = "")
   if (!is.null(x$execution_plan)) {
-    cat("  plan:       ", x$execution_plan$plan_id, "\n", sep = "")
+    cat("  plan:            ", x$execution_plan$plan_id, "\n", sep = "")
   }
-  cat("  signature:  ", x$spec$signature, "\n", sep = "")
+  cat("  signature:       ", x$spec$signature, "\n", sep = "")
   invisible(x)
 }
 
@@ -316,7 +324,8 @@ rducks_table_as_arrow_array <- function(result) {
 #' Data stream, imports it into a DuckDB chunk, and emits row batches from
 #' that imported chunk during table-function scans.
 #'
-#' This is intentionally separate from scalar/vectorized UDF registration: table
+#' This is intentionally separate from DuckDB scalar-UDF registration through
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
 #' functions have their own bind/init/scan state and currently support only the
 #' one-shot finite table shape. DuckDB table functions can have bind-time dynamic
 #' schemas and broad input signatures; this Rducks API follows that model

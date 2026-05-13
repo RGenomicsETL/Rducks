@@ -25,7 +25,7 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
-  invisible(rducks_register(
+  invisible(rducks_register_scalar_udf(
     con,
     "rducks_chunk_probe",
     function(x) {

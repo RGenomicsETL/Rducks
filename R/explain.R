@@ -185,20 +185,24 @@ rducks_explain_udf_row <- function(con, name) {
   )
 }
 
-#' Explain a registered Rducks UDF
+#' Explain a registered Rducks scalar UDF
 #'
 #' Returns the R-side registration metadata together with native execution
-#' counters for a UDF registered by \code{\link[=rducks_register]{rducks_register()}}. The `r_side_record`
-#' column is `FALSE` when native catalog metadata is still present but the
-#' connection-local R registry view was detached or is otherwise unavailable.
-#' The native counters are
-#' useful for checking that a plan executed through its requested evaluator
-#' instead of silently switching engines: for example, an `arrow_c` scalar UDF should
-#' increment `arrow_c_chunks` and leave `arrow_r_chunks` unchanged.
+#' counters for a DuckDB scalar UDF registered by
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. The
+#' `mode` column is the Rducks scalar-UDF evaluation mode, while `plan_id`,
+#' `marshalling`, and `concurrency` describe the frozen execution plan. The
+#' `r_side_record` column is `FALSE` when native catalog metadata is still
+#' present but the connection-local R registry view was detached or is otherwise
+#' unavailable. The native counters are useful for checking that a plan executed
+#' through its requested evaluator instead of silently switching engines: for
+#' example, an `arrow_c` scalar UDF should increment `arrow_c_chunks` and leave
+#' `arrow_r_chunks` unchanged.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
-#' @param name SQL function name registered with \code{\link[=rducks_register]{rducks_register()}}.
-#' @return A one-row data frame with registration metadata and native counters.
+#' @param name SQL scalar-UDF function name registered with
+#'   \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}.
+#' @return A one-row data frame with scalar-UDF registration metadata and native counters.
 #' @export
 rducks_explain_udf <- function(con, name) {
   rducks_assert_duckdb_connection(con)
@@ -209,15 +213,16 @@ rducks_explain_udf <- function(con, name) {
   rducks_explain_udf_row(con, name)
 }
 
-#' Reset Rducks UDF counters
+#' Reset Rducks scalar-UDF counters
 #'
-#' Resets native per-UDF diagnostic counters without unregistering any DuckDB
-#' catalog function. Current liveness gauges such as pending/in-flight counts are
-#' preserved; their max fields are reset to the current values.
+#' Resets native per-scalar-UDF diagnostic counters without unregistering any
+#' DuckDB catalog function. Current liveness gauges such as pending/in-flight
+#' counts are preserved; their max fields are reset to the current values.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
-#' @param name Optional SQL function name registered with \code{\link[=rducks_register]{rducks_register()}}. If
-#'   `NULL`, reset counters for all native Rducks UDFs in the database runtime.
+#' @param name Optional SQL scalar-UDF function name registered with
+#'   \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. If
+#'   `NULL`, reset counters for all native Rducks scalar UDFs in the database runtime.
 #' @return Invisibly `TRUE` on success.
 #' @export
 rducks_reset_udf_counters <- function(con, name = NULL) {
@@ -235,17 +240,20 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
   invisible(TRUE)
 }
 
-#' List registered Rducks UDFs
+#' List registered Rducks scalar UDFs
 #'
-#' Returns one row per UDF registered through \code{\link[=rducks_register]{rducks_register()}} in the current
-#' DuckDB database runtime, including the same registration metadata and native
-#' counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}. This is an Rducks registry view, not a
-#' complete DuckDB catalog listing: functions registered by other extensions or
-#' raw SQL are not included. Because DuckDB's function catalog is database
-#' scoped, sibling DBI connections to the same database runtime share this view.
+#' Returns one row per DuckDB scalar UDF registered through
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}} in
+#' the current DuckDB database runtime, including the same registration metadata
+#' and native counters as \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
+#' This is an Rducks scalar-UDF registry view, not a complete DuckDB catalog
+#' listing: aggregate functions, table functions, functions registered by other
+#' extensions, and raw SQL functions are not included. Because DuckDB's function
+#' catalog is database scoped, sibling DBI connections to the same database
+#' runtime share this view.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
-#' @return A data frame with one row per Rducks UDF registered on `con`.
+#' @return A data frame with one row per Rducks scalar UDF registered on `con`.
 #' @export
 rducks_list_udfs <- function(con) {
   rducks_assert_duckdb_connection(con)

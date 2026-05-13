@@ -60,7 +60,7 @@ conservative `codetools`-style discovery misses globals needed by parallel
 workers and why `globals::findGlobals(..., method = "dfs")` was added:
 <https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/>.
 
-For production IPC UDFs with large or subtle dependencies, prefer explicit
+For production IPC scalar UDFs with large or subtle dependencies, prefer explicit
 `ipc_globals` and `ipc_packages`. Use `ipc_globals_share = "mori"` only for
 same-host workers. It is meant for large read-only R globals, not for the SQL
 chunk data plane.

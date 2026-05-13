@@ -12,9 +12,9 @@ rducks_enable(con_r, threads = "single")
 rducks_enable(con_c, threads = "single")
 rducks_set_execution_plan(con_c, rducks_execution_plan("arrow_c", "serial"))
 
-invisible(rducks_register(con_r, "bench_eval", function(x) x + 1, DOUBLE, DOUBLE,
+invisible(rducks_register_scalar_udf(con_r, "bench_eval", function(x) x + 1, DOUBLE, DOUBLE,
                           side_effects = TRUE))
-invisible(rducks_register(con_c, "bench_eval", function(x) x + 1, DOUBLE, DOUBLE,
+invisible(rducks_register_scalar_udf(con_c, "bench_eval", function(x) x + 1, DOUBLE, DOUBLE,
                           side_effects = TRUE))
 
 for (n in c(10000L, 100000L, 300000L)) {

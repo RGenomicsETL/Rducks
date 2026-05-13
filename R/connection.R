@@ -54,18 +54,19 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   invisible(con)
 }
 
-#' Enable in-process queued R UDF execution
+#' Enable in-process queued scalar-UDF execution
 #'
-#' Switches a Rducks-enabled DuckDB connection to the in-process queued R UDF
-#' backend. This backend preserves R's thread discipline: DuckDB worker-side UDF
-#' callbacks submit chunk requests to an extension-owned queue, and the recorded
-#' main R thread drains the queue and performs all R API work. This is a
+#' Switches a Rducks-enabled DuckDB connection to the in-process queued
+#' scalar-UDF backend. This backend preserves R's thread discipline: DuckDB
+#' worker-side scalar-UDF callbacks submit chunk requests to an extension-owned
+#' queue, and the recorded main R thread drains the queue and performs all R API
+#' work. This is a
 #' same-process scheduling mode, not a performance promise; R function calls are
 #' still serialized on the main R thread. This helper changes only the
 #' concurrency part of the active execution plan; marshalling stays `arrow_r` or
 #' `arrow_c` according to \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}.
 #'
-#' Register UDFs while the connection is in the registration-safe
+#' Register scalar UDFs while the connection is in the registration-safe
 #' configuration, then call `rducks_enable_inproc()` before running queries that
 #' should use the queued in-process path. Use `threads`/`external_threads` here
 #' to adjust DuckDB's thread settings for queued execution.
@@ -87,7 +88,7 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
   invisible(con)
 }
 
-#' Disable in-process queued R UDF execution
+#' Disable in-process queued scalar-UDF execution
 #'
 #' Switches a Rducks-enabled DuckDB connection back to the direct serial backend.
 #' Optionally updates DuckDB thread settings at the same time.
@@ -110,7 +111,7 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #'
 #' Detaches Rducks' connection-local R state for `con`. This clears the current
 #' default execution plan and releases this connection's R-side runtime anchor.
-#' It does not drop DuckDB catalog functions, unregister UDFs, or release
+#' It does not drop DuckDB catalog functions, unregister scalar UDFs, or release
 #' native-owned R closures that are still referenced by database-scoped catalog
 #' metadata. If sibling DBI connections are attached to the same DuckDB database
 #' runtime, their database-scoped Rducks registration metadata remains visible.
@@ -179,7 +180,7 @@ rducks_detach <- function(con) {
 #' callback-frame input/output storage, so running-timeout cancellation is
 #' intentionally not supported and is reported via
 #' `running_timeout_supported = FALSE`. This is a runtime queue summary; for
-#' per-UDF execution detail such as selected evaluator, Arrow IPC waves, direct
+#' per-scalar-UDF execution detail such as selected evaluator, Arrow IPC waves, direct
 #' `arrow_c` input snapshots, and owned result-chunk counters, use
 #' \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
 #'
@@ -212,8 +213,9 @@ rducks_inproc_stats <- function(con) {
 #' Returns process-local diagnostics for preserved R objects that native DuckDB
 #' catalog metadata could not release immediately because destruction happened
 #' off the recorded main R thread. Safe main-thread drain points include
-#' \code{\link[=rducks_enable]{rducks_enable()}}, \code{\link[=rducks_release]{rducks_release()}}, \code{\link[=rducks_register]{rducks_register()}}, UDF execution, and
-#' metadata/stat queries.
+#' \code{\link[=rducks_enable]{rducks_enable()}}, \code{\link[=rducks_release]{rducks_release()}},
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}},
+#' scalar-UDF execution, and metadata/stat queries.
 #'
 #' @param con A `duckdb_connection`.
 #' @return A one-row data frame with queued, released, failed, and pending
@@ -377,11 +379,13 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' Set the Rducks execution plan for a connection
 #'
 #' Stores the R-side default execution plan used by subsequent
-#' \code{\link[=rducks_register]{rducks_register()}} calls through this connection and updates the native
-#' runtime backend needed by that plan. Registration still defines UDF semantics
-#' such as scalar versus vectorized call shape, declared types, NULL handling,
-#' error handling, and side effects. The selected evaluator/marshalling for an
-#' already-registered UDF remains frozen in its database-catalog metadata.
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}} calls
+#' through this connection and updates the native runtime backend needed by that
+#' plan. Scalar-UDF registration still defines Rducks evaluation semantics such
+#' as scalar row calls versus vectorized chunk calls, declared types, NULL
+#' handling, error handling, and side effects. The selected evaluator/marshalling
+#' for an already-registered scalar UDF remains frozen in its database-catalog
+#' metadata.
 #'
 #' @param con A `duckdb_connection` already enabled with \code{\link[=rducks_enable]{rducks_enable()}}.
 #' @param plan An `rducks_execution_plan()` object.

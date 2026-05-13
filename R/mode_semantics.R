@@ -32,19 +32,23 @@ rducks_match_mode <- function(mode) {
   mode
 }
 
-#' Describe Rducks execution mode semantics
+#' Describe Rducks scalar-UDF evaluation mode semantics
 #'
-#' `rducks_mode_semantics()` is the package-level schema for execution-mode
-#' semantics. `mode = "scalar"` calls the R function once for each DuckDB row.
-#' `mode = "vectorized"` calls the R function once per DuckDB chunk with one R
-#' vector/list-column per declared argument. Vectorized mode is exposed for
-#' `arrow_r`, direct `arrow_c`, and worker-provider `arrow_ipc` plans.
+#' `rducks_mode_semantics()` is the package-level schema for Rducks evaluation
+#' modes used by DuckDB scalar UDFs registered with
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. This
+#' is distinct from DuckDB function kind (scalar, aggregate, or table) and from
+#' Rducks execution plans. `mode = "scalar"` calls the R function once for each
+#' DuckDB row. `mode = "vectorized"` calls the R function once per DuckDB chunk
+#' with one R vector/list-column per declared argument. Vectorized mode is
+#' exposed for `arrow_r`, direct `arrow_c`, and worker-provider `arrow_ipc`
+#' plans.
 #'
-#' @param mode Optional character vector of mode names. When `NULL`, all known
-#'   modes are returned.
+#' @param mode Optional character vector of scalar-UDF evaluation mode names.
+#'   When `NULL`, all known modes are returned.
 #' @return A data frame describing status, call granularity, input and return
 #'   shape, NULL handling, length checks, error behavior, threading, and copy
-#'   semantics for each mode.
+#'   semantics for each scalar-UDF evaluation mode.
 #' @export
 rducks_mode_semantics <- function(mode = NULL) {
   modes <- names(rducks_mode_semantics_rows)

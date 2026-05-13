@@ -17,6 +17,7 @@ counters.
 Returns process-local diagnostics for preserved R objects that native DuckDB
 catalog metadata could not release immediately because destruction happened
 off the recorded main R thread. Safe main-thread drain points include
-\code{\link[=rducks_enable]{rducks_enable()}}, \code{\link[=rducks_release]{rducks_release()}}, \code{\link[=rducks_register]{rducks_register()}}, UDF execution, and
-metadata/stat queries.
+\code{\link[=rducks_enable]{rducks_enable()}}, \code{\link[=rducks_release]{rducks_release()}},
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}},
+scalar-UDF execution, and metadata/stat queries.
 }
