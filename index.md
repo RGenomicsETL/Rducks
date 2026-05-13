@@ -257,6 +257,33 @@ dbGetQuery(
 #> 1 3
 ```
 
+## Table functions
+
+[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+registers finite R-backed table functions. The number of positional SQL
+arguments comes from `formals(fun)`, each input is registered as DuckDB
+`ANY`, and the output schema is inferred from the data frame or named
+list returned during DuckDB bind.
+
+``` r
+
+reg_rows <- rducks_register_table(
+  con,
+  name = "r_rows",
+  fun = function(n, prefix) {
+    i <- seq_len(as.integer(n))
+    data.frame(i = i, label = paste0(prefix, i))
+  },
+  chunk_size = 2L
+)
+
+dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
+#>   i label
+#> 1 1 row-1
+#> 2 2 row-2
+#> 3 3 row-3
+```
+
 A tiny benchmark with `bench` can show the call-shape difference for
 simple R work. The result is illustrative rather than a performance
 guarantee.
@@ -272,8 +299,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        284ms      3.51    1.96MB
-#> 2 vectorized    223ms      4.48    2.34MB
+#> 1 scalar        282ms      3.54    1.96MB
+#> 2 vectorized    222ms      4.47    2.34MB
 ```
 
 ## Execution mode semantics
@@ -776,9 +803,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.873         R             16
-#> 2    in-process queue       1 536887296       1.838         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.865         R             16
+#> 2    in-process queue       1 536887296       1.811         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.045      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
