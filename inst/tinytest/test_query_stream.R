@@ -68,6 +68,35 @@ local({
   expect_null(exotic$next_batch())
   expect_true(isTRUE(exotic$close()))
 
+  rb_stream <- rducks_query_stream(
+    con,
+    "SELECT i::INTEGER AS i, ('row-' || i::VARCHAR) AS label FROM range(1, 5) t(i) ORDER BY i",
+    batch_size = 2L,
+    format = "record_batch"
+  )
+  rb_first <- rb_stream$next_batch()
+  expect_true(inherits(rb_first, "nanoarrow_array"))
+  expect_true(inherits(nanoarrow::infer_nanoarrow_schema(rb_first), "nanoarrow_schema"))
+  expect_true(identical(attr(rb_first, "rducks_nanoarrow_schema"), rb_stream$schema))
+  expect_equal(as.data.frame(rb_first)$i, 1:2)
+  rb_second <- rb_stream$next_batch(format = "nanoarrow")
+  expect_true(inherits(rb_second, "nanoarrow_array"))
+  expect_equal(as.data.frame(rb_second)$i, 3:4)
+  expect_null(rb_stream$next_batch())
+  expect_true(isTRUE(rb_stream$close()))
+
+  enum_stream <- rducks_query_stream(
+    con,
+    "SELECT v::ENUM('a', 'b') AS e FROM (VALUES ('a'), ('b')) t(v) ORDER BY v",
+    batch_size = 2L,
+    format = "record_batch"
+  )
+  enum_batch <- enum_stream$next_batch()
+  expect_true(inherits(enum_batch, "nanoarrow_array"))
+  expect_equal(as.character(as.data.frame(enum_batch)$e), c("a", "b"))
+  expect_null(enum_stream$next_batch())
+  expect_true(isTRUE(enum_stream$close()))
+
   expect_error(
     rducks_query_stream(con, "SELECT * FROM rducks_missing_stream_table"),
     "rducks_missing_stream_table|Catalog|does not exist"

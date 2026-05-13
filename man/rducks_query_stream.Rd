@@ -2,9 +2,14 @@
 % Please edit documentation in R/query_stream.R
 \name{rducks_query_stream}
 \alias{rducks_query_stream}
-\title{Stream a DuckDB query in data-frame batches}
+\title{Stream a DuckDB query in batches}
 \usage{
-rducks_query_stream(con, sql, batch_size = 1024L)
+rducks_query_stream(
+  con,
+  sql,
+  batch_size = 1024L,
+  format = c("data.frame", "record_batch", "nanoarrow")
+)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection} with Rducks enabled.}
@@ -14,27 +19,42 @@ rducks_query_stream(con, sql, batch_size = 1024L)
 \item{batch_size}{Maximum number of rows returned by \code{next_batch()} when its
 \code{n} argument is \code{NULL}. DuckDB may fetch a larger native chunk internally;
 Rducks buffers any remainder for later \code{next_batch()} calls.}
+
+\item{format}{Default batch representation. \code{"data.frame"} materializes
+batches to base R data frames. \code{"record_batch"} returns the owned
+\code{nanoarrow_array} record batch directly. \code{"nanoarrow"} is accepted as an
+alias for \code{"record_batch"}.}
 }
 \value{
-Object of class \code{rducks_query_stream} with \code{next_batch(n = NULL)},
-\code{close()}, \code{is_closed()}, \code{schema}, and \code{prototype} fields.
+Object of class \code{rducks_query_stream} with
+\code{next_batch(n = NULL, format = NULL)}, \code{close()}, \code{is_closed()}, \code{schema},
+and \code{prototype} fields.
 }
 \description{
 Opens a connection-bound query stream with explicit \code{next_batch()} and
 \code{close()} methods. The query itself is executed by the Rducks DuckDB extension
-using DuckDB's native streaming result and data-chunk APIs; Rducks converts
-each fetched DuckDB chunk through DuckDB Arrow C Data and the package's
-nanoarrow materializers. This is an R-side result/session API; it is not
-inferred from scalar UDF IPC behavior and does not use the R-backed SQL table
-function path. Because execution uses the extension-owned DuckDB connection,
-database-scoped objects are visible but temporary tables/views that exist only
-on the caller's DBI connection are not part of the stream query scope.
+using DuckDB's native streaming result and data-chunk APIs; each fetched
+DuckDB chunk is exported through DuckDB Arrow C Data. Rducks can either return
+the owned nanoarrow record-batch object directly or materialize it with the
+package's Rducks/nanoarrow helpers. This is an R-side result/session API; it
+is not inferred from scalar UDF IPC behavior and does not use the R-backed SQL
+table function path. Because execution uses the extension-owned DuckDB
+connection, database-scoped objects are visible but temporary tables/views
+that exist only on the caller's DBI connection are not part of the stream
+query scope. Delivery into R runs on the recorded R thread: even
+record-batch mode creates R external-pointer objects and installs nanoarrow
+finalizers, so Rducks does not call R/nanoarrow code from arbitrary DuckDB
+worker threads.
 }
 \details{
-\code{next_batch()} returns the next data-frame batch or \code{NULL} at end-of-stream.
-Returned batches carry the stream's DuckDB/nanoarrow schema as the
-\code{"rducks_nanoarrow_schema"} attribute. \code{close()} clears the native streaming
-result; it is safe to call more than once. A finalizer also closes unclosed
-streams, and \code{rducks_release(con)} closes streams registered on that
-connection before detaching connection-local state.
+\code{next_batch()} returns the next batch or \code{NULL} at end-of-stream. With
+\code{format = "data.frame"} it returns a base R data-frame batch. With
+\code{format = "record_batch"} it returns a \code{nanoarrow_array} struct array with an
+attached \code{nanoarrow_schema}; nanoarrow's R finalizer owns the Arrow C Data
+release callbacks, so callers can materialize later without Rducks copying the
+batch to R vectors first. Returned batches carry the stream's DuckDB/nanoarrow
+schema as the \code{"rducks_nanoarrow_schema"} attribute. \code{close()} clears the
+native streaming result; it is safe to call more than once. A finalizer also
+closes unclosed streams, and \code{rducks_release(con)} closes streams registered
+on that connection before detaching connection-local state.
 }
