@@ -125,6 +125,8 @@ typedef struct rducks_type_desc {
 typedef struct rducks_runtime_entry {
     duckdb_database database;
     duckdb_connection connection;
+    duckdb_connection query_stream_connection;
+    int query_stream_connection_busy;
     uint64_t runtime_id;
     uint64_t generation;
     int registration_surface_ready;
@@ -438,6 +440,28 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
     if (!rducks_runtime_configure_connection(entry->connection, err, err_cap)) {
         duckdb_disconnect(&entry->connection);
         g_runtime_connections_closed++;
+        rducks_runtime_queue_destroy_entry(entry);
+        memset(entry, 0, sizeof(*entry));
+        duckdb_free(entry);
+        rducks_runtime_unlock();
+        return NULL;
+    }
+    if (duckdb_connect(database, &entry->query_stream_connection) == DuckDBError || !entry->query_stream_connection) {
+        g_runtime_connection_open_failed++;
+        duckdb_disconnect(&entry->connection);
+        g_runtime_connections_closed++;
+        rducks_runtime_queue_destroy_entry(entry);
+        memset(entry, 0, sizeof(*entry));
+        duckdb_free(entry);
+        rducks_runtime_unlock();
+        snprintf(err, err_cap, "failed to open Rducks query stream connection");
+        return NULL;
+    }
+    g_runtime_connections_opened++;
+    if (!rducks_runtime_configure_connection(entry->query_stream_connection, err, err_cap)) {
+        duckdb_disconnect(&entry->query_stream_connection);
+        duckdb_disconnect(&entry->connection);
+        g_runtime_connections_closed += 2;
         rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);

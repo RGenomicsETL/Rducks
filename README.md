@@ -40,14 +40,14 @@ execution plans:
   mori shared-memory references with `ipc_globals_share = "mori"`.
 
 Aggregate and table functions use separate APIs and are not scalar-UDF
-execution-plan variants. `rducks_register_aggregate()` stores only
-native raw-byte aggregate state and calls R for serialized
-update/finalize phases on the recorded R thread.
-`rducks_register_table()` covers finite scans whose positional SQL
-argument count is inferred from the R function formals and whose input
-types are registered as DuckDB `ANY`; the output schema is inferred
-during DuckDB bind and the result is imported through nanoarrow Arrow C
-Data before scanning. For R callers that want query results
+execution-plan variants. `rducks_register_aggregate()` stores preserved
+R object aggregate state and can call row-wise or chunk-wise
+update/combine/finalize callbacks on the recorded R thread.
+`rducks_register_table()` covers finite or streaming scans whose
+positional SQL argument count is inferred from the R function formals
+and whose input types are registered as DuckDB `ANY`; finite results are
+imported once during bind, while `rducks_table_stream()` lets scan-time
+batches be imported one at a time. For R callers that want query results
 incrementally, `rducks_query_stream()` provides a connection-bound
 query-batch API with explicit `next_batch()` and `close()` methods.
 Query streams fetch DuckDB native chunks and import them through Arrow C
@@ -242,8 +242,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        315ms      3.22    1.97MB
-#> 2 vectorized    257ms      3.72    2.34MB
+#> 1 scalar        286ms      3.46    1.97MB
+#> 2 vectorized    233ms      4.30    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -494,36 +494,34 @@ dbGetQuery(con, "SELECT r_rng() AS x FROM range(3)")
 
 ## Aggregate functions
 
-`rducks_register_aggregate()` registers serialized R-backed aggregates.
-The state stored in DuckDB is a native copy of the raw vector returned
-by `update(state, ...)`; R object pointers are not stored in aggregate
-state. `finalize(state)` receives the final raw state or `NULL` for a
-group with no non-NULL inputs and returns a scalar compatible with the
-declared return type. Aggregate functions expose a single aggregate
-execution path: serialized R callbacks on the recorded R thread. They do
-not have row-wise/vectorized scalar-UDF evaluation modes and are not
-controlled by scalar-UDF execution plans. Registration requires
+`rducks_register_aggregate()` registers R-backed DuckDB aggregates. The
+aggregate state is an arbitrary R object preserved by the extension, not
+a serialized `raw` vector. Returning `NULL` means an empty/no-state
+aggregate; otherwise update/combine callbacks may return any R object.
+Aggregates still run on the recorded R thread and are not controlled by
+scalar-UDF execution plans. Registration requires
 `rducks_enable(con, threads = "single")`, and execution rejects attempts
 to call R from DuckDB worker threads.
 
 ``` r
-pack_state <- function(x) serialize(x, NULL, version = 2)
-unpack_state <- function(state) {
-  if (is.null(state)) list(sum = 0L, n = 0L) else unserialize(state)
+new_sum_state <- function() {
+  state <- new.env(parent = emptyenv())
+  state$sum <- 0L
+  state$n <- 0L
+  state
 }
 
 reg_r_sum <- rducks_register_aggregate(
   con,
   name = "r_sum_i32",
   update = function(state, x) {
-    s <- unpack_state(state)
-    s$sum <- as.integer(s$sum + x)
-    s$n <- as.integer(s$n + 1L)
-    pack_state(s)
+    if (is.null(state)) state <- new_sum_state()
+    state$sum <- as.integer(state$sum + x)
+    state$n <- as.integer(state$n + 1L)
+    state
   },
   finalize = function(state) {
-    s <- unpack_state(state)
-    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
+    if (is.null(state) || identical(state$n, 0L)) NA_integer_ else as.integer(state$sum)
   },
   args = INTEGER,
   returns = INTEGER
@@ -537,16 +535,23 @@ dbGetQuery(
 #> 1 3
 ```
 
+For chunk-first execution, supply `update_chunk(states, group_id, ...)`
+and optionally `combine_chunk(left_states, right_states)` /
+`finalize_chunk(states)`. `group_id` maps each input row to one element
+of `states`, with `0L` marking rows skipped by default NULL handling.
+
 ## Table functions
 
-`rducks_register_table()` registers finite R-backed table functions. The
-number of positional SQL arguments comes from `formals(fun)`, each input
-is registered as DuckDB `ANY`, and the output schema is inferred from
-the data frame or named list returned during DuckDB bind. Table
-functions expose a single table-function execution path: R callbacks on
-the recorded R thread. They do not have row-wise/vectorized scalar-UDF
-evaluation modes and are not controlled by scalar-UDF execution plans;
-register and execute them with `rducks_enable(con, threads = "single")`.
+`rducks_register_table()` registers finite or streaming R-backed table
+functions. The number of positional SQL arguments comes from
+`formals(fun)`, each input is registered as DuckDB `ANY`, and the output
+schema is inferred at bind time. `fun()` may return a data frame, a
+named list of columns, or `rducks_table_stream()`. Finite results are
+imported once during bind; streaming results provide a prototype plus
+`next_batch()` and are imported one batch at a time during scan.
+Projection pushdown still avoids copying unreferenced columns into
+DuckDB output chunks. Register and execute table functions with
+`rducks_enable(con, threads = "single")`.
 
 ``` r
 reg_rows <- rducks_register_table(
@@ -566,6 +571,10 @@ dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
 #> 3 3 row-3
 ```
 
+When the full result should not be materialized during bind, return
+`rducks_table_stream()` with a zero-row prototype and a `next_batch()`
+callback.
+
 ## Streaming query batches
 
 Use `rducks_query_stream()` when an R caller wants explicit
@@ -576,20 +585,23 @@ exported through DuckDB Arrow C Data and can be returned as owned
 nanoarrow record batches or materialized with the same Rducks/nanoarrow
 conversion helpers used by scalar-UDF marshalling. This path does not
 page over an already materialized DBI result and does not require the
-heavy `arrow` R package. Because execution uses the extension-owned
-DuckDB connection, database-scoped objects are visible, while
-caller-connection temporary tables/views are not part of the stream
-query scope. Delivery into R is intentionally on the recorded R thread
-because record-batch wrapping and optional data-frame materialization
-create R objects; Rducks does not call R/nanoarrow code from arbitrary
-DuckDB worker threads. The returned stream is connection-bound for
-lifecycle and has `next_batch()`, `close()`, and `is_closed()` methods.
-By default `next_batch()` materializes a base R data-frame batch; with
-`format = "record_batch"` it returns the owned nanoarrow record batch
-and leaves R-vector materialization to the caller. Each non-empty batch
-carries the stream’s nanoarrow schema in the `"rducks_nanoarrow_schema"`
-attribute, and `rducks_release(con)` closes streams attached to that
-connection.
+heavy `arrow` R package. Because execution uses a dedicated
+extension-owned query-stream connection, database-scoped objects are
+visible, while caller-connection temporary tables/views are not part of
+the stream query scope. That stream connection is separate from the
+extension connection used for dynamic scalar/table/aggregate
+registration, and a caller connection currently supports one active
+native query stream at a time. Delivery into R is intentionally on the
+recorded R thread because record-batch wrapping and optional data-frame
+materialization create R objects; Rducks does not call R/nanoarrow code
+from arbitrary DuckDB worker threads. The returned stream is
+connection-bound for lifecycle and has `next_batch()`, `close()`, and
+`is_closed()` methods. By default `next_batch()` materializes a base R
+data-frame batch; with `format = "record_batch"` it returns the owned
+nanoarrow record batch and leaves R-vector materialization to the
+caller. Each non-empty batch carries the stream’s nanoarrow schema in
+the `"rducks_nanoarrow_schema"` attribute, and `rducks_release(con)`
+closes streams attached to that connection.
 
 ``` r
 stream <- rducks_query_stream(
@@ -674,7 +686,7 @@ dbGetQuery(con, "SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input")
 #> 1 20000100000
 rducks_inproc_stats(con)[, c("submitted", "executed", "pending_max", "main_drain_batches")]
 #>   submitted executed pending_max main_drain_batches
-#> 1        38       38           1                 37
+#> 1        38       38           1                 38
 rducks_disable_inproc(con, threads = 1)
 ```
 
@@ -832,9 +844,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.859         R             16
-#> 2    in-process queue       1 536887296       1.780         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.059      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.865         R             16
+#> 2    in-process queue       1 536887296       1.799         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.016      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
@@ -865,10 +877,10 @@ extension build and metadata details.
 
 The extension entrypoint receives the DuckDB database handle from
 DuckDB’s extension access struct, stores it in a per-database runtime
-record, and opens an extension-owned DuckDB connection for native
-callback support. On extension reload, Rducks verifies that the active
-connection has the SQL surface registered and re-registers it when
-needed.
+record, and opens extension-owned DuckDB connections for native callback
+support and native query streaming. On extension reload, Rducks verifies
+that the active connection has the SQL surface registered and
+re-registers it when needed.
 
 The unstable DuckDB C extension ABI entries are tracked by
 `tools/used_duckdb_unstable_api.R` and documented in `docs/BUILD.md`.

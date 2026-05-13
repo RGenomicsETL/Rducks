@@ -29,6 +29,9 @@ local({
   third <- stream$next_batch()
   expect_equal(third$i, 5L)
   expect_null(stream$next_batch())
+  post_eof <- rducks_query_stream(con, "SELECT 10::INTEGER AS i", batch_size = 2L)
+  expect_equal(post_eof$next_batch()$i, 10L)
+  expect_true(isTRUE(post_eof$close()))
   expect_true(isTRUE(stream$close()))
   expect_true(stream$is_closed())
 
@@ -43,6 +46,48 @@ local({
   expect_true(isTRUE(early$close()))
   expect_error(early$next_batch(), "closed")
   expect_false(isTRUE(early$close()))
+
+  held <- rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(1, 4) t(i)", batch_size = 2L)
+  expect_error(
+    rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(10, 12) t(i)", batch_size = 2L),
+    "one active native query stream"
+  )
+  expect_equal(held$next_batch()$i, 1:2)
+  expect_true(isTRUE(held$close()))
+
+  reg_after_stream <- rducks_register_scalar_udf(
+    con,
+    "r_after_stream_plus_one",
+    function(x) x + 1,
+    DOUBLE,
+    DOUBLE
+  )
+  expect_inherits(reg_after_stream, "rducks_scalar_udf_registration")
+  expect_equal(DBI::dbGetQuery(con, "SELECT r_after_stream_plus_one(1.0) AS x")$x, 2)
+
+  table_after_stream <- rducks_register_table(
+    con,
+    "r_after_stream_table",
+    function() data.frame(i = 1:3),
+    chunk_size = 2L
+  )
+  expect_inherits(table_after_stream, "rducks_table_registration")
+  expect_equal(DBI::dbGetQuery(con, "SELECT sum(i) AS s FROM r_after_stream_table()")$s, 6)
+
+  aggregate_after_stream <- rducks_register_aggregate(
+    con,
+    "r_after_stream_count_i32",
+    update = function(state, x) as.integer((if (is.null(state)) 0L else state) + 1L),
+    finalize = function(state) as.integer(if (is.null(state)) 0L else state),
+    INTEGER,
+    INTEGER,
+    combine = function(left, right) as.integer((if (is.null(left)) 0L else left) + (if (is.null(right)) 0L else right))
+  )
+  expect_inherits(aggregate_after_stream, "rducks_aggregate_registration")
+  expect_equal(
+    DBI::dbGetQuery(con, "SELECT r_after_stream_count_i32(i) AS n FROM (VALUES (1::INTEGER), (2::INTEGER), (3::INTEGER)) t(i)")$n,
+    3L
+  )
 
   exotic <- rducks_query_stream(
     con,

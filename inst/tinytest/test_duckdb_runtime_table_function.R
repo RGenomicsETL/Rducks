@@ -59,6 +59,104 @@ local({
   expect_equal(nrow(empty), 0L)
   expect_equal(names(empty), c("i", "label"))
 
+  stream_next_calls <- 0L
+  stream_close_calls <- 0L
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming",
+    function() {
+      batch_index <- 0L
+      batches <- list(
+        data.frame(i = 1:2, label = c("a", "b"), ignored = 10:11),
+        data.frame(i = 3:5, label = c("c", "d", "e"), ignored = 12:14)
+      )
+      rducks_table_stream(
+        prototype = data.frame(i = integer(), label = character(), ignored = integer()),
+        cardinality = 5,
+        exact = TRUE,
+        next_batch = function(n) {
+          stream_next_calls <<- stream_next_calls + 1L
+          batch_index <<- batch_index + 1L
+          if (batch_index > length(batches)) return(NULL)
+          batches[[batch_index]]
+        },
+        close = function() {
+          stream_close_calls <<- stream_close_calls + 1L
+        }
+      )
+    },
+    chunk_size = 2L
+  ))
+  streamed <- DBI::dbGetQuery(con, "SELECT label FROM rducks_table_streaming() WHERE i >= 2 ORDER BY label")
+  expect_equal(streamed$label, c("b", "c", "d", "e"))
+  expect_true(stream_next_calls >= 3L)
+  expect_equal(stream_close_calls, 1L)
+
+  stream_count_close_calls <- 0L
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming_count",
+    function() {
+      batch_index <- 0L
+      rducks_table_stream(
+        prototype = data.frame(i = integer(), ignored = integer()),
+        next_batch = function(n) {
+          batch_index <<- batch_index + 1L
+          if (batch_index == 1L) data.frame(i = 1:3, ignored = 11:13) else NULL
+        },
+        close = function() {
+          stream_count_close_calls <<- stream_count_close_calls + 1L
+        }
+      )
+    },
+    chunk_size = 2L
+  ))
+  stream_counted <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM rducks_table_streaming_count()")
+  expect_equal(as.integer(stream_counted$n), 3L)
+  expect_equal(stream_count_close_calls, 1L)
+
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming_type_mismatch",
+    function() {
+      batch_index <- 0L
+      rducks_table_stream(
+        prototype = data.frame(i = integer()),
+        next_batch = function(n) {
+          batch_index <<- batch_index + 1L
+          if (batch_index == 1L) data.frame(i = c(1.5, 2.5)) else NULL
+        }
+      )
+    },
+    chunk_size = 2L
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM rducks_table_streaming_type_mismatch()"),
+    "prototype type"
+  )
+
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming_exact_underflow",
+    function() {
+      batch_index <- 0L
+      rducks_table_stream(
+        prototype = data.frame(i = integer()),
+        cardinality = 3,
+        exact = TRUE,
+        next_batch = function(n) {
+          batch_index <<- batch_index + 1L
+          if (batch_index == 1L) data.frame(i = 1:2) else NULL
+        }
+      )
+    },
+    chunk_size = 2L
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM rducks_table_streaming_exact_underflow()"),
+    "different row count"
+  )
+
   invisible(rducks_register_table(
     con,
     "rducks_table_nulls",

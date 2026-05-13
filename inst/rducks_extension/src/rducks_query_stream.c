@@ -3,6 +3,7 @@
 struct rducks_query_stream_entry {
     char *token;
     rducks_runtime_entry_t *runtime;
+    duckdb_connection connection;
     duckdb_result result;
     int result_initialized;
     int done;
@@ -30,6 +31,11 @@ static void rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry
     if (entry->result_initialized) {
         duckdb_destroy_result(&entry->result);
         entry->result_initialized = 0;
+    }
+    if (entry->runtime && entry->connection && entry->runtime->query_stream_connection == entry->connection) {
+        rducks_runtime_lock();
+        entry->runtime->query_stream_connection_busy = 0;
+        rducks_runtime_unlock();
     }
     if (entry->types) {
         for (idx_t i = 0; i < entry->column_count; i++) {
@@ -372,11 +378,16 @@ static int rducks_query_stream_fill_arrow_schema(rducks_runtime_entry_t *runtime
     const char **names = NULL;
     int ok = 0;
 
+    (void)runtime;
     if (!entry || !schema) {
         snprintf(err_msg, err_cap, "invalid Rducks query stream Arrow schema request");
         return 0;
     }
-    if (!rducks_allocate_arrow_options(runtime, &options, &borrowed_options, err_msg, err_cap)) return 0;
+    if (!entry->connection) {
+        snprintf(err_msg, err_cap, "Rducks query stream has no DuckDB connection for Arrow schema conversion");
+        return 0;
+    }
+    if (!rducks_allocate_arrow_options_for_connection(entry->connection, &options, &borrowed_options, err_msg, err_cap)) return 0;
     if (entry->column_count > 0) {
         names = (const char **)rducks_calloc_array((size_t)entry->column_count, sizeof(*names));
         if (!names) {
@@ -500,7 +511,11 @@ static int rducks_query_stream_store_chunk(rducks_runtime_entry_t *runtime,
 
     array_xptr = PROTECT(nanoarrow_array_owning_xptr());
     protect_count++;
-    if (!rducks_fill_input_arrow_array(runtime, array_xptr, chunk, err_msg, err_cap)) goto cleanup;
+    if (!entry->connection) {
+        snprintf(err_msg, err_cap, "Rducks query stream has no DuckDB connection for Arrow array conversion");
+        goto cleanup;
+    }
+    if (!rducks_fill_input_arrow_array_for_connection(entry->connection, array_xptr, chunk, err_msg, err_cap)) goto cleanup;
     R_SetExternalPtrTag(array_xptr, schema_xptr);
 
     pkg = PROTECT(Rf_mkString("Rducks"));
@@ -538,7 +553,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     duckdb_state rc;
 
     if (token_out) *token_out = NULL;
-    if (!runtime || !runtime->connection) {
+    if (!runtime || !runtime->query_stream_connection) {
         snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for query streaming");
         return 0;
     }
@@ -559,8 +574,18 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     entry->column_names_sexp = R_NilValue;
     memset(&entry->result, 0, sizeof(entry->result));
 
+    rducks_runtime_lock();
+    if (runtime->query_stream_connection_busy) {
+        rducks_runtime_unlock();
+        snprintf(err_msg, err_cap, "Rducks supports one active native query stream per connection");
+        goto error;
+    }
+    runtime->query_stream_connection_busy = 1;
+    entry->connection = runtime->query_stream_connection;
+    rducks_runtime_unlock();
+
     if (!rducks_query_stream_make_token(runtime, &entry->token, err_msg, err_cap)) goto error;
-    rc = duckdb_prepare(runtime->connection, sql, &stmt);
+    rc = duckdb_prepare(entry->connection, sql, &stmt);
     if (rc == DuckDBError) {
         const char *msg = stmt ? duckdb_prepare_error(stmt) : NULL;
         snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to prepare query stream");

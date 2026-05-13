@@ -902,29 +902,72 @@ static bool rducks_register_version(duckdb_connection con) {
 static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, duckdb_database database,
                                              char *err, size_t err_cap) {
     duckdb_connection old_connection = NULL;
+    duckdb_connection old_stream_connection = NULL;
     duckdb_connection new_connection = NULL;
+    duckdb_connection new_stream_connection = NULL;
     if (!runtime || !database) {
         snprintf(err, err_cap, "Rducks runtime refresh is missing database state");
         return 0;
     }
     if (duckdb_connect(database, &new_connection) == DuckDBError || !new_connection) {
+        rducks_runtime_lock();
+        g_runtime_connection_open_failed++;
+        rducks_runtime_unlock();
         snprintf(err, err_cap, "failed to reopen Rducks extension connection");
         return 0;
     }
+    rducks_runtime_lock();
+    g_runtime_connections_opened++;
+    rducks_runtime_unlock();
     if (!rducks_runtime_configure_connection(new_connection, err, err_cap)) {
         duckdb_disconnect(&new_connection);
+        rducks_runtime_lock();
+        g_runtime_connections_closed++;
+        rducks_runtime_unlock();
+        return 0;
+    }
+    if (duckdb_connect(database, &new_stream_connection) == DuckDBError || !new_stream_connection) {
+        duckdb_disconnect(&new_connection);
+        rducks_runtime_lock();
+        g_runtime_connection_open_failed++;
+        g_runtime_connections_closed++;
+        rducks_runtime_unlock();
+        snprintf(err, err_cap, "failed to reopen Rducks query stream connection");
+        return 0;
+    }
+    rducks_runtime_lock();
+    g_runtime_connections_opened++;
+    rducks_runtime_unlock();
+    if (!rducks_runtime_configure_connection(new_stream_connection, err, err_cap)) {
+        duckdb_disconnect(&new_stream_connection);
+        duckdb_disconnect(&new_connection);
+        rducks_runtime_lock();
+        g_runtime_connections_closed += 2;
+        rducks_runtime_unlock();
         return 0;
     }
     rducks_query_stream_close_all(runtime);
     rducks_runtime_forget_udf_registry(runtime);
     rducks_runtime_lock();
     old_connection = runtime->connection;
+    old_stream_connection = runtime->query_stream_connection;
     runtime->database = database;
     runtime->connection = new_connection;
+    runtime->query_stream_connection = new_stream_connection;
+    runtime->query_stream_connection_busy = 0;
     runtime->registration_surface_ready = 0;
     rducks_runtime_unlock();
     if (old_connection) {
         duckdb_disconnect(&old_connection);
+        rducks_runtime_lock();
+        g_runtime_connections_closed++;
+        rducks_runtime_unlock();
+    }
+    if (old_stream_connection) {
+        duckdb_disconnect(&old_stream_connection);
+        rducks_runtime_lock();
+        g_runtime_connections_closed++;
+        rducks_runtime_unlock();
     }
     return 1;
 }

@@ -13,19 +13,19 @@ static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const cha
     snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : default_msg);
 }
 
-static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
-                                         duckdb_arrow_options *out_options, int *borrowed,
-                                         char *err_msg, size_t err_cap) {
+static int rducks_allocate_arrow_options_for_connection(duckdb_connection connection,
+                                                        duckdb_arrow_options *out_options, int *borrowed,
+                                                        char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
-    if (!runtime || !runtime->connection) {
-        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+    if (!connection) {
+        snprintf(err_msg, err_cap, "Rducks has no DuckDB connection for Arrow C Data conversion");
         return 0;
     }
     if (!out_options || !borrowed) return 0;
     *out_options = NULL;
     *borrowed = 0;
 
-    duckdb_connection_get_arrow_options(runtime->connection, &options);
+    duckdb_connection_get_arrow_options(connection, &options);
     if (options) {
         *out_options = options;
         return 1;
@@ -33,6 +33,16 @@ static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
 
     snprintf(err_msg, err_cap, "failed to get DuckDB Arrow C Data options");
     return 0;
+}
+
+static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
+                                         duckdb_arrow_options *out_options, int *borrowed,
+                                         char *err_msg, size_t err_cap) {
+    if (!runtime || !runtime->connection) {
+        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+        return 0;
+    }
+    return rducks_allocate_arrow_options_for_connection(runtime->connection, out_options, borrowed, err_msg, err_cap);
 }
 
 static void rducks_release_arrow_options(duckdb_arrow_options *options, int borrowed) {
@@ -51,6 +61,116 @@ static void rducks_release_arrow_array_if_set(struct ArrowArray *array) {
         array->release(array);
         array->release = NULL;
     }
+}
+
+
+typedef struct rducks_arrow_import_result {
+    duckdb_data_chunk chunk;
+    idx_t rows;
+    idx_t columns;
+} rducks_arrow_import_result_t;
+
+static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *runtime,
+                                                       SEXP array_xptr,
+                                                       int check_rows, idx_t expected_rows,
+                                                       int check_columns, idx_t expected_columns,
+                                                       const char *context,
+                                                       rducks_arrow_import_result_t *out,
+                                                       char *err_msg, size_t err_cap) {
+    SEXP schema_xptr;
+    struct ArrowArray *array;
+    struct ArrowSchema *schema;
+    duckdb_arrow_converted_schema converted_schema = NULL;
+    duckdb_data_chunk imported_chunk = NULL;
+    duckdb_error_data error_data = NULL;
+    idx_t imported_size;
+    idx_t imported_columns;
+    const char *label = context && context[0] ? context : "Rducks Arrow";
+
+    if (out) memset(out, 0, sizeof(*out));
+    if (!runtime || !runtime->connection) {
+        snprintf(err_msg, err_cap, "%s runtime is unavailable for Arrow import", label);
+        return 0;
+    }
+    if (!out || array_xptr == R_NilValue || !Rf_inherits(array_xptr, "nanoarrow_array")) {
+        snprintf(err_msg, err_cap, "%s import requires a nanoarrow_array", label);
+        return 0;
+    }
+    schema_xptr = R_ExternalPtrTag(array_xptr);
+    if (schema_xptr == R_NilValue || !Rf_inherits(schema_xptr, "nanoarrow_schema")) {
+        snprintf(err_msg, err_cap, "%s nanoarrow array does not carry a nanoarrow schema", label);
+        return 0;
+    }
+    array = nanoarrow_array_from_xptr(array_xptr);
+    schema = nanoarrow_schema_from_xptr(schema_xptr);
+    if (!array || !schema || array->release == NULL || schema->release == NULL) {
+        snprintf(err_msg, err_cap, "%s nanoarrow array or schema is invalid", label);
+        return 0;
+    }
+    if (array->length < 0) {
+        snprintf(err_msg, err_cap, "%s nanoarrow array has a negative row count", label);
+        return 0;
+    }
+    if ((uint64_t)array->length > (uint64_t)((idx_t)-1)) {
+        snprintf(err_msg, err_cap, "%s nanoarrow array row count is too large", label);
+        return 0;
+    }
+    if (check_rows && (idx_t)array->length != expected_rows) {
+        snprintf(err_msg, err_cap, "%s nanoarrow array returned %lld rows, expected %llu",
+                 label, (long long)array->length, (unsigned long long)expected_rows);
+        return 0;
+    }
+
+    error_data = duckdb_schema_from_arrow(runtime->connection, schema, &converted_schema);
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow schema", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+    if (!converted_schema) {
+        snprintf(err_msg, err_cap, "DuckDB returned no converted schema for %s Arrow data", label);
+        return 0;
+    }
+    error_data = duckdb_data_chunk_from_arrow(runtime->connection, array, converted_schema, &imported_chunk);
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow data", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            duckdb_destroy_arrow_converted_schema(&converted_schema);
+            return 0;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+    duckdb_destroy_arrow_converted_schema(&converted_schema);
+    if (!imported_chunk) {
+        snprintf(err_msg, err_cap, "DuckDB returned no data chunk for %s Arrow data", label);
+        return 0;
+    }
+
+    array->release = NULL;
+    imported_size = duckdb_data_chunk_get_size(imported_chunk);
+    imported_columns = duckdb_data_chunk_get_column_count(imported_chunk);
+    if (check_rows && imported_size != expected_rows) {
+        snprintf(err_msg, err_cap, "DuckDB imported %llu %s rows, expected %llu",
+                 (unsigned long long)imported_size, label, (unsigned long long)expected_rows);
+        duckdb_destroy_data_chunk(&imported_chunk);
+        return 0;
+    }
+    if (check_columns && imported_columns != expected_columns) {
+        snprintf(err_msg, err_cap, "DuckDB imported %llu %s columns, expected %llu",
+                 (unsigned long long)imported_columns, label, (unsigned long long)expected_columns);
+        duckdb_destroy_data_chunk(&imported_chunk);
+        return 0;
+    }
+    out->chunk = imported_chunk;
+    out->rows = imported_size;
+    out->columns = imported_columns;
+    return 1;
 }
 
 static void rducks_arrow_buffer_noop_free(struct ArrowBufferAllocator *allocator, uint8_t *ptr, int64_t size) {
@@ -202,9 +322,10 @@ static int rducks_fill_output_arrow_schema(rducks_runtime_entry_t *runtime, SEXP
     return rducks_fill_output_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(schema_xptr), meta, err_msg, err_cap);
 }
 
-static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime, struct ArrowArray *array,
-                                                duckdb_data_chunk input,
-                                                char *err_msg, size_t err_cap) {
+static int rducks_fill_input_arrow_array_native_for_connection(duckdb_connection connection,
+                                                               struct ArrowArray *array,
+                                                               duckdb_data_chunk input,
+                                                               char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
     int borrowed_options = 0;
     duckdb_error_data error_data = NULL;
@@ -214,7 +335,7 @@ static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime,
         return 0;
     }
 
-    if (!rducks_allocate_arrow_options(runtime, &options, &borrowed_options, err_msg, err_cap)) {
+    if (!rducks_allocate_arrow_options_for_connection(connection, &options, &borrowed_options, err_msg, err_cap)) {
         return 0;
     }
 
@@ -231,6 +352,22 @@ static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime,
         duckdb_destroy_error_data(&error_data);
     }
     return 1;
+}
+
+static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime, struct ArrowArray *array,
+                                                duckdb_data_chunk input,
+                                                char *err_msg, size_t err_cap) {
+    if (!runtime || !runtime->connection) {
+        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+        return 0;
+    }
+    return rducks_fill_input_arrow_array_native_for_connection(runtime->connection, array, input, err_msg, err_cap);
+}
+
+static int rducks_fill_input_arrow_array_for_connection(duckdb_connection connection, SEXP array_xptr,
+                                                        duckdb_data_chunk input,
+                                                        char *err_msg, size_t err_cap) {
+    return rducks_fill_input_arrow_array_native_for_connection(connection, nanoarrow_output_array_from_xptr(array_xptr), input, err_msg, err_cap);
 }
 
 static int rducks_fill_input_arrow_array(rducks_runtime_entry_t *runtime, SEXP array_xptr,

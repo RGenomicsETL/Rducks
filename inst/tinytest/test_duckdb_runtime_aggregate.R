@@ -1,8 +1,29 @@
 library(Rducks)
 
-rducks_agg_pack <- function(x) serialize(x, NULL, version = 2)
-rducks_agg_unpack <- function(state, default) {
-  if (is.null(state)) default else unserialize(state)
+rducks_agg_state <- function(sum = 0L, n = 0L) {
+  state <- new.env(parent = emptyenv())
+  state$sum <- sum
+  state$n <- n
+  state
+}
+
+rducks_agg_add <- function(state, x) {
+  if (is.null(state)) state <- rducks_agg_state()
+  state$sum <- as.integer(state$sum + x)
+  state$n <- as.integer(state$n + 1L)
+  state
+}
+
+rducks_agg_merge <- function(left, right) {
+  if (is.null(right)) return(left)
+  if (is.null(left)) left <- rducks_agg_state()
+  left$sum <- as.integer(left$sum + right$sum)
+  left$n <- as.integer(left$n + right$n)
+  left
+}
+
+rducks_agg_finish <- function(state) {
+  if (is.null(state) || identical(state$n, 0L)) NA_integer_ else as.integer(state$sum)
 }
 
 local({
@@ -10,21 +31,9 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
-  update_sum <- function(state, x) {
-    s <- rducks_agg_unpack(state, list(sum = 0L, n = 0L))
-    s$sum <- as.integer(s$sum + x)
-    s$n <- as.integer(s$n + 1L)
-    rducks_agg_pack(s)
-  }
-  combine_sum <- function(left, right) {
-    l <- rducks_agg_unpack(left, list(sum = 0L, n = 0L))
-    r <- rducks_agg_unpack(right, list(sum = 0L, n = 0L))
-    rducks_agg_pack(list(sum = as.integer(l$sum + r$sum), n = as.integer(l$n + r$n)))
-  }
-  finalize_sum <- function(state) {
-    s <- rducks_agg_unpack(state, list(sum = 0L, n = 0L))
-    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
-  }
+  update_sum <- function(state, x) rducks_agg_add(state, x)
+  combine_sum <- function(left, right) rducks_agg_merge(left, right)
+  finalize_sum <- function(state) rducks_agg_finish(state)
 
   reg <- rducks_register_aggregate(
     con,
@@ -88,20 +97,79 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
+  update_chunk_calls <- 0L
+  update_row_calls <- 0L
+  saw_skipped_row <- FALSE
+  update_chunk_sum <- function(states, group_id, x) {
+    update_chunk_calls <<- update_chunk_calls + 1L
+    saw_skipped_row <<- saw_skipped_row || any(group_id == 0L)
+    for (g in seq_along(states)) {
+      rows <- which(group_id == g)
+      state <- states[[g]]
+      if (is.null(state)) state <- rducks_agg_state()
+      state$sum <- as.integer(state$sum + sum(x[rows]))
+      state$n <- as.integer(state$n + length(rows))
+      states[[g]] <- state
+    }
+    states
+  }
+  update_row_fallback <- function(state, x) {
+    update_row_calls <<- update_row_calls + 1L
+    rducks_agg_add(state, x)
+  }
+  finalize_chunk_sum <- function(states) {
+    vapply(states, rducks_agg_finish, integer(1))
+  }
+
+  invisible(rducks_register_aggregate(
+    con,
+    "rducks_r_sum_i32_chunk",
+    update = update_row_fallback,
+    finalize = function(state) -999L,
+    args = INTEGER,
+    returns = INTEGER,
+    update_chunk = update_chunk_sum,
+    finalize_chunk = finalize_chunk_sum
+  ))
+  chunked <- DBI::dbGetQuery(
+    con,
+    paste(
+      "SELECT g, rducks_r_sum_i32_chunk(i) AS s",
+      "FROM (VALUES (1, 1::INTEGER), (1, 2::INTEGER), (1, NULL::INTEGER),",
+      "             (2, 5::INTEGER), (2, 7::INTEGER)) t(g, i)",
+      "GROUP BY g ORDER BY g"
+    )
+  )
+  expect_equal(chunked$g, c(1, 2))
+  expect_equal(chunked$s, c(3L, 12L))
+  expect_true(update_chunk_calls >= 1L)
+  expect_equal(update_row_calls, 0L)
+  expect_true(saw_skipped_row)
+})
+
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+
   seen_nulls <- 0L
   update_special <- function(state, x) {
-    s <- rducks_agg_unpack(state, list(total = 0, nulls = 0L))
-    if (is.na(x)) {
-      s$nulls <- s$nulls + 1L
-    } else {
-      s$total <- s$total + x
+    if (is.null(state)) {
+      state <- new.env(parent = emptyenv())
+      state$total <- 0
+      state$nulls <- 0L
     }
-    seen_nulls <<- s$nulls
-    rducks_agg_pack(s)
+    if (is.na(x)) {
+      state$nulls <- state$nulls + 1L
+    } else {
+      state$total <- state$total + x
+    }
+    seen_nulls <<- state$nulls
+    state
   }
   finalize_special <- function(state) {
-    s <- rducks_agg_unpack(state, list(total = 0, nulls = 0L))
-    s$total + s$nulls * 100
+    if (is.null(state)) return(NA_real_)
+    state$total + state$nulls * 100
   }
 
   invisible(rducks_register_aggregate(
@@ -121,6 +189,41 @@ local({
   expect_equal(seen_nulls, 1L)
 })
 
+
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+
+  update_env <- function(state, x) {
+    if (is.null(state)) {
+      state <- new.env(parent = emptyenv())
+      state$sum <- 0L
+      state$n <- 0L
+    }
+    state$sum <- as.integer(state$sum + x)
+    state$n <- as.integer(state$n + 1L)
+    state
+  }
+  finalize_env <- function(state) {
+    if (is.null(state) || identical(state$n, 0L)) NA_integer_ else state$sum
+  }
+
+  invisible(rducks_register_aggregate(
+    con,
+    "rducks_r_sum_env_state",
+    update_env,
+    finalize_env,
+    INTEGER,
+    INTEGER
+  ))
+  out <- DBI::dbGetQuery(
+    con,
+    "SELECT rducks_r_sum_env_state(i) AS s FROM (VALUES (10::INTEGER), (20::INTEGER), (NULL::INTEGER)) t(i)"
+  )
+  expect_equal(out$s, 30L)
+})
+
 local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
@@ -128,7 +231,7 @@ local({
 
   bad_update <- function(state, x) {
     if (identical(x, 2L)) stop("aggregate update boom")
-    rducks_agg_pack(x)
+    x
   }
   invisible(rducks_register_aggregate(con, "rducks_r_bad_update", bad_update, function(state) 1L, INTEGER, INTEGER))
   expect_error(
@@ -137,7 +240,7 @@ local({
   )
 
   bad_finalize <- function(state) stop("aggregate finalize boom")
-  invisible(rducks_register_aggregate(con, "rducks_r_bad_finalize", function(state, x) rducks_agg_pack(x), bad_finalize, INTEGER, INTEGER))
+  invisible(rducks_register_aggregate(con, "rducks_r_bad_finalize", function(state, x) x, bad_finalize, INTEGER, INTEGER))
   expect_error(
     DBI::dbGetQuery(con, "SELECT rducks_r_bad_finalize(1::INTEGER) AS x"),
     "aggregate finalize boom"
@@ -150,7 +253,7 @@ local({
   rducks_enable(con, threads = "single")
   DBI::dbExecute(con, "PRAGMA threads=2")
   expect_error(
-    rducks_register_aggregate(con, "rducks_r_parallel_reject", function(state, x) raw(), function(state) 0L, INTEGER, INTEGER),
+    rducks_register_aggregate(con, "rducks_r_parallel_reject", function(state, x) x, function(state) 0L, INTEGER, INTEGER),
     "R-backed functions require DuckDB to execute R code on the calling R thread"
   )
 })

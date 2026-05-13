@@ -295,6 +295,12 @@ rducks_query_stream_native_close <- function(con, native_token) {
   rducks_query_stream_native_bool(con, native_token, "rducks_query_stream_close")
 }
 
+rducks_query_stream_close_native_quiet <- function(state) {
+  if (is.null(state) || is.null(state$con) || is.null(state$native_token)) return(invisible(FALSE))
+  try(rducks_query_stream_native_close(state$con, state$native_token), silent = TRUE)
+  invisible(TRUE)
+}
+
 rducks_query_stream_close_state <- function(state) {
   if (is.null(state) || isTRUE(state$closed)) return(invisible(FALSE))
   state$closed <- TRUE
@@ -369,6 +375,7 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
     if (is.null(state$pending) || !rducks_query_stream_arrow_batch_nrow(state$pending)) {
       state$done <- TRUE
       state$pending <- NULL
+      rducks_query_stream_close_native_quiet(state)
       return(NULL)
     }
     state$pending <- rducks_query_stream_set_arrow_batch_schema(state$pending, state$schema)
@@ -399,13 +406,15 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
 #' the owned nanoarrow record-batch object directly or materialize it with the
 #' package's Rducks/nanoarrow helpers. This is an R-side result/session API; it
 #' is not inferred from scalar UDF IPC behavior and does not use the R-backed SQL
-#' table function path. Because execution uses the extension-owned DuckDB
-#' connection, database-scoped objects are visible but temporary tables/views
-#' that exist only on the caller's DBI connection are not part of the stream
-#' query scope. Delivery into R runs on the recorded R thread: even
-#' record-batch mode creates R external-pointer objects and installs nanoarrow
-#' finalizers, so Rducks does not call R/nanoarrow code from arbitrary DuckDB
-#' worker threads.
+#' table function path. Because execution uses a dedicated extension-owned
+#' DuckDB connection, database-scoped objects are visible but temporary
+#' tables/views that exist only on the caller's DBI connection are not part of
+#' the stream query scope. That dedicated stream connection is separate from the
+#' extension connection used for dynamic scalar/table/aggregate registration; a
+#' caller connection currently supports one active native query stream at a
+#' time. Delivery into R runs on the recorded R thread: even record-batch mode
+#' creates R external-pointer objects and installs nanoarrow finalizers, so
+#' Rducks does not call R/nanoarrow code from arbitrary DuckDB worker threads.
 #'
 #' `next_batch()` returns the next batch or `NULL` at end-of-stream. With
 #' `format = "data.frame"` it returns a base R data-frame batch. With

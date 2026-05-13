@@ -276,6 +276,168 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
   )
 }
 
+
+#' Create a streaming result for an Rducks table function
+#'
+#' Return this object from a function registered with
+#' \code{\link[=rducks_register_table]{rducks_register_table()}} to expose a
+#' finite table without materializing all rows during DuckDB bind. The
+#' \code{prototype} supplies the output column names and types. During scan,
+#' Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
+#' frame, named list, \code{nanoarrow_array}, or one-batch
+#' \code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
+#' signal end-of-stream.
+#'
+#' \code{close}, when supplied, is called at most once when the stream reaches
+#' EOF. Rducks also tries to close unreached EOF streams when DuckDB releases
+#' the native bind state on the recorded R thread, and a finalizer provides
+#' eventual best-effort cleanup if the stream object is later garbage-collected.
+#' Use it to release file handles, sockets, iterators, or other producer-side
+#' resources. \code{cardinality} is optional scan metadata; set \code{exact =
+#' TRUE} only when the stream will emit exactly that many rows.
+#'
+#' @param prototype Data frame or named list whose column names and R types
+#'   define the stream schema. A zero-row prototype is usually appropriate.
+#' @param next_batch Function called as \code{next_batch(n)} or
+#'   \code{next_batch()} if it has no formal arguments. It must return the next
+#'   batch or \code{NULL} for EOF.
+#' @param close Optional cleanup function.
+#' @param cardinality Optional non-negative row count, or \code{NA} when
+#'   unknown.
+#' @param exact Whether \code{cardinality} is exact rather than an estimate.
+#' @return Object of class \code{rducks_table_stream}.
+#' @export
+rducks_table_stream <- function(prototype, next_batch, close = NULL,
+                                cardinality = NA_real_, exact = FALSE) {
+  prototype <- rducks_table_result_as_data_frame(prototype)
+  if (!is.function(next_batch)) {
+    stop("next_batch must be a function", call. = FALSE)
+  }
+  if (!is.null(close) && !is.function(close)) {
+    stop("close must be NULL or a function", call. = FALSE)
+  }
+  if (!is.numeric(cardinality) || length(cardinality) != 1L || is.na(cardinality)) {
+    cardinality <- NA_real_
+  } else if (!is.finite(cardinality) || cardinality < 0 || cardinality != floor(cardinality)) {
+    stop("cardinality must be NA or a non-negative integer-like number", call. = FALSE)
+  }
+  if (!is.logical(exact) || length(exact) != 1L || is.na(exact)) {
+    stop("exact must be TRUE or FALSE", call. = FALSE)
+  }
+  state <- new.env(parent = emptyenv())
+  state$next_batch <- next_batch
+  state$close <- close
+  state$closed <- FALSE
+  state$cardinality <- cardinality
+  state$exact <- exact
+  reg.finalizer(state, function(env) {
+    try(rducks_table_stream_finalize_state(env), silent = TRUE)
+    invisible(NULL)
+  }, onexit = TRUE)
+  structure(
+    list(prototype = prototype, state = state),
+    class = "rducks_table_stream"
+  )
+}
+
+rducks_table_is_stream <- function(x) inherits(x, "rducks_table_stream")
+
+rducks_table_stream_prototype <- function(stream) {
+  if (!rducks_table_is_stream(stream)) {
+    stop("Rducks table stream object is invalid", call. = FALSE)
+  }
+  rducks_table_result_as_data_frame(stream$prototype)
+}
+
+rducks_table_stream_cardinality <- function(stream) {
+  if (!rducks_table_is_stream(stream)) {
+    stop("Rducks table stream object is invalid", call. = FALSE)
+  }
+  cardinality <- stream$state$cardinality
+  if (is.na(cardinality)) {
+    list(known = FALSE, rows = 0, exact = FALSE)
+  } else {
+    list(known = TRUE, rows = as.numeric(cardinality), exact = isTRUE(stream$state$exact))
+  }
+}
+
+rducks_table_stream_finalize_state <- function(state) {
+  if (is.null(state) || isTRUE(state$closed)) return(invisible(FALSE))
+  state$closed <- TRUE
+  if (is.function(state$close)) state$close()
+  invisible(TRUE)
+}
+
+rducks_table_stream_close <- function(stream) {
+  if (!rducks_table_is_stream(stream)) return(invisible(FALSE))
+  rducks_table_stream_finalize_state(stream$state)
+}
+
+rducks_table_call_next_batch <- function(next_batch, n) {
+  if (identical(typeof(next_batch), "closure")) {
+    fmls <- formals(next_batch)
+    if (is.null(fmls) || !length(fmls)) return(next_batch())
+  }
+  next_batch(as.integer(n))
+}
+
+rducks_table_stream_column_signature <- function(x) {
+  if (inherits(x, "POSIXct")) return(list(kind = "POSIXct"))
+  if (inherits(x, "Date")) return(list(kind = "Date"))
+  if (inherits(x, "factor")) return(list(kind = "factor", levels = levels(x)))
+  switch(typeof(x),
+    logical = list(kind = "logical"),
+    integer = list(kind = "integer"),
+    double = list(kind = "numeric"),
+    character = list(kind = "character"),
+    list = {
+      ok <- all(vapply(x, function(value) is.null(value) || is.raw(value), logical(1)))
+      if (ok) return(list(kind = "blob_list"))
+      stop(
+        "Rducks table stream column type is unsupported; supported stream columns are logical, integer, numeric, character, factor, Date, POSIXct, and list-of-raw BLOB",
+        call. = FALSE
+      )
+    },
+    stop(
+      "Rducks table stream column type is unsupported; supported stream columns are logical, integer, numeric, character, factor, Date, POSIXct, and list-of-raw BLOB",
+      call. = FALSE
+    )
+  )
+}
+
+rducks_table_stream_validate_batch <- function(stream, batch) {
+  if (inherits(batch, "nanoarrow_array") || inherits(batch, "nanoarrow_array_stream")) return(batch)
+  batch <- rducks_table_result_as_data_frame(batch)
+  expected <- names(stream$prototype)
+  actual <- names(batch)
+  if (!identical(actual, expected)) {
+    stop("Rducks table stream next_batch columns must match the prototype names and order", call. = FALSE)
+  }
+  for (name in expected) {
+    prototype_signature <- rducks_table_stream_column_signature(stream$prototype[[name]])
+    batch_signature <- rducks_table_stream_column_signature(batch[[name]])
+    if (!identical(batch_signature, prototype_signature)) {
+      stop("Rducks table stream column ", name, " must match the prototype type", call. = FALSE)
+    }
+  }
+  batch
+}
+
+rducks_table_stream_next_array <- function(stream, n) {
+  if (!rducks_table_is_stream(stream)) {
+    stop("Rducks table stream object is invalid", call. = FALSE)
+  }
+  state <- stream$state
+  if (isTRUE(state$closed)) return(NULL)
+  batch <- rducks_table_call_next_batch(state$next_batch, n)
+  if (is.null(batch)) {
+    rducks_table_stream_close(stream)
+    return(NULL)
+  }
+  batch <- rducks_table_stream_validate_batch(stream, batch)
+  rducks_table_as_arrow_array(batch)
+}
+
 rducks_table_result_as_data_frame <- function(result) {
   if (is.data.frame(result)) return(result)
   if (!is.list(result)) {
@@ -318,34 +480,35 @@ rducks_table_as_arrow_array <- function(result) {
 #' table function infers its positional SQL argument count from `formals(fun)`
 #' and registers those arguments with DuckDB's dynamic `ANY` type. During
 #' DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-#' scalars/lists, calls `fun(...)` on the recorded calling R thread, and infers
-#' the DuckDB output schema from the returned data frame or named list of
-#' equal-length columns. It then converts the result through a nanoarrow Arrow C
-#' Data stream, imports it into a DuckDB chunk, and emits row batches from
-#' that imported chunk during table-function scans. Scans honor DuckDB
-#' projection pushdown, so unreferenced columns are not copied from the imported
-#' chunk into the output chunk.
+#' scalars/lists and calls `fun(...)` on the recorded calling R thread. `fun()`
+#' may return either a finite data frame/named list or a
+#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
+#'
+#' For finite results, Rducks imports the full result into one DuckDB data chunk
+#' during bind and then emits row batches during scan. For streaming results,
+#' bind uses only the stream prototype to define the DuckDB schema; scan calls
+#' `next_batch()` repeatedly and imports one returned batch at a time. Both
+#' paths honor DuckDB projection pushdown, so unreferenced columns are not copied
+#' from imported chunks into DuckDB output chunks.
 #'
 #' This is intentionally separate from DuckDB scalar-UDF registration through
 #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
-#' functions have their own bind/init/scan state and currently support only the
-#' one-shot finite table shape. DuckDB table functions can have bind-time dynamic
-#' schemas and broad input signatures; this Rducks API follows that model
-#' for output schemas and positional input types, while the number of SQL
-#' arguments is fixed by the R function's formal argument count. Variadic `...`
-#' arguments are not supported. If you already have a static R data frame to
-#' expose as a virtual table, prefer `duckdb::duckdb_register()`; DuckDB's R
-#' package routes that through its native data-frame scan path. Use
-#' `rducks_enable(con, threads = "single")` or otherwise set `external_threads=1`
-#' plus `PRAGMA threads=1` before registration and execution; worker-thread calls
-#' into R are rejected.
+#' functions have their own bind/init/scan state, bind-time dynamic schemas, and
+#' positional SQL arguments fixed by the R function's finite formal argument
+#' count. Variadic `...` arguments are not supported. If you already have a
+#' static R data frame to expose as a virtual table, prefer
+#' `duckdb::duckdb_register()`; DuckDB's R package routes that through its native
+#' data-frame scan path. Use `rducks_enable(con, threads = "single")` or
+#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before registration
+#' and execution; worker-thread calls into R are rejected.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.
-#' @param fun R function returning a data frame or named list of columns. Its
-#'   finite formal argument count defines the SQL positional argument count;
-#'   each positional argument is registered as DuckDB `ANY` and converted at
-#'   bind time from the actual SQL value.
+#' @param fun R function returning a data frame, named list of columns, or
+#'   \code{\link[=rducks_table_stream]{rducks_table_stream()}}. Its finite formal
+#'   argument count defines the SQL positional argument count; each positional
+#'   argument is registered as DuckDB `ANY` and converted at bind time from the
+#'   actual SQL value.
 #' @param chunk_size Maximum number of rows emitted per DuckDB output chunk.
 #'   Must be an integer from 1 to 1024.
 #' @return Object of class `rducks_table_registration` containing the
@@ -392,18 +555,41 @@ print.rducks_table_registration <- function(x, ...) {
   invisible(x)
 }
 
-rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine) {
+rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine,
+                                                update_chunk = NULL, combine_chunk = NULL, finalize_chunk = NULL,
+                                                copy = NULL, copy_chunk = NULL) {
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
   }
-  if (!is.function(update)) {
-    stop("update must be a function", call. = FALSE)
+  if (!is.null(update) && !is.function(update)) {
+    stop("update must be NULL or a function", call. = FALSE)
   }
-  if (!is.function(finalize)) {
-    stop("finalize must be a function", call. = FALSE)
+  if (!is.null(finalize) && !is.function(finalize)) {
+    stop("finalize must be NULL or a function", call. = FALSE)
   }
   if (!is.null(combine) && !is.function(combine)) {
     stop("combine must be NULL or a function", call. = FALSE)
+  }
+  if (!is.null(copy) && !is.function(copy)) {
+    stop("copy must be NULL or a function", call. = FALSE)
+  }
+  if (!is.null(copy_chunk) && !is.function(copy_chunk)) {
+    stop("copy_chunk must be NULL or a function", call. = FALSE)
+  }
+  if (!is.null(update_chunk) && !is.function(update_chunk)) {
+    stop("update_chunk must be NULL or a function", call. = FALSE)
+  }
+  if (!is.null(combine_chunk) && !is.function(combine_chunk)) {
+    stop("combine_chunk must be NULL or a function", call. = FALSE)
+  }
+  if (!is.null(finalize_chunk) && !is.function(finalize_chunk)) {
+    stop("finalize_chunk must be NULL or a function", call. = FALSE)
+  }
+  if (is.null(update) && is.null(update_chunk)) {
+    stop("at least one of update or update_chunk must be supplied", call. = FALSE)
+  }
+  if (is.null(finalize) && is.null(finalize_chunk)) {
+    stop("at least one of finalize or finalize_chunk must be supplied", call. = FALSE)
   }
   arg_types <- rducks_as_type_list(args)
   if (!length(arg_types)) {
@@ -428,58 +614,100 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 
 #' Register an R aggregate function in DuckDB
 #'
-#' Registers an R-backed DuckDB aggregate. The aggregate state stored
-#' inside DuckDB is native memory containing bytes from an R `raw` vector, never
-#' an R object pointer. For each non-NULL input row, Rducks calls
-#' `update(state, ...)`, where `state` is the previous raw state or `NULL` and
-#' `...` are the row's scalar input values. `update()` must return the next raw
-#' state or `NULL`. `raw(0)` is a valid non-`NULL` state; return `NULL` only
-#' when the aggregate intentionally has no state. At finalization Rducks calls
-#' `finalize(state)` and marshals that scalar result to the declared DuckDB
-#' return type.
+#' Registers an R-backed DuckDB aggregate. The aggregate state is an arbitrary R
+#' object, not a serialized `raw` vector. Rducks stores a preserved reference to
+#' the state object inside the native DuckDB aggregate state and passes that same
+#' object back to later R callbacks. Returning `NULL` means "empty/no state";
+#' use a wrapper such as `list(value = NULL)` if `NULL` itself must be
+#' represented as a non-empty state.
+#'
+#' The row-wise API calls `update(state, ...)` for each selected input row and
+#' `finalize(state)` for each output state. The vectorized update API calls
+#' `update_chunk(states, group_id, ...)` once per DuckDB input chunk. `states` is
+#' a list of the distinct aggregate-state objects referenced by that chunk, and
+#' `group_id` is an integer vector with one entry per input row: `0L` means the
+#' row was skipped by default NULL handling, otherwise the value is a one-based
+#' index into `states`. The remaining arguments are full, unsliced R vectors for
+#' the aggregate inputs. `update_chunk()` must return a list of replacement
+#' states with the same length as `states`. `combine_chunk(left, right)` receives
+#' lists of state objects for partial-state merging and must return a list with
+#' one merged state per pair. `finalize_chunk(states)` must return a vector or
+#' list with one scalar result per output state. Chunk callbacks take precedence
+#' over row-wise callbacks.
 #'
 #' This API is deliberately serialized. Registration requires
 #' `rducks_enable(con, threads = "single")` or equivalent
 #' `external_threads=1` plus `PRAGMA threads=1`, and execution rejects attempts
 #' to call R from non-calling DuckDB worker threads. If DuckDB combines partial
-#' states, Rducks can copy a source state into an empty target; merging two
-#' non-`NULL` states requires `combine(left, right)` and must still run on the
-#' recorded R thread. Cross-thread R aggregate execution is future work.
+#' states and the target state is empty, Rducks preserves another reference to
+#' the source R object rather than serializing or deep-copying it. Use `copy` or
+#' `copy_chunk` when empty-target combine must create independent mutable state.
+#' Merging two non-`NULL` states requires either `combine(left, right)` or
+#' `combine_chunk(left, right)` and must still run on the recorded R thread.
 #'
-#' With `null_handling = "default"`, rows with any top-level SQL `NULL` input
-#' do not call `update()`. Groups with no non-NULL rows therefore pass `NULL` to
-#' `finalize()`. With `null_handling = "special"`, `update()` receives the
-#' declared type's R missing-value shape for NULL inputs.
+#' With `null_handling = "default"`, rows with any top-level SQL `NULL` input do
+#' not call `update()` or appear in a positive `group_id` entry for
+#' `update_chunk()`. Groups with no non-NULL rows therefore pass `NULL` to
+#' `finalize()` or `finalize_chunk()`. With `null_handling = "special"`, update
+#' callbacks receive the declared type's R missing-value shape for NULL inputs.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL aggregate function name.
-#' @param update R function called as `update(state, ...)`; must return a raw
-#'   vector state or `NULL`.
-#' @param finalize R function called as `finalize(state)`; must return a scalar
-#'   compatible with `returns` or `NULL` for SQL `NULL`.
+#' @param update Optional row-wise R function called as `update(state, ...)`;
+#'   may return any R object state or `NULL`.
+#' @param finalize Optional row-wise R function called as `finalize(state)`;
+#'   must return a scalar compatible with `returns` or `NULL` for SQL `NULL`.
 #' @param args Input type specification. Use exported DuckDB-style descriptors
 #'   such as `INTEGER`, `DOUBLE`, or `VARCHAR`.
 #' @param returns Return type specification.
 #' @param combine Optional R function called as `combine(left, right)` when two
-#'   non-`NULL` partial raw states must be merged. It must return a raw vector
-#'   state or `NULL`.
+#'   non-`NULL` partial states must be merged. It may return any R object state
+#'   or `NULL`.
 #' @param null_handling Either `"default"` to skip rows with top-level NULL
-#'   inputs, or `"special"` to pass missing values to `update()`.
+#'   inputs, or `"special"` to pass missing values to update callbacks.
+#' @param copy Optional R function called as `copy(state)` when DuckDB needs to
+#'   place a non-`NULL` partial state into an empty target state during combine.
+#'   When omitted, Rducks preserves another reference to the same R object.
+#' @param copy_chunk Optional vectorized R function called as
+#'   `copy_chunk(states)` with a list of states to copy. It must return a list
+#'   of replacement states of the same length. It takes precedence over `copy()`.
+#' @param update_chunk Optional vectorized R function called as
+#'   `update_chunk(states, group_id, ...)`, where `states` is a list of current
+#'   R state objects, `group_id` maps each input row to an element of `states`,
+#'   and the remaining arguments are full R input vectors. It must return a list
+#'   of replacement states with the same length as `states`.
+#' @param combine_chunk Optional vectorized R function called as
+#'   `combine_chunk(left_states, right_states)`, where both arguments are lists
+#'   of R state objects or `NULL`. It must return a list of states of the same
+#'   length.
+#' @param finalize_chunk Optional vectorized R function called as
+#'   `finalize_chunk(states)`, where `states` is a list of R state objects or
+#'   `NULL`. It must return one result per state as either a vector or list.
 #' @return Object of class `rducks_aggregate_registration` containing the
 #'   connection and normalized aggregate signature. The aggregate remains
 #'   registered in DuckDB even if this object is discarded.
 #' @export
-rducks_register_aggregate <- function(con, name, update, finalize, args, returns,
+rducks_register_aggregate <- function(con, name, update = NULL, finalize = NULL, args, returns,
                                       combine = NULL,
-                                      null_handling = c("default", "special")) {
+                                      null_handling = c("default", "special"),
+                                      copy = NULL, copy_chunk = NULL,
+                                      update_chunk = NULL, combine_chunk = NULL, finalize_chunk = NULL) {
   null_handling <- match.arg(null_handling)
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
-  spec <- rducks_aggregate_registration_spec(name, update, finalize, args, returns, combine)
+  spec <- rducks_aggregate_registration_spec(
+    name, update, finalize, args, returns, combine,
+    update_chunk = update_chunk, combine_chunk = combine_chunk, finalize_chunk = finalize_chunk,
+    copy = copy, copy_chunk = copy_chunk
+  )
   rducks_assert_single_thread(con)
   rducks_attach_runtime_anchor(con)
-  bundle <- list(update = update, combine = combine, finalize = finalize)
+  bundle <- list(
+    update = update, combine = combine, finalize = finalize,
+    update_chunk = update_chunk, combine_chunk = combine_chunk, finalize_chunk = finalize_chunk,
+    copy = copy, copy_chunk = copy_chunk
+  )
   eval_ref_handle <- rducks_evaluator_ref_put(bundle)
   on.exit(rducks_evaluator_ref_remove(eval_ref_handle), add = TRUE)
   sql <- sprintf(

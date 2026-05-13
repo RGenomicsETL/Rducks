@@ -38,13 +38,15 @@ DuckDB chunk is exported through DuckDB Arrow C Data. Rducks can either return
 the owned nanoarrow record-batch object directly or materialize it with the
 package's Rducks/nanoarrow helpers. This is an R-side result/session API; it
 is not inferred from scalar UDF IPC behavior and does not use the R-backed SQL
-table function path. Because execution uses the extension-owned DuckDB
-connection, database-scoped objects are visible but temporary tables/views
-that exist only on the caller's DBI connection are not part of the stream
-query scope. Delivery into R runs on the recorded R thread: even
-record-batch mode creates R external-pointer objects and installs nanoarrow
-finalizers, so Rducks does not call R/nanoarrow code from arbitrary DuckDB
-worker threads.
+table function path. Because execution uses a dedicated extension-owned
+DuckDB connection, database-scoped objects are visible but temporary
+tables/views that exist only on the caller's DBI connection are not part of
+the stream query scope. That dedicated stream connection is separate from the
+extension connection used for dynamic scalar/table/aggregate registration; a
+caller connection currently supports one active native query stream at a
+time. Delivery into R runs on the recorded R thread: even record-batch mode
+creates R external-pointer objects and installs nanoarrow finalizers, so
+Rducks does not call R/nanoarrow code from arbitrary DuckDB worker threads.
 }
 \details{
 \code{next_batch()} returns the next batch or \code{NULL} at end-of-stream. With

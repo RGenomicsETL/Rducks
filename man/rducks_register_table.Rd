@@ -11,10 +11,11 @@ rducks_register_table(con, name, fun, chunk_size = 1024L)
 
 \item{name}{SQL table function name.}
 
-\item{fun}{R function returning a data frame or named list of columns. Its
-finite formal argument count defines the SQL positional argument count;
-each positional argument is registered as DuckDB \code{ANY} and converted at
-bind time from the actual SQL value.}
+\item{fun}{R function returning a data frame, named list of columns, or
+\code{\link[=rducks_table_stream]{rducks_table_stream()}}. Its finite formal
+argument count defines the SQL positional argument count; each positional
+argument is registered as DuckDB \code{ANY} and converted at bind time from the
+actual SQL value.}
 
 \item{chunk_size}{Maximum number of rows emitted per DuckDB output chunk.
 Must be an integer from 1 to 1024.}
@@ -29,26 +30,26 @@ Registers an R-backed DuckDB table function. The registered SQL
 table function infers its positional SQL argument count from \code{formals(fun)}
 and registers those arguments with DuckDB's dynamic \code{ANY} type. During
 DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-scalars/lists, calls \code{fun(...)} on the recorded calling R thread, and infers
-the DuckDB output schema from the returned data frame or named list of
-equal-length columns. It then converts the result through a nanoarrow Arrow C
-Data stream, imports it into a DuckDB chunk, and emits row batches from
-that imported chunk during table-function scans. Scans honor DuckDB
-projection pushdown, so unreferenced columns are not copied from the imported
-chunk into the output chunk.
+scalars/lists and calls \code{fun(...)} on the recorded calling R thread. \code{fun()}
+may return either a finite data frame/named list or a
+\code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
 }
 \details{
+For finite results, Rducks imports the full result into one DuckDB data chunk
+during bind and then emits row batches during scan. For streaming results,
+bind uses only the stream prototype to define the DuckDB schema; scan calls
+\code{next_batch()} repeatedly and imports one returned batch at a time. Both
+paths honor DuckDB projection pushdown, so unreferenced columns are not copied
+from imported chunks into DuckDB output chunks.
+
 This is intentionally separate from DuckDB scalar-UDF registration through
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
-functions have their own bind/init/scan state and currently support only the
-one-shot finite table shape. DuckDB table functions can have bind-time dynamic
-schemas and broad input signatures; this Rducks API follows that model
-for output schemas and positional input types, while the number of SQL
-arguments is fixed by the R function's formal argument count. Variadic \code{...}
-arguments are not supported. If you already have a static R data frame to
-expose as a virtual table, prefer \code{duckdb::duckdb_register()}; DuckDB's R
-package routes that through its native data-frame scan path. Use
-\code{rducks_enable(con, threads = "single")} or otherwise set \code{external_threads=1}
-plus \verb{PRAGMA threads=1} before registration and execution; worker-thread calls
-into R are rejected.
+functions have their own bind/init/scan state, bind-time dynamic schemas, and
+positional SQL arguments fixed by the R function's finite formal argument
+count. Variadic \code{...} arguments are not supported. If you already have a
+static R data frame to expose as a virtual table, prefer
+\code{duckdb::duckdb_register()}; DuckDB's R package routes that through its native
+data-frame scan path. Use \code{rducks_enable(con, threads = "single")} or
+otherwise set \code{external_threads=1} plus \verb{PRAGMA threads=1} before registration
+and execution; worker-thread calls into R are rejected.
 }

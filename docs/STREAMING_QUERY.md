@@ -6,11 +6,14 @@ feature and not an R-backed SQL table function.
 
 ## Implementation contract
 
-The query is opened by the Rducks DuckDB extension using the extension-owned
-DuckDB connection recorded at extension initialization. Rducks prepares the SQL
-with `duckdb_prepare()`, opens a streaming result with
-`duckdb_execute_prepared_streaming()`, and fetches result chunks with
-`duckdb_stream_fetch_chunk()`.
+The query is opened by the Rducks DuckDB extension using a dedicated
+extension-owned query-stream DuckDB connection created at extension
+initialization. This stream connection is separate from the extension-owned
+connection used for dynamic scalar/table/aggregate registration. Rducks prepares
+the SQL with `duckdb_prepare()`, opens a streaming pending result with
+`duckdb_pending_prepared_streaming()`, materializes the streaming result with
+`duckdb_execute_pending()`, verifies it with `duckdb_result_is_streaming()`, and
+fetches result chunks with `duckdb_stream_fetch_chunk()`.
 
 Each fetched DuckDB data chunk is exported through DuckDB Arrow C Data with
 `duckdb_data_chunk_to_arrow()`. The R wrapper can either return the owned
@@ -20,12 +23,13 @@ decimal, enum, list, array, struct, map, UUID, huge integer, interval, BLOB, and
 BIT handling used by scalar-UDF marshalling. The heavy `arrow` package is not
 required.
 
-Because execution uses the extension-owned DuckDB connection, database-scoped
-objects are visible, but temporary tables or views that exist only on the
-caller's DBI connection are not part of the stream query scope. Delivery into R
-runs on the recorded R thread: even record-batch mode creates R external-pointer
-objects and installs nanoarrow finalizers, so Rducks does not call R/nanoarrow
-code from arbitrary DuckDB worker threads.
+Because execution uses the dedicated extension-owned query-stream connection,
+database-scoped objects are visible, but temporary tables or views that exist
+only on the caller's DBI connection are not part of the stream query scope. A
+caller connection currently supports one active native query stream at a time.
+Delivery into R runs on the recorded R thread: even record-batch mode creates R
+external-pointer objects and installs nanoarrow finalizers, so Rducks does not
+call R/nanoarrow code from arbitrary DuckDB worker threads.
 
 ## Public contract
 
@@ -66,7 +70,7 @@ used.
 The stream owns one native DuckDB streaming result in the Rducks extension.
 Query resources remain live until end-of-stream, `close()`, `rducks_release(con)`,
 or stream finalization. Streams do not survive connection release for the
-current 0.1.0 API.
+current API.
 
 If query creation or batch fetch fails, the error is surfaced to the caller. A
 fetch-time error closes the stream before rethrowing so the native result is not

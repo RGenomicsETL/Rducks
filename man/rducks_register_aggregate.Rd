@@ -7,12 +7,17 @@
 rducks_register_aggregate(
   con,
   name,
-  update,
-  finalize,
+  update = NULL,
+  finalize = NULL,
   args,
   returns,
   combine = NULL,
-  null_handling = c("default", "special")
+  null_handling = c("default", "special"),
+  copy = NULL,
+  copy_chunk = NULL,
+  update_chunk = NULL,
+  combine_chunk = NULL,
+  finalize_chunk = NULL
 )
 }
 \arguments{
@@ -20,11 +25,11 @@ rducks_register_aggregate(
 
 \item{name}{SQL aggregate function name.}
 
-\item{update}{R function called as \code{update(state, ...)}; must return a raw
-vector state or \code{NULL}.}
+\item{update}{Optional row-wise R function called as \code{update(state, ...)};
+may return any R object state or \code{NULL}.}
 
-\item{finalize}{R function called as \code{finalize(state)}; must return a scalar
-compatible with \code{returns} or \code{NULL} for SQL \code{NULL}.}
+\item{finalize}{Optional row-wise R function called as \code{finalize(state)};
+must return a scalar compatible with \code{returns} or \code{NULL} for SQL \code{NULL}.}
 
 \item{args}{Input type specification. Use exported DuckDB-style descriptors
 such as \code{INTEGER}, \code{DOUBLE}, or \code{VARCHAR}.}
@@ -32,11 +37,34 @@ such as \code{INTEGER}, \code{DOUBLE}, or \code{VARCHAR}.}
 \item{returns}{Return type specification.}
 
 \item{combine}{Optional R function called as \code{combine(left, right)} when two
-non-\code{NULL} partial raw states must be merged. It must return a raw vector
-state or \code{NULL}.}
+non-\code{NULL} partial states must be merged. It may return any R object state
+or \code{NULL}.}
 
 \item{null_handling}{Either \code{"default"} to skip rows with top-level NULL
-inputs, or \code{"special"} to pass missing values to \code{update()}.}
+inputs, or \code{"special"} to pass missing values to update callbacks.}
+
+\item{copy}{Optional R function called as \code{copy(state)} when DuckDB needs to
+place a non-\code{NULL} partial state into an empty target state during combine.
+When omitted, Rducks preserves another reference to the same R object.}
+
+\item{copy_chunk}{Optional vectorized R function called as
+\code{copy_chunk(states)} with a list of states to copy. It must return a list
+of replacement states of the same length. It takes precedence over \code{copy()}.}
+
+\item{update_chunk}{Optional vectorized R function called as
+\code{update_chunk(states, group_id, ...)}, where \code{states} is a list of current
+R state objects, \code{group_id} maps each input row to an element of \code{states},
+and the remaining arguments are full R input vectors. It must return a list
+of replacement states with the same length as \code{states}.}
+
+\item{combine_chunk}{Optional vectorized R function called as
+\code{combine_chunk(left_states, right_states)}, where both arguments are lists
+of R state objects or \code{NULL}. It must return a list of states of the same
+length.}
+
+\item{finalize_chunk}{Optional vectorized R function called as
+\code{finalize_chunk(states)}, where \code{states} is a list of R state objects or
+\code{NULL}. It must return one result per state as either a vector or list.}
 }
 \value{
 Object of class \code{rducks_aggregate_registration} containing the
@@ -44,27 +72,41 @@ connection and normalized aggregate signature. The aggregate remains
 registered in DuckDB even if this object is discarded.
 }
 \description{
-Registers an R-backed DuckDB aggregate. The aggregate state stored
-inside DuckDB is native memory containing bytes from an R \code{raw} vector, never
-an R object pointer. For each non-NULL input row, Rducks calls
-\code{update(state, ...)}, where \code{state} is the previous raw state or \code{NULL} and
-\code{...} are the row's scalar input values. \code{update()} must return the next raw
-state or \code{NULL}. \code{raw(0)} is a valid non-\code{NULL} state; return \code{NULL} only
-when the aggregate intentionally has no state. At finalization Rducks calls
-\code{finalize(state)} and marshals that scalar result to the declared DuckDB
-return type.
+Registers an R-backed DuckDB aggregate. The aggregate state is an arbitrary R
+object, not a serialized \code{raw} vector. Rducks stores a preserved reference to
+the state object inside the native DuckDB aggregate state and passes that same
+object back to later R callbacks. Returning \code{NULL} means "empty/no state";
+use a wrapper such as \code{list(value = NULL)} if \code{NULL} itself must be
+represented as a non-empty state.
 }
 \details{
+The row-wise API calls \code{update(state, ...)} for each selected input row and
+\code{finalize(state)} for each output state. The vectorized update API calls
+\code{update_chunk(states, group_id, ...)} once per DuckDB input chunk. \code{states} is
+a list of the distinct aggregate-state objects referenced by that chunk, and
+\code{group_id} is an integer vector with one entry per input row: \code{0L} means the
+row was skipped by default NULL handling, otherwise the value is a one-based
+index into \code{states}. The remaining arguments are full, unsliced R vectors for
+the aggregate inputs. \code{update_chunk()} must return a list of replacement
+states with the same length as \code{states}. \code{combine_chunk(left, right)} receives
+lists of state objects for partial-state merging and must return a list with
+one merged state per pair. \code{finalize_chunk(states)} must return a vector or
+list with one scalar result per output state. Chunk callbacks take precedence
+over row-wise callbacks.
+
 This API is deliberately serialized. Registration requires
 \code{rducks_enable(con, threads = "single")} or equivalent
 \code{external_threads=1} plus \verb{PRAGMA threads=1}, and execution rejects attempts
 to call R from non-calling DuckDB worker threads. If DuckDB combines partial
-states, Rducks can copy a source state into an empty target; merging two
-non-\code{NULL} states requires \code{combine(left, right)} and must still run on the
-recorded R thread. Cross-thread R aggregate execution is future work.
+states and the target state is empty, Rducks preserves another reference to
+the source R object rather than serializing or deep-copying it. Use \code{copy} or
+\code{copy_chunk} when empty-target combine must create independent mutable state.
+Merging two non-\code{NULL} states requires either \code{combine(left, right)} or
+\code{combine_chunk(left, right)} and must still run on the recorded R thread.
 
-With \code{null_handling = "default"}, rows with any top-level SQL \code{NULL} input
-do not call \code{update()}. Groups with no non-NULL rows therefore pass \code{NULL} to
-\code{finalize()}. With \code{null_handling = "special"}, \code{update()} receives the
-declared type's R missing-value shape for NULL inputs.
+With \code{null_handling = "default"}, rows with any top-level SQL \code{NULL} input do
+not call \code{update()} or appear in a positive \code{group_id} entry for
+\code{update_chunk()}. Groups with no non-NULL rows therefore pass \code{NULL} to
+\code{finalize()} or \code{finalize_chunk()}. With \code{null_handling = "special"}, update
+callbacks receive the declared type's R missing-value shape for NULL inputs.
 }
