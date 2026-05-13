@@ -14,9 +14,9 @@ non-empty drain waves. `pending_timeout_ms` is the configured native
 pending-request timeout. Running requests borrow DuckDB callback-frame
 input/output storage, so running-timeout cancellation is intentionally
 not supported and is reported via `running_timeout_supported = FALSE`.
-This is a runtime queue summary; for per-UDF execution detail such as
-selected evaluator, Arrow IPC waves, direct `arrow_c` input snapshots,
-and owned result-chunk counters, use
+This is a runtime queue summary; for per-scalar-UDF execution detail
+such as selected evaluator, Arrow IPC waves, direct `arrow_c` input
+snapshots, and owned result-chunk counters, use
 [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
 
 ## Usage

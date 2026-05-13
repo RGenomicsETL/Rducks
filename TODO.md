@@ -142,7 +142,7 @@ Implemented behavior to preserve:
   `ipc_future_pool`, or `ipc_mirai_pool`. These engine ids are accepted
   as internal shortcuts while the user-facing pair API remains stable.
 - The active plan at
-  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   chooses the native evaluator stored in DuckDB UDF metadata (`R`, `RC`,
   `RCV`, or `RIPC`). Later plan changes alter the runtime concurrency
   backend, but do not retarget already-registered UDF marshalling.
@@ -235,7 +235,7 @@ Resolved decisions:
   process-local `(runtime_id, generation)` token, not a raw
   `duckdb_database` pointer, DuckDB connection id, or R object address.
 - **Registration-time marshalling:** the execution plan active at
-  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   freezes the UDF’s evaluator/marshalling metadata. Later plan changes
   affect connection defaults and the native concurrency backend; they do
   not retarget already-registered UDFs.
@@ -291,7 +291,7 @@ Make R-side registration metadata database-runtime scoped.
 
 Remove raw SEXP pointer-through-SQL evaluator registration.
 
-- [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
+- [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   now stores the evaluator in a temporary R-side registry and passes an
   opaque evaluator id/token to the DuckDB extension.
 - Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB
@@ -391,7 +391,7 @@ document the leak-until-session-end policy.
 - Safe drain points include
   [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
-  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
+  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md),
   UDF execution, and metadata/stat queries.
 - [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
   exposes queued/released/failed/pending counters.

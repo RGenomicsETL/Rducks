@@ -2,8 +2,8 @@
 
 `rducks_argument_type_mapping()` is the package-level source of truth
 for the R value shape used when DuckDB argument values are marshalled
-into an R function call. It is used by registration checks and the
-nanoarrow scalar marshalling adapter.
+into an R function call. It is used by scalar-UDF registration checks
+and the nanoarrow scalar-UDF marshalling adapter.
 
 ## Usage
 
@@ -16,10 +16,10 @@ rducks_argument_type_mapping(x = NULL)
 - x:
 
   Optional scalar type tokens or constructed `rducks_type` descriptors.
-  When `NULL`, all currently implemented scalar-mode scalar argument
-  mappings are returned. Composite mappings should be requested with
-  constructors such as `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`,
-  and `MAP(VARCHAR, INTEGER)`.
+  When `NULL`, all currently implemented DuckDB scalar-UDF scalar
+  argument mappings are returned. Composite mappings should be requested
+  with constructors such as `INTEGER[]`, `INTEGER[3]`,
+  `STRUCT(a = INTEGER)`, and `MAP(VARCHAR, INTEGER)`.
 
 ## Value
 
@@ -39,6 +39,6 @@ representation; nested composite `NULL` values are represented as R
 `NULL`.
 
 The default table contains all scalar descriptors supported by the
-nanoarrow scalar marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and
-composite descriptors can be requested explicitly to inspect their
+nanoarrow scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`,
+and composite descriptors can be requested explicitly to inspect their
 recursive R function shapes.

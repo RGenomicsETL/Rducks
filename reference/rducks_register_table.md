@@ -46,7 +46,9 @@ DuckDB even if this object is discarded.
 
 ## Details
 
-This is intentionally separate from scalar/vectorized UDF registration:
+This is intentionally separate from DuckDB scalar-UDF registration
+through
+[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md):
 table functions have their own bind/init/scan state and currently
 support only the one-shot finite table shape. DuckDB table functions can
 have bind-time dynamic schemas and broad input signatures; this Rducks

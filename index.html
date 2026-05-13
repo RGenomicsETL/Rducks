@@ -50,16 +50,23 @@
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
 <p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a></p>
-<p>Rducks registers R functions as DuckDB SQL functions using a DuckDB C extension, including a small set of unstable DuckDB C extension API functions. The extension records the DuckDB database instance handle at initialization and keeps an extension-owned connection associated with that runtime. Scalar/vectorized UDF inputs and outputs move through explicit execution plans:</p>
+<p>Rducks registers R functions as DuckDB SQL functions using a DuckDB C extension, including a small set of unstable DuckDB C extension API functions. The extension records the DuckDB database instance handle at initialization and keeps an extension-owned connection associated with that runtime.</p>
+<p>The user-facing API separates three concepts:</p>
+<ul>
+<li>DuckDB function kind: scalar UDF, aggregate function, or table function.</li>
+<li>Rducks evaluation mode for DuckDB scalar UDFs: one R call per row (<code>mode = "scalar"</code>) or one R call per DuckDB chunk (<code>mode = "vectorized"</code>).</li>
+<li>Rducks execution plan: the marshalling and concurrency implementation used by DuckDB scalar UDFs.</li>
+</ul>
+<p>R-backed DuckDB scalar UDF inputs and outputs move through explicit execution plans:</p>
 <ul>
 <li>
 <code>arrow_r</code>: reference path using DuckDB Arrow C Data plus nanoarrow/R.</li>
 <li>
-<code>arrow_c</code>: native extension path for supported scalar and vectorized calls with direct DuckDB-vector materialization.</li>
+<code>arrow_c</code>: native extension path for supported scalar-UDF evaluation modes with direct DuckDB-vector materialization.</li>
 <li>
 <code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops. Large same-host read-only R globals can optionally be sent as mori shared-memory references with <code>ipc_globals_share = "mori"</code>.</li>
 </ul>
-<p>For scalar/vectorized UDFs, the user-facing semantics are separate from the execution plan: <code>mode = "scalar"</code> means one R call per logical row, and <code>mode = "vectorized"</code> means one R call per DuckDB chunk. Aggregate and table functions use separate APIs with a single execution mode: R callbacks on the recorded R thread, not <code>mode = "scalar"</code> or <code>mode = "vectorized"</code>. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning.</p>
+<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores only native raw-byte aggregate state and calls R for serialized update/finalize phases on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; the output schema is inferred during DuckDB bind and the result is imported through nanoarrow Arrow C Data before scanning.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -71,7 +78,7 @@
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_hello</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_hello</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_hello"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="st">"hello from R"</span>,</span>
@@ -84,7 +91,7 @@
 <span><span class="co">#&gt;        message</span></span>
 <span><span class="co">#&gt; 1 hello from R</span></span>
 <span></span>
-<span><span class="va">reg_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
@@ -97,11 +104,11 @@
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
 <p>Use <code>args = NULL</code> for a zero-argument scalar UDF. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
-<p><code><a href="reference/rducks_register.html">rducks_register()</a></code> returns an <code>rducks_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the UDF to keep working in DuckDB. Registering the same SQL name/signature again replaces the callable implementation in the shared DuckDB database catalog.</p>
+<p><code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> returns an <code>rducks_scalar_udf_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the scalar UDF to keep working in DuckDB. Registering the same SQL name/signature again replaces the callable implementation in the shared DuckDB database catalog.</p>
 <div class="section level3">
 <h3 id="release-and-disconnect">Release and disconnect<a class="anchor" aria-label="anchor" href="#release-and-disconnect"></a>
 </h3>
-<p><code>rducks_release(con)</code> detaches connection-local Rducks state such as the current default plan and R-side runtime anchor. It is non-destructive for the DuckDB catalog: it does not drop catalog functions and does not release closures still owned by native catalog metadata. For <code>arrow_ipc + multiprocess_parallel</code>, the last Rducks attachment to a runtime also closes native client pools for Rducks-launched local workers and stops those local mirai/NNG workers. If <code>ipc_endpoints</code> was supplied, those URLs name user-owned worker processes; Rducks does not send stop requests to them during release. Call <code>rducks_release(con)</code> before <code>DBI::dbDisconnect(con)</code> when you want deterministic R-side cleanup. Rducks does not provide <code>rducks_unregister()</code>; registered catalog UDFs and their preserved R closures are intentionally retained for the database/runtime lifetime or until the same SQL name/signature is replaced.</p>
+<p><code>rducks_release(con)</code> detaches connection-local Rducks state such as the current default plan and R-side runtime anchor. It is non-destructive for the DuckDB catalog: it does not drop catalog functions and does not release closures still owned by native catalog metadata. For <code>arrow_ipc + multiprocess_parallel</code>, the last Rducks attachment to a runtime also closes native client pools for Rducks-launched local workers and stops those local mirai/NNG workers. If <code>ipc_endpoints</code> was supplied, those URLs name user-owned worker processes; Rducks does not send stop requests to them during release. Call <code>rducks_release(con)</code> before <code>DBI::dbDisconnect(con)</code> when you want deterministic R-side cleanup. Rducks does not provide <code>rducks_unregister()</code>; registered catalog functions and their preserved R closures are intentionally retained for the database/runtime lifetime or until the same SQL name/signature is replaced.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">release_con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">release_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
@@ -117,7 +124,7 @@
 <div class="section level2">
 <h2 id="what-you-can-register">What you can register<a class="anchor" aria-label="anchor" href="#what-you-can-register"></a>
 </h2>
-<p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register.html">rducks_register()</a></code> for scalar/vectorized UDFs and by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
+<p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> for DuckDB scalar UDF arguments/returns and by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
 <p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types.</p>
 <p>Declared <code>ENUM(...)</code> descriptors are supported by all implemented execution plans. On the native <code>arrow_ipc</code> NNG path, Rducks does not depend on Arrow IPC dictionary transport for enums: declared enum levels are registration metadata, and the IPC payload carries the underlying DuckDB enum index storage as Arrow integer buffers.</p>
 <p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type descriptors use the formal S7 <code>rducks_type</code> class and structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
@@ -144,11 +151,11 @@
 <span><span class="fu"><a href="reference/rducks_check_value.html">rducks_check_return</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_enum.html">rducks_enum</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udfs-rducks_register">Scalar/vectorized UDFs (<code>rducks_register()</code>)<a class="anchor" aria-label="anchor" href="#scalarvectorized-udfs-rducks_register"></a>
+<h2 id="duckdb-scalar-udfs-rducks_register_scalar_udf">DuckDB scalar UDFs (<code>rducks_register_scalar_udf()</code>)<a class="anchor" aria-label="anchor" href="#duckdb-scalar-udfs-rducks_register_scalar_udf"></a>
 </h2>
-<p>Scalar mode calls the R function once per DuckDB row. Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per declared argument.</p>
+<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per declared argument.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_vec_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">reg_vec_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_vec_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
@@ -161,11 +168,11 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i)"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 15</span></span></code></pre></div>
-<p>In vectorized mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as scalar mode. The return length must match the number of evaluated rows. Vectorized mode currently requires at least one declared argument.</p>
+<p>In vectorized evaluation mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as row-wise scalar evaluation. The return length must match the number of evaluated rows. Vectorized mode currently requires at least one declared argument.</p>
 <div class="section level3">
-<h3 id="scalarvectorized-udf-benchmark">Scalar/vectorized UDF benchmark<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-benchmark"></a>
+<h3 id="scalar-udf-evaluation-mode-benchmark">Scalar-UDF evaluation-mode benchmark<a class="anchor" aria-label="anchor" href="#scalar-udf-evaluation-mode-benchmark"></a>
 </h3>
-<p>A tiny benchmark with <code>bench</code> can show the <code><a href="reference/rducks_register.html">rducks_register()</a></code> call-shape difference for simple R work. The result is illustrative rather than a performance guarantee.</p>
+<p>A tiny benchmark with <code>bench</code> can show the row-wise versus chunk-wise R call shape for a DuckDB scalar UDF. The result is illustrative rather than a performance guarantee.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">bench</span><span class="fu">::</span><span class="fu"><a href="https://bench.r-lib.org/reference/mark.html" class="external-link">mark</a></span><span class="op">(</span></span>
 <span>  scalar <span class="op">=</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_plus_one(i::DOUBLE)) AS x FROM range(10000) AS t(i)"</span><span class="op">)</span>,</span>
@@ -176,14 +183,14 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        286ms      3.47    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    233ms      4.29    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        290ms      3.46    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    231ms      4.30    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-mode-semantics">Scalar/vectorized UDF mode semantics<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-mode-semantics"></a>
+<h2 id="scalar-udf-evaluation-mode-semantics">Scalar-UDF evaluation-mode semantics<a class="anchor" aria-label="anchor" href="#scalar-udf-evaluation-mode-semantics"></a>
 </h2>
-<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code> and applies to scalar/vectorized UDFs registered with <code><a href="reference/rducks_register.html">rducks_register()</a></code>.</p>
+<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code> and applies to DuckDB scalar UDFs registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>.</p>
 <table class="table">
 <colgroup>
 <col width="1%">
@@ -242,11 +249,11 @@
 </table>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-argument-values-passed-to-r-functions">Scalar/vectorized UDF argument values passed to R functions<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-argument-values-passed-to-r-functions"></a>
+<h2 id="scalar-udf-argument-values-passed-to-r-functions">Scalar-UDF argument values passed to R functions<a class="anchor" aria-label="anchor" href="#scalar-udf-argument-values-passed-to-r-functions"></a>
 </h2>
 <details><summary>
-Expand for scalar/vectorized UDF argument values passed to R functions
-</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented scalar/vectorized UDF marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R function. The <code>special_null_argument</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact Rducks value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
+Expand for scalar-UDF argument values passed to R functions
+</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented DuckDB scalar-UDF marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R function. The <code>special_null_argument</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact Rducks value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
 <table style="width:100%;" class="table">
 <colgroup>
 <col width="11%">
@@ -373,11 +380,11 @@ Expand for scalar/vectorized UDF argument values passed to R functions
 </table></details>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-null-na-nan-inf-and-value-class-semantics">Scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-null-na-nan-inf-and-value-class-semantics"></a>
+<h2 id="scalar-udf-null-na-nan-inf-and-value-class-semantics">Scalar-UDF NULL, NA, NaN, Inf, and value-class semantics<a class="anchor" aria-label="anchor" href="#scalar-udf-null-na-nan-inf-and-value-class-semantics"></a>
 </h2>
 <details><summary>
-Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
-</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document scalar/vectorized UDF missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, and exact Rducks value classes reject them.</p>
+Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
+</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document DuckDB scalar-UDF missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, and exact Rducks value classes reject them.</p>
 <table class="table">
 <colgroup>
 <col width="5%">
@@ -534,11 +541,11 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 </table></details>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-composite-input-examples">Scalar/vectorized UDF composite input examples<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-composite-input-examples"></a>
+<h2 id="scalar-udf-composite-input-examples">Scalar-UDF composite input examples<a class="anchor" aria-label="anchor" href="#scalar-udf-composite-input-examples"></a>
 </h2>
-<p>Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL <code>NULL</code> elements represented as typed <code>NA</code> values. Structs are passed as named lists, and maps are passed as <code>list(keys = ..., values = ...)</code>. A <code>data.frame</code> return is not a table-valued UDF here; the scalar UDF type equivalent is <code>STRUCT(...)</code>. In vectorized mode, a <code>STRUCT(...)</code> return may be supplied as a <code>data.frame</code> with columns matching the struct fields, yielding one struct-valued SQL result per row.</p>
+<p>Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL <code>NULL</code> elements represented as typed <code>NA</code> values. Structs are passed as named lists, and maps are passed as <code>list(keys = ..., values = ...)</code>. A <code>data.frame</code> return is not a table-valued UDF here; the scalar UDF type equivalent is <code>STRUCT(...)</code>. In vectorized evaluation mode, a <code>STRUCT(...)</code> return may be supplied as a <code>data.frame</code> with columns matching the struct fields, yielding one struct-valued SQL result per row.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_list_len</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">reg_list_len</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_list_len"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span>,</span>
@@ -546,7 +553,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_array_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_array_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_array_sum"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span>,</span>
@@ -554,7 +561,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_struct_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_struct_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_struct_sum"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span><span class="op">$</span><span class="va">a</span> <span class="op">+</span> <span class="va">x</span><span class="op">$</span><span class="va">b</span>,</span>
@@ -562,7 +569,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_map_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_map_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_map_sum"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">x</span><span class="op">$</span><span class="va">values</span><span class="op">)</span>,</span>
@@ -570,7 +577,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_make_struct</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_make_struct</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_make_struct"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">x</span>, b <span class="op">=</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>,</span>
@@ -578,7 +585,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span>, b <span class="op">=</span> <span class="va">INTEGER</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_make_array</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_make_array</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_make_array"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>,</span>
@@ -586,7 +593,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_make_map</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_make_map</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_make_map"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>keys <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"a"</span>, <span class="st">"b"</span><span class="op">)</span>, values <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span>,</span>
@@ -608,12 +615,12 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt; 1        3         6         42      42            42           41         21</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-null-handling">Scalar/vectorized UDF NULL handling<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-null-handling"></a>
+<h2 id="scalar-udf-null-handling">Scalar-UDF NULL handling<a class="anchor" aria-label="anchor" href="#scalar-udf-null-handling"></a>
 </h2>
-<p>For scalar/vectorized UDFs, Rducks uses NULL-in/NULL-out handling by default: if any input is SQL <code>NULL</code>, the R function is not called and the SQL result is <code>NULL</code>.</p>
+<p>For DuckDB scalar UDFs, Rducks uses NULL-in/NULL-out handling by default: if any input is SQL <code>NULL</code>, the R function is not called and the SQL result is <code>NULL</code>.</p>
 <p>Use <code>null_handling = "special"</code> to pass the type-specific missing value shown in <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> to the R function for SQL <code>NULL</code> inputs. For ordinary scalar types this is usually a typed <code>NA</code>; for exact/exotic, binary, and composite inputs it is R <code>NULL</code>.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_null_special</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">reg_null_special</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_null_special"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span> <span class="fl">5L</span> <span class="kw">else</span> <span class="va">x</span>,</span>
@@ -627,11 +634,11 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt; 1 5</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="scalarvectorized-udf-exceptions-and-side-effects">Scalar/vectorized UDF exceptions and side effects<a class="anchor" aria-label="anchor" href="#scalarvectorized-udf-exceptions-and-side-effects"></a>
+<h2 id="scalar-udf-exceptions-and-side-effects">Scalar-UDF exceptions and side effects<a class="anchor" aria-label="anchor" href="#scalar-udf-exceptions-and-side-effects"></a>
 </h2>
-<p>For scalar/vectorized UDFs, set <code>exception_handling = "return_null"</code> to turn errors thrown by the user R function into SQL <code>NULL</code>. Return type-checking and marshalling errors still abort the query so type bugs are not hidden as NULLs.</p>
+<p>For DuckDB scalar UDFs, set <code>exception_handling = "return_null"</code> to turn errors thrown by the user R function into SQL <code>NULL</code>. Return type-checking and marshalling errors still abort the query so type bugs are not hidden as NULLs.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_error_null</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">reg_error_null</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_error_null"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="kw"><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop</a></span><span class="op">(</span><span class="st">"boom"</span><span class="op">)</span>,</span>
@@ -643,7 +650,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_error_null(1::INTEGER) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 NA</span></span></code></pre></div>
-<p>For scalar/vectorized UDFs, set <code>side_effects = TRUE</code> for functions with counters, randomness, I/O, or mutation so DuckDB reruns the function for each row.</p>
+<p>For DuckDB scalar UDFs, set <code>side_effects = TRUE</code> for functions with counters, randomness, I/O, or mutation so DuckDB reruns the function for each row.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">i</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
@@ -653,7 +660,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  <span class="op">}</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_counter"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="va">counter</span>,</span>
@@ -671,7 +678,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="co">#&gt; 5 5</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">reg_rng</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="va">reg_rng</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_rng"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span>,</span>
@@ -689,7 +696,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="aggregate-functions">Aggregate functions<a class="anchor" aria-label="anchor" href="#aggregate-functions"></a>
 </h2>
-<p><code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> registers serialized R-backed aggregates. The state stored in DuckDB is a native copy of the raw vector returned by <code>update(state, ...)</code>; R object pointers are not stored in aggregate state. <code>finalize(state)</code> receives the final raw state or <code>NULL</code> for a group with no non-NULL inputs and returns a scalar compatible with the declared return type. Aggregate functions expose a single execution mode: serialized R callbacks on the recorded R thread. They do not have scalar/vectorized modes and are not controlled by scalar UDF execution plans. Registration requires <code>rducks_enable(con, threads = "single")</code>, and execution rejects attempts to call R from DuckDB worker threads.</p>
+<p><code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> registers serialized R-backed aggregates. The state stored in DuckDB is a native copy of the raw vector returned by <code>update(state, ...)</code>; R object pointers are not stored in aggregate state. <code>finalize(state)</code> receives the final raw state or <code>NULL</code> for a group with no non-NULL inputs and returns a scalar compatible with the declared return type. Aggregate functions expose a single aggregate execution path: serialized R callbacks on the recorded R thread. They do not have row-wise/vectorized scalar-UDF evaluation modes and are not controlled by scalar-UDF execution plans. Registration requires <code>rducks_enable(con, threads = "single")</code>, and execution rejects attempts to call R from DuckDB worker threads.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pack_state</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/serialize.html" class="external-link">serialize</a></span><span class="op">(</span><span class="va">x</span>, <span class="cn">NULL</span>, version <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="va">unpack_state</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span><span class="op">)</span> <span class="op">{</span></span>
@@ -723,7 +730,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="table-functions">Table functions<a class="anchor" aria-label="anchor" href="#table-functions"></a>
 </h2>
-<p><code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> registers finite R-backed table functions. The number of positional SQL arguments comes from <code>formals(fun)</code>, each input is registered as DuckDB <code>ANY</code>, and the output schema is inferred from the data frame or named list returned during DuckDB bind. Table functions expose a single execution mode: R callbacks on the recorded R thread. They do not have scalar/vectorized modes and are not controlled by scalar UDF execution plans; register and execute them with <code>rducks_enable(con, threads = "single")</code>.</p>
+<p><code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> registers finite R-backed table functions. The number of positional SQL arguments comes from <code>formals(fun)</code>, each input is registered as DuckDB <code>ANY</code>, and the output schema is inferred from the data frame or named list returned during DuckDB bind. Table functions expose a single table-function execution path: R callbacks on the recorded R thread. They do not have row-wise/vectorized scalar-UDF evaluation modes and are not controlled by scalar-UDF execution plans; register and execute them with <code>rducks_enable(con, threads = "single")</code>.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_rows</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_table.html">rducks_register_table</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -764,7 +771,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
 </h2>
-<p>Execution plans choose the default marshalling implementation and concurrency contract for future scalar/vectorized UDF registrations through <code><a href="reference/rducks_register.html">rducks_register()</a></code>. They do not control aggregate functions, table functions, or query streams. Registration remains semantic: name, function, mode, types, NULL handling, exception handling, and side-effect flag. The plan active at <code><a href="reference/rducks_register.html">rducks_register()</a></code> freezes the UDF’s native evaluator/marshalling metadata; later plan changes do not retarget already-registered UDFs.</p>
+<p>Execution plans choose the default marshalling implementation and concurrency contract for future DuckDB scalar UDF registrations through <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>. They do not control aggregate functions, table functions, or query streams. Registration remains semantic: name, function, Rducks evaluation mode, types, NULL handling, exception handling, and side-effect flag. The plan active at <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> freezes the scalar UDF’s native evaluator/marshalling metadata; later plan changes do not retarget already-registered scalar UDFs.</p>
 <table class="table">
 <colgroup>
 <col width="11%">
@@ -812,7 +819,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 </tr>
 </tbody>
 </table>
-<p><code>arrow_r + serial</code> is the semantic reference. Other implemented plans are tested against it and use exactly their selected marshalling path. Use <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> to inspect the plan and native counters for a registered UDF.</p>
+<p><code>arrow_r + serial</code> is the semantic reference. Other implemented plans are tested against it and use exactly their selected marshalling path. Use <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> to inspect the plan and native counters for a registered scalar UDF.</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_vec_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"native_marshalling"</span>,</span>
@@ -826,21 +833,21 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
 </h2>
-<p><code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> lets DuckDB worker threads enqueue same-process R calls while the recorded main R thread drains the queue. This is for safety and liveness, not automatic speed: R API work still runs on the main thread.</p>
+<p><code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> lets DuckDB worker threads enqueue same-process R calls for scalar UDFs while the recorded main R thread drains the queue. This is for safety and liveness, not automatic speed: R API work still runs on the main thread.</p>
 <div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_inproc_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span></span>
 <span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_registration&gt;</span></span>
-<span><span class="co">#&gt;   registered: yes</span></span>
-<span><span class="co">#&gt;   name:       r_inproc_plus_one</span></span>
-<span><span class="co">#&gt;   mode:       scalar</span></span>
-<span><span class="co">#&gt;   plan:       arrow_r+serial</span></span>
-<span><span class="co">#&gt;   signature:  r_inproc_plus_one(DOUBLE) -&gt; DOUBLE</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_inproc_plus_one</span></span>
+<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
+<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
+<span><span class="co">#&gt;   signature:       r_inproc_plus_one(DOUBLE) -&gt; DOUBLE</span></span>
 <span></span>
 <span><span class="fu"><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="fl">4</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)"</span><span class="op">)</span></span>
@@ -864,15 +871,15 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <li>
 <code>ipc_transport</code> chooses local mirai worker endpoints: <code>abstract</code>, <code>ipc</code>, <code>unix</code>, <code>tcp</code>, or <code>ws</code>.</li>
 <li>
-<code>ipc_timeout</code> is used for worker registration/control requests and for native NNG send/receive on each UDF’s client pool.</li>
-<li>Worker providers are reused by runtime, worker count, max-pending limit, and endpoint/transport choice. Registering another function with the same IPC provider key reuses the existing workers; changing that key starts another provider. Changing the default plan does not stop old providers.</li>
+<code>ipc_timeout</code> is used for worker registration/control requests and for native NNG send/receive on each scalar UDF’s client pool.</li>
+<li>Worker providers are reused by runtime, worker count, max-pending limit, and endpoint/transport choice. Registering another scalar UDF with the same IPC provider key reuses the existing workers; changing that key starts another provider. Changing the default plan does not stop old providers.</li>
 <li>
 <code>rducks_release(con)</code> stops Rducks-launched local providers when the last Rducks anchor for the DuckDB runtime is released. For caller-supplied <code>ipc_endpoints</code>, release closes Rducks bookkeeping but does not send stop requests to the processes listening at those URLs. <code>rducks_nng_quiesce()</code> is lower-level: it only closes native client pools for local IPC providers.</li>
 </ul>
 <div class="section level3">
 <h3 id="large-ipc-globals-with-mori">Large IPC globals with mori<a class="anchor" aria-label="anchor" href="#large-ipc-globals-with-mori"></a>
 </h3>
-<p>Automatic global discovery for parallel workers is subtle. Rducks uses <code>globals::globalsOf(..., method = "dfs", recursive = TRUE)</code> when available, following the futureverse fix around <code>globals::findGlobals(..., method = "dfs")</code>; see Henrik Bengtsson’s discussion of why conservative <code>codetools</code>-style discovery can miss globals needed by worker processes: <a href="https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/" class="external-link uri">https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/</a>. For production UDFs with large dependencies, prefer explicit <code>ipc_globals</code>. When the workers are on the same host, <code>ipc_globals_share = "mori"</code> applies <code><a href="https://shikokuchuo.net/mori/reference/share.html" class="external-link">mori::share()</a></code> to each selected global before worker registration so large atomic vectors, lists, and data frames travel as compact shared-memory references rather than full serialized copies. Rducks keeps those shared objects anchored for the registered UDF lifetime.</p>
+<p>Automatic global discovery for parallel workers is subtle. Rducks uses <code>globals::globalsOf(..., method = "dfs", recursive = TRUE)</code> when available, following the futureverse fix around <code>globals::findGlobals(..., method = "dfs")</code>; see Henrik Bengtsson’s discussion of why conservative <code>codetools</code>-style discovery can miss globals needed by worker processes: <a href="https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/" class="external-link uri">https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/</a>. For production UDFs with large dependencies, prefer explicit <code>ipc_globals</code>. When the workers are on the same host, <code>ipc_globals_share = "mori"</code> applies <code><a href="https://shikokuchuo.net/mori/reference/share.html" class="external-link">mori::share()</a></code> to each selected global before worker registration so large atomic vectors, lists, and data frames travel as compact shared-memory references rather than full serialized copies. Rducks keeps those shared objects anchored for the registered scalar UDF lifetime.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">large_lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">1e6</span><span class="op">)</span></span>
 <span></span>
@@ -884,7 +891,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">mori_ipc_plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_with_large_lookup"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="va">large_lookup</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span>,</span>
@@ -923,7 +930,7 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span></span>
 <span><span class="va">register_for_plan</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">name</span>, <span class="va">plan</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_register.html">rducks_register</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>    <span class="va">con</span>,</span>
 <span>    name <span class="op">=</span> <span class="va">name</span>,</span>
 <span>    fun <span class="op">=</span> <span class="va">chunk_plus_one</span>,</span>
@@ -968,9 +975,9 @@ Expand for scalar/vectorized UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.867         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.830         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.069      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.856         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.821         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.033      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>

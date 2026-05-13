@@ -1,7 +1,7 @@
-# Convert R date/time values to Rducks scalar-mode shapes
+# Convert R date/time values to Rducks scalar-UDF shapes
 
 These helpers normalize common R date/time inputs to the R value shapes
-used by Rducks scalar-mode marshalling for DuckDB `DATE`, `TIME`,
+used by Rducks DuckDB scalar-UDF marshalling for `DATE`, `TIME`,
 `TIMESTAMP`, and `INTERVAL` values.
 
 ## Usage

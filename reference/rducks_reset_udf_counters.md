@@ -1,7 +1,7 @@
-# Reset Rducks UDF counters
+# Reset Rducks scalar-UDF counters
 
-Resets native per-UDF diagnostic counters without unregistering any
-DuckDB catalog function. Current liveness gauges such as
+Resets native per-scalar-UDF diagnostic counters without unregistering
+any DuckDB catalog function. Current liveness gauges such as
 pending/in-flight counts are preserved; their max fields are reset to
 the current values.
 
@@ -19,10 +19,10 @@ rducks_reset_udf_counters(con, name = NULL)
 
 - name:
 
-  Optional SQL function name registered with
-  [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md).
-  If `NULL`, reset counters for all native Rducks UDFs in the database
-  runtime.
+  Optional SQL scalar-UDF function name registered with
+  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
+  If `NULL`, reset counters for all native Rducks scalar UDFs in the
+  database runtime.
 
 ## Value
 

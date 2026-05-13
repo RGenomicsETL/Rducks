@@ -6,8 +6,8 @@ destruction happened off the recorded main R thread. Safe main-thread
 drain points include
 [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md),
 [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md),
-[`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md),
-UDF execution, and metadata/stat queries.
+[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md),
+scalar-UDF execution, and metadata/stat queries.
 
 ## Usage
 

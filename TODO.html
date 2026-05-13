@@ -125,7 +125,7 @@
 </td>
 </tr></tbody></table><p>Implemented behavior to preserve:</p>
 <ul><li>Every valid <code>marshalling + concurrency</code> pair maps to a concrete <code>engine_id</code>: <code>arrow_r_serial</code>, <code>arrow_r_main_queue</code>, <code>arrow_c_direct_serial</code>, <code>arrow_c_direct_main_queue</code>, <code>ipc_future_pool</code>, or <code>ipc_mirai_pool</code>. These engine ids are accepted as internal shortcuts while the user-facing pair API remains stable.</li>
-<li>The active plan at <code><a href="reference/rducks_register.html">rducks_register()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, <code>RCV</code>, or <code>RIPC</code>). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
+<li>The active plan at <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> chooses the native evaluator stored in DuckDB UDF metadata (<code>R</code>, <code>RC</code>, <code>RCV</code>, or <code>RIPC</code>). Later plan changes alter the runtime concurrency backend, but do not retarget already-registered UDF marshalling.</li>
 <li>Zero-argument scalar UDFs use <code>args = NULL</code>.</li>
 <li>Zero-argument vectorized UDFs are not exposed.</li>
 <li>
@@ -157,7 +157,7 @@
 <li>
 <strong>Runtime token contents:</strong> native runtime identity is an Rducks-owned process-local <code>(runtime_id, generation)</code> token, not a raw <code>duckdb_database</code> pointer, DuckDB connection id, or R object address.</li>
 <li>
-<strong>Registration-time marshalling:</strong> the execution plan active at <code><a href="reference/rducks_register.html">rducks_register()</a></code> freezes the UDF’s evaluator/marshalling metadata. Later plan changes affect connection defaults and the native concurrency backend; they do not retarget already-registered UDFs.</li>
+<strong>Registration-time marshalling:</strong> the execution plan active at <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> freezes the UDF’s evaluator/marshalling metadata. Later plan changes affect connection defaults and the native concurrency backend; they do not retarget already-registered UDFs.</li>
 <li>
 <strong><code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code> scope:</strong> runtime-wide queue pressure counters live in <code><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats()</a></code>, while per-UDF evaluator/batching counters live in <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code>.</li>
 <li>
@@ -186,7 +186,7 @@
 <li>
 <label><input type="checkbox" checked>Remove raw SEXP pointer-through-SQL evaluator registration.</label>
 <ul><li>
-<code><a href="reference/rducks_register.html">rducks_register()</a></code> now stores the evaluator in a temporary R-side registry and passes an opaque evaluator id/token to the DuckDB extension.</li>
+<code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> now stores the evaluator in a temporary R-side registry and passes an opaque evaluator id/token to the DuckDB extension.</li>
 <li>Manual SQL calls with invalid handles fail with a normal Rducks/DuckDB error instead of letting native code cast arbitrary integers to <code>SEXP</code>.</li>
 </ul></li>
 <li>
@@ -242,7 +242,7 @@
 <li>
 <label><input type="checkbox" checked>Add a main-thread release queue for preserved R objects, or explicitly document the leak-until-session-end policy.</label>
 <ul><li>Native UDF metadata destructors now release preserved evaluator objects immediately only on the recorded main R thread; off-main destructors enqueue them for later safe release.</li>
-<li>Safe drain points include <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, <code><a href="reference/rducks_release.html">rducks_release()</a></code>, <code><a href="reference/rducks_register.html">rducks_register()</a></code>, UDF execution, and metadata/stat queries.</li>
+<li>Safe drain points include <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>, <code><a href="reference/rducks_release.html">rducks_release()</a></code>, <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>, UDF execution, and metadata/stat queries.</li>
 <li>
 <code><a href="reference/rducks_release_stats.html">rducks_release_stats()</a></code> exposes queued/released/failed/pending counters.</li>
 </ul></li>

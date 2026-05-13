@@ -98,7 +98,8 @@ registered in DuckDB even if this object is discarded.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>This is intentionally separate from scalar/vectorized UDF registration: table
+    <p>This is intentionally separate from DuckDB scalar-UDF registration through
+<code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>: table
 functions have their own bind/init/scan state and currently support only the
 one-shot finite table shape. DuckDB table functions can have bind-time dynamic
 schemas and broad input signatures; this Rducks API follows that model

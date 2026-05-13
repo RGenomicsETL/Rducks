@@ -1,4 +1,4 @@
-# Disable in-process queued R UDF execution
+# Disable in-process queued scalar-UDF execution
 
 Switches a Rducks-enabled DuckDB connection back to the direct serial
 backend. Optionally updates DuckDB thread settings at the same time.

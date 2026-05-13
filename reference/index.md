@@ -12,7 +12,7 @@
   [`rducks_as_time()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_as_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
   [`rducks_interval_between()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_as_date.md)
-  : Convert R date/time values to Rducks scalar-mode shapes
+  : Convert R date/time values to Rducks scalar-UDF shapes
 - [`rducks_bigint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bigint.md)
   : Construct exact DuckDB BIGINT values
 - [`rducks_bits()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_bits.md)
@@ -27,7 +27,7 @@
 - [`rducks_decimal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_decimal.md)
   : Construct exact DuckDB DECIMAL values
 - [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md)
-  : Disable in-process queued R UDF execution
+  : Disable in-process queued scalar-UDF execution
 - [`rducks_duckdb_signature()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_signature.md)
   : Format a DuckDB scalar function signature
 - [`rducks_duckdb_types()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_duckdb_types.md)
@@ -35,13 +35,13 @@
 - [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
   : Enable Rducks on a DuckDB connection
 - [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-  : Enable in-process queued R UDF execution
+  : Enable in-process queued scalar-UDF execution
 - [`rducks_enum()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enum.md)
   : Construct DuckDB ENUM values
 - [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
   : Define an Rducks execution plan
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  : Explain a registered Rducks UDF
+  : Explain a registered Rducks scalar UDF
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
   : Locate the built Rducks DuckDB extension
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
@@ -53,17 +53,17 @@
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)
   : Construct DuckDB INTERVAL values
 - [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
-  : List registered Rducks UDFs
+  : List registered Rducks scalar UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
-  : Describe Rducks execution mode semantics
+  : Describe Rducks scalar-UDF evaluation mode semantics
 - [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
   : Inspect the native Rducks execution backend
 - [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
   : Stream a DuckDB query in data-frame batches
-- [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
-  : Register an R UDF in DuckDB
 - [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
   : Register an R aggregate function in DuckDB
+- [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+  : Register an R-backed DuckDB scalar UDF
 - [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
   : Register an R table function in DuckDB
 - [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
@@ -72,7 +72,7 @@
 - [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
   : Inspect preserved-object release counters
 - [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
-  : Reset Rducks UDF counters
+  : Reset Rducks scalar-UDF counters
 - [`rducks_runtime_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_runtime_stats.md)
   : Inspect native runtime registry counters
 - [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
