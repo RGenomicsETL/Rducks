@@ -40,10 +40,11 @@
   schema/prototype metadata, finalizer cleanup, and
   [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
   integration. Query streams now use DuckDB’s native streaming
-  result/data-chunk APIs through the Rducks extension and materialize
-  fetched chunks via DuckDB Arrow C Data plus the existing
-  Rducks/nanoarrow conversion helpers, without requiring the `arrow`
-  package.
+  result/data-chunk APIs through the Rducks extension, export fetched
+  chunks via DuckDB Arrow C Data, and either return owned nanoarrow
+  record batches (`format = "record_batch"`) or materialize through the
+  existing Rducks/nanoarrow conversion helpers, without requiring the
+  `arrow` package.
 - Clarified IPC shared-memory capability metadata and design notes: mori
   is a same-host path for long-lived globals, while built-in backends
   still report no SQL chunk shared-memory handle support. Added a

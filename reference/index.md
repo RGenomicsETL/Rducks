@@ -59,7 +59,7 @@
 - [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
   : Inspect the native Rducks execution backend
 - [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
-  : Stream a DuckDB query in data-frame batches
+  : Stream a DuckDB query in batches
 - [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
   : Register an R aggregate function in DuckDB
 - [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)

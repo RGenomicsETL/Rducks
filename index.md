@@ -53,9 +53,10 @@ provides a connection-bound query-batch API with explicit `next_batch()`
 and [`close()`](https://rdrr.io/r/base/connections.html) methods. Query
 streams fetch DuckDB native chunks and import them through Arrow C
 Data/nanoarrow without requiring the heavy `arrow` R package. The
-current R-facing `next_batch()` method materializes base-R batches, but
-the stream engine boundary is DuckDB chunks and Arrow C Data rather than
-DBI result pagination.
+default R-facing `next_batch()` method materializes base-R data-frame
+batches; `format = "record_batch"` returns the owned nanoarrow record
+batch so callers can materialize later. The stream engine boundary is
+DuckDB chunks and Arrow C Data rather than DBI result pagination.
 
 ## Quick start
 
@@ -261,8 +262,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        289ms      3.43    1.97MB
-#> 2 vectorized    234ms      4.17    2.34MB
+#> 1 scalar        288ms      3.43    1.97MB
+#> 2 vectorized    238ms      4.16    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -599,22 +600,24 @@ than one eager
 [`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
 result. The query runs through the Rducks extension’s DuckDB streaming
 result handle; fetched DuckDB chunks are exported through DuckDB Arrow C
-Data and materialized with the same Rducks/nanoarrow conversion helpers
-used by scalar-UDF marshalling. This path does not page over an already
+Data and can be returned as owned nanoarrow record batches or
+materialized with the same Rducks/nanoarrow conversion helpers used by
+scalar-UDF marshalling. This path does not page over an already
 materialized DBI result and does not require the heavy `arrow` R
 package. Because execution uses the extension-owned DuckDB connection,
 database-scoped objects are visible, while caller-connection temporary
 tables/views are not part of the stream query scope. Delivery into R is
-intentionally on the recorded R thread because the current materializer
-creates R objects; Rducks does not call R/nanoarrow materializers from
-arbitrary DuckDB worker threads. The returned stream is connection-bound
-for lifecycle and has `next_batch()`,
+intentionally on the recorded R thread because record-batch wrapping and
+optional data-frame materialization create R objects; Rducks does not
+call R/nanoarrow code from arbitrary DuckDB worker threads. The returned
+stream is connection-bound for lifecycle and has `next_batch()`,
 [`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
-methods. The current `next_batch()` materializer returns a base R
-data-frame batch or `NULL` at end-of-stream. Each non-empty batch
-carries the stream’s nanoarrow schema in the `"rducks_nanoarrow_schema"`
-attribute, and `rducks_release(con)` closes streams attached to that
-connection.
+methods. By default `next_batch()` materializes a base R data-frame
+batch; with `format = "record_batch"` it returns the owned nanoarrow
+record batch and leaves R-vector materialization to the caller. Each
+non-empty batch carries the stream’s nanoarrow schema in the
+`"rducks_nanoarrow_schema"` attribute, and `rducks_release(con)` closes
+streams attached to that connection.
 
 ``` r
 
@@ -866,9 +869,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.859         R             16
-#> 2    in-process queue       1 536887296       1.810         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.076      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.847         R             16
+#> 2    in-process queue       1 536887296       1.796         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.034      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
