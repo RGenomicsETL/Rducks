@@ -25,24 +25,26 @@ catalog UDF. Changing a connection's default plan later affects only future
 registrations.
 
 Aggregate functions registered with `rducks_register_aggregate()` are also
-separate from the scalar/vectorized execution-plan matrix. Their first-slice
-state contract is explicit: DuckDB aggregate state stores copied raw bytes, not
-R object pointers; R `update()`/`combine()` callbacks must return raw state or
-`NULL`; `finalize()` returns the declared scalar result. R callbacks are
-single-threaded and require the recorded calling R thread.
+separate from the scalar/vectorized execution-plan matrix. Their state contract
+is explicit: DuckDB aggregate state stores copied raw bytes, not R object
+pointers; R `update()`/`combine()` callbacks must return raw state or `NULL`;
+`finalize()` returns the declared scalar result. R callbacks are single-threaded
+and require the recorded calling R thread.
 
 Table functions registered with `rducks_register_table()` are separate from this
-scalar/vectorized execution-plan matrix. The current first slice is a one-shot,
+scalar/vectorized execution-plan matrix. The current implementation is a one-shot,
 finite table function: Rducks infers the positional SQL argument count from the
 R function formals, registers those input slots as DuckDB `ANY`, converts the
 actual SQL bind values to R values, calls the R function during bind on the
 recorded calling R thread, infers the output schema dynamically from the
 returned data-frame/list columns, imports the result through nanoarrow Arrow C
-Data, then emits slices of that imported DuckDB chunk. Worker-thread calls into R
-are rejected; use `rducks_enable(con, threads = "single")` for this path.
+Data, then emits row batches from that imported DuckDB chunk. Worker-thread
+calls into R are rejected; use `rducks_enable(con, threads = "single")` for this
+path.
 
-DuckDB table functions are more general than this first slice. Their bind phase
-can inspect constant input arguments, decide the output schema dynamically, and
+DuckDB table functions are more general than the current Rducks table API. Their
+bind phase can inspect constant input arguments, decide the output schema
+dynamically, and
 DuckDB's function catalog can contain overloads with distinct input signatures.
 Rducks should not model table functions as inherently declared-schema or
 zero-argument; this API supports dynamic output schemas and dynamic positional
@@ -59,7 +61,7 @@ replacement-scan rewriting to produce the same table-function call. That route
 avoids Rducks' per-value result marshalling and should remain the recommended
 path when the table already exists as an R data frame at registration time.
 
-Future Rducks table-function slices should build on this nanoarrow/DuckDB-chunk
+Future Rducks table-function work should build on this nanoarrow/DuckDB-chunk
 path rather than reintroducing per-value result marshalling. Remaining design
 work includes Arrow ArrayStream producers with multiple batches, named/optional
 parameters, explicit lifetime and main-thread callback rules, and overload-aware

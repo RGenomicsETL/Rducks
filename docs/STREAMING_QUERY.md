@@ -1,6 +1,6 @@
 # Streaming query interface
 
-`rducks_query_stream(con, sql, batch_size = 1024L)` is the first R-side streaming
+`rducks_query_stream(con, sql, batch_size = 1024L)` is an R-side streaming
 query API. It is a connection-bound result/session object, not a scalar-UDF IPC
 feature and not an R-backed SQL table function.
 
@@ -24,15 +24,15 @@ At stream creation, Rducks fetches a zero-row prototype from DuckDB and records
 Each non-empty batch returned by `next_batch()` carries the same schema as the
 `"rducks_nanoarrow_schema"` attribute.
 
-This first slice returns data-frame batches because that is the stable DBI/DuckDB
-R result shape. Future adapters can expose nanoarrow arrays or Arrow IPC bytes
+The current implementation returns data-frame batches because that is the stable
+DBI/DuckDB R result shape. Future adapters can expose nanoarrow arrays or Arrow IPC bytes
 without changing the stream lifetime rules.
 
 ## Ownership and errors
 
 The stream owns one DBI result handle. Query resources remain live until
 end-of-stream, `close()`, `rducks_release(con)`, or stream finalization. Streams
-do not survive connection release for the 0.1.0 slice.
+do not survive connection release for the current 0.1.0 API.
 
 If query creation or batch fetch fails, the error is surfaced to the caller. A
 fetch-time error closes the stream before rethrowing so the DBI result is not

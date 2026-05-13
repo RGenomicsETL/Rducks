@@ -17,7 +17,7 @@ Invalid marshalling/concurrency pairs fail validation.
 
 ## Aggregate functions
 
-`rducks_register_aggregate()` is a separate first-slice SQL aggregate surface,
+`rducks_register_aggregate()` is a separate SQL aggregate surface,
 not an execution-plan variant of scalar/vectorized UDFs. The only supported
 state representation is native DuckDB aggregate memory containing a copied R
 `raw` vector. `update()` and optional `combine()` must return raw state or

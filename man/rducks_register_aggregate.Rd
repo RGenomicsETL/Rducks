@@ -44,7 +44,7 @@ connection and normalized aggregate signature. The aggregate remains
 registered in DuckDB even if this object is discarded.
 }
 \description{
-Registers a first-slice R-backed DuckDB aggregate. The aggregate state stored
+Registers an R-backed DuckDB aggregate. The aggregate state stored
 inside DuckDB is native memory containing bytes from an R \code{raw} vector, never
 an R object pointer. For each non-NULL input row, Rducks calls
 \code{update(state, ...)}, where \code{state} is the previous raw state or \code{NULL} and

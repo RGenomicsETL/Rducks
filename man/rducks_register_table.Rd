@@ -25,21 +25,21 @@ connection and normalized table signature. The table function remains
 registered in DuckDB even if this object is discarded.
 }
 \description{
-Registers a first-slice R-backed DuckDB table function. The registered SQL
+Registers an R-backed DuckDB table function. The registered SQL
 table function infers its positional SQL argument count from \code{formals(fun)}
 and registers those arguments with DuckDB's dynamic \code{ANY} type. During
 DuckDB's bind phase, Rducks converts the actual SQL argument values to R
 scalars/lists, calls \code{fun(...)} on the recorded calling R thread, and infers
 the DuckDB output schema from the returned data frame or named list of
 equal-length columns. It then converts the result through a nanoarrow Arrow C
-Data stream, imports it into a DuckDB chunk, and emits slices of that imported
-chunk during table-function scans.
+Data stream, imports it into a DuckDB chunk, and emits row batches from
+that imported chunk during table-function scans.
 }
 \details{
 This is intentionally separate from scalar/vectorized UDF registration: table
 functions have their own bind/init/scan state and currently support only the
 one-shot finite table shape. DuckDB table functions can have bind-time dynamic
-schemas and broad input signatures; this first Rducks API follows that model
+schemas and broad input signatures; this Rducks API follows that model
 for output schemas and positional input types, while the number of SQL
 arguments is fixed by the R function's formal argument count. Variadic \code{...}
 arguments are not supported. If you already have a static R data frame to

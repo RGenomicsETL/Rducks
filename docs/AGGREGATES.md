@@ -1,6 +1,6 @@
 # R-backed aggregate functions
 
-`rducks_register_aggregate()` is the first Rducks aggregate-function slice. It is
+`rducks_register_aggregate()` is the Rducks aggregate-function API. It is
 separate from scalar/vectorized UDF execution plans because aggregate functions
 have state, update, combine, and finalize phases.
 
@@ -30,7 +30,7 @@ and receives the declared type's R missing-value shape.
 
 ## Threading and combine behavior
 
-This slice is serialized. Register aggregates after
+This API is serialized. Register aggregates after
 `rducks_enable(con, threads = "single")` or equivalent `external_threads=1` plus
 `PRAGMA threads=1`. If execution reaches a DuckDB worker thread and would need
 to call R, Rducks raises a DuckDB error.
