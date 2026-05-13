@@ -256,8 +256,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.43    1.97MB
-#> 2 vectorized    238ms      4.21    2.34MB
+#> 1 scalar        292ms      3.38    1.97MB
+#> 2 vectorized    247ms      4.07    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -592,7 +592,14 @@ Use
 when an R caller wants explicit batch-by-batch query consumption rather
 than one eager
 [`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
-result. The returned stream is connection-bound and has `next_batch()`,
+result. The query runs through the Rducks extension’s DuckDB streaming
+result handle; fetched DuckDB chunks are exported through DuckDB Arrow C
+Data and materialized with the same Rducks/nanoarrow conversion helpers
+used by scalar-UDF marshalling. Because execution uses the
+extension-owned DuckDB connection, database-scoped objects are visible,
+while caller-connection temporary tables/views are not part of the
+stream query scope. The returned stream is connection-bound for
+lifecycle and has `next_batch()`,
 [`close()`](https://rdrr.io/r/base/connections.html), and `is_closed()`
 methods; `next_batch()` returns a data frame or `NULL` at end-of-stream.
 Each non-empty batch carries the stream’s nanoarrow schema in the
@@ -849,9 +856,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.815         R             16
-#> 2    in-process queue       1 536887296       1.694         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.019      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.856         R             16
+#> 2    in-process queue       1 536887296       1.756         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.052      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
