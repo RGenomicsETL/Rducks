@@ -3,6 +3,15 @@
 ## Rducks 0.0.1
 
 - Added a first-slice
+  [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+  API for serialized R-backed DuckDB aggregate functions. Aggregate
+  state is native raw-byte storage copied from R `raw` vectors,
+  [`update()`](https://rdrr.io/r/stats/update.html)/`combine()` must
+  return raw state or `NULL`, `finalize()` returns the declared scalar
+  result, default NULL handling skips rows with top-level NULL inputs,
+  and execution is explicitly restricted to the recorded calling R
+  thread.
+- Added a first-slice
   [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
   API for finite R-backed DuckDB table functions. The native
   table-function path infers positional SQL argument count from the R

@@ -23,10 +23,13 @@ plans:
 
 The user-facing UDF semantics are separate from the execution plan:
 `mode = "scalar"` means one R call per logical row;
-`mode = "vectorized"` means one R call per DuckDB chunk. Table functions
-use a separate first-slice API,
-[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md),
-for finite scans whose positional SQL argument count is inferred from
+`mode = "vectorized"` means one R call per DuckDB chunk. Aggregate and
+table functions use separate first-slice APIs.
+[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+stores only native raw-byte aggregate state and calls R for serialized
+update/finalize phases on the recorded R thread.
+[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+covers finite scans whose positional SQL argument count is inferred from
 the R function formals and whose input types are registered as DuckDB
 `ANY`; the output schema is inferred during DuckDB bind and the result
 is imported through nanoarrow Arrow C Data before scanning.
@@ -210,6 +213,50 @@ NA/NULL shapes as scalar mode. The return length must match the number
 of evaluated rows. Vectorized mode currently requires at least one
 declared argument.
 
+## Aggregate functions
+
+[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+registers serialized R-backed aggregates. The state stored in DuckDB is
+a native copy of the raw vector returned by `update(state, ...)`; R
+object pointers are not stored in aggregate state. `finalize(state)`
+receives the final raw state or `NULL` for a group with no non-NULL
+inputs and returns a scalar compatible with the declared return type.
+This first slice is deliberately single-threaded: registration requires
+`rducks_enable(con, threads = "single")`, and execution rejects attempts
+to call R from DuckDB worker threads.
+
+``` r
+
+pack_state <- function(x) serialize(x, NULL, version = 2)
+unpack_state <- function(state) {
+  if (is.null(state)) list(sum = 0L, n = 0L) else unserialize(state)
+}
+
+reg_r_sum <- rducks_register_aggregate(
+  con,
+  name = "r_sum_i32",
+  update = function(state, x) {
+    s <- unpack_state(state)
+    s$sum <- as.integer(s$sum + x)
+    s$n <- as.integer(s$n + 1L)
+    pack_state(s)
+  },
+  finalize = function(state) {
+    s <- unpack_state(state)
+    if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
+  },
+  args = INTEGER,
+  returns = INTEGER
+)
+
+dbGetQuery(
+  con,
+  "SELECT r_sum_i32(i) AS s FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+)
+#>   s
+#> 1 3
+```
+
 A tiny benchmark with `bench` can show the call-shape difference for
 simple R work. The result is illustrative rather than a performance
 guarantee.
@@ -225,8 +272,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        287ms      3.49    1.97MB
-#> 2 vectorized    228ms      4.34    2.34MB
+#> 1 scalar        284ms      3.51    1.96MB
+#> 2 vectorized    223ms      4.48    2.34MB
 ```
 
 ## Execution mode semantics
@@ -729,9 +776,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.862         R             16
-#> 2    in-process queue       1 536887296       1.801         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.035      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.873         R             16
+#> 2    in-process queue       1 536887296       1.838         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.065      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0

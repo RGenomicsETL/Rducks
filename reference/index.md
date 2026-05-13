@@ -62,6 +62,8 @@
   : Stream a DuckDB query in data-frame batches
 - [`rducks_register()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register.md)
   : Register an R UDF in DuckDB
+- [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+  : Register an R aggregate function in DuckDB
 - [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
   : Register an R table function in DuckDB
 - [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
