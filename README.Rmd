@@ -234,6 +234,27 @@ dbGetQuery(
 )
 ```
 
+## Table functions
+
+`rducks_register_table()` registers finite R-backed table functions. The number
+of positional SQL arguments comes from `formals(fun)`, each input is registered
+as DuckDB `ANY`, and the output schema is inferred from the data frame or named
+list returned during DuckDB bind.
+
+```{r table-function}
+reg_rows <- rducks_register_table(
+  con,
+  name = "r_rows",
+  fun = function(n, prefix) {
+    i <- seq_len(as.integer(n))
+    data.frame(i = i, label = paste0(prefix, i))
+  },
+  chunk_size = 2L
+)
+
+dbGetQuery(con, "SELECT * FROM r_rows(3, 'row-') ORDER BY i")
+```
+
 A tiny benchmark with `bench` can show the call-shape difference for simple R
 work. The result is illustrative rather than a performance guarantee.
 
