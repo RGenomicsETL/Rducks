@@ -776,6 +776,79 @@ unlink(csv_dir, recursive = TRUE, force = TRUE)
 rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 ```
 
+## Demo : duckplyr with no fallback, using Rducks for custom R logic.
+
+```{r, no-fallback}
+
+Sys.setenv(
+  DUCKPLYR_FALLBACK_COLLECT = "0",
+  DUCKPLYR_FALLBACK_INFO = "0",
+  DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
+)
+
+suppressPackageStartupMessages({
+  library(duckplyr)
+})
+
+con <- DBI::dbConnect(
+  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  dbdir = ":memory:"
+)
+
+Rducks::rducks_enable(con, threads = "single")
+
+input <- data.frame(
+  id = 1:6,
+  x = as.numeric(c(2, 5, 8, 13, 21, 34)),
+  label = c("low", "low", "mid", "mid", "high", "high")
+)
+DBI::dbWriteTable(con, "demo_input", input)
+
+stingy <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM demo_input",
+  con = con,
+  prudence = "stingy"
+)
+
+local_score <- function(x) x + 100
+fallback_blocked <- tryCatch({
+  stingy |>
+    mutate(score = local_score(x)) |>
+    collect()
+  FALSE
+}, error = function(e) {
+  message("Fallback blocked as expected: ", conditionMessage(e))
+  TRUE
+})
+stopifnot(isTRUE(fallback_blocked))
+
+Rducks::rducks_register_scalar_udf(
+  con,
+  "rducks_demo_score",
+  function(x, label) {
+    bonus <- if (identical(label, "high")) 100 else if (identical(label, "mid")) 10 else 0
+    as.double(x + bonus)
+  },
+  args = list(DOUBLE, VARCHAR),
+  returns = DOUBLE
+)
+
+out <- stingy |>
+  mutate(score = dd$rducks_demo_score(x, label)) |>
+  filter(score >= 100) |>
+  select(id, label, score) |>
+  arrange(id) |>
+  collect()
+
+out
+stopifnot(
+  identical(out$id, 5:6),
+  identical(out$label, c("high", "high")),
+  identical(out$score, c(121, 134))
+)
+
+```
+
 ## Build notes
 
 The package builds its DuckDB extension during installation using `configure` or
