@@ -90,16 +90,18 @@ reg_plus_one <- rducks_register_scalar_udf(
   con,
   name = "r_plus_one",
   fun = function(x) x + 1,
-  args = DOUBLE,
   returns = DOUBLE,
   mode = "scalar"
 )
 
-dbGetQuery(con, "SELECT r_plus_one(41.0) AS x")
+dbGetQuery(con, "SELECT r_plus_one(41::DOUBLE) AS x")
 ```
 
-Use `args = NULL` for a zero-argument scalar UDF. `null_handling` only affects
-SQL NULL inputs, so the default is appropriate for `r_hello()`.
+Omitting `args` registers a dynamic-varargs DuckDB scalar UDF and is convenient
+for simple row-wise scalar calls. DuckDB still needs an explicit `returns` type
+while planning. Use `args = NULL` for a true zero-argument scalar UDF; otherwise
+DuckDB treats omitted arguments as variadic. `null_handling` only affects SQL
+NULL inputs, so the default is appropriate for `r_hello()`.
 
 `rducks_register_scalar_udf()` returns an `rducks_scalar_udf_registration` object that records the
 connection, normalized signature, and registration options. You do not need to
@@ -145,8 +147,9 @@ conversion used at the Rducks boundary.
 
 Rducks installs a package-managed DuckDB extension and loads it into DuckDB
 with `rducks_enable()`. The type descriptors below are used by
-`rducks_register_scalar_udf()` for DuckDB scalar UDF arguments/returns and by
-`rducks_register_aggregate()` for aggregate inputs and returns. Table functions
+`rducks_register_scalar_udf()` for DuckDB scalar UDF returns and, when declared,
+DuckDB scalar UDF arguments. They are also used by `rducks_register_aggregate()`
+for aggregate inputs and returns. Table functions
 registered with `rducks_register_table()` infer their output schema dynamically
 from the returned data frame or named list instead of taking declared type
 descriptors.
@@ -158,7 +161,10 @@ Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 `ENUM(levels)`, and `UNION(...)`.
 Composite inputs and outputs are accepted as constructed type descriptors such
 as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
-supported child types.
+supported child types. Omitted scalar-UDF arguments are dynamic DuckDB `ANY`
+inputs; they are intended for simple scalar convenience and do not replace
+explicit descriptors when exact Rducks composite, exotic, or special-NULL
+semantics matter.
 
 Declared `ENUM(...)` descriptors are supported by all implemented execution
 plans. On the native `arrow_ipc` NNG path, Rducks does not depend on Arrow IPC
@@ -194,8 +200,12 @@ rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))
 
 DuckDB scalar UDFs return one SQL value per logical input row. Rducks can
 evaluate the backing R function row-wise (`mode = "scalar"`) or chunk-wise
-(`mode = "vectorized"`). Vectorized mode calls the R function once per DuckDB
-chunk with one R vector/list-column per declared argument.
+(`mode = "vectorized"`). Omitting `args` is allowed for row-wise scalar UDFs on
+the default `arrow_r + serial` plan and registers a dynamic DuckDB varargs
+function. Declare `args` when using vectorized mode, non-default execution
+plans, composite/exotic inputs, or `null_handling = "special"` input semantics.
+Vectorized mode calls the R function once per DuckDB chunk with one R
+vector/list-column per declared argument.
 
 ```{r vectorized-mode}
 reg_vec_plus_one <- rducks_register_scalar_udf(
@@ -440,7 +450,7 @@ reg_counter <- rducks_register_scalar_udf(
   con,
   name = "r_counter",
   fun = counter,
-  args = character(),
+  args = NULL,
   returns = INTEGER,
   side_effects = TRUE
 )
@@ -452,7 +462,7 @@ reg_rng <- rducks_register_scalar_udf(
   con,
   name = "r_rng",
   fun = function() runif(1),
-  args = character(),
+  args = NULL,
   returns = DOUBLE,
   side_effects = TRUE
 )
@@ -776,77 +786,99 @@ unlink(csv_dir, recursive = TRUE, force = TRUE)
 rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 ```
 
-## Demo : duckplyr with no fallback, using Rducks for custom R logic.
+## Demo: duckplyr with no fallback, using Rducks for custom R logic
 
-```{r, no-fallback}
+This example keeps a stingy duckplyr pipeline in DuckDB without writing
+`dd$...` calls. Rducks registers `local_score()` as a dynamic-argument scalar
+UDF, so only the return type is declared here; argument types are intentionally
+omitted for this simple scalar path.
 
-Sys.setenv(
-  DUCKPLYR_FALLBACK_COLLECT = "0",
-  DUCKPLYR_FALLBACK_INFO = "0",
-  DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
-)
+```{r no-fallback}
+local({
+  old_collect <- Sys.getenv("DUCKPLYR_FALLBACK_COLLECT", unset = NA_character_)
+  old_info <- Sys.getenv("DUCKPLYR_FALLBACK_INFO", unset = NA_character_)
+  old_upload <- Sys.getenv("DUCKPLYR_FALLBACK_AUTOUPLOAD", unset = NA_character_)
+  Sys.setenv(
+    DUCKPLYR_FALLBACK_COLLECT = "0",
+    DUCKPLYR_FALLBACK_INFO = "0",
+    DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
+  )
+  restore_env <- function(name, value) {
+    if (is.na(value)) {
+      Sys.unsetenv(name)
+    } else {
+      do.call(Sys.setenv, stats::setNames(list(value), name))
+    }
+  }
+  on.exit({
+    restore_env("DUCKPLYR_FALLBACK_COLLECT", old_collect)
+    restore_env("DUCKPLYR_FALLBACK_INFO", old_info)
+    restore_env("DUCKPLYR_FALLBACK_AUTOUPLOAD", old_upload)
+  }, add = TRUE)
 
-suppressPackageStartupMessages({
-  library(duckplyr)
-})
+  suppressPackageStartupMessages({
+    library(dplyr)
+    library(duckplyr)
+  })
 
-con <- DBI::dbConnect(
-  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
-  dbdir = ":memory:"
-)
+  demo_con <- DBI::dbConnect(
+    duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+    dbdir = ":memory:"
+  )
+  on.exit({
+    try(Rducks::rducks_release(demo_con), silent = TRUE)
+    try(DBI::dbDisconnect(demo_con, shutdown = TRUE), silent = TRUE)
+  }, add = TRUE)
 
-Rducks::rducks_enable(con, threads = "single")
+  Rducks::rducks_enable(demo_con, threads = "single")
 
-input <- data.frame(
-  id = 1:6,
-  x = as.numeric(c(2, 5, 8, 13, 21, 34)),
-  label = c("low", "low", "mid", "mid", "high", "high")
-)
-DBI::dbWriteTable(con, "demo_input", input)
+  input <- data.frame(
+    id = 1:6,
+    x = as.numeric(c(2, 5, 8, 13, 21, 34)),
+    label = c("low", "low", "mid", "mid", "high", "high")
+  )
+  DBI::dbWriteTable(demo_con, "demo_input", input)
 
-stingy <- duckplyr::read_sql_duckdb(
-  "SELECT * FROM demo_input",
-  con = con,
-  prudence = "stingy"
-)
+  stingy <- duckplyr::read_sql_duckdb(
+    "SELECT * FROM demo_input",
+    con = demo_con,
+    prudence = "stingy"
+  )
 
-local_score <- function(x) x + 100
-fallback_blocked <- tryCatch({
-  stingy |>
-    mutate(score = local_score(x)) |>
-    collect()
-  FALSE
-}, error = function(e) {
-  message("Fallback blocked as expected: ", conditionMessage(e))
-  TRUE
-})
-stopifnot(isTRUE(fallback_blocked))
-
-Rducks::rducks_register_scalar_udf(
-  con,
-  "rducks_demo_score",
-  function(x, label) {
+  local_score <- function(x, label) {
     bonus <- if (identical(label, "high")) 100 else if (identical(label, "mid")) 10 else 0
     as.double(x + bonus)
-  },
-  args = list(DOUBLE, VARCHAR),
-  returns = DOUBLE
-)
+  }
 
-out <- stingy |>
-  mutate(score = dd$rducks_demo_score(x, label)) |>
-  filter(score >= 100) |>
-  select(id, label, score) |>
-  arrange(id) |>
-  collect()
+  fallback_blocked <- tryCatch({
+    stingy |>
+      mutate(score = local_score(x, label)) |>
+      collect()
+    FALSE
+  }, error = function(e) {
+    message("Fallback blocked as expected: ", conditionMessage(e))
+    TRUE
+  })
+  stopifnot(isTRUE(fallback_blocked))
 
-out
-stopifnot(
-  identical(out$id, 5:6),
-  identical(out$label, c("high", "high")),
-  identical(out$score, c(121, 134))
-)
+  out <- with(
+    demo_con,
+    stingy |>
+      mutate(score = local_score(x, label)) |>
+      filter(score >= 100) |>
+      select(id, label, score) |>
+      arrange(id) |>
+      collect(),
+    rducks_returns = list(local_score = DOUBLE)
+  )
 
+  print(out)
+  stopifnot(
+    identical(out$id, 5:6),
+    identical(out$label, c("high", "high")),
+    identical(out$score, c(121, 134))
+  )
+})
 ```
 
 ## Build notes

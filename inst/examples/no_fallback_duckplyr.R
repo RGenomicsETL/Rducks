@@ -3,15 +3,32 @@
 # The important pieces are:
 # - duckplyr::read_sql_duckdb(..., prudence = "stingy") forbids dplyr fallback.
 # - A plain R helper in mutate() therefore fails by itself, as expected.
-# - rducks_with_duckplyr() registers selected R helpers as dynamic-argument
-#   DuckDB scalar UDFs and rewrites those calls before duckplyr translates the
-#   pipeline, so the expression stays in DuckDB.
+# - with(con, ..., rducks_returns = ...) registers selected R helpers as
+#   dynamic-argument DuckDB scalar UDFs and rewrites those calls before duckplyr
+#   translates the pipeline, so the expression stays in DuckDB.
+# - DuckDB still needs return types at planning time; simple scalar input
+#   argument types are intentionally omitted here.
 
+old_collect <- Sys.getenv("DUCKPLYR_FALLBACK_COLLECT", unset = NA_character_)
+old_info <- Sys.getenv("DUCKPLYR_FALLBACK_INFO", unset = NA_character_)
+old_upload <- Sys.getenv("DUCKPLYR_FALLBACK_AUTOUPLOAD", unset = NA_character_)
 Sys.setenv(
   DUCKPLYR_FALLBACK_COLLECT = "0",
   DUCKPLYR_FALLBACK_INFO = "0",
   DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
 )
+restore_env <- function(name, value) {
+  if (is.na(value)) {
+    Sys.unsetenv(name)
+  } else {
+    do.call(Sys.setenv, stats::setNames(list(value), name))
+  }
+}
+on.exit({
+  restore_env("DUCKPLYR_FALLBACK_COLLECT", old_collect)
+  restore_env("DUCKPLYR_FALLBACK_INFO", old_info)
+  restore_env("DUCKPLYR_FALLBACK_AUTOUPLOAD", old_upload)
+}, add = TRUE)
 
 required <- c("DBI", "dplyr", "duckdb", "duckplyr", "Rducks")
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
@@ -67,7 +84,7 @@ fallback_blocked <- tryCatch({
 })
 stopifnot(isTRUE(fallback_blocked))
 
-out <- Rducks::rducks_with_duckplyr(
+out <- with(
   con,
   stingy |>
     mutate(score = local_score(x, label)) |>
@@ -75,7 +92,7 @@ out <- Rducks::rducks_with_duckplyr(
     select(id, label, score) |>
     arrange(id) |>
     collect(),
-  returns = list(local_score = DOUBLE)
+  rducks_returns = list(local_score = DOUBLE)
 )
 
 print(out)
