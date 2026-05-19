@@ -132,3 +132,6 @@
 - [`rducks_value_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   [`rducks_duckdb_literal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   : Generic helpers for Rducks value classes
+- [`rducks_with_duckplyr()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+  [`with(`*`<duckdb_connection>`*`)`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+  : Evaluate a duckplyr pipeline with dynamic Rducks scalar UDFs

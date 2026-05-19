@@ -40,10 +40,15 @@ rducks_register_scalar_udf(
 
 - args:
 
-  Argument type specification. Use `NULL` for a zero-argument scalar
-  UDF. Otherwise use exported DuckDB-style type descriptors such as
-  `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`,
-  or `MAP(VARCHAR, INTEGER)`.
+  Optional argument type specification. If omitted, Rducks registers a
+  dynamic-varargs DuckDB scalar function for the `arrow_r+serial` scalar
+  path. Dynamic inputs are materialized with nanoarrow's default
+  conversion and are intended for duckplyr-style simple scalar calls;
+  use explicit `args` for Rducks' declared composite, exotic, and
+  special-NULL input semantics. Use explicit `NULL` for a zero-argument
+  scalar UDF. Otherwise use exported DuckDB-style type descriptors such
+  as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
+  `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 
 - returns:
 

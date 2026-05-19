@@ -84,10 +84,14 @@ calls the R function once per DuckDB chunk with vector/list-column inputs.</p>
 
 
 <dt id="arg-args">args<a class="anchor" aria-label="anchor" href="#arg-args"></a></dt>
-<dd><p>Argument type specification. Use <code>NULL</code> for a zero-argument
-scalar UDF. Otherwise use exported DuckDB-style type descriptors such as
-<code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or
-<code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
+<dd><p>Optional argument type specification. If omitted, Rducks registers
+a dynamic-varargs DuckDB scalar function for the <code>arrow_r+serial</code> scalar
+path. Dynamic inputs are materialized with nanoarrow's default conversion
+and are intended for duckplyr-style simple scalar calls; use explicit <code>args</code>
+for Rducks' declared composite, exotic, and special-NULL input semantics.
+Use explicit <code>NULL</code> for a zero-argument scalar UDF. Otherwise use exported
+DuckDB-style type descriptors such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code>,
+<code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>
