@@ -264,7 +264,7 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        286ms      3.46    1.97MB
+#> 1 scalar        285ms      3.49    1.97MB
 #> 2 vectorized    233ms      4.30    2.34MB
 ```
 
@@ -882,9 +882,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.865         R             16
-#> 2    in-process queue       1 536887296       1.799         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.016      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.850         R             16
+#> 2    in-process queue       1 536887296       1.817         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.067      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
@@ -892,6 +892,90 @@ comparison
 
 unlink(csv_dir, recursive = TRUE, force = TRUE)
 rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
+```
+
+## Demo : duckplyr with no fallback, using Rducks for custom R logic.
+
+``` r
+
+
+Sys.setenv(
+  DUCKPLYR_FALLBACK_COLLECT = "0",
+  DUCKPLYR_FALLBACK_INFO = "0",
+  DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
+)
+
+suppressPackageStartupMessages({
+  library(duckplyr)
+})
+
+con <- DBI::dbConnect(
+  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  dbdir = ":memory:"
+)
+
+Rducks::rducks_enable(con, threads = "single")
+
+input <- data.frame(
+  id = 1:6,
+  x = as.numeric(c(2, 5, 8, 13, 21, 34)),
+  label = c("low", "low", "mid", "mid", "high", "high")
+)
+DBI::dbWriteTable(con, "demo_input", input)
+
+stingy <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM demo_input",
+  con = con,
+  prudence = "stingy"
+)
+
+local_score <- function(x) x + 100
+fallback_blocked <- tryCatch({
+  stingy |>
+    mutate(score = local_score(x)) |>
+    collect()
+  FALSE
+}, error = function(e) {
+  message("Fallback blocked as expected: ", conditionMessage(e))
+  TRUE
+})
+stopifnot(isTRUE(fallback_blocked))
+
+Rducks::rducks_register_scalar_udf(
+  con,
+  "rducks_demo_score",
+  function(x, label) {
+    bonus <- if (identical(label, "high")) 100 else if (identical(label, "mid")) 10 else 0
+    as.double(x + bonus)
+  },
+  args = list(DOUBLE, VARCHAR),
+  returns = DOUBLE
+)
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            rducks_demo_score
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       rducks_demo_score(DOUBLE, VARCHAR) -> DOUBLE
+
+out <- stingy |>
+  mutate(score = dd$rducks_demo_score(x, label)) |>
+  filter(score >= 100) |>
+  select(id, label, score) |>
+  arrange(id) |>
+  collect()
+
+out
+#> # A tibble: 2 × 3
+#>      id label score
+#> * <int> <chr> <dbl>
+#> 1     5 high    121
+#> 2     6 high    134
+stopifnot(
+  identical(out$id, 5:6),
+  identical(out$label, c("high", "high")),
+  identical(out$score, c(121, 134))
+)
 ```
 
 ## Build notes
