@@ -59,28 +59,31 @@ rducks_evaluator_ref_remove <- function(handle) {
   invisible(NULL)
 }
 
-rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode) {
+rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, dynamic_args = FALSE) {
   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
     stop("name must be a non-empty character scalar", call. = FALSE)
   }
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
   }
-  arg_types <- rducks_as_type_list(args)
+  dynamic_args <- isTRUE(dynamic_args)
+  arg_types <- if (dynamic_args) NULL else rducks_as_type_list(args)
   return_type <- rducks_as_type(returns)
+  return_sql <- rducks_duckdb_types(return_type)
   list(
     name = name,
-    args = vapply(arg_types, rducks_type_token, character(1), USE.NAMES = FALSE),
+    args = if (dynamic_args) "*" else vapply(arg_types, rducks_type_token, character(1), USE.NAMES = FALSE),
     returns = rducks_type_token(return_type),
     arg_types = arg_types,
     return_type = return_type,
+    dynamic_args = dynamic_args,
     mode = mode,
-    signature = rducks_duckdb_signature(name, arg_types, return_type)
+    signature = if (dynamic_args) sprintf("%s(...) -> %s", name, return_sql) else rducks_duckdb_signature(name, arg_types, return_type)
   )
 }
 
 rducks_assert_arrow_marshalling_supported <- function(spec) {
-  types <- c(spec$arg_types, list(spec$return_type))
+  types <- c(spec$arg_types %||% list(), list(spec$return_type))
   unsupported <- vapply(types, function(type) {
     if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
   }, character(1))
@@ -120,10 +123,14 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
 #' @param fun R function.
-#' @param args Argument type specification. Use `NULL` for a zero-argument
-#'   scalar UDF. Otherwise use exported DuckDB-style type descriptors such as
-#'   `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
-#'   `MAP(VARCHAR, INTEGER)`.
+#' @param args Optional argument type specification. If omitted, Rducks registers
+#'   a dynamic-varargs DuckDB scalar function for the `arrow_r+serial` scalar
+#'   path. Dynamic inputs are materialized with nanoarrow's default conversion
+#'   and are intended for duckplyr-style simple scalar calls; use explicit `args`
+#'   for Rducks' declared composite, exotic, and special-NULL input semantics.
+#'   Use explicit `NULL` for a zero-argument scalar UDF. Otherwise use exported
+#'   DuckDB-style type descriptors such as `INTEGER`, `DOUBLE`, `INTEGER[]`,
+#'   `INTEGER[3]`, `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
 #' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
 #'   calls the R function once per DuckDB row. `"vectorized"` calls the R
@@ -159,7 +166,17 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
-  spec <- rducks_scalar_udf_registration_spec(name, fun, args, returns, mode = mode)
+  dynamic_args <- missing(args)
+  if (missing(returns)) {
+    stop("returns must be supplied", call. = FALSE)
+  }
+  spec <- rducks_scalar_udf_registration_spec(
+    name, fun,
+    args = if (dynamic_args) NULL else args,
+    returns = returns,
+    mode = mode,
+    dynamic_args = dynamic_args
+  )
   plan <- rducks_current_execution_plan(con)
   rducks_assert_arrow_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
@@ -199,7 +216,7 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
     rducks_sql_string(name),
     rducks_sql_string(eval_ref_handle$id),
     rducks_sql_string(eval_ref_handle$token),
-    rducks_sql_string(paste(spec$args, collapse = ",")),
+    rducks_sql_string(if (isTRUE(spec$dynamic_args)) "*" else paste(spec$args, collapse = ",")),
     rducks_sql_string(spec$returns),
     rducks_sql_string(null_handling),
     rducks_sql_string(exception_handling),

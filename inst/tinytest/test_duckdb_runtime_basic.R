@@ -8,6 +8,9 @@ local({
   }, add = TRUE)
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  with_parent_value <- 41
+  expect_equal(with(con, 1 + 1), 2)
+  expect_equal(with(con, with_parent_value + 1), 42)
   rducks_enable(con, threads = "single")
   expect_error(DBI::dbGetQuery(con, "SELECT rducks_thread_is_main(1::UBIGINT) AS ok"), "does not exist|not exist|Catalog Error")
   expect_error(DBI::dbGetQuery(con, "SELECT * FROM rducks_parallel_range(1::UBIGINT)"), "does not exist|not exist|Catalog Error")
@@ -38,6 +41,27 @@ local({
   reg0 <- rducks_register_scalar_udf(con, "rducks_hello", function() "hello from R", NULL, VARCHAR)
   expect_equal(reg0$spec$args, character())
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_hello() AS x")$x, "hello from R")
+
+  reg_dyn_sum <- rducks_register_scalar_udf(
+    con,
+    "rducks_dyn_sum",
+    function(...) sum(as.numeric(unlist(list(...))), na.rm = TRUE),
+    returns = DOUBLE
+  )
+  expect_true(isTRUE(reg_dyn_sum$spec$dynamic_args))
+  expect_equal(reg_dyn_sum$spec$args, "*")
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_dyn_sum(1, 2.5, 3::INTEGER) AS x")$x, 6.5)
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_dyn_sum(10::INTEGER) AS x")$x, 10)
+
+  invisible(rducks_register_scalar_udf(
+    con,
+    "rducks_dyn_label",
+    function(x) paste0("v", x),
+    returns = VARCHAR
+  ))
+  dyn_labels <- DBI::dbGetQuery(con, "SELECT rducks_dyn_label(42::INTEGER) AS a, rducks_dyn_label('duck') AS b")
+  expect_equal(dyn_labels$a, "v42")
+  expect_equal(dyn_labels$b, "vduck")
 
   expect_error(
     DBI::dbGetQuery(

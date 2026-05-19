@@ -169,6 +169,7 @@ struct rducks_r_scalar_meta {
     rducks_r_scalar_meta_t *registry_next;
     size_t arity;
     struct rducks_type_desc **args;
+    int dynamic_args;
     struct rducks_type_desc *return_desc;
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;

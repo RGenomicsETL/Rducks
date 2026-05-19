@@ -1,5 +1,14 @@
 # Rducks 0.0.1
 
+- Added dynamic-argument scalar UDF registration for the `arrow_r+serial` scalar
+  path: omitting `args` in `rducks_register_scalar_udf()` registers a DuckDB
+  varargs `ANY` function while keeping the return type explicit. This path uses
+  nanoarrow's default input conversion and is intended for duckplyr-style simple
+  scalar calls; explicit `args` remain the exact-semantics path for composite,
+  exotic, and special-NULL inputs. Added `rducks_with_duckplyr()` and a
+  `with.duckdb_connection()` method that register named R helpers and rewrite
+  matching duckplyr calls so stingy duckplyr pipelines can stay in DuckDB rather
+  than falling back to dplyr.
 - Renamed the scalar-function registration API to
   `rducks_register_scalar_udf()` and clarified terminology across the user
   documentation: DuckDB function kind (scalar UDF, aggregate function, table

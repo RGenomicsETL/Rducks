@@ -2,9 +2,10 @@
 #
 # The important pieces are:
 # - duckplyr::read_sql_duckdb(..., prudence = "stingy") forbids dplyr fallback.
-# - A plain R helper in mutate() therefore fails, as expected.
-# - Registering that logic as a Rducks DuckDB scalar UDF lets duckplyr call it
-#   through the dd$ escape hatch, so the pipeline stays in DuckDB.
+# - A plain R helper in mutate() therefore fails by itself, as expected.
+# - rducks_with_duckplyr() registers selected R helpers as dynamic-argument
+#   DuckDB scalar UDFs and rewrites those calls before duckplyr translates the
+#   pipeline, so the expression stays in DuckDB.
 
 Sys.setenv(
   DUCKPLYR_FALLBACK_COLLECT = "0",
@@ -50,10 +51,14 @@ stingy <- duckplyr::read_sql_duckdb(
   prudence = "stingy"
 )
 
-local_score <- function(x) x + 100
+local_score <- function(x, label) {
+  bonus <- if (identical(label, "high")) 100 else if (identical(label, "mid")) 10 else 0
+  as.double(x + bonus)
+}
+
 fallback_blocked <- tryCatch({
   stingy |>
-    mutate(score = local_score(x)) |>
+    mutate(score = local_score(x, label)) |>
     collect()
   FALSE
 }, error = function(e) {
@@ -62,23 +67,16 @@ fallback_blocked <- tryCatch({
 })
 stopifnot(isTRUE(fallback_blocked))
 
-invisible(Rducks::rducks_register_scalar_udf(
+out <- Rducks::rducks_with_duckplyr(
   con,
-  "rducks_demo_score",
-  function(x, label) {
-    bonus <- if (identical(label, "high")) 100 else if (identical(label, "mid")) 10 else 0
-    as.double(x + bonus)
-  },
-  args = list(DOUBLE, VARCHAR),
-  returns = DOUBLE
-))
-
-out <- stingy |>
-  mutate(score = dd$rducks_demo_score(x, label)) |>
-  filter(score >= 100) |>
-  select(id, label, score) |>
-  arrange(id) |>
-  collect()
+  stingy |>
+    mutate(score = local_score(x, label)) |>
+    filter(score >= 100) |>
+    select(id, label, score) |>
+    arrange(id) |>
+    collect(),
+  returns = list(local_score = DOUBLE)
+)
 
 print(out)
 stopifnot(

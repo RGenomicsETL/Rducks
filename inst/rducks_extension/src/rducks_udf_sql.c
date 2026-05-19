@@ -10,9 +10,11 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
     rducks_eval_mode_t eval_mode;
+    int dynamic_args = 0;
     rducks_r_scalar_meta_t *meta = NULL;
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
+    duckdb_logical_type any_arg_type = NULL;
     duckdb_state rc;
     if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) {
         return false;
@@ -31,7 +33,12 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         snprintf(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
     }
-    if (!rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
+    dynamic_args = args_spec && (strcmp(args_spec, "*") == 0 || strcmp(args_spec, "...") == 0);
+    if (dynamic_args && eval_mode != RDUCKS_EVAL_R) {
+        snprintf(err, err_cap, "dynamic Rducks scalar arguments currently require Arrow/R scalar evaluation");
+        return false;
+    }
+    if (!dynamic_args && !rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
         return false;
     }
     if (!rducks_parse_type_desc_text(return_spec, &return_desc, err, err_cap)) {
@@ -69,19 +76,32 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     }
 
     duckdb_scalar_function_set_name(fn, name);
-    for (size_t i = 0; i < arity; i++) {
-        duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
-        if (!arg_logical_type) {
-            snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
+    if (dynamic_args) {
+        any_arg_type = duckdb_create_logical_type(DUCKDB_TYPE_ANY);
+        if (!any_arg_type) {
+            snprintf(err, err_cap, "failed to allocate DuckDB ANY type for dynamic Rducks arguments");
             duckdb_destroy_scalar_function(&fn);
             duckdb_destroy_logical_type(&return_logical_type);
-            for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
-            free(arg_descs);
             rducks_type_desc_destroy(return_desc);
             return false;
         }
-        duckdb_scalar_function_add_parameter(fn, arg_logical_type);
-        duckdb_destroy_logical_type(&arg_logical_type);
+        duckdb_scalar_function_set_varargs(fn, any_arg_type);
+        duckdb_destroy_logical_type(&any_arg_type);
+    } else {
+        for (size_t i = 0; i < arity; i++) {
+            duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
+            if (!arg_logical_type) {
+                snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
+                duckdb_destroy_scalar_function(&fn);
+                duckdb_destroy_logical_type(&return_logical_type);
+                for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
+                free(arg_descs);
+                rducks_type_desc_destroy(return_desc);
+                return false;
+            }
+            duckdb_scalar_function_add_parameter(fn, arg_logical_type);
+            duckdb_destroy_logical_type(&arg_logical_type);
+        }
     }
 
     meta = (rducks_r_scalar_meta_t *)rducks_calloc_array(1, sizeof(*meta));
@@ -109,6 +129,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     }
     meta->arity = arity;
     meta->args = arg_descs;
+    meta->dynamic_args = dynamic_args;
     arg_descs = NULL;
     meta->return_desc = return_desc;
     return_desc = NULL;

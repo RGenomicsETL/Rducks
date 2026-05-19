@@ -261,6 +261,92 @@ static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, stru
     return 1;
 }
 
+static int rducks_fill_dynamic_input_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
+                                                         duckdb_data_chunk input,
+                                                         char *err_msg, size_t err_cap) {
+    duckdb_arrow_options options = NULL;
+    int borrowed_options = 0;
+    duckdb_logical_type *types = NULL;
+    const char **names = NULL;
+    char **owned_names = NULL;
+    duckdb_error_data error_data = NULL;
+    idx_t arity;
+    int ok = 0;
+
+    if (!schema || !input) {
+        snprintf(err_msg, err_cap, "invalid dynamic Arrow schema request");
+        return 0;
+    }
+
+    arity = duckdb_data_chunk_get_column_count(input);
+    if (arity > 0) {
+        if ((size_t)arity > SIZE_MAX / sizeof(*types) ||
+            (size_t)arity > SIZE_MAX / sizeof(*names) ||
+            (size_t)arity > SIZE_MAX / sizeof(*owned_names)) {
+            snprintf(err_msg, err_cap, "dynamic Rducks scalar UDF has too many arguments");
+            return 0;
+        }
+        types = (duckdb_logical_type *)rducks_calloc_array((size_t)arity, sizeof(*types));
+        names = (const char **)rducks_calloc_array((size_t)arity, sizeof(*names));
+        owned_names = (char **)rducks_calloc_array((size_t)arity, sizeof(*owned_names));
+        if (!types || !names || !owned_names) {
+            snprintf(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema");
+            goto cleanup;
+        }
+        for (idx_t i = 0; i < arity; i++) {
+            char buf[32];
+            duckdb_vector vector = duckdb_data_chunk_get_vector(input, i);
+            if (!vector) {
+                snprintf(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument %llu",
+                         (unsigned long long)(i + 1));
+                goto cleanup;
+            }
+            types[i] = duckdb_vector_get_column_type(vector);
+            if (!types[i]) {
+                snprintf(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument type %llu",
+                         (unsigned long long)(i + 1));
+                goto cleanup;
+            }
+            snprintf(buf, sizeof(buf), "arg%llu", (unsigned long long)(i + 1));
+            owned_names[i] = rducks_strdup_len(buf, strlen(buf));
+            if (!owned_names[i]) {
+                snprintf(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema name");
+                goto cleanup;
+            }
+            names[i] = owned_names[i];
+        }
+    }
+
+    if (!rducks_allocate_arrow_options(runtime, &options, &borrowed_options, err_msg, err_cap)) goto cleanup;
+    error_data = duckdb_to_arrow_schema(options, types, names, arity, schema);
+    rducks_release_arrow_options(&options, borrowed_options);
+    options = NULL;
+    if (error_data) {
+        int has_error = duckdb_error_data_has_error(error_data);
+        if (has_error) {
+            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create dynamic Arrow C Data schema", err_msg, err_cap);
+            duckdb_destroy_error_data(&error_data);
+            rducks_release_arrow_schema_if_set(schema);
+            goto cleanup;
+        }
+        duckdb_destroy_error_data(&error_data);
+    }
+    ok = 1;
+
+cleanup:
+    if (options) rducks_release_arrow_options(&options, borrowed_options);
+    if (types) {
+        for (idx_t i = 0; i < arity; i++) if (types[i]) duckdb_destroy_logical_type(&types[i]);
+    }
+    if (owned_names) {
+        for (idx_t i = 0; i < arity; i++) free(owned_names[i]);
+    }
+    free(types);
+    free(names);
+    free(owned_names);
+    return ok;
+}
+
 static int rducks_fill_input_arrow_schema_native(rducks_runtime_entry_t *runtime, struct ArrowSchema *schema,
                                                  rducks_r_scalar_meta_t *meta,
                                                  char *err_msg, size_t err_cap) {
@@ -665,7 +751,11 @@ static int rducks_r_scalar_prepare_inprocess_arrow(rducks_runtime_entry_t *runti
 
     *input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
     (*protect_count)++;
-    if (!rducks_fill_input_arrow_schema(runtime, *input_schema_xptr, meta, err_msg, err_cap)) return 0;
+    if (meta && meta->dynamic_args) {
+        if (!rducks_fill_dynamic_input_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(*input_schema_xptr), input, err_msg, err_cap)) return 0;
+    } else {
+        if (!rducks_fill_input_arrow_schema(runtime, *input_schema_xptr, meta, err_msg, err_cap)) return 0;
+    }
 
     *input_array_xptr = PROTECT(nanoarrow_array_owning_xptr());
     (*protect_count)++;

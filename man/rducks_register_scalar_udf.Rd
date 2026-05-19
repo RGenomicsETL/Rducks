@@ -23,10 +23,14 @@ rducks_register_scalar_udf(
 
 \item{fun}{R function.}
 
-\item{args}{Argument type specification. Use \code{NULL} for a zero-argument
-scalar UDF. Otherwise use exported DuckDB-style type descriptors such as
-\code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or
-\code{MAP(VARCHAR, INTEGER)}.}
+\item{args}{Optional argument type specification. If omitted, Rducks registers
+a dynamic-varargs DuckDB scalar function for the \code{arrow_r+serial} scalar
+path. Dynamic inputs are materialized with nanoarrow's default conversion
+and are intended for duckplyr-style simple scalar calls; use explicit \code{args}
+for Rducks' declared composite, exotic, and special-NULL input semantics.
+Use explicit \code{NULL} for a zero-argument scalar UDF. Otherwise use exported
+DuckDB-style type descriptors such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]},
+\code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}.}
 
 \item{returns}{Return type specification.}
 
