@@ -96,15 +96,14 @@
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41.0) AS x"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41::DOUBLE) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
-<p>Use <code>args = NULL</code> for a zero-argument scalar UDF. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
+<p>Omitting <code>args</code> registers a dynamic-varargs DuckDB scalar UDF and is convenient for simple row-wise scalar calls. DuckDB still needs an explicit <code>returns</code> type while planning. Use <code>args = NULL</code> for a true zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as variadic. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
 <p><code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> returns an <code>rducks_scalar_udf_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the scalar UDF to keep working in DuckDB. Registering the same SQL name/signature again replaces the callable implementation in the shared DuckDB database catalog.</p>
 <div class="section level3">
 <h3 id="release-and-disconnect">Release and disconnect<a class="anchor" aria-label="anchor" href="#release-and-disconnect"></a>
@@ -125,8 +124,8 @@
 <div class="section level2">
 <h2 id="what-you-can-register">What you can register<a class="anchor" aria-label="anchor" href="#what-you-can-register"></a>
 </h2>
-<p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> for DuckDB scalar UDF arguments/returns and by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
-<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types.</p>
+<p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> for DuckDB scalar UDF returns and, when declared, DuckDB scalar UDF arguments. They are also used by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
+<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. Omitted scalar-UDF arguments are dynamic DuckDB <code>ANY</code> inputs; they are intended for simple scalar convenience and do not replace explicit descriptors when exact Rducks composite, exotic, or special-NULL semantics matter.</p>
 <p>Declared <code>ENUM(...)</code> descriptors are supported by all implemented execution plans. On the native <code>arrow_ipc</code> NNG path, Rducks does not depend on Arrow IPC dictionary transport for enums: declared enum levels are registration metadata, and the IPC payload carries the underlying DuckDB enum index storage as Arrow integer buffers.</p>
 <p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type descriptors use the formal S7 <code>rducks_type</code> class and structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
 </div>
@@ -154,7 +153,7 @@
 <div class="section level2">
 <h2 id="duckdb-scalar-udfs-rducks_register_scalar_udf">DuckDB scalar UDFs (<code>rducks_register_scalar_udf()</code>)<a class="anchor" aria-label="anchor" href="#duckdb-scalar-udfs-rducks_register_scalar_udf"></a>
 </h2>
-<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per declared argument.</p>
+<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Omitting <code>args</code> is allowed for row-wise scalar UDFs on the default <code>arrow_r + serial</code> plan and registers a dynamic DuckDB varargs function. Declare <code>args</code> when using vectorized mode, non-default execution plans, composite/exotic inputs, or <code>null_handling = "special"</code> input semantics. Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per declared argument.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_vec_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -184,8 +183,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        285ms      3.49    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    233ms      4.30    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        288ms      3.49  998.35KB</span></span>
+<span><span class="co">#&gt; 2 vectorized    230ms      4.34    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -665,7 +664,7 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_counter"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="va">counter</span>,</span>
-<span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
@@ -683,7 +682,7 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_rng"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
@@ -979,9 +978,9 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.850         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.817         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.067      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.871         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.830         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.054      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
@@ -992,87 +991,100 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 </div>
 </div>
 <div class="section level2">
-<h2 id="demo--duckplyr-with-no-fallback-using-rducks-for-custom-r-logic">Demo : duckplyr with no fallback, using Rducks for custom R logic.<a class="anchor" aria-label="anchor" href="#demo--duckplyr-with-no-fallback-using-rducks-for-custom-r-logic"></a>
+<h2 id="demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic">Demo: duckplyr with no fallback, using Rducks for custom R logic<a class="anchor" aria-label="anchor" href="#demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic"></a>
 </h2>
+<p>This example keeps a stingy duckplyr pipeline in DuckDB without writing <code>dd$...</code> calls. Rducks registers <code>local_score()</code> as a dynamic-argument scalar UDF, so only the return type is declared here; argument types are intentionally omitted for this simple scalar path.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span></span>
-<span>  DUCKPLYR_FALLBACK_COLLECT <span class="op">=</span> <span class="st">"0"</span>,</span>
-<span>  DUCKPLYR_FALLBACK_INFO <span class="op">=</span> <span class="st">"0"</span>,</span>
-<span>  DUCKPLYR_FALLBACK_AUTOUPLOAD <span class="op">=</span> <span class="st">"0"</span></span>
-<span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="va">old_collect</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_COLLECT"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
+<span>  <span class="va">old_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_INFO"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
+<span>  <span class="va">old_upload</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_AUTOUPLOAD"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span></span>
+<span>    DUCKPLYR_FALLBACK_COLLECT <span class="op">=</span> <span class="st">"0"</span>,</span>
+<span>    DUCKPLYR_FALLBACK_INFO <span class="op">=</span> <span class="st">"0"</span>,</span>
+<span>    DUCKPLYR_FALLBACK_AUTOUPLOAD <span class="op">=</span> <span class="st">"0"</span></span>
+<span>  <span class="op">)</span></span>
+<span>  <span class="va">restore_env</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">name</span>, <span class="va">value</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">value</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.unsetenv</a></span><span class="op">(</span><span class="va">name</span><span class="op">)</span></span>
+<span>    <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">Sys.setenv</span>, <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/setNames.html" class="external-link">setNames</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">value</span><span class="op">)</span>, <span class="va">name</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="op">}</span></span>
+<span>  <span class="op">}</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_COLLECT"</span>, <span class="va">old_collect</span><span class="op">)</span></span>
+<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_INFO"</span>, <span class="va">old_info</span><span class="op">)</span></span>
+<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_AUTOUPLOAD"</span>, <span class="va">old_upload</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">suppressPackageStartupMessages</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://duckplyr.tidyverse.org" class="external-link">duckplyr</a></span><span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">suppressPackageStartupMessages</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dplyr.tidyverse.org" class="external-link">dplyr</a></span><span class="op">)</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://duckplyr.tidyverse.org" class="external-link">duckplyr</a></span><span class="op">)</span></span>
+<span>  <span class="op">}</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
-<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  dbdir <span class="op">=</span> <span class="st">":memory:"</span></span>
-<span><span class="op">)</span></span>
+<span>  <span class="va">demo_con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
+<span>    <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    dbdir <span class="op">=</span> <span class="st">":memory:"</span></span>
+<span>  <span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">demo_con</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
+<span>  <span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">demo_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">input</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span>,</span>
-<span>  x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">5</span>, <span class="fl">8</span>, <span class="fl">13</span>, <span class="fl">21</span>, <span class="fl">34</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  label <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"low"</span>, <span class="st">"mid"</span>, <span class="st">"mid"</span>, <span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbWriteTable.html" class="external-link">dbWriteTable</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"demo_input"</span>, <span class="va">input</span><span class="op">)</span></span>
+<span>  <span class="va">input</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>    id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span>,</span>
+<span>    x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">5</span>, <span class="fl">8</span>, <span class="fl">13</span>, <span class="fl">21</span>, <span class="fl">34</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    label <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"low"</span>, <span class="st">"mid"</span>, <span class="st">"mid"</span>, <span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span>  <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbWriteTable.html" class="external-link">dbWriteTable</a></span><span class="op">(</span><span class="va">demo_con</span>, <span class="st">"demo_input"</span>, <span class="va">input</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">stingy</span> <span class="op">&lt;-</span> <span class="fu">duckplyr</span><span class="fu">::</span><span class="fu"><a href="https://duckplyr.tidyverse.org/reference/read_sql_duckdb.html" class="external-link">read_sql_duckdb</a></span><span class="op">(</span></span>
-<span>  <span class="st">"SELECT * FROM demo_input"</span>,</span>
-<span>  con <span class="op">=</span> <span class="va">con</span>,</span>
-<span>  prudence <span class="op">=</span> <span class="st">"stingy"</span></span>
-<span><span class="op">)</span></span>
+<span>  <span class="va">stingy</span> <span class="op">&lt;-</span> <span class="fu">duckplyr</span><span class="fu">::</span><span class="fu"><a href="https://duckplyr.tidyverse.org/reference/read_sql_duckdb.html" class="external-link">read_sql_duckdb</a></span><span class="op">(</span></span>
+<span>    <span class="st">"SELECT * FROM demo_input"</span>,</span>
+<span>    con <span class="op">=</span> <span class="va">demo_con</span>,</span>
+<span>    prudence <span class="op">=</span> <span class="st">"stingy"</span></span>
+<span>  <span class="op">)</span></span>
 <span></span>
-<span><span class="va">local_score</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">100</span></span>
-<span><span class="va">fallback_blocked</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">stingy</span> <span class="op">|&gt;</span></span>
-<span>    <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>    <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span></span>
-<span>  <span class="cn">FALSE</span></span>
-<span><span class="op">}</span>, error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">message</a></span><span class="op">(</span><span class="st">"Fallback blocked as expected: "</span>, <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="cn">TRUE</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Logic.html" class="external-link">isTRUE</a></span><span class="op">(</span><span class="va">fallback_blocked</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  <span class="st">"rducks_demo_score"</span>,</span>
-<span>  <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">local_score</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span> <span class="op">{</span></span>
 <span>    <span class="va">bonus</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="kw">else</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"mid"</span><span class="op">)</span><span class="op">)</span> <span class="fl">10</span> <span class="kw">else</span> <span class="fl">0</span></span>
 <span>    <span class="fu"><a href="https://rdrr.io/r/base/double.html" class="external-link">as.double</a></span><span class="op">(</span><span class="va">x</span> <span class="op">+</span> <span class="va">bonus</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>,</span>
-<span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">DOUBLE</span>, <span class="va">VARCHAR</span><span class="op">)</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">DOUBLE</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
-<span><span class="co">#&gt;   registered:      yes</span></span>
-<span><span class="co">#&gt;   name:            rducks_demo_score</span></span>
-<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
-<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
-<span><span class="co">#&gt;   signature:       rducks_demo_score(DOUBLE, VARCHAR) -&gt; DOUBLE</span></span>
+<span>  <span class="op">}</span></span>
 <span></span>
-<span><span class="va">out</span> <span class="op">&lt;-</span> <span class="va">stingy</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="va">dd</span><span class="op">$</span><span class="fu">rducks_demo_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">score</span> <span class="op">&gt;=</span> <span class="fl">100</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">label</span>, <span class="va">score</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/arrange.html" class="external-link">arrange</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span></span>
+<span>  <span class="va">fallback_blocked</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>    <span class="va">stingy</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span></span>
+<span>    <span class="cn">FALSE</span></span>
+<span>  <span class="op">}</span>, error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">message</a></span><span class="op">(</span><span class="st">"Fallback blocked as expected: "</span>, <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="cn">TRUE</span></span>
+<span>  <span class="op">}</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Logic.html" class="external-link">isTRUE</a></span><span class="op">(</span><span class="va">fallback_blocked</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">out</span></span>
+<span>  <span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
+<span>    <span class="va">demo_con</span>,</span>
+<span>    <span class="va">stingy</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">score</span> <span class="op">&gt;=</span> <span class="fl">100</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">label</span>, <span class="va">score</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/arrange.html" class="external-link">arrange</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>    rducks_returns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>local_score <span class="op">=</span> <span class="va">DOUBLE</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">out</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">id</span>, <span class="fl">5</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">label</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">score</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">121</span>, <span class="fl">134</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
 <span><span class="co">#&gt; # A tibble: 2 × 3</span></span>
 <span><span class="co">#&gt;      id label score</span></span>
 <span><span class="co">#&gt; * &lt;int&gt; &lt;chr&gt; &lt;dbl&gt;</span></span>
 <span><span class="co">#&gt; 1     5 high    121</span></span>
-<span><span class="co">#&gt; 2     6 high    134</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">id</span>, <span class="fl">5</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">label</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">score</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">121</span>, <span class="fl">134</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; 2     6 high    134</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
