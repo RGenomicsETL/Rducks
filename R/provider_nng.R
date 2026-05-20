@@ -233,12 +233,14 @@ rducks_nng_worker_loop <- function(endpoint) {
   registry <- new.env(parent = emptyenv())
   registry_order <- character()
   registry_max <- rducks_nng_worker_registry_limit()
+  sock <- NULL
+  ctx <- NULL
+  on.exit({
+    try(if (!is.null(ctx)) close(ctx), silent = TRUE)
+    try(if (!is.null(sock)) close(sock), silent = TRUE)
+  }, add = TRUE)
   sock <- nanonext::socket("rep", listen = endpoint)
   ctx <- nanonext::context(sock)
-  on.exit({
-    try(close(ctx), silent = TRUE)
-    try(close(sock), silent = TRUE)
-  }, add = TRUE)
   send_timeout_ms <- as.integer(max(1L, ceiling(rducks_nng_defaults$worker_send_timeout * 1000)))
   repeat {
     stop_requested <- FALSE

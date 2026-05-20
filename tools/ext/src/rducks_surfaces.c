@@ -888,6 +888,7 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
     old_connection = runtime->connection;
     old_stream_connection = runtime->query_stream_connection;
     runtime->query_streams = NULL;
+    rducks_runtime_clear_udf_hash_locked(runtime);
     runtime->udf_registry_head = NULL;
     runtime->database = database;
     runtime->connection = new_connection;

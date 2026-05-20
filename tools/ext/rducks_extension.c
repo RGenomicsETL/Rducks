@@ -121,6 +121,9 @@ typedef struct rducks_type_desc {
     size_t field_count;
     char **field_names;
     struct rducks_type_desc **field_types;
+    uint32_t *field_hash_heads;
+    uint32_t *field_hash_next;
+    size_t field_hash_bucket_count;
 } rducks_type_desc_t;
 
 typedef struct rducks_runtime_entry {
@@ -152,6 +155,9 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_main_drain_batches;
     uint64_t queue_main_drain_max_batch;
     rducks_r_scalar_meta_t *udf_registry_head;
+    rducks_r_scalar_meta_t **udf_registry_buckets;
+    size_t udf_registry_bucket_count;
+    size_t udf_registry_size;
 #ifdef _WIN32
     CRITICAL_SECTION queue_lock;
     CONDITION_VARIABLE queue_cond;
@@ -168,6 +174,7 @@ struct rducks_r_scalar_meta {
     SEXP fun;
     char *name;
     rducks_r_scalar_meta_t *registry_next;
+    rducks_r_scalar_meta_t *registry_hash_next;
     size_t arity;
     struct rducks_type_desc **args;
     int dynamic_args;
@@ -250,6 +257,9 @@ static void *rducks_realloc_array(void *ptr, size_t n, size_t size) {
     if (!rducks_size_mul(n, size, &bytes)) return NULL;
     return realloc(ptr, bytes);
 }
+
+static void rducks_copy_error_message(char *out, size_t out_cap,
+                                      const char *message, const char *fallback);
 
 /* Locking discipline: avoid nesting the global runtime registry lock and a
  * runtime queue lock. Queue operations should release runtime->queue_lock before
@@ -370,7 +380,7 @@ static int rducks_runtime_configure_connection(duckdb_connection connection, cha
     }
     if (duckdb_query(connection, "SET arrow_lossless_conversion=true", &result) == DuckDBError) {
         const char *msg = duckdb_result_error(&result);
-        snprintf(err, err_cap, "%s", (msg && msg[0]) ? msg : "failed to configure Rducks extension connection");
+        rducks_copy_error_message(err, err_cap, msg, "failed to configure Rducks extension connection");
         duckdb_destroy_result(&result);
         return 0;
     }

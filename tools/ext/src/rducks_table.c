@@ -56,30 +56,26 @@ static void rducks_r_table_meta_destroy(void *ptr) {
 }
 
 static void rducks_r_table_close_stream_if_main(rducks_r_table_bind_t *bind) {
-    int r_err = 0;
-    SEXP pkg;
-    SEXP ns;
-    SEXP fun;
-    SEXP call;
-    SEXP result;
     if (!bind || !bind->streaming || bind->result == R_NilValue ||
         !bind->meta || !bind->meta->runtime || !rducks_is_main_thread(bind->meta->runtime)) {
         return;
     }
-    pkg = PROTECT(Rf_mkString("Rducks"));
-    ns = PROTECT(R_FindNamespace(pkg));
-    fun = PROTECT(Rf_findFun(Rf_install("rducks_table_stream_close"), ns));
-    call = PROTECT(Rf_lang2(fun, bind->result));
-    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
-    (void)result;
-    UNPROTECT(5);
+    rducks_close_table_stream_on_main(bind->result);
 }
 
 static void rducks_r_table_bind_destroy(void *ptr) {
     rducks_r_table_bind_t *bind = (rducks_r_table_bind_t *)ptr;
+    rducks_runtime_entry_t *runtime;
+    int close_stream_on_release;
     if (!bind) return;
-    rducks_r_table_close_stream_if_main(bind);
-    rducks_r_table_release_preserved(bind->meta ? bind->meta->runtime : NULL, bind->result);
+    runtime = bind->meta ? bind->meta->runtime : NULL;
+    close_stream_on_release = bind->streaming && bind->result != R_NilValue && runtime && !rducks_is_main_thread(runtime);
+    if (close_stream_on_release) {
+        rducks_preserved_release_enqueue_table_stream(bind->result);
+    } else {
+        rducks_r_table_close_stream_if_main(bind);
+        rducks_r_table_release_preserved(runtime, bind->result);
+    }
     bind->result = R_NilValue;
     if (bind->imported_chunk) duckdb_destroy_data_chunk(&bind->imported_chunk);
     if (bind->column_names) {
@@ -542,6 +538,11 @@ static rducks_type_desc_t *rducks_r_table_enum_desc(SEXP column, const char *nam
             return NULL;
         }
         desc->field_count = (size_t)i + 1U;
+    }
+    if (!rducks_type_desc_build_field_hash(desc)) {
+        snprintf(err, err_cap, "out of memory indexing Rducks table factor column levels");
+        rducks_type_desc_destroy(desc);
+        return NULL;
     }
     return desc;
 }

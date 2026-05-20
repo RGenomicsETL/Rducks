@@ -50,6 +50,9 @@ rducks_runtime_lifecycle_body <- function() {
     expect_equal(NROW(rducks_list_udfs(con_plain)), 0L)
     rducks_enable(con_plain, threads = "single")
     expect_true("rducks_lifecycle_enabled_only" %in% rducks_list_udfs(con_plain)$name)
+    expect_equal(DBI::dbGetQuery(con_plain, "SELECT rducks_lifecycle_enabled_only(41::INTEGER) AS x")$x, 42L)
+    invisible(rducks_register_scalar_udf(con_plain, "rducks_lifecycle_after_refresh", rducks_lifecycle_times_two_fun, INTEGER, INTEGER))
+    expect_equal(DBI::dbGetQuery(con_plain, "SELECT rducks_lifecycle_after_refresh(21::INTEGER) AS x")$x, 42L)
   })
 
   local({
@@ -126,6 +129,58 @@ rducks_runtime_lifecycle_body <- function() {
     expect_equal(detached_explain$name[[1L]], "rducks_lifecycle_con2")
 
     DBI::dbDisconnect(con2, shutdown = TRUE)
+  })
+
+  local({
+    main_path <- tempfile(fileext = ".duckdb")
+    aux_path <- tempfile(fileext = ".duckdb")
+    on.exit(unlink(c(main_path, aux_path, paste0(main_path, ".wal"), paste0(aux_path, ".wal")), force = TRUE), add = TRUE)
+
+    aux_con <- DBI::dbConnect(duckdb::duckdb(dbdir = aux_path, config = list(allow_unsigned_extensions = "true")))
+    DBI::dbExecute(aux_con, "CREATE TABLE some_table(i INTEGER)")
+    DBI::dbExecute(aux_con, "INSERT INTO some_table VALUES (1), (41)")
+    DBI::dbDisconnect(aux_con, shutdown = TRUE)
+
+    main_con <- DBI::dbConnect(duckdb::duckdb(dbdir = main_path, config = list(allow_unsigned_extensions = "true")))
+    on.exit(DBI::dbDisconnect(main_con, shutdown = TRUE), add = TRUE)
+    rducks_enable(main_con, threads = "single")
+    invisible(rducks_register_scalar_udf(
+      main_con, "rducks_lifecycle_attach_plus", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER
+    ))
+    DBI::dbExecute(main_con, sprintf("ATTACH %s AS aux", DBI::dbQuoteString(main_con, aux_path)))
+    attached <- DBI::dbGetQuery(
+      main_con,
+      "SELECT rducks_lifecycle_attach_plus(i) AS x FROM aux.some_table ORDER BY i"
+    )
+    expect_equal(attached$x, c(2L, 42L))
+    DBI::dbExecute(main_con, "DETACH aux")
+  })
+
+  local({
+    path_a <- tempfile(fileext = ".duckdb")
+    path_b <- tempfile(fileext = ".duckdb")
+    on.exit(unlink(c(path_a, path_b, paste0(path_a, ".wal"), paste0(path_b, ".wal")), force = TRUE), add = TRUE)
+
+    con_a <- DBI::dbConnect(duckdb::duckdb(dbdir = path_a, config = list(allow_unsigned_extensions = "true")))
+    con_b <- DBI::dbConnect(duckdb::duckdb(dbdir = path_b, config = list(allow_unsigned_extensions = "true")))
+    on.exit(DBI::dbDisconnect(con_a, shutdown = TRUE), add = TRUE)
+    on.exit(DBI::dbDisconnect(con_b, shutdown = TRUE), add = TRUE)
+
+    rducks_enable(con_a, threads = "single")
+    rducks_enable(con_b, threads = "single")
+    token_a <- Rducks:::rducks_database_registration_key(con_a)
+    token_b <- Rducks:::rducks_database_registration_key(con_b)
+    expect_false(identical(token_a, token_b))
+
+    invisible(rducks_register_scalar_udf(con_a, "rducks_lifecycle_same_name", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
+    invisible(rducks_register_scalar_udf(con_b, "rducks_lifecycle_same_name", rducks_lifecycle_times_two_fun, INTEGER, INTEGER))
+    expect_equal(DBI::dbGetQuery(con_a, "SELECT rducks_lifecycle_same_name(41::INTEGER) AS x")$x, 42L)
+    expect_equal(DBI::dbGetQuery(con_b, "SELECT rducks_lifecycle_same_name(41::INTEGER) AS x")$x, 82L)
+
+    rducks_release(con_a)
+    expect_false(exists(token_a, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
+    expect_true(exists(token_b, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
+    expect_equal(DBI::dbGetQuery(con_b, "SELECT rducks_lifecycle_same_name(21::INTEGER) AS x")$x, 42L)
   })
 
   local({

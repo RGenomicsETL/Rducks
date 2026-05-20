@@ -280,6 +280,18 @@ local({
     INTEGER, STRUCT(a = INTEGER, b = INTEGER),
     mode = "vectorized", side_effects = TRUE
   ))
+  invisible(rducks_register_scalar_udf(
+    con, "rducks_queue_arrow_c_error_null_list",
+    function(x) stop("expected list error"),
+    INTEGER, INTEGER[],
+    exception_handling = "return_null"
+  ))
+  invisible(rducks_register_scalar_udf(
+    con, "rducks_queue_arrow_c_error_null_struct",
+    function(x) stop("expected struct error"),
+    INTEGER, STRUCT(a = INTEGER, b = VARCHAR),
+    exception_handling = "return_null"
+  ))
 
   snapshot_n <- 4096L
   snapshot_expected <- sum(c(
@@ -354,6 +366,17 @@ local({
   expect_true(struct_explain$arrow_c_input_snapshot_chunks >= 1)
   expect_true(struct_explain$arrow_c_owned_result_chunk_chunks >= 1)
   expect_equal(struct_explain$arrow_r_chunks, 0)
+
+  nested_error_null <- DBI::dbGetQuery(
+    con,
+    paste(
+      "SELECT count(rducks_queue_arrow_c_error_null_list(i::INTEGER)) AS list_nonnull,",
+      "count(rducks_queue_arrow_c_error_null_struct(i::INTEGER)) AS struct_nonnull",
+      "FROM rducks_parallel_range(4::UBIGINT) AS t(i)"
+    )
+  )
+  expect_equal(nested_error_null$list_nonnull, 0)
+  expect_equal(nested_error_null$struct_nonnull, 0)
 
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] > before$submitted[[1L]])

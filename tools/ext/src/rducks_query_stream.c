@@ -588,7 +588,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     rc = duckdb_prepare(entry->connection, sql, &stmt);
     if (rc == DuckDBError) {
         const char *msg = stmt ? duckdb_prepare_error(stmt) : NULL;
-        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to prepare query stream");
+        rducks_copy_error_message(err_msg, err_cap, msg, "DuckDB failed to prepare query stream");
         goto error;
     }
 
@@ -597,7 +597,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     stmt = NULL;
     if (rc == DuckDBError) {
         const char *msg = pending ? duckdb_pending_error(pending) : NULL;
-        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to create pending query stream");
+        rducks_copy_error_message(err_msg, err_cap, msg, "DuckDB failed to create pending query stream");
         goto error;
     }
 
@@ -607,7 +607,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
     pending = NULL;
     if (rc == DuckDBError) {
         const char *msg = duckdb_result_error(&entry->result);
-        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to open query stream");
+        rducks_copy_error_message(err_msg, err_cap, msg, "DuckDB failed to open query stream");
         goto error;
     }
     if (!duckdb_result_is_streaming(entry->result)) {
@@ -735,7 +735,7 @@ static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, cons
     if (!chunk || duckdb_data_chunk_get_size(chunk) == 0) {
         const char *msg = duckdb_result_error(&entry->result);
         if (msg && msg[0]) {
-            snprintf(err_msg, err_cap, "%s", msg);
+            rducks_copy_error_message(err_msg, err_cap, msg, "DuckDB query stream fetch failed");
             goto cleanup;
         }
         entry->done = 1;

@@ -57,9 +57,76 @@ static int rducks_multiprocess_parallel_enabled(rducks_runtime_entry_t *runtime)
     return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_MULTIPROCESS_PARALLEL;
 }
 
+static uint64_t rducks_runtime_udf_name_hash(const char *text) {
+    const unsigned char *p = (const unsigned char *)(text ? text : "");
+    uint64_t h = 1469598103934665603ULL;
+    while (*p) {
+        h ^= (uint64_t)*p++;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static size_t rducks_runtime_udf_bucket_count(size_t size) {
+    size_t buckets = 64U;
+    if (size > (SIZE_MAX / 2U)) return 0U;
+    while (buckets < size * 2U) {
+        if (buckets > (SIZE_MAX / 2U)) return 0U;
+        buckets *= 2U;
+    }
+    return buckets;
+}
+
+static void rducks_runtime_udf_hash_insert_locked(rducks_runtime_entry_t *runtime,
+                                                  rducks_r_scalar_meta_t *meta) {
+    size_t bucket;
+    if (!runtime || !runtime->udf_registry_buckets || !runtime->udf_registry_bucket_count || !meta || !meta->name) return;
+    bucket = (size_t)(rducks_runtime_udf_name_hash(meta->name) &
+                      (uint64_t)(runtime->udf_registry_bucket_count - 1U));
+    meta->registry_hash_next = runtime->udf_registry_buckets[bucket];
+    runtime->udf_registry_buckets[bucket] = meta;
+}
+
+static int rducks_runtime_rebuild_udf_hash_locked(rducks_runtime_entry_t *runtime, size_t min_size) {
+    rducks_r_scalar_meta_t **buckets;
+    rducks_r_scalar_meta_t *cur;
+    size_t bucket_count;
+    if (!runtime) return 0;
+    bucket_count = rducks_runtime_udf_bucket_count(min_size);
+    if (!bucket_count) return 0;
+    buckets = (rducks_r_scalar_meta_t **)rducks_calloc_array(bucket_count, sizeof(*buckets));
+    if (!buckets) return 0;
+    for (cur = runtime->udf_registry_head; cur; cur = cur->registry_next) cur->registry_hash_next = NULL;
+    free(runtime->udf_registry_buckets);
+    runtime->udf_registry_buckets = buckets;
+    runtime->udf_registry_bucket_count = bucket_count;
+    for (cur = runtime->udf_registry_head; cur; cur = cur->registry_next) {
+        rducks_runtime_udf_hash_insert_locked(runtime, cur);
+    }
+    return 1;
+}
+
+static void rducks_runtime_clear_udf_hash_locked(rducks_runtime_entry_t *runtime) {
+    rducks_r_scalar_meta_t *cur;
+    if (!runtime) return;
+    for (cur = runtime->udf_registry_head; cur; cur = cur->registry_next) cur->registry_hash_next = NULL;
+    free(runtime->udf_registry_buckets);
+    runtime->udf_registry_buckets = NULL;
+    runtime->udf_registry_bucket_count = 0U;
+    runtime->udf_registry_size = 0U;
+}
+
 static rducks_r_scalar_meta_t *rducks_runtime_find_udf_locked(rducks_runtime_entry_t *runtime, const char *name) {
     rducks_r_scalar_meta_t *cur;
     if (!runtime || !name) return NULL;
+    if (runtime->udf_registry_buckets && runtime->udf_registry_bucket_count) {
+        size_t bucket = (size_t)(rducks_runtime_udf_name_hash(name) &
+                                 (uint64_t)(runtime->udf_registry_bucket_count - 1U));
+        for (cur = runtime->udf_registry_buckets[bucket]; cur; cur = cur->registry_hash_next) {
+            if (cur->name && strcmp(cur->name, name) == 0) return cur;
+        }
+        return NULL;
+    }
     cur = runtime->udf_registry_head;
     while (cur) {
         if (cur->name && strcmp(cur->name, name) == 0) return cur;
@@ -72,7 +139,18 @@ static void rducks_runtime_register_udf(rducks_runtime_entry_t *runtime, rducks_
     if (!runtime || !meta || !meta->name) return;
     rducks_runtime_lock();
     meta->registry_next = runtime->udf_registry_head;
+    meta->registry_hash_next = NULL;
     runtime->udf_registry_head = meta;
+    runtime->udf_registry_size++;
+    if (!runtime->udf_registry_buckets ||
+        runtime->udf_registry_size > runtime->udf_registry_bucket_count * 2U) {
+        if (!rducks_runtime_rebuild_udf_hash_locked(runtime, runtime->udf_registry_size) &&
+            runtime->udf_registry_buckets) {
+            rducks_runtime_udf_hash_insert_locked(runtime, meta);
+        }
+    } else {
+        rducks_runtime_udf_hash_insert_locked(runtime, meta);
+    }
     rducks_runtime_unlock();
 }
 
@@ -90,16 +168,31 @@ static void rducks_runtime_unregister_udf(rducks_runtime_entry_t *runtime, rduck
                 runtime->udf_registry_head = cur->registry_next;
             }
             cur->registry_next = NULL;
+            if (runtime->udf_registry_size > 0U) runtime->udf_registry_size--;
             break;
         }
         prev = cur;
         cur = cur->registry_next;
+    }
+    if (runtime->udf_registry_buckets && runtime->udf_registry_bucket_count && meta->name) {
+        size_t bucket = (size_t)(rducks_runtime_udf_name_hash(meta->name) &
+                                 (uint64_t)(runtime->udf_registry_bucket_count - 1U));
+        rducks_r_scalar_meta_t **link = &runtime->udf_registry_buckets[bucket];
+        while (*link) {
+            if (*link == meta) {
+                *link = meta->registry_hash_next;
+                meta->registry_hash_next = NULL;
+                break;
+            }
+            link = &(*link)->registry_hash_next;
+        }
     }
     rducks_runtime_unlock();
 }
 
 typedef struct rducks_preserved_release_node {
     SEXP object;
+    int close_table_stream;
     struct rducks_preserved_release_node *next;
 } rducks_preserved_release_node_t;
 
@@ -116,13 +209,30 @@ static void rducks_preserved_release_record_released(uint64_t count) {
     rducks_runtime_unlock();
 }
 
+static void rducks_close_table_stream_on_main(SEXP object) {
+    int r_err = 0;
+    SEXP pkg;
+    SEXP ns;
+    SEXP fun;
+    SEXP call;
+    SEXP result;
+    if (!object || object == R_NilValue) return;
+    pkg = PROTECT(Rf_mkString("Rducks"));
+    ns = PROTECT(R_FindNamespace(pkg));
+    fun = PROTECT(Rf_findFun(Rf_install("rducks_table_stream_close"), ns));
+    call = PROTECT(Rf_lang2(fun, object));
+    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
+    (void)result;
+    UNPROTECT(5);
+}
+
 static void rducks_preserved_release_now(SEXP object) {
     if (!object || object == R_NilValue) return;
     R_ReleaseObject(object);
     rducks_preserved_release_record_released(1U);
 }
 
-static void rducks_preserved_release_enqueue(SEXP object) {
+static void rducks_preserved_release_enqueue_ex(SEXP object, int close_table_stream) {
     rducks_preserved_release_node_t *node;
     if (!object || object == R_NilValue) return;
     node = (rducks_preserved_release_node_t *)malloc(sizeof(*node));
@@ -136,6 +246,7 @@ static void rducks_preserved_release_enqueue(SEXP object) {
         return;
     }
     node->object = object;
+    node->close_table_stream = close_table_stream ? 1 : 0;
     node->next = NULL;
     rducks_runtime_lock();
     if (g_preserved_release_tail) {
@@ -146,6 +257,14 @@ static void rducks_preserved_release_enqueue(SEXP object) {
     g_preserved_release_tail = node;
     g_preserved_release_queued++;
     rducks_runtime_unlock();
+}
+
+static void rducks_preserved_release_enqueue(SEXP object) {
+    rducks_preserved_release_enqueue_ex(object, 0);
+}
+
+static void rducks_preserved_release_enqueue_table_stream(SEXP object) {
+    rducks_preserved_release_enqueue_ex(object, 1);
 }
 
 static uint64_t rducks_preserved_release_drain_on_main(rducks_runtime_entry_t *runtime) {
@@ -160,6 +279,7 @@ static uint64_t rducks_preserved_release_drain_on_main(rducks_runtime_entry_t *r
     while (node) {
         rducks_preserved_release_node_t *next = node->next;
         if (node->object && node->object != R_NilValue) {
+            if (node->close_table_stream) rducks_close_table_stream_on_main(node->object);
             R_ReleaseObject(node->object);
             released++;
         }
@@ -195,6 +315,7 @@ static void rducks_runtime_destroy_detached_udf_registry(rducks_r_scalar_meta_t 
     for (cur = detached; cur; ) {
         rducks_r_scalar_meta_t *next = cur->registry_next;
         cur->registry_next = NULL;
+        cur->registry_hash_next = NULL;
         rducks_nng_client_pool_destroy(&cur->ripc_client_pool);
         cur = next;
     }
@@ -214,6 +335,7 @@ static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) 
     if (!runtime) return;
     rducks_runtime_lock();
     detached = runtime->udf_registry_head;
+    rducks_runtime_clear_udf_hash_locked(runtime);
     runtime->udf_registry_head = NULL;
     rducks_runtime_unlock();
     rducks_runtime_destroy_detached_udf_registry(detached);

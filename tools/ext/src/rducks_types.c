@@ -218,6 +218,8 @@ static void rducks_type_desc_destroy(rducks_type_desc_t *desc) {
         for (size_t i = 0; i < desc->field_count; i++) rducks_type_desc_destroy(desc->field_types[i]);
         free(desc->field_types);
     }
+    free(desc->field_hash_heads);
+    free(desc->field_hash_next);
     free(desc);
 }
 
@@ -225,6 +227,79 @@ static rducks_type_desc_t *rducks_type_desc_new(rducks_type_kind_t kind) {
     rducks_type_desc_t *desc = (rducks_type_desc_t *)rducks_calloc_array(1, sizeof(*desc));
     if (desc) desc->kind = kind;
     return desc;
+}
+
+static uint64_t rducks_type_desc_field_hash(const char *text) {
+    const unsigned char *p = (const unsigned char *)(text ? text : "");
+    uint64_t h = 1469598103934665603ULL;
+    while (*p) {
+        h ^= (uint64_t)*p++;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static size_t rducks_type_desc_hash_bucket_count(size_t count) {
+    size_t buckets = 8U;
+    if (count > (SIZE_MAX / 2U)) return 0U;
+    while (buckets < count * 2U) {
+        if (buckets > (SIZE_MAX / 2U)) return 0U;
+        buckets *= 2U;
+    }
+    return buckets;
+}
+
+static int rducks_type_desc_build_field_hash(rducks_type_desc_t *desc) {
+    size_t buckets;
+    uint32_t *heads;
+    uint32_t *next;
+    if (!desc || !desc->field_count || !desc->field_names) return 1;
+    if (desc->field_hash_heads && desc->field_hash_next && desc->field_hash_bucket_count) return 1;
+    if (desc->field_count > (size_t)UINT32_MAX) return 0;
+    buckets = rducks_type_desc_hash_bucket_count(desc->field_count);
+    if (!buckets) return 0;
+    heads = (uint32_t *)rducks_calloc_array(buckets, sizeof(*heads));
+    next = (uint32_t *)rducks_calloc_array(desc->field_count, sizeof(*next));
+    if (!heads || !next) {
+        free(heads);
+        free(next);
+        return 0;
+    }
+    for (size_t i = 0; i < buckets; i++) heads[i] = UINT32_MAX;
+    for (size_t i = 0; i < desc->field_count; i++) next[i] = UINT32_MAX;
+    for (size_t i = 0; i < desc->field_count; i++) {
+        size_t bucket = (size_t)(rducks_type_desc_field_hash(desc->field_names[i]) & (uint64_t)(buckets - 1U));
+        next[i] = heads[bucket];
+        heads[bucket] = (uint32_t)i;
+    }
+    desc->field_hash_heads = heads;
+    desc->field_hash_next = next;
+    desc->field_hash_bucket_count = buckets;
+    return 1;
+}
+
+static int rducks_type_desc_find_field_index(const rducks_type_desc_t *desc, const char *name,
+                                             size_t *index_out) {
+    if (index_out) *index_out = 0U;
+    if (!desc || !name || !desc->field_names) return 0;
+    if (desc->field_hash_heads && desc->field_hash_next && desc->field_hash_bucket_count) {
+        size_t bucket = (size_t)(rducks_type_desc_field_hash(name) &
+                                 (uint64_t)(desc->field_hash_bucket_count - 1U));
+        for (uint32_t i = desc->field_hash_heads[bucket]; i != UINT32_MAX; i = desc->field_hash_next[i]) {
+            if ((size_t)i < desc->field_count && desc->field_names[i] && strcmp(name, desc->field_names[i]) == 0) {
+                if (index_out) *index_out = (size_t)i;
+                return 1;
+            }
+        }
+        return 0;
+    }
+    for (size_t i = 0; i < desc->field_count; i++) {
+        if (desc->field_names[i] && strcmp(name, desc->field_names[i]) == 0) {
+            if (index_out) *index_out = i;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void rducks_type_desc_array_destroy(rducks_type_desc_t **items, size_t count) {
@@ -271,6 +346,7 @@ static rducks_type_desc_t *rducks_type_desc_clone(const rducks_type_desc_t *src)
                 if (!dst->field_types[i]) goto fail;
             }
         }
+        if (!rducks_type_desc_build_field_hash(dst)) goto fail;
     }
     return dst;
 fail:
@@ -399,6 +475,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             snprintf(err, err_cap, "enum type must contain at least one level");
             goto fail;
         }
+        if (!rducks_type_desc_build_field_hash(desc)) goto oom;
         *out = desc;
         return 1;
     }
@@ -447,6 +524,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             snprintf(err, err_cap, "union type must contain 1 to 255 members");
             goto fail;
         }
+        if (!rducks_type_desc_build_field_hash(desc)) goto oom;
         *out = desc;
         return 1;
     }
@@ -848,6 +926,7 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
                 duckdb_free(value);
                 if (!desc->field_names[i]) goto oom;
             }
+            if (!rducks_type_desc_build_field_hash(desc)) goto oom;
         }
         *out = desc;
         return 1;
@@ -922,6 +1001,7 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
                 }
                 duckdb_destroy_logical_type(&child);
             }
+            if (!rducks_type_desc_build_field_hash(desc)) goto oom;
         }
         *out = desc;
         return 1;

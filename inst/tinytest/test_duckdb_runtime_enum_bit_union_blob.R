@@ -30,6 +30,18 @@ local({
     if (identical(x$tag, "code")) rducks_union("label", paste0("c", x$value)) else rducks_union("code", 1L)
   }, UNION(code = INTEGER, label = VARCHAR), UNION(code = INTEGER, label = VARCHAR)))
   expect_equal(DBI::dbGetQuery(con, "SELECT union_extract(rducks_union_arrow_c(union_value(code := 42)::UNION(code INTEGER, label VARCHAR)), 'label') AS x")$x, "c42")
+  union_batch <- DBI::dbGetQuery(con, paste0(
+    "WITH input(u) AS (VALUES ",
+    "(union_value(code := 42)::UNION(code INTEGER, label VARCHAR)), ",
+    "(union_value(label := 'x')::UNION(code INTEGER, label VARCHAR))",
+    "), out AS (SELECT rducks_union_arrow_c(u) AS y FROM input) ",
+    "SELECT union_tag(y)::VARCHAR AS tag, ",
+    "CASE WHEN union_tag(y)::VARCHAR = 'label' THEN union_extract(y, 'label') ",
+    "ELSE CAST(union_extract(y, 'code') AS VARCHAR) END AS value ",
+    "FROM out ORDER BY tag"
+  ))
+  expect_equal(union_batch$tag, c("code", "label"))
+  expect_equal(union_batch$value, c("1", "c42"))
   union_explain <- rducks_explain_udf(con, "rducks_union_arrow_c")
   expect_equal(union_explain$evaluator, "RC")
   expect_true(union_explain$arrow_c_chunks >= 1)

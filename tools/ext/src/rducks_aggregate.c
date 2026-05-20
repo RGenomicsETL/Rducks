@@ -232,6 +232,34 @@ static SEXP rducks_r_aggregate_state_list(rducks_r_aggregate_state_t **states,
     return out;
 }
 
+static int rducks_r_aggregate_state_ptr_compare(const void *a, const void *b) {
+    uintptr_t pa = (uintptr_t)*(rducks_r_aggregate_state_t * const *)a;
+    uintptr_t pb = (uintptr_t)*(rducks_r_aggregate_state_t * const *)b;
+    return (pa > pb) - (pa < pb);
+}
+
+static int rducks_r_aggregate_state_ptr_find(rducks_r_aggregate_state_t **states, idx_t count,
+                                             rducks_r_aggregate_state_t *state, idx_t *index_out) {
+    idx_t lo = 0;
+    idx_t hi = count;
+    uintptr_t needle = (uintptr_t)state;
+    if (index_out) *index_out = 0;
+    while (lo < hi) {
+        idx_t mid = lo + (hi - lo) / 2U;
+        uintptr_t cur = (uintptr_t)states[mid];
+        if (cur == needle) {
+            if (index_out) *index_out = mid;
+            return 1;
+        }
+        if (cur < needle) {
+            lo = mid + 1U;
+        } else {
+            hi = mid;
+        }
+    }
+    return 0;
+}
+
 static int rducks_r_aggregate_update_vectorized(duckdb_function_info info,
                                                 rducks_r_aggregate_meta_t *meta,
                                                 duckdb_data_chunk input,
@@ -264,37 +292,44 @@ static int rducks_r_aggregate_update_vectorized(duckdb_function_info info,
     protect_count++;
     for (idx_t row = 0; row < n; row++) {
         rducks_r_aggregate_state_t *state = (rducks_r_aggregate_state_t *)states[row];
-        idx_t found = 0;
         int selected = state && rducks_r_aggregate_row_selected(meta, views, row);
-        if (!selected) {
-            INTEGER(group_id)[(R_xlen_t)row] = 0;
-            continue;
-        }
-        for (idx_t i = 0; i < state_count; i++) {
-            if (distinct_states[i] == state) {
-                found = i + 1;
-                break;
-            }
-        }
-        if (found == 0) {
-            if (state_count >= (idx_t)INT_MAX) {
-                free(distinct_states);
-                UNPROTECT(protect_count);
-                snprintf(err, err_cap, "Rducks aggregate vectorized update has too many distinct states for R");
-                return 0;
-            }
-            distinct_states[state_count] = state;
-            state_count++;
-            found = state_count;
-        }
-        INTEGER(group_id)[(R_xlen_t)row] = (int)found;
+        INTEGER(group_id)[(R_xlen_t)row] = 0;
+        if (selected) distinct_states[state_count++] = state;
     }
     if (state_count == 0) {
         free(distinct_states);
         UNPROTECT(protect_count);
         return 1;
     }
-
+    qsort(distinct_states, (size_t)state_count, sizeof(*distinct_states), rducks_r_aggregate_state_ptr_compare);
+    {
+        idx_t unique_count = 1;
+        for (idx_t i = 1; i < state_count; i++) {
+            if (distinct_states[i] != distinct_states[unique_count - 1U]) {
+                distinct_states[unique_count++] = distinct_states[i];
+            }
+        }
+        state_count = unique_count;
+    }
+    if ((uint64_t)state_count > (uint64_t)INT_MAX) {
+        free(distinct_states);
+        UNPROTECT(protect_count);
+        snprintf(err, err_cap, "Rducks aggregate vectorized update has too many distinct states for R");
+        return 0;
+    }
+    for (idx_t row = 0; row < n; row++) {
+        rducks_r_aggregate_state_t *state = (rducks_r_aggregate_state_t *)states[row];
+        idx_t found = 0;
+        int selected = state && rducks_r_aggregate_row_selected(meta, views, row);
+        if (!selected) continue;
+        if (!rducks_r_aggregate_state_ptr_find(distinct_states, state_count, state, &found)) {
+            free(distinct_states);
+            UNPROTECT(protect_count);
+            snprintf(err, err_cap, "Rducks aggregate vectorized update failed to map a group state");
+            return 0;
+        }
+        INTEGER(group_id)[(R_xlen_t)row] = (int)(found + 1U);
+    }
     state_list = rducks_r_aggregate_state_list(distinct_states, state_count, &protect_count, err, err_cap);
     if (err[0] || state_list == R_NilValue) {
         free(distinct_states);

@@ -29,3 +29,24 @@ static void rducks_ascii_lower_inplace(char *x) {
     }
 }
 
+static void rducks_copy_error_message(char *out, size_t out_cap,
+                                      const char *message, const char *fallback) {
+    const char *text = (message && message[0]) ? message : (fallback ? fallback : "Rducks error");
+    size_t len;
+    static const char suffix[] = " ... [truncated]";
+    size_t suffix_len = sizeof(suffix) - 1U;
+    if (!out || out_cap == 0U) return;
+    len = strlen(text);
+    if (len < out_cap) {
+        memcpy(out, text, len + 1U);
+        return;
+    }
+    if (out_cap <= suffix_len + 1U) {
+        snprintf(out, out_cap, "%s", text);
+        return;
+    }
+    memcpy(out, text, out_cap - suffix_len - 1U);
+    memcpy(out + out_cap - suffix_len - 1U, suffix, suffix_len);
+    out[out_cap - 1U] = '\0';
+}
+

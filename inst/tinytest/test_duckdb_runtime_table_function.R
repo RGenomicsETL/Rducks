@@ -130,6 +130,31 @@ local({
   expect_equal(as.integer(stream_counted$n), 3L)
   expect_equal(stream_count_close_calls, 1L)
 
+  stream_limit_close_calls <- 0L
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming_limit_close",
+    function() {
+      batch_index <- 0L
+      rducks_table_stream(
+        prototype = data.frame(i = integer()),
+        next_batch = function(n) {
+          batch_index <<- batch_index + 1L
+          if (batch_index > 3L) return(NULL)
+          data.frame(i = seq_len(as.integer(n)) + (batch_index - 1L) * as.integer(n))
+        },
+        close = function() {
+          stream_limit_close_calls <<- stream_limit_close_calls + 1L
+        }
+      )
+    },
+    chunk_size = 2L
+  ))
+  stream_limited <- DBI::dbGetQuery(con, "SELECT * FROM rducks_table_streaming_limit_close() LIMIT 1")
+  expect_equal(stream_limited$i, 1L)
+  invisible(gc())
+  expect_equal(stream_limit_close_calls, 1L)
+
   invisible(rducks_register_table(
     con,
     "rducks_table_streaming_type_mismatch",

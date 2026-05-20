@@ -405,19 +405,19 @@ fail:
 
 static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr) {
     rducks_nng_client_pool_t *pool;
+    int counted_op;
     if (!pool_ptr || !*pool_ptr) return;
     pool = *pool_ptr;
     *pool_ptr = NULL;
     rducks_nng_client_pool_begin_close(pool);
-    if (!rducks_nng_enter_op("destroy Rducks NNG client pool", NULL, 0)) {
-        if (pool->sync_initialized) {
-            rducks_nng_mutex_lock(&pool->lock);
-            pool->closing = 0;
-            rducks_nng_mutex_unlock(&pool->lock);
-        }
-        *pool_ptr = pool;
-        return;
-    }
+    counted_op = rducks_nng_enter_op("destroy Rducks NNG client pool", NULL, 0);
+    /* begin_close() is the per-pool quiesce barrier: it marks the pool closing
+     * and waits until every acquired request has released its reference.  If a
+     * process-global quiesce check races with teardown, enter_op() can decline
+     * to count this close operation; do not restore a half-closed pool.  Global
+     * quiesce does not call nng_fini(), so closing sockets after the pool ref
+     * barrier is still the safe and leak-free action.
+     */
     if (pool->clients) {
         for (size_t i = 0; i < pool->count; i++) rducks_nng_client_destroy(&pool->clients[i]);
         free(pool->clients);
@@ -425,7 +425,7 @@ static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr) 
     rducks_nng_client_pool_sync_destroy(pool);
     free(pool);
     rducks_nng_pool_count_done();
-    rducks_nng_leave_op();
+    if (counted_op) rducks_nng_leave_op();
     (void)rducks_nng_global_quiesce(NULL, 0);
 }
 

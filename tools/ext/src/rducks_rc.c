@@ -1077,6 +1077,21 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
             snprintf(err_msg, err_cap, "Rducks enum return value is invalid");
             return 0;
         }
+        if (XLENGTH(levels) == (R_xlen_t)desc->field_count) {
+            int levels_match = 1;
+            for (size_t i = 0; i < desc->field_count; i++) {
+                SEXP level = STRING_ELT(levels, (R_xlen_t)i);
+                const char *expected = desc->field_names[i] ? desc->field_names[i] : "";
+                if (level == NA_STRING || strcmp(CHAR(level), expected) != 0) {
+                    levels_match = 0;
+                    break;
+                }
+            }
+            if (levels_match) {
+                *index_out = (uint32_t)(idx - 1);
+                return 1;
+            }
+        }
         ch = STRING_ELT(levels, idx - 1);
     } else {
         snprintf(err_msg, err_cap, "Rducks enum return value must be character or factor");
@@ -1087,9 +1102,10 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
         return 0;
     }
     value_text = CHAR(ch);
-    for (size_t i = 0; i < desc->field_count; i++) {
-        if (desc->field_names[i] && strcmp(value_text, desc->field_names[i]) == 0) {
-            *index_out = (uint32_t)i;
+    {
+        size_t index = 0;
+        if (rducks_type_desc_find_field_index(desc, value_text, &index) && index <= (size_t)UINT32_MAX) {
+            *index_out = (uint32_t)index;
             return 1;
         }
     }
@@ -2337,12 +2353,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         }
         const char *tag_text = CHAR(STRING_ELT(tag_value, 0));
         size_t tag_index = desc->field_count;
-        for (size_t i = 0; i < desc->field_count; i++) {
-            if (desc->field_names[i] && strcmp(tag_text, desc->field_names[i]) == 0) {
-                tag_index = i;
-                break;
-            }
-        }
+        (void)rducks_type_desc_find_field_index(desc, tag_text, &tag_index);
         if (tag_index >= desc->field_count || tag_index > 255U) {
             UNPROTECT(2);
             snprintf(err_msg, err_cap, "Rducks UNION tag is outside declared members");
