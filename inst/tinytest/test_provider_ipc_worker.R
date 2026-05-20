@@ -43,6 +43,22 @@ local({
     }, "auto")
     expect_equal(nested_globals$globals$outer_x, 2L)
   }
+
+  helper_value <- 42L
+  f <- NULL
+  g <- NULL
+  f <- function(x) if (x > 0) g(x - 1L) else helper_value
+  g <- function(x) f(x)
+  codetools_globals <- Rducks:::rducks_ipc_globals_for_function_codetools(f)
+  expect_equal(codetools_globals$globals$helper_value, 42L)
+  expect_true("g" %in% names(codetools_globals$globals))
+})
+
+local({
+  expect_error(
+    Rducks:::rducks_nng_check_seconds(0.001, "timeout", minimum = 0.01),
+    "greater than 0.01"
+  )
 })
 
 local({

@@ -40,7 +40,12 @@ rducks_nng_check_seconds <- function(x, what, default = NULL, minimum = 0) {
   if (is.null(x)) x <- default
   x <- suppressWarnings(as.numeric(x))
   if (length(x) != 1L || is.na(x) || !is.finite(x) || x <= minimum) {
-    stop(what, " must be a positive finite numeric scalar", call. = FALSE)
+    stop(
+      what,
+      " must be a finite numeric scalar greater than ",
+      format(minimum, scientific = FALSE, trim = TRUE),
+      call. = FALSE
+    )
   }
   x
 }

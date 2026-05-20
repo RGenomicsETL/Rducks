@@ -159,7 +159,7 @@ rducks_nng_wire_decode_request <- function(buf) {
   if (!is.finite(total) || total < rducks_nng_wire_request_header_size) {
     stop("invalid Rducks NNG request frame length", call. = FALSE)
   }
-  if (total > as.double(length(buf)) || total != length(buf)) {
+  if (total != length(buf)) {
     stop("truncated Rducks NNG request frame", call. = FALSE)
   }
 

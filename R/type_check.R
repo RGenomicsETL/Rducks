@@ -165,8 +165,8 @@ rducks_check_enum_value <- function(type, x, what) {
 }
 
 rducks_check_union_value <- function(type, x, what) {
-  tag <- if (inherits(x, "rducks_union")) x$tag else x$tag
-  value <- if (inherits(x, "rducks_union")) x$value else x$value
+  tag <- x$tag
+  value <- x$value
   if (!is.character(tag) || length(tag) != 1L || is.na(tag) || !nzchar(tag)) {
     stop(what, " must have a non-empty union tag", call. = FALSE)
   }

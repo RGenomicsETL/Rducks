@@ -135,15 +135,14 @@ rducks_ipc_globals_for_function_codetools <- function(fun) {
   packages <- character()
   queue <- list(fun)
   queue_pos <- 1L
-  seen <- new.env(parent = emptyenv())
+  seen <- list()
   seen_globals <- new.env(parent = emptyenv())
 
   while (queue_pos <= length(queue)) {
     current <- queue[[queue_pos]]
     queue_pos <- queue_pos + 1L
-    current_key <- paste0(typeof(current), "@", .Call(RDUCKS_sexp_addr, current))
-    if (exists(current_key, envir = seen, inherits = FALSE)) next
-    assign(current_key, TRUE, envir = seen)
+    if (length(seen) && any(vapply(seen, identical, logical(1), current))) next
+    seen[[length(seen) + 1L]] <- current
 
     names <- rducks_ipc_find_globals_codetools(current)
     env <- environment(current) %||% parent.frame()
