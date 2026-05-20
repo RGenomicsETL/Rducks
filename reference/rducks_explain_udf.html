@@ -3,7 +3,8 @@
 counters for a DuckDB scalar UDF registered by
 rducks_register_scalar_udf(). The
 mode column is the Rducks scalar-UDF evaluation mode, while plan_id,
-marshalling, and concurrency describe the frozen execution plan. The
+marshalling, and concurrency describe the plan recorded at registration
+time. The
 r_side_record column is FALSE when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
@@ -13,7 +14,8 @@ arrow_r_chunks unchanged."><meta property="og:description" content="Returns the 
 counters for a DuckDB scalar UDF registered by
 rducks_register_scalar_udf(). The
 mode column is the Rducks scalar-UDF evaluation mode, while plan_id,
-marshalling, and concurrency describe the frozen execution plan. The
+marshalling, and concurrency describe the plan recorded at registration
+time. The
 r_side_record column is FALSE when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
@@ -27,7 +29,7 @@ arrow_r_chunks unchanged."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">Rducks</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,6 +38,13 @@ arrow_r_chunks unchanged."></head><body>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+<li class="nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
+    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -58,7 +67,8 @@ arrow_r_chunks unchanged."></head><body>
 counters for a DuckDB scalar UDF registered by
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>. The
 <code>mode</code> column is the Rducks scalar-UDF evaluation mode, while <code>plan_id</code>,
-<code>marshalling</code>, and <code>concurrency</code> describe the frozen execution plan. The
+<code>marshalling</code>, and <code>concurrency</code> describe the plan recorded at registration
+time. The
 <code>r_side_record</code> column is <code>FALSE</code> when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed

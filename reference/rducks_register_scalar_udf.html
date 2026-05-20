@@ -17,7 +17,7 @@ calls the R function once per DuckDB chunk with vector/list-column inputs."></he
 
     <a class="navbar-brand me-2" href="../index.html">Rducks</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.2</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -26,6 +26,13 @@ calls the R function once per DuckDB chunk with vector/list-column inputs."></he
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+<li class="nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
+    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -142,11 +149,13 @@ selects and freezes the marshalling/concurrency implementation for this
 registration; unsupported plan/evaluation-mode/type combinations fail instead
 of switching engines. If a later call registers the same SQL name/signature,
 the callable implementation is replaced in the shared DuckDB database catalog
-rather than being tied to the registering DBI connection. After registration,
-use <code><a href="rducks_enable_inproc.html">rducks_enable_inproc()</a></code> to opt into
-queued same-process execution. For <code>arrow_ipc</code> plans, the UDF closure and
-discovered globals are copied once to each NNG worker in the shared provider
-pool and retained for that pool's lifetime.</p>
+rather than being tied to the registering DBI connection. Choose the desired
+execution plan before registration with
+<code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>; the
+selected evaluator/marshalling metadata is then stored with the native catalog
+entry. For <code>arrow_ipc</code> plans, the UDF closure and discovered globals are
+copied once to each NNG worker in the shared provider pool and retained for
+that pool's lifetime.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

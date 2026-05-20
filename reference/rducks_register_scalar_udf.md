@@ -98,8 +98,9 @@ registration; unsupported plan/evaluation-mode/type combinations fail
 instead of switching engines. If a later call registers the same SQL
 name/signature, the callable implementation is replaced in the shared
 DuckDB database catalog rather than being tied to the registering DBI
-connection. After registration, use
-[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to opt into queued same-process execution. For `arrow_ipc` plans, the
-UDF closure and discovered globals are copied once to each NNG worker in
-the shared provider pool and retained for that pool's lifetime.
+connection. Choose the desired execution plan before registration with
+[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md);
+the selected evaluator/marshalling metadata is then stored with the
+native catalog entry. For `arrow_ipc` plans, the UDF closure and
+discovered globals are copied once to each NNG worker in the shared
+provider pool and retained for that pool's lifetime.

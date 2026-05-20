@@ -7,9 +7,10 @@ explicitly. `rducks_enable()` also sets DuckDB's
 `arrow_lossless_conversion=true` option on the user connection; the
 extension applies the same setting to its internal connections so
 DuckDB-specific Arrow metadata is preserved for typed scalar-UDF, table,
-and query-stream marshalling. After registering UDFs, call
-[`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md)
-to opt into the extension-owned in-process queue.
+and query-stream marshalling. Use
+[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
+before scalar-UDF registration to select a non-reference marshalling or
+concurrency plan.
 
 ## Usage
 

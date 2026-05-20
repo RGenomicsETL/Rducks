@@ -4,12 +4,13 @@ An execution plan describes how Rducks should marshal DuckDB chunks and
 what concurrency model is allowed. When stored on a connection it is the
 default for future
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
-calls; the selected evaluator/marshalling is frozen into each registered
-scalar UDF's database-catalog metadata. It is separate from DuckDB
-function kind and from scalar-UDF registration semantics such as Rducks
-evaluation mode (`"scalar"` row calls versus `"vectorized"` chunk
-calls), argument/return types, NULL handling, error handling, and side
-effects.
+calls and updates the native runtime backend used for matching
+concurrent execution; the selected evaluator/marshalling is frozen into
+each registered scalar UDF's database-catalog metadata. It is separate
+from DuckDB function kind and from scalar-UDF registration semantics
+such as Rducks evaluation mode (`"scalar"` row calls versus
+`"vectorized"` chunk calls), argument/return types, NULL handling, error
+handling, and side effects.
 
 ## Usage
 
