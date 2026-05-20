@@ -156,50 +156,52 @@ slower there.</p>
 <span><span class="va">ipc_transport</span> <span class="op">&lt;-</span> <span class="st">"tcp"</span></span>
 <span><span class="va">ipc_timeout</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Sys.info.html" class="external-link">Sys.info</a></span><span class="op">(</span><span class="op">)</span><span class="op">[[</span><span class="st">"sysname"</span><span class="op">]</span><span class="op">]</span>, <span class="st">"Windows"</span><span class="op">)</span><span class="op">)</span> <span class="fl">120</span> <span class="kw">else</span> <span class="fl">30</span></span>
 <span></span>
-<span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>    <span class="st">"arrow_ipc"</span>,</span>
-<span>    <span class="st">"multiprocess_parallel"</span>,</span>
-<span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
-<span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
-<span>    ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
-<span>  <span class="op">)</span>,</span>
-<span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
-<span>  external_threads <span class="op">=</span> <span class="fl">1L</span></span>
-<span><span class="op">)</span></span>
+<span><span class="va">ipc_available</span> <span class="op">&lt;-</span> <span class="cn">TRUE</span></span>
+<span><span class="va">ipc_start_error</span> <span class="op">&lt;-</span> <span class="cn">NULL</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
+<span>      <span class="st">"arrow_ipc"</span>,</span>
+<span>      <span class="st">"multiprocess_parallel"</span>,</span>
+<span>      ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
+<span>      ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
+<span>      ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
+<span>    <span class="op">)</span>,</span>
+<span>    threads <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="fl">1L</span></span>
+<span>  <span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_slow_square"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.1</span><span class="op">)</span></span>
-<span>    <span class="va">x</span> <span class="op">*</span> <span class="va">x</span></span>
-<span>  <span class="op">}</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
-<span><span class="co">#&gt;   registered:      yes</span></span>
-<span><span class="co">#&gt;   name:            r_slow_square</span></span>
-<span><span class="co">#&gt;   evaluation_mode: vectorized</span></span>
-<span><span class="co">#&gt;   plan:            arrow_ipc+multiprocess_parallel</span></span>
-<span><span class="co">#&gt;   signature:       r_slow_square(DOUBLE) -&gt; DOUBLE</span></span>
+<span>  <span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    name <span class="op">=</span> <span class="st">"r_slow_square"</span>,</span>
+<span>    fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.1</span><span class="op">)</span></span>
+<span>      <span class="va">x</span> <span class="op">*</span> <span class="va">x</span></span>
+<span>    <span class="op">}</span>,</span>
+<span>    args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
+<span>    returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
+<span>    mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
+<span>    side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span>  <span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>    <span class="st">"arrow_ipc"</span>,</span>
-<span>    <span class="st">"multiprocess_parallel"</span>,</span>
-<span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
-<span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
-<span>    ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
-<span>  <span class="op">)</span>,</span>
-<span>  threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
-<span>  external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span>  <span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
+<span>      <span class="st">"arrow_ipc"</span>,</span>
+<span>      <span class="st">"multiprocess_parallel"</span>,</span>
+<span>      ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
+<span>      ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
+<span>      ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
+<span>    <span class="op">)</span>,</span>
+<span>    threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span>, error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">ipc_available</span> <span class="op">&lt;&lt;-</span> <span class="cn">FALSE</span></span>
+<span>  <span class="va">ipc_start_error</span> <span class="op">&lt;&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">message</a></span><span class="op">(</span><span class="st">"IPC worker demo unavailable on this host: "</span>, <span class="va">ipc_start_error</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span></code></pre></div>
 <p>Managed startup occurs during registration. Rducks starts local mirai
 workers, launches the NNG worker loop, pings each endpoint, then
 broadcasts the closure, type metadata, NULL/error policy, packages, and
@@ -214,18 +216,17 @@ does not stop them.</p>
 current R process. With <code>ping = TRUE</code>, it also checks whether
 each endpoint responds.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_ipc_workers: 1 worker&gt;</span></span>
-<span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
-<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:22547</span></span>
-<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">ipc_timeout</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Logic.html" class="external-link">isTRUE</a></span><span class="op">(</span><span class="va">ipc_available</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">ipc_timeout</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>status <span class="op">=</span> <span class="st">"unavailable"</span>, reason <span class="op">=</span> <span class="va">ipc_start_error</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
 <span><span class="co">#&gt; &lt;rducks_ipc_workers: 1 worker&gt;</span></span>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
 <span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok</span></span>
 <span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:22547</span></span></code></pre></div>
+<span><span class="co">#&gt;  tcp://127.0.0.1:48835</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

@@ -91,50 +91,52 @@ ipc_workers <- 1L
 ipc_transport <- "tcp"
 ipc_timeout <- if (identical(Sys.info()[["sysname"]], "Windows")) 120 else 30
 
-rducks_set_execution_plan(
-  con,
-  rducks_execution_plan(
-    "arrow_ipc",
-    "multiprocess_parallel",
-    ipc_workers = ipc_workers,
-    ipc_transport = ipc_transport,
-    ipc_timeout = ipc_timeout
-  ),
-  threads = 1L,
-  external_threads = 1L
-)
+ipc_available <- TRUE
+ipc_start_error <- NULL
+tryCatch({
+  rducks_set_execution_plan(
+    con,
+    rducks_execution_plan(
+      "arrow_ipc",
+      "multiprocess_parallel",
+      ipc_workers = ipc_workers,
+      ipc_transport = ipc_transport,
+      ipc_timeout = ipc_timeout
+    ),
+    threads = 1L,
+    external_threads = 1L
+  )
 
-rducks_register_scalar_udf(
-  con,
-  name = "r_slow_square",
-  fun = function(x) {
-    Sys.sleep(0.1)
-    x * x
-  },
-  args = DOUBLE,
-  returns = DOUBLE,
-  mode = "vectorized",
-  side_effects = TRUE
-)
-#> <rducks_scalar_udf_registration>
-#>   registered:      yes
-#>   name:            r_slow_square
-#>   evaluation_mode: vectorized
-#>   plan:            arrow_ipc+multiprocess_parallel
-#>   signature:       r_slow_square(DOUBLE) -> DOUBLE
+  rducks_register_scalar_udf(
+    con,
+    name = "r_slow_square",
+    fun = function(x) {
+      Sys.sleep(0.1)
+      x * x
+    },
+    args = DOUBLE,
+    returns = DOUBLE,
+    mode = "vectorized",
+    side_effects = TRUE
+  )
 
-rducks_set_execution_plan(
-  con,
-  rducks_execution_plan(
-    "arrow_ipc",
-    "multiprocess_parallel",
-    ipc_workers = ipc_workers,
-    ipc_transport = ipc_transport,
-    ipc_timeout = ipc_timeout
-  ),
-  threads = ipc_workers + 1L,
-  external_threads = ipc_workers
-)
+  rducks_set_execution_plan(
+    con,
+    rducks_execution_plan(
+      "arrow_ipc",
+      "multiprocess_parallel",
+      ipc_workers = ipc_workers,
+      ipc_transport = ipc_transport,
+      ipc_timeout = ipc_timeout
+    ),
+    threads = ipc_workers + 1L,
+    external_threads = ipc_workers
+  )
+}, error = function(e) {
+  ipc_available <<- FALSE
+  ipc_start_error <<- conditionMessage(e)
+  message("IPC worker demo unavailable on this host: ", ipc_start_error)
+})
 ```
 
 Managed startup occurs during registration. Rducks starts local mirai
@@ -152,18 +154,17 @@ it also checks whether each endpoint responds.
 
 ``` r
 
-rducks_ipc_workers(con)
-#> <rducks_ipc_workers: 1 worker>
-#>             runtime backend transport worker started task_state ping
-#>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running <NA>
-#>               endpoint
-#>  tcp://127.0.0.1:22547
-rducks_ipc_workers(con, ping = TRUE, timeout = min(ipc_timeout, 30))
+if (isTRUE(ipc_available)) {
+  rducks_ipc_workers(con)
+  rducks_ipc_workers(con, ping = TRUE, timeout = min(ipc_timeout, 30))
+} else {
+  data.frame(status = "unavailable", reason = ipc_start_error)
+}
 #> <rducks_ipc_workers: 1 worker>
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:22547
+#>  tcp://127.0.0.1:48835
 ```
 
 The result is an R-side provider view: runtime token, provider key,
