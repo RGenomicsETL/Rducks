@@ -2,8 +2,8 @@
  * shared library. Keep this in a dedicated translation unit so ordinary R-side
  * IPC code does not include vendored implementation .c files directly.
  */
-#include "../inst/rducks_extension/src/rducks_vendor_nanoarrow.c"
-#include "../inst/rducks_extension/src/rducks_vendor_ipc_helpers.h"
+#include "../tools/ext/src/rducks_vendor_nanoarrow.c"
+#include "../tools/ext/src/rducks_vendor_ipc_helpers.h"
 
 #include "rducks_ipc_vendor.h"
 

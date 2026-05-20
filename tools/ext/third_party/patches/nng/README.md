@@ -1,7 +1,7 @@
 # Rducks NNG patches
 
 These patch files document intentional local divergence from the vendored NNG
-snapshot under `inst/rducks_extension/third_party/nng/`.
+snapshot under `tools/ext/third_party/nng/`.
 
 - `0001-optional-nng-manpages.patch` keeps NNG's optional manpage directory out
   of the R source package while still allowing CMake to configure when that

@@ -35,7 +35,7 @@ if (!file.exists(file.path(repo_root, "DESCRIPTION"))) {
 
 opts <- parse_args(args)
 ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.0")
-dest <- opts[["dest"]] %||% file.path(repo_root, "inst", "rducks_extension", "duckdb_capi")
+dest <- opts[["dest"]] %||% file.path(repo_root, "tools", "ext", "duckdb_capi")
 source_repo <- opts[["repo"]] %||% ""
 
 dest <- normalizePath(dest, mustWork = FALSE)
@@ -211,7 +211,7 @@ for (filename in names(written)) {
   )
   file_entries <- c(file_entries, paste0(
     "    ", json_quote(filename), ": {\n",
-    "      \"path\": ", json_quote(file.path("inst", "rducks_extension", "duckdb_capi", filename)), ",\n",
+    "      \"path\": ", json_quote(file.path("tools", "ext", "duckdb_capi", filename)), ",\n",
     "      \"md5\": ", json_quote(md5), ",\n",
     "      \"repairs\": {\n", repair_entries, "\n      }\n",
     "    }"

@@ -11,13 +11,14 @@ for arg in "$@"; do
   esac
 done
 
-EXT_DIR="${THIS_DIR}/inst/rducks_extension"
-DUCKDB_CAPI_HEADER="${EXT_DIR}/duckdb_capi/duckdb_extension.h"
-SRC_FILE="${EXT_DIR}/rducks_extension.c"
-BUILD_DIR="${EXT_DIR}/build"
+EXT_SRC_DIR="${THIS_DIR}/tools/ext"
+EXT_INSTALL_DIR="${THIS_DIR}/inst/rducks_extension"
+DUCKDB_CAPI_HEADER="${EXT_SRC_DIR}/duckdb_capi/duckdb_extension.h"
+SRC_FILE="${EXT_SRC_DIR}/rducks_extension.c"
+BUILD_DIR="${EXT_INSTALL_DIR}/build"
 RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
 FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
-VENDOR_DIR="${EXT_DIR}/third_party"
+VENDOR_DIR="${EXT_SRC_DIR}/third_party"
 VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
 VENDOR_MBEDTLS_DIR="${VENDOR_DIR}/mbedtls"
 VENDOR_NANOARROW_DIR="${VENDOR_DIR}/na"
@@ -80,7 +81,7 @@ if [ -z "${EXT_VERSION}" ]; then
   EXT_VERSION="0.0.0"
 fi
 
-DUCKDB_HEADERS_JSON="${EXT_DIR}/duckdb_capi/duckdb_headers.json"
+DUCKDB_HEADERS_JSON="${EXT_SRC_DIR}/duckdb_capi/duckdb_headers.json"
 DUCKDB_VERSION=`awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "${DUCKDB_HEADERS_JSON}" 2>/dev/null || true`
 if [ -z "${DUCKDB_VERSION}" ]; then
   DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
@@ -201,7 +202,7 @@ CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2 -fPIC"
 if [ "${OS_NAME}" != "Windows_NT" ]; then
   CFLAGS="${CFLAGS} -fvisibility=hidden"
 fi
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
 
 if [ "${WASM_BUILD}" = "yes" ]; then
   SHARED_FLAGS="-shared -fPIC"

@@ -1,7 +1,7 @@
-diff --git a/inst/rducks_extension/third_party/nng/CMakeLists.txt b/inst/rducks_extension/third_party/nng/CMakeLists.txt
+diff --git a/tools/ext/third_party/nng/CMakeLists.txt b/tools/ext/third_party/nng/CMakeLists.txt
 index 1dca028..cf39400 100644
---- a/inst/rducks_extension/third_party/nng/CMakeLists.txt
-+++ b/inst/rducks_extension/third_party/nng/CMakeLists.txt
+--- a/tools/ext/third_party/nng/CMakeLists.txt
++++ b/tools/ext/third_party/nng/CMakeLists.txt
 @@ -294,3 +294,6 @@ endif ()
 -#  Build the tools
 -

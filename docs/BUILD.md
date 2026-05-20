@@ -5,13 +5,19 @@ extension artifact is loaded by `rducks_enable()`.
 
 ## Inputs
 
-- `inst/rducks_extension/rducks_extension.c`
-- native sources under `inst/rducks_extension/src/`
-- vendored DuckDB C API headers under `inst/rducks_extension/duckdb_capi/`
+- `tools/ext/rducks_extension.c`
+- native sources under `tools/ext/src/`
+- vendored DuckDB C API headers under `tools/ext/duckdb_capi/`
 - vendored NNG, Mbed TLS, nanoarrow C/IPC, and flatcc sources under
-  `inst/rducks_extension/third_party/`
+  `tools/ext/third_party/`
 - `tools/fetch_duckdb_headers.R`
 - `tools/append_extension_metadata.R`
+
+The source package keeps extension sources and vendored dependencies under
+`tools/ext/`. During installation, `configure` writes the generated extension
+artifact under `inst/rducks_extension/build/` in the build tree. The installed
+package then contains only `rducks_extension/build/rducks.duckdb_extension`; the
+source/vendor tree is not copied into the installed package.
 
 ## Native dependency vendoring
 
@@ -27,9 +33,9 @@ Refresh bundled nanoarrow C/IPC plus the flatcc runtime subset with:
 Rscript tools/vendor_nanoarrow.R --force
 ```
 
-Nanoarrow is stored under `inst/rducks_extension/third_party/na`; the short
-basename keeps installed source paths portable while still keeping third-party
-code out of the extension source directory.
+Nanoarrow is stored under `tools/ext/third_party/na`; the short
+basename keeps build source paths portable while still keeping third-party code
+out of the extension source directory.
 
 ## Header vendoring
 
@@ -45,7 +51,7 @@ The script fetches:
 - `src/include/duckdb_extension.h`
 
 It records the source ref, file hashes, and local prototype repairs in
-`inst/rducks_extension/duckdb_capi/duckdb_headers.json`. For an already-cloned
+`tools/ext/duckdb_capi/duckdb_headers.json`. For an already-cloned
 DuckDB checkout, use:
 
 ```sh
@@ -54,14 +60,18 @@ Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.2
 
 ## Install-time build
 
-`configure` and `configure.win` build:
+`configure` and `configure.win` compile sources from `tools/ext/`
+and write the build-tree payload to:
 
 ```text
 inst/rducks_extension/build/rducks.duckdb_extension
 ```
 
 After linking, `tools/append_extension_metadata.R` appends the DuckDB extension
-metadata footer. `cleanup` and `cleanup.win` remove generated build artifacts.
+metadata footer. In the installed package this file is available as
+`rducks_extension/build/rducks.duckdb_extension`. `cleanup` and `cleanup.win`
+remove generated build artifacts from `inst/rducks_extension/build` without
+deleting the source tree required for later source-package builds.
 
 ## DuckDB C extension ABI
 

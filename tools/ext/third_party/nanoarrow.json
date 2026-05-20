@@ -7,5 +7,5 @@
   "url": "https://github.com/apache/arrow-nanoarrow/archive/4639910.tar.gz",
   "archive_sha256": "",
   "namespace": "RducksNanoarrow",
-  "layout": "inst/rducks_extension/third_party/na"
+  "layout": "tools/ext/third_party/na"
 }

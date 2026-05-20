@@ -24,6 +24,10 @@ rducks_enable(
 Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
 requires R API work to happen on the recorded main R thread; pass
 \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
-explicitly. After registering UDFs, call \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
+explicitly. \code{rducks_enable()} also sets DuckDB's
+\code{arrow_lossless_conversion=true} option on the user connection; the extension
+applies the same setting to its internal connections so DuckDB-specific Arrow
+metadata is preserved for typed scalar-UDF, table, and query-stream
+marshalling. After registering UDFs, call \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
 the extension-owned in-process queue.
 }

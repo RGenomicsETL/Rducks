@@ -13,7 +13,7 @@ cmd <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", cmd, value = TRUE)
 script_path <- if (length(file_arg)) sub("^--file=", "", file_arg[[1L]]) else "tools/vendor_nng_mbedtls.R"
 root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
-third_party <- file.path(root, "inst", "rducks_extension", "third_party")
+third_party <- file.path(root, "tools", "ext", "third_party")
 
 pins <- list(
   nng = list(
@@ -283,7 +283,7 @@ write_metadata <- function(records) {
     extra = c(
       commit = "4639910",
       namespace = "RducksNanoarrow",
-      layout = "inst/rducks_extension/third_party/na"
+      layout = "tools/ext/third_party/na"
     )
   )
   records <- c(records, list(nanoarrow_record))
@@ -384,7 +384,7 @@ write_metadata <- function(records) {
     "```",
     "",
     "If vendored NNG files are edited, refresh the matching patch files under",
-    "`inst/rducks_extension/third_party/patches/nng/` before committing.",
+    "`tools/ext/third_party/patches/nng/` before committing.",
     ""
   )
   writeLines(md, file.path(third_party, "VENDORING.md"), useBytes = TRUE)

@@ -1,7 +1,7 @@
-diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt b/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
+diff --git a/tools/ext/third_party/nng/src/platform/windows/CMakeLists.txt b/tools/ext/third_party/nng/src/platform/windows/CMakeLists.txt
 index 10c3113..06ac4c2 100644
---- a/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
-+++ b/inst/rducks_extension/third_party/nng/src/platform/windows/CMakeLists.txt
+--- a/tools/ext/third_party/nng/src/platform/windows/CMakeLists.txt
++++ b/tools/ext/third_party/nng/src/platform/windows/CMakeLists.txt
 @@ -18 +18 @@ if (NNG_PLATFORM_WINDOWS)
 -    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF OR NOT NNG_HAVE_TIMESPEC_GET)
 +    if (NOT NNG_HAVE_CONDVAR OR NOT NNG_HAVE_SNPRINTF)
@@ -10,10 +10,10 @@ index 10c3113..06ac4c2 100644
 @@ -25 +24 @@ if (NNG_PLATFORM_WINDOWS)
 -                "and are also using the universal C runtime (UCRT).")
 +                "and are also using a runtime that provides snprintf() and condition variables.")
-diff --git a/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c b/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
+diff --git a/tools/ext/third_party/nng/src/platform/windows/win_clock.c b/tools/ext/third_party/nng/src/platform/windows/win_clock.c
 index a51738e..f5a014f 100644
---- a/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
-+++ b/inst/rducks_extension/third_party/nng/src/platform/windows/win_clock.c
+--- a/tools/ext/third_party/nng/src/platform/windows/win_clock.c
++++ b/tools/ext/third_party/nng/src/platform/windows/win_clock.c
 @@ -27,0 +28 @@ nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)
 +#if defined(NNG_HAVE_TIMESPEC_GET)
 @@ -33,0 +35,18 @@ nni_time_get(uint64_t *seconds, uint32_t *nanoseconds)

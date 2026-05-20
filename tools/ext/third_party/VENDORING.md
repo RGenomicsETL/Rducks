@@ -67,4 +67,4 @@ make test
 ```
 
 If vendored NNG files are edited, refresh the matching patch files under
-`inst/rducks_extension/third_party/patches/nng/` before committing.
+`tools/ext/third_party/patches/nng/` before committing.

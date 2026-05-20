@@ -2,7 +2,7 @@
 # Rducks source code currently calls.
 
 rducks_read_duckdb_extension_api <- function(header = file.path(
-  "inst", "rducks_extension", "duckdb_capi", "duckdb_extension.h"
+  "tools", "ext", "duckdb_capi", "duckdb_extension.h"
 )) {
   lines <- readLines(header, warn = FALSE)
   current_group <- "stable"
@@ -46,9 +46,9 @@ rducks_strip_c_comments_and_strings <- function(text) {
 
 rducks_extension_source_files <- function(root = ".") {
   c(
-    file.path(root, "inst", "rducks_extension", "rducks_extension.c"),
+    file.path(root, "tools", "ext", "rducks_extension.c"),
     list.files(
-      file.path(root, "inst", "rducks_extension", "src"),
+      file.path(root, "tools", "ext", "src"),
       pattern = "\\.c$",
       full.names = TRUE
     )
@@ -57,7 +57,7 @@ rducks_extension_source_files <- function(root = ".") {
 
 rducks_used_duckdb_unstable_api <- function(root = ".") {
   api <- rducks_read_duckdb_extension_api(file.path(
-    root, "inst", "rducks_extension", "duckdb_capi", "duckdb_extension.h"
+    root, "tools", "ext", "duckdb_capi", "duckdb_extension.h"
   ))
   unstable <- api[startsWith(api$abi_group, "unstable"), , drop = FALSE]
   if (!nrow(unstable)) return(unstable)

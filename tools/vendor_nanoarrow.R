@@ -19,7 +19,7 @@ cmd <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", cmd, value = TRUE)
 script_path <- if (length(file_arg)) sub("^--file=", "", file_arg[[1L]]) else "tools/vendor_nanoarrow.R"
 root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
-third_party <- file.path(root, "inst", "rducks_extension", "third_party")
+third_party <- file.path(root, "tools", "ext", "third_party")
 dest <- file.path(third_party, "na")
 
 pin <- list(
@@ -30,7 +30,7 @@ pin <- list(
   tag = value_arg("--tag", "apache-arrow-nanoarrow-0.9.0.dev-23-g4639910"),
   url = value_arg("--url", "https://github.com/apache/arrow-nanoarrow/archive/4639910.tar.gz"),
   namespace = "RducksNanoarrow",
-  layout = "inst/rducks_extension/third_party/na"
+  layout = "tools/ext/third_party/na"
 )
 
 keep <- c(
