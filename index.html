@@ -50,24 +50,15 @@
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
 <p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a></p>
-<p>Rducks registers R functions as DuckDB SQL functions using a DuckDB C extension, including a small set of unstable DuckDB C extension API functions. The extension records the DuckDB database instance handle at initialization and keeps an extension-owned connection associated with that runtime.</p>
-<p>The user-facing API separates three concepts:</p>
+<p>Rducks registers R functions as DuckDB SQL functions through a package-managed DuckDB C extension. It is built around explicit type descriptors, DuckDB Arrow C Data/nanoarrow marshalling, and a strict rule that R object work runs on the recorded R thread unless it is intentionally moved to R worker processes through the Arrow IPC plan.</p>
+<p>The public surface is split by role:</p>
 <ul>
-<li>DuckDB function kind: scalar UDF, aggregate function, or table function.</li>
-<li>Rducks evaluation mode for DuckDB scalar UDFs: one R call per row (<code>mode = "scalar"</code>) or one R call per DuckDB chunk (<code>mode = "vectorized"</code>).</li>
-<li>Rducks execution plan: the marshalling and concurrency implementation used by DuckDB scalar UDFs.</li>
-<li>R-side query consumption: <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> exposes explicit connection-bound query batches; it is not a SQL UDF registration surface.</li>
+<li>scalar UDFs: <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>;</li>
+<li>aggregate functions: <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>;</li>
+<li>table functions: <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code>;</li>
+<li>R-side query streaming: <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code>.</li>
 </ul>
-<p>R-backed DuckDB scalar UDF inputs and outputs move through explicit execution plans:</p>
-<ul>
-<li>
-<code>arrow_r</code>: reference path using DuckDB Arrow C Data plus nanoarrow/R.</li>
-<li>
-<code>arrow_c</code>: native extension path for supported scalar-UDF evaluation modes with direct DuckDB-vector materialization.</li>
-<li>
-<code>arrow_ipc</code>: process-isolated R execution using native NNG plus owned Arrow IPC request/result bytes. By default Rducks launches worker loops with mirai daemons and Rducks-generated NNG endpoint URLs; <code>ipc_transport</code> selects the generated transport. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops. Large same-host read-only R globals can optionally be sent as mori shared-memory references with <code>ipc_globals_share = "mori"</code>.</li>
-</ul>
-<p>Aggregate and table functions use separate APIs and are not scalar-UDF execution-plan variants. <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> stores preserved R object aggregate state and can call row-wise or chunk-wise update/combine/finalize callbacks on the recorded R thread. <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> covers finite or streaming scans whose positional SQL argument count is inferred from the R function formals and whose input types are registered as DuckDB <code>ANY</code>; finite results are imported once during bind, while <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code> lets scan-time batches be imported one at a time. For R callers that want query results incrementally, <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> provides a connection-bound query-batch API with explicit <code>next_batch()</code> and <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code> methods. Query streams fetch DuckDB native chunks and import them through Arrow C Data/nanoarrow without requiring the heavy <code>arrow</code> R package. The default R-facing <code>next_batch()</code> method materializes base-R data-frame batches; <code>format = "record_batch"</code> returns the owned nanoarrow record batch so callers can materialize later. The stream engine boundary is DuckDB chunks and Arrow C Data rather than DBI result pagination.</p>
+<p>Scalar UDFs also choose an evaluation mode (<code>"scalar"</code> or <code>"vectorized"</code>) and an execution plan (<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>). Aggregates, table functions, and query streams are separate APIs rather than scalar-UDF plan variants.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -79,83 +70,51 @@
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">reg_hello</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span><span class="va">score_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_hello"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="st">"hello from R"</span>,</span>
-<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">VARCHAR</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_hello() AS message"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;        message</span></span>
-<span><span class="co">#&gt; 1 hello from R</span></span>
-<span></span>
-<span><span class="va">reg_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_plus_one"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_score"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">bonus</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="kw">else</span> <span class="fl">0</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/double.html" class="external-link">as.double</a></span><span class="op">(</span><span class="va">x</span> <span class="op">+</span> <span class="va">bonus</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
+<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41::DOUBLE) AS x"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;    x</span></span>
-<span><span class="co">#&gt; 1 42</span></span></code></pre></div>
-<p>Omitting <code>args</code> registers a dynamic-varargs DuckDB scalar UDF. DuckDB still needs an explicit <code>returns</code> type while planning, but the concrete input types are resolved at bind time and then materialized with the same Rducks typed semantics used by explicit <code>args = ...</code> signatures. Use <code>args = NULL</code> for a true zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as variadic. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
-<p><code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> returns an <code>rducks_scalar_udf_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the scalar UDF to keep working in DuckDB. Registering the same SQL name/signature again replaces the callable implementation in the shared DuckDB database catalog.</p>
-<div class="section level3">
-<h3 id="release-and-disconnect">Release and disconnect<a class="anchor" aria-label="anchor" href="#release-and-disconnect"></a>
-</h3>
-<p><code>rducks_release(con)</code> detaches connection-local Rducks state such as the current default plan and R-side runtime anchor. It is non-destructive for the DuckDB catalog: it does not drop catalog functions and does not release closures still owned by native catalog metadata. For <code>arrow_ipc + multiprocess_parallel</code>, the last Rducks attachment to a runtime also closes native client pools for Rducks-launched local workers and stops those local mirai/NNG workers. If <code>ipc_endpoints</code> was supplied, those URLs name user-owned worker processes; Rducks does not send stop requests to them during release. Call <code>rducks_release(con)</code> before <code>DBI::dbDisconnect(con)</code> when you want deterministic R-side cleanup. Rducks does not provide <code>rducks_unregister()</code>; registered catalog functions and their preserved R closures are intentionally retained for the database/runtime lifetime or until the same SQL name/signature is replaced.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">release_con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">release_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">release_con</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">release_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="arrow-conversion-setting">Arrow conversion setting<a class="anchor" aria-label="anchor" href="#arrow-conversion-setting"></a>
-</h3>
-<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> sets DuckDB’s <code>arrow_lossless_conversion=true</code> setting on the user connection, and the Rducks extension also sets it on its own internal DuckDB connection. Rducks uses DuckDB’s Arrow C Data conversion APIs for several execution plans, and this setting tells DuckDB to preserve DuckDB-specific type identity in Arrow metadata when possible instead of exporting only a more generic Arrow representation. This matters for types such as <code>UUID</code>, <code>BIT</code>, <code>HUGEINT</code>/<code>UHUGEINT</code>, <code>TIME WITH TIME ZONE</code>, and JSON aliases. It does not change stored DuckDB values or SQL evaluation; it only affects DuckDB-to-Arrow conversion used at the Rducks boundary.</p>
-</div>
-</div>
-<div class="section level2">
-<h2 id="what-you-can-register">What you can register<a class="anchor" aria-label="anchor" href="#what-you-can-register"></a>
-</h2>
-<p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> for DuckDB scalar UDF returns and, when declared, DuckDB scalar UDF arguments. They are also used by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
-<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. Omitted scalar-UDF arguments are dynamic DuckDB <code>ANY</code> inputs at registration; at bind time DuckDB supplies the concrete logical types, which Rducks maps back to these descriptors for typed materialization.</p>
-<p>Declared <code>ENUM(...)</code> descriptors are supported by all implemented execution plans. On the native <code>arrow_ipc</code> NNG path, Rducks does not depend on Arrow IPC dictionary transport for enums: declared enum levels are registration metadata, and the IPC payload carries the underlying DuckDB enum index storage as Arrow integer buffers.</p>
-<p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type descriptors use the formal S7 <code>rducks_type</code> class and structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"</span></span>
+<span><span class="st">  SELECT r_score(x::DOUBLE, label) AS score</span></span>
+<span><span class="st">  FROM (VALUES (2, 'low'), (21, 'high')) AS t(x, label)</span></span>
+<span><span class="st">"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   score</span></span>
+<span><span class="co">#&gt; 1     2</span></span>
+<span><span class="co">#&gt; 2   121</span></span></code></pre></div>
+<p><code>r_score()</code> omits <code>args</code>, so DuckDB registers it as a dynamic varargs scalar UDF. The return type is still explicit. At each SQL call site, DuckDB binds the concrete argument types and Rducks then materializes those inputs as if the signature had been declared with <code>args = ...</code>. Use <code>args = NULL</code> only for a true zero-argument UDF.</p>
 </div>
 <div class="section level2">
 <h2 id="type-descriptors">Type descriptors<a class="anchor" aria-label="anchor" href="#type-descriptors"></a>
 </h2>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<p>Rducks descriptors are used for scalar-UDF returns, declared scalar-UDF inputs, and aggregate inputs/returns. They include DuckDB scalar types, exact value classes such as <code>UUID</code>, <code>HUGEINT</code>, <code>DECIMAL(width, scale)</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>ENUM(levels)</code>, and composite descriptors such as <code>LIST(TYPE)</code>, <code>ARRAY(TYPE, n)</code>, <code>STRUCT(...)</code>, <code>MAP(key, value)</code>, and <code>UNION(...)</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nested_type</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span></span>
-<span>  payload <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, label <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  amount <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span>,</span>
-<span>  tags <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">LIST</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  id <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  label <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  payload <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, note <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span>,</span>
+<span>  values <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">LIST</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="reference/rducks_type_objects.html">rducks_is_type</a></span><span class="op">(</span><span class="va">nested_type</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span>
-<span><span class="fu"><a href="reference/rducks_type_token.html">rducks_type_kind</a></span><span class="op">(</span><span class="va">nested_type</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "struct"</span></span>
 <span><span class="fu"><a href="reference/rducks_type_token.html">rducks_type_sql</a></span><span class="op">(</span><span class="va">nested_type</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "STRUCT(payload UNION(code INTEGER, label ENUM('red', 'blue')), amount DECIMAL(10, 2), tags ENUM('red', 'blue')[])"</span></span>
+<span><span class="co">#&gt; [1] "STRUCT(id INTEGER, label ENUM('low', 'high'), payload UNION(code INTEGER, note VARCHAR), values DECIMAL(10, 2)[])"</span></span>
 <span><span class="fu"><a href="reference/rducks_type_token.html">rducks_type_child_names</a></span><span class="op">(</span><span class="va">nested_type</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] "payload" "amount"  "tags"</span></span>
-<span><span class="fu"><a href="reference/rducks_check_value.html">rducks_check_return</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, label <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_union.html">rducks_union</a></span><span class="op">(</span><span class="st">"label"</span>, <span class="st">"ok"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_check_value.html">rducks_check_return</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_enum.html">rducks_enum</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] "id"      "label"   "payload" "values"</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="duckdb-scalar-udfs-rducks_register_scalar_udf">DuckDB scalar UDFs (<code>rducks_register_scalar_udf()</code>)<a class="anchor" aria-label="anchor" href="#duckdb-scalar-udfs-rducks_register_scalar_udf"></a>
+<h2 id="scalar-udfs">Scalar UDFs<a class="anchor" aria-label="anchor" href="#scalar-udfs"></a>
 </h2>
-<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Omitting <code>args</code> registers a dynamic DuckDB varargs function; each call site is resolved by DuckDB at bind time and then behaves like an explicitly typed signature for the bound argument types across the supported <code>arrow_r</code>, <code>arrow_c</code>, and <code>arrow_ipc</code> execution plans. Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per bound or declared argument.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_vec_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<p>Scalar mode calls the R function once per logical row. Vectorized mode calls the R function once per DuckDB chunk with one R vector or list-column per declared or dynamically bound argument.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">vec_plus_one_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_vec_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
@@ -165,462 +124,50 @@
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;    x</span></span>
-<span><span class="co">#&gt; 1 15</span></span></code></pre></div>
-<p>In vectorized evaluation mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as row-wise scalar evaluation. The return length must match the number of evaluated rows. Vectorized mode currently requires at least one declared or dynamically bound argument.</p>
-<div class="section level3">
-<h3 id="scalar-udf-evaluation-mode-benchmark">Scalar-UDF evaluation-mode benchmark<a class="anchor" aria-label="anchor" href="#scalar-udf-evaluation-mode-benchmark"></a>
-</h3>
-<p>A tiny benchmark with <code>bench</code> can show the row-wise versus chunk-wise R call shape for a DuckDB scalar UDF. The result is illustrative rather than a performance guarantee.</p>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS total FROM range(5) AS t(i)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   total</span></span>
+<span><span class="co">#&gt; 1    15</span></span></code></pre></div>
+<p>Dynamic omitted arguments are not a guessing path. They are bind-time descriptors. The same R function below is registered once with an explicit nested signature and once as dynamic varargs; both calls see the same typed R value.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">nested_summary</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="va">x</span><span class="op">$</span><span class="va">id</span>, <span class="st">":"</span>, <span class="va">x</span><span class="op">$</span><span class="va">label</span>, <span class="st">":"</span>, <span class="va">x</span><span class="op">$</span><span class="va">payload</span><span class="op">$</span><span class="va">tag</span>, <span class="st">"="</span>, <span class="va">x</span><span class="op">$</span><span class="va">payload</span><span class="op">$</span><span class="va">value</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">nested_declared_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_nested_declared"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="va">nested_summary</span>,</span>
+<span>  args <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span></span>
+<span>    id <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>    label <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">ENUM</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    payload <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>code <span class="op">=</span> <span class="va">INTEGER</span>, note <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">VARCHAR</span>,</span>
+<span>  null_handling <span class="op">=</span> <span class="st">"special"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">nested_dynamic_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_nested_dynamic"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="va">nested_summary</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">VARCHAR</span>,</span>
+<span>  null_handling <span class="op">=</span> <span class="st">"special"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">nested_sql</span> <span class="op">&lt;-</span> <span class="st">"</span></span>
+<span><span class="st">  struct_pack(</span></span>
+<span><span class="st">    id := 7::INTEGER,</span></span>
+<span><span class="st">    label := 'high'::ENUM('low', 'high'),</span></span>
+<span><span class="st">    payload := union_value(note := 'ok')::UNION(code INTEGER, note VARCHAR)</span></span>
+<span><span class="st">  )</span></span>
+<span><span class="st">"</span></span>
+<span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"\n  SELECT\n    r_nested_declared(%1$s) AS declared,\n    r_nested_dynamic(%1$s) AS dynamic\n"</span>, <span class="va">nested_sql</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         declared        dynamic</span></span>
+<span><span class="co">#&gt; 1 7:high:note=ok 7:high:note=ok</span></span></code></pre></div>
+<p>With <code>null_handling = "default"</code>, a top-level SQL <code>NULL</code> input produces a SQL <code>NULL</code> output without calling R. With <code>null_handling = "special"</code>, top-level SQL <code>NULL</code> values are passed as type-specific R missing values. Nested NULLs are part of the value: scalar children usually become typed <code>NA</code>, while nested composite NULLs become <code>NULL</code>.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">bench</span><span class="fu">::</span><span class="fu"><a href="https://bench.r-lib.org/reference/mark.html" class="external-link">mark</a></span><span class="op">(</span></span>
-<span>  scalar <span class="op">=</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_plus_one(i::DOUBLE)) AS x FROM range(10000) AS t(i)"</span><span class="op">)</span>,</span>
-<span>  vectorized <span class="op">=</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(10000) AS t(i)"</span><span class="op">)</span>,</span>
-<span>  iterations <span class="op">=</span> <span class="fl">3</span>,</span>
-<span>  check <span class="op">=</span> <span class="cn">FALSE</span></span>
-<span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"expression"</span>, <span class="st">"median"</span>, <span class="st">"itr/sec"</span>, <span class="st">"mem_alloc"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
-<span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
-<span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        294ms      3.38    1.97MB</span></span>
-<span><span class="co">#&gt; 2 vectorized    232ms      4.28    2.34MB</span></span></code></pre></div>
-</div>
-</div>
-<div class="section level2">
-<h2 id="scalar-udf-evaluation-mode-semantics">Scalar-UDF evaluation-mode semantics<a class="anchor" aria-label="anchor" href="#scalar-udf-evaluation-mode-semantics"></a>
-</h2>
-<p>The table below is produced by <code><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics()</a></code> and applies to DuckDB scalar UDFs registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>.</p>
-<table class="table">
-<colgroup>
-<col width="1%">
-<col width="1%">
-<col width="2%">
-<col width="6%">
-<col width="6%">
-<col width="13%">
-<col width="5%">
-<col width="12%">
-<col width="15%">
-<col width="21%">
-<col width="13%">
-</colgroup>
-<thead><tr>
-<th align="left">mode</th>
-<th align="left">status</th>
-<th align="left">call_granularity</th>
-<th align="left">input_shape</th>
-<th align="left">return_shape</th>
-<th align="left">null_semantics</th>
-<th align="left">length_semantics</th>
-<th align="left">error_semantics</th>
-<th align="left">threading</th>
-<th align="left">copy_semantics</th>
-<th align="left">notes</th>
-</tr></thead>
-<tbody>
-<tr>
-<td align="left">scalar</td>
-<td align="left">implemented</td>
-<td align="left">one R call per row</td>
-<td align="left">one scalar/composite R value per declared or dynamically bound argument</td>
-<td align="left">one scalar/composite R value compatible with the declared return type</td>
-<td align="left">default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values</td>
-<td align="left">one output value per R function call</td>
-<td align="left">R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query</td>
-<td align="left">R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding</td>
-<td align="left">DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport</td>
-<td align="left">scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation</td>
-</tr>
-<tr>
-<td align="left">vectorized</td>
-<td align="left">implemented</td>
-<td align="left">one R call per DuckDB chunk</td>
-<td align="left">one R vector/list-column per declared or dynamically bound argument</td>
-<td align="left">one R vector/list of values compatible with the declared return type</td>
-<td align="left">default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values</td>
-<td align="left">return length must equal the number of evaluated rows in the chunk</td>
-<td align="left">R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query</td>
-<td align="left">arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider</td>
-<td align="left">arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport</td>
-<td align="left">batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="scalar-udf-argument-values-passed-to-r-functions">Scalar-UDF argument values passed to R functions<a class="anchor" aria-label="anchor" href="#scalar-udf-argument-values-passed-to-r-functions"></a>
-</h2>
-<details><summary>
-Expand for scalar-UDF argument values passed to R functions
-</summary><p>The table is produced by the exported <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> helper and reflects the currently implemented DuckDB scalar-UDF marshalling path. With <code>null_handling = "default"</code>, any top-level SQL <code>NULL</code> input makes DuckDB return SQL <code>NULL</code> without calling the R function. The <code>special_null_argument</code> column below applies when <code>null_handling = "special"</code>. It is type-specific: ordinary R scalar types receive typed <code>NA</code> values, while exact Rducks value classes, binary values, and top-level composite values receive R <code>NULL</code>. Within homogeneous scalar lists/arrays, SQL <code>NULL</code> elements are represented as typed <code>NA</code> values where the child type has an R <code>NA</code> representation; nested composite <code>NULL</code> values are represented as R <code>NULL</code>.</p>
-<table style="width:100%;" class="table">
-<colgroup>
-<col width="11%">
-<col width="5%">
-<col width="4%">
-<col width="17%">
-<col width="7%">
-<col width="8%">
-<col width="7%">
-<col width="8%">
-<col width="7%">
-<col width="21%">
-</colgroup>
-<thead><tr>
-<th align="left">duckdb_type</th>
-<th align="left">descriptor_kind</th>
-<th align="left">r_value_class</th>
-<th align="left">r_argument_shape</th>
-<th align="left">special_null_argument</th>
-<th align="left">copy_semantics</th>
-<th align="left">integer_uses_r_double</th>
-<th align="left">float32_widens_to_r_double</th>
-<th align="left">precision_may_be_lost</th>
-<th align="left">notes</th>
-</tr></thead>
-<tbody>
-<tr>
-<td align="left">INTEGER</td>
-<td align="left">scalar</td>
-<td align="left">integer</td>
-<td align="left">integer scalar</td>
-<td align="left">NA_integer_</td>
-<td align="left">boxed scalar</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left"></td>
-</tr>
-<tr>
-<td align="left">DOUBLE</td>
-<td align="left">scalar</td>
-<td align="left">numeric</td>
-<td align="left">numeric scalar</td>
-<td align="left">NA_real_</td>
-<td align="left">boxed scalar</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left"></td>
-</tr>
-<tr>
-<td align="left">INTEGER[]</td>
-<td align="left">list</td>
-<td align="left">vector</td>
-<td align="left">integer vector</td>
-<td align="left">NULL</td>
-<td align="left">R vector allocation</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">homogeneous scalar children use atomic vectors</td>
-</tr>
-<tr>
-<td align="left">BIGINT[3]</td>
-<td align="left">array</td>
-<td align="left">vector</td>
-<td align="left">rducks_bigint vector of length 3</td>
-<td align="left">NULL</td>
-<td align="left">R vector allocation</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">fixed-size array; homogeneous scalar children use atomic vectors</td>
-</tr>
-<tr>
-<td align="left">STRUCT(a UUID, b DECIMAL(10, 2))</td>
-<td align="left">struct</td>
-<td align="left">list</td>
-<td align="left">named list of fields</td>
-<td align="left">NULL</td>
-<td align="left">recursive R allocation</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">recursive field mapping</td>
-</tr>
-<tr>
-<td align="left">MAP(VARCHAR, INTEGER)</td>
-<td align="left">map</td>
-<td align="left">list</td>
-<td align="left">list(keys = character vector, values = integer vector)</td>
-<td align="left">NULL</td>
-<td align="left">recursive R allocation</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">keys and values use sequence mapping</td>
-</tr>
-<tr>
-<td align="left">ENUM(‘red’, ‘blue’)</td>
-<td align="left">enum</td>
-<td align="left">rducks_enum</td>
-<td align="left">rducks_enum scalar</td>
-<td align="left">NULL</td>
-<td align="left">boxed exact Rducks value</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">factor with enum levels</td>
-</tr>
-<tr>
-<td align="left">UNION(code INTEGER, label VARCHAR)</td>
-<td align="left">union</td>
-<td align="left">rducks_union</td>
-<td align="left">rducks_union object</td>
-<td align="left">NULL</td>
-<td align="left">boxed exact Rducks value</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">FALSE</td>
-<td align="left">tagged value object</td>
-</tr>
-</tbody>
-</table></details>
-</div>
-<div class="section level2">
-<h2 id="scalar-udf-null-na-nan-inf-and-value-class-semantics">Scalar-UDF NULL, NA, NaN, Inf, and value-class semantics<a class="anchor" aria-label="anchor" href="#scalar-udf-null-na-nan-inf-and-value-class-semantics"></a>
-</h2>
-<details><summary>
-Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
-</summary><p>The table below is produced by <code><a href="reference/rducks_value_semantics.html">rducks_value_semantics()</a></code>, the exported schema that Rducks uses to document DuckDB scalar-UDF missing and non-finite value behavior. Top-level R <code>NULL</code> returns map to SQL <code>NULL</code>. R <code>NA</code> values map to SQL <code>NULL</code> when represented by the declared R type. <code>NaN</code> and <code>Inf</code> are values only for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, and exact Rducks value classes reject them.</p>
-<table class="table">
-<colgroup>
-<col width="5%">
-<col width="2%">
-<col width="2%">
-<col width="9%">
-<col width="3%">
-<col width="9%">
-<col width="10%">
-<col width="13%">
-<col width="5%">
-<col width="5%">
-<col width="12%">
-<col width="13%">
-<col width="5%">
-</colgroup>
-<thead><tr>
-<th align="left">duckdb_type</th>
-<th align="left">descriptor_kind</th>
-<th align="left">r_value_class</th>
-<th align="left">default_null_input</th>
-<th align="left">special_null_argument</th>
-<th align="left">sql_nan_inf_input</th>
-<th align="left">r_null_return</th>
-<th align="left">r_na_return</th>
-<th align="left">r_nan_return</th>
-<th align="left">r_inf_return</th>
-<th align="left">binary_ops</th>
-<th align="left">error_semantics</th>
-<th align="left">notes</th>
-</tr></thead>
-<tbody>
-<tr>
-<td align="left">INTEGER</td>
-<td align="left">scalar</td>
-<td align="left">integer</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NA_integer_</td>
-<td align="left">not representable for this DuckDB type</td>
-<td align="left">SQL NULL</td>
-<td align="left">NA_integer_ -&gt; SQL NULL</td>
-<td align="left">error</td>
-<td align="left">error</td>
-<td align="left">no Rducks-specific binary ops</td>
-<td align="left">NaN, Inf, fractional, and out-of-range return values error</td>
-<td align="left"></td>
-</tr>
-<tr>
-<td align="left">DOUBLE</td>
-<td align="left">scalar</td>
-<td align="left">numeric</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NA_real_</td>
-<td align="left">DuckDB NaN/Inf pass through as R numeric values</td>
-<td align="left">SQL NULL</td>
-<td align="left">NA_real_ -&gt; SQL NULL</td>
-<td align="left">preserved as DuckDB NaN</td>
-<td align="left">preserved as DuckDB +/-Inf</td>
-<td align="left">ordinary R numeric semantics in the R function</td>
-<td align="left">NA is NULL; NaN and Inf are valid DOUBLE values</td>
-<td align="left"></td>
-</tr>
-<tr>
-<td align="left">BIGINT</td>
-<td align="left">scalar</td>
-<td align="left">rducks_bigint</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">not representable for this DuckDB type</td>
-<td align="left">SQL NULL</td>
-<td align="left">rducks_bigint(NA) -&gt; SQL NULL</td>
-<td align="left">error</td>
-<td align="left">error</td>
-<td align="left">rducks_bigint +, -, comparisons; NA propagates; range errors remain errors</td>
-<td align="left">non-integer strings, numeric NaN/Inf, and out-of-range values error</td>
-<td align="left">exact signed 64-bit integer value</td>
-</tr>
-<tr>
-<td align="left">UUID</td>
-<td align="left">scalar</td>
-<td align="left">rducks_uuid</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">not representable for this DuckDB type</td>
-<td align="left">SQL NULL</td>
-<td align="left">rducks_uuid(NA) -&gt; SQL NULL</td>
-<td align="left">error</td>
-<td align="left">error</td>
-<td align="left">no Rducks-specific binary ops</td>
-<td align="left">NA UUID values are NULL; malformed UUID text errors</td>
-<td align="left">exact Rducks value class</td>
-</tr>
-<tr>
-<td align="left">DECIMAL(10, 2)</td>
-<td align="left">decimal</td>
-<td align="left">rducks_decimal</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">not representable for DuckDB DECIMAL</td>
-<td align="left">SQL NULL for the top-level value; nested NULLs map recursively</td>
-<td align="left">rducks_decimal(NA, width, scale) -&gt; SQL NULL</td>
-<td align="left">error</td>
-<td align="left">error</td>
-<td align="left">rducks_decimal +, -, comparisons; NA propagates; matching scales are required</td>
-<td align="left">NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error</td>
-<td align="left">exact fixed-point value class</td>
-</tr>
-<tr>
-<td align="left">ENUM(‘red’, ‘blue’)</td>
-<td align="left">enum</td>
-<td align="left">rducks_enum</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">not representable for DuckDB ENUM</td>
-<td align="left">SQL NULL for the top-level value; nested NULLs map recursively</td>
-<td align="left">rducks_enum(NA, levels) -&gt; SQL NULL</td>
-<td align="left">not applicable</td>
-<td align="left">not applicable</td>
-<td align="left">no Rducks-specific ENUM binary ops</td>
-<td align="left">values outside the declared enum levels error</td>
-<td align="left">factor with enum levels</td>
-</tr>
-<tr>
-<td align="left">UNION(code INTEGER, label VARCHAR)</td>
-<td align="left">union</td>
-<td align="left">rducks_union</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">recursive: only FLOAT/DOUBLE union members can carry NaN/Inf</td>
-<td align="left">SQL NULL for the top-level value; nested NULLs map recursively</td>
-<td align="left">no missing tag; NA in the selected child follows that child semantics</td>
-<td align="left">recursive selected-child semantics</td>
-<td align="left">recursive selected-child semantics</td>
-<td align="left">no Rducks-specific UNION binary ops</td>
-<td align="left">missing, empty, or unknown tags and selected-child mismatches error</td>
-<td align="left">tagged value object</td>
-</tr>
-<tr>
-<td align="left">MAP(VARCHAR, INTEGER)</td>
-<td align="left">map</td>
-<td align="left">list</td>
-<td align="left">short-circuit to SQL NULL result; R function is not called</td>
-<td align="left">NULL</td>
-<td align="left">recursive: only FLOAT/DOUBLE children can carry NaN/Inf</td>
-<td align="left">SQL NULL for the top-level value; nested NULLs map recursively</td>
-<td align="left">values recurse; scalar NA values become SQL NULL value entries; NULL/NA keys error</td>
-<td align="left">recursive child semantics</td>
-<td align="left">recursive child semantics</td>
-<td align="left">no descriptor-level Rducks binary ops; child value classes keep their own ops</td>
-<td align="left">keys/values length mismatch, NULL/NA keys, and child type mismatches error</td>
-<td align="left">keys and values use sequence mapping</td>
-</tr>
-</tbody>
-</table></details>
-</div>
-<div class="section level2">
-<h2 id="scalar-udf-composite-input-examples">Scalar-UDF composite input examples<a class="anchor" aria-label="anchor" href="#scalar-udf-composite-input-examples"></a>
-</h2>
-<p>Homogeneous scalar lists and arrays are passed as atomic R vectors with SQL <code>NULL</code> elements represented as typed <code>NA</code> values. Structs are passed as named lists, and maps are passed as <code>list(keys = ..., values = ...)</code>. A <code>data.frame</code> return is not a table-valued UDF here; the scalar UDF type equivalent is <code>STRUCT(...)</code>. In vectorized evaluation mode, a <code>STRUCT(...)</code> return may be supplied as a <code>data.frame</code> with columns matching the struct fields, yielding one struct-valued SQL result per row.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_list_len</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_list_len"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_array_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_array_sum"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="fl">3</span><span class="op">]</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_struct_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_struct_sum"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span><span class="op">$</span><span class="va">a</span> <span class="op">+</span> <span class="va">x</span><span class="op">$</span><span class="va">b</span>,</span>
-<span>  args <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span>, b <span class="op">=</span> <span class="va">INTEGER</span><span class="op">)</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_map_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_map_sum"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">x</span><span class="op">$</span><span class="va">values</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">MAP</a></span><span class="op">(</span><span class="va">VARCHAR</span>, <span class="va">INTEGER</span><span class="op">)</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_make_struct</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_make_struct"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">x</span>, b <span class="op">=</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span>, b <span class="op">=</span> <span class="va">INTEGER</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_make_array</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_make_array"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_make_map</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_make_map"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>keys <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"a"</span>, <span class="st">"b"</span><span class="op">)</span>, values <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="fu"><a href="reference/rducks_type_objects.html">MAP</a></span><span class="op">(</span><span class="va">VARCHAR</span>, <span class="va">INTEGER</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"</span></span>
-<span><span class="st">  SELECT</span></span>
-<span><span class="st">    r_list_len([1,2,3]::INTEGER[]) AS list_len,</span></span>
-<span><span class="st">    r_array_sum([1,2,3]::INTEGER[3]) AS array_sum,</span></span>
-<span><span class="st">    r_struct_sum({'a': 20, 'b': 22}::STRUCT(a INTEGER, b INTEGER)) AS struct_sum,</span></span>
-<span><span class="st">    r_map_sum(map(['a','b'], [20,22])) AS map_sum,</span></span>
-<span><span class="st">    (r_make_struct(41::INTEGER)).b AS struct_return,</span></span>
-<span><span class="st">    list_sum(r_make_array(20::INTEGER)) AS array_return,</span></span>
-<span><span class="st">    map_extract_value(r_make_map(20::INTEGER), 'b') AS map_return</span></span>
-<span><span class="st">"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   list_len array_sum struct_sum map_sum struct_return array_return map_return</span></span>
-<span><span class="co">#&gt; 1        3         6         42      42            42           41         21</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="scalar-udf-null-handling">Scalar-UDF NULL handling<a class="anchor" aria-label="anchor" href="#scalar-udf-null-handling"></a>
-</h2>
-<p>For DuckDB scalar UDFs, Rducks uses NULL-in/NULL-out handling by default: if any input is SQL <code>NULL</code>, the R function is not called and the SQL result is <code>NULL</code>.</p>
-<p>Use <code>null_handling = "special"</code> to pass the type-specific missing value shown in <code><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping()</a></code> to the R function for SQL <code>NULL</code> inputs. For ordinary scalar types this is usually a typed <code>NA</code>; for exact/exotic, binary, and composite inputs it is R <code>NULL</code>.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_null_special</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<code class="sourceCode R"><span><span class="va">null_special_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_null_special"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span><span class="op">)</span> <span class="fl">5L</span> <span class="kw">else</span> <span class="va">x</span>,</span>
@@ -632,130 +179,60 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_null_special(NULL::INTEGER) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   x</span></span>
 <span><span class="co">#&gt; 1 5</span></span></code></pre></div>
+<p>For type-by-type details, use the exported reference tables:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_mode_semantics.html">rducks_mode_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mode"</span>, <span class="st">"call_granularity"</span>, <span class="st">"input_shape"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;         mode            call_granularity</span></span>
+<span><span class="co">#&gt; 1     scalar          one R call per row</span></span>
+<span><span class="co">#&gt; 2 vectorized one R call per DuckDB chunk</span></span>
+<span><span class="co">#&gt;                                                               input_shape</span></span>
+<span><span class="co">#&gt; 1 one scalar/composite R value per declared or dynamically bound argument</span></span>
+<span><span class="co">#&gt; 2     one R vector/list-column per declared or dynamically bound argument</span></span>
+<span><span class="fu"><a href="reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span>, <span class="va">UUID</span>, <span class="fu"><a href="reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">[</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"duckdb_type"</span>, <span class="st">"r_value_class"</span>, <span class="st">"special_null_argument"</span><span class="op">)</span></span>
+<span><span class="op">]</span></span>
+<span><span class="co">#&gt;           duckdb_type  r_value_class special_null_argument</span></span>
+<span><span class="co">#&gt; 1             INTEGER        integer           NA_integer_</span></span>
+<span><span class="co">#&gt; 2                UUID    rducks_uuid                  NULL</span></span>
+<span><span class="co">#&gt; 3      DECIMAL(10, 2) rducks_decimal                  NULL</span></span>
+<span><span class="co">#&gt; 4 STRUCT(a INTEGER[])           list                  NULL</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="scalar-udf-exceptions-and-side-effects">Scalar-UDF exceptions and side effects<a class="anchor" aria-label="anchor" href="#scalar-udf-exceptions-and-side-effects"></a>
+<h2 id="aggregates-table-functions-and-query-streams">Aggregates, table functions, and query streams<a class="anchor" aria-label="anchor" href="#aggregates-table-functions-and-query-streams"></a>
 </h2>
-<p>For DuckDB scalar UDFs, set <code>exception_handling = "return_null"</code> to turn errors thrown by the user R function into SQL <code>NULL</code>. Return type-checking and marshalling errors still abort the query so type bugs are not hidden as NULLs.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_error_null</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_error_null"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="kw"><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop</a></span><span class="op">(</span><span class="st">"boom"</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  exception_handling <span class="op">=</span> <span class="st">"return_null"</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_error_null(1::INTEGER) AS x"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;    x</span></span>
-<span><span class="co">#&gt; 1 NA</span></span></code></pre></div>
-<p>For DuckDB scalar UDFs, set <code>side_effects = TRUE</code> for functions with counters, randomness, I/O, or mutation so DuckDB reruns the function for each row.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">i</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
-<span>  <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="va">i</span> <span class="op">&lt;&lt;-</span> <span class="va">i</span> <span class="op">+</span> <span class="fl">1L</span></span>
-<span>    <span class="va">i</span></span>
-<span>  <span class="op">}</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">reg_counter</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_counter"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="va">counter</span>,</span>
-<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_counter() AS x FROM range(5)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   x</span></span>
-<span><span class="co">#&gt; 1 1</span></span>
-<span><span class="co">#&gt; 2 2</span></span>
-<span><span class="co">#&gt; 3 3</span></span>
-<span><span class="co">#&gt; 4 4</span></span>
-<span><span class="co">#&gt; 5 5</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">reg_rng</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_rng"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span>,</span>
-<span>  args <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_rng() AS x FROM range(3)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;           x</span></span>
-<span><span class="co">#&gt; 1 0.2655087</span></span>
-<span><span class="co">#&gt; 2 0.3721239</span></span>
-<span><span class="co">#&gt; 3 0.5728534</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="aggregate-functions">Aggregate functions<a class="anchor" aria-label="anchor" href="#aggregate-functions"></a>
-</h2>
-<p><code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> registers R-backed DuckDB aggregates. The aggregate state is an arbitrary R object preserved by the extension, not a serialized <code>raw</code> vector. Returning <code>NULL</code> means an empty/no-state aggregate; otherwise update/combine callbacks may return any R object. Aggregates still run on the recorded R thread and are not controlled by scalar-UDF execution plans. Registration requires <code>rducks_enable(con, threads = "single")</code>, and execution rejects attempts to call R from DuckDB worker threads.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">new_sum_state</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">state</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">new.env</a></span><span class="op">(</span>parent <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/environment.html" class="external-link">emptyenv</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">state</span><span class="op">$</span><span class="va">sum</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
-<span>  <span class="va">state</span><span class="op">$</span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
-<span>  <span class="va">state</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="va">reg_r_sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate</a></span><span class="op">(</span></span>
+<p>Aggregates keep preserved R state owned by the extension and execute on the recorded R thread.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sum_i32_aggregate</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_sum_i32"</span>,</span>
 <span>  update <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span>, <span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span><span class="op">)</span> <span class="va">state</span> <span class="op">&lt;-</span> <span class="fu">new_sum_state</span><span class="op">(</span><span class="op">)</span></span>
-<span>    <span class="va">state</span><span class="op">$</span><span class="va">sum</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">state</span><span class="op">$</span><span class="va">sum</span> <span class="op">+</span> <span class="va">x</span><span class="op">)</span></span>
-<span>    <span class="va">state</span><span class="op">$</span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">state</span><span class="op">$</span><span class="va">n</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span>    <span class="va">state</span></span>
+<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span><span class="op">)</span> <span class="va">state</span> <span class="op">&lt;-</span> <span class="fl">0L</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">state</span> <span class="op">+</span> <span class="va">x</span><span class="op">)</span></span>
 <span>  <span class="op">}</span>,</span>
-<span>  finalize <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span> <span class="op">||</span> <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">state</span><span class="op">$</span><span class="va">n</span>, <span class="fl">0L</span><span class="op">)</span><span class="op">)</span> <span class="cn">NA_integer_</span> <span class="kw">else</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">state</span><span class="op">$</span><span class="va">sum</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>,</span>
+<span>  finalize <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span><span class="op">)</span> <span class="cn">NA_integer_</span> <span class="kw">else</span> <span class="va">state</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  <span class="st">"SELECT r_sum_i32(i) AS s FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt;   s</span></span>
-<span><span class="co">#&gt; 1 3</span></span></code></pre></div>
-<p>For chunk-first execution, supply <code>update_chunk(states, group_id, ...)</code> and optionally <code>combine_chunk(left_states, right_states)</code> / <code>finalize_chunk(states)</code>. <code>group_id</code> maps each input row to one element of <code>states</code>, with <code>0L</code> marking rows skipped by default NULL handling.</p>
-</div>
-<div class="section level2">
-<h2 id="table-functions">Table functions<a class="anchor" aria-label="anchor" href="#table-functions"></a>
-</h2>
-<p><code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> registers finite or streaming R-backed table functions. The number of positional SQL arguments comes from <code>formals(fun)</code>, each input is registered as DuckDB <code>ANY</code>, and the output schema is inferred at bind time. <code>fun()</code> may return a data frame, a named list of columns, or <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code>. Finite results are imported once during bind; streaming results provide a prototype plus <code>next_batch()</code> and are imported one batch at a time during scan. Projection pushdown still avoids copying unreferenced columns into DuckDB output chunks. Register and execute table functions with <code>rducks_enable(con, threads = "single")</code>.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reg_rows</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_table.html">rducks_register_table</a></span><span class="op">(</span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_sum_i32(i) AS total FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   total</span></span>
+<span><span class="co">#&gt; 1     3</span></span></code></pre></div>
+<p>Table functions return a data frame, a named list of columns, or an <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code> for scan-time batches.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">rows_table</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_table.html">rducks_register_table</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_rows"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span>, <span class="va">prefix</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="va">i</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>i <span class="op">=</span> <span class="va">i</span>, label <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="va">prefix</span>, <span class="va">i</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>,</span>
+<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>i <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  chunk_size <span class="op">=</span> <span class="fl">2L</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT * FROM r_rows(3, 'row-') ORDER BY i"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   i label</span></span>
-<span><span class="co">#&gt; 1 1 row-1</span></span>
-<span><span class="co">#&gt; 2 2 row-2</span></span>
-<span><span class="co">#&gt; 3 3 row-3</span></span></code></pre></div>
-<p>When the full result should not be materialized during bind, return <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code> with a zero-row prototype and a <code>next_batch()</code> callback.</p>
-</div>
-<div class="section level2">
-<h2 id="streaming-query-batches">Streaming query batches<a class="anchor" aria-label="anchor" href="#streaming-query-batches"></a>
-</h2>
-<p>Use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> when an R caller wants explicit batch-by-batch query consumption rather than one eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result. The query runs through the Rducks extension’s DuckDB streaming result handle; fetched DuckDB chunks are exported through DuckDB Arrow C Data and can be returned as owned nanoarrow record batches or materialized with the same Rducks/nanoarrow conversion helpers used by scalar-UDF marshalling. This path does not page over an already materialized DBI result and does not require the heavy <code>arrow</code> R package. Because execution uses a dedicated extension-owned query-stream connection, database-scoped objects are visible, while caller-connection temporary tables/views are not part of the stream query scope. That stream connection is separate from the extension connection used for dynamic scalar/table/aggregate registration, and a caller connection currently supports one active native query stream at a time. Delivery into R is intentionally on the recorded R thread because record-batch wrapping and optional data-frame materialization create R objects; Rducks does not call R/nanoarrow code from arbitrary DuckDB worker threads. The returned stream is connection-bound for lifecycle and has <code>next_batch()</code>, <code><a href="https://rdrr.io/r/base/connections.html" class="external-link">close()</a></code>, and <code>is_closed()</code> methods. By default <code>next_batch()</code> materializes a base R data-frame batch; with <code>format = "record_batch"</code> it returns the owned nanoarrow record batch and leaves R-vector materialization to the caller. Each non-empty batch carries the stream’s nanoarrow schema in the <code>"rducks_nanoarrow_schema"</code> attribute, and <code>rducks_release(con)</code> closes streams attached to that connection.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT * FROM r_rows(3) ORDER BY i"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   i</span></span>
+<span><span class="co">#&gt; 1 1</span></span>
+<span><span class="co">#&gt; 2 2</span></span>
+<span><span class="co">#&gt; 3 3</span></span></code></pre></div>
+<p>Use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> when an R caller wants explicit DuckDB-native query batches instead of an eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result.</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  <span class="st">"SELECT i::INTEGER AS i FROM range(1, 6) t(i)"</span>,</span>
@@ -774,387 +251,152 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
 </h2>
-<p>Execution plans choose the default marshalling implementation and concurrency contract for future DuckDB scalar UDF registrations through <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>. They do not control aggregate functions, table functions, or query streams. Registration remains semantic: name, function, Rducks evaluation mode, types, NULL handling, exception handling, and side-effect flag. The plan active at <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> freezes the scalar UDF’s native evaluator/marshalling metadata; later plan changes do not retarget already-registered scalar UDFs.</p>
+<p>Execution plans are fixed at scalar-UDF registration time.</p>
 <table class="table">
 <colgroup>
-<col width="11%">
-<col width="3%">
-<col width="3%">
-<col width="80%">
+<col width="26%">
+<col width="9%">
+<col width="12%">
+<col width="52%">
 </colgroup>
 <thead><tr>
 <th>Plan</th>
-<th>Scalar</th>
-<th>Vectorized</th>
+<th>Scalar mode</th>
+<th>Vectorized mode</th>
 <th>Notes</th>
 </tr></thead>
 <tbody>
 <tr>
 <td><code>arrow_r + serial</code></td>
-<td>implemented</td>
-<td>implemented</td>
-<td>reference implementation</td>
+<td>yes</td>
+<td>yes</td>
+<td>reference path using DuckDB Arrow C Data plus nanoarrow/R</td>
 </tr>
 <tr>
 <td><code>arrow_r + inproc_concurrent</code></td>
-<td>implemented</td>
-<td>implemented</td>
-<td>queued same-process callbacks; R API work stays on the recorded main R thread</td>
+<td>yes</td>
+<td>yes</td>
+<td>DuckDB workers enqueue callbacks; R work drains on the recorded R thread</td>
 </tr>
 <tr>
 <td><code>arrow_c + serial</code></td>
-<td>implemented</td>
-<td>implemented</td>
-<td>direct native evaluator tokens <code>RC</code>/<code>RCV</code>
-</td>
+<td>yes</td>
+<td>yes</td>
+<td>direct native DuckDB-vector materialization for supported types</td>
 </tr>
 <tr>
 <td><code>arrow_c + inproc_concurrent</code></td>
-<td>implemented</td>
-<td>implemented</td>
-<td>queued same-process callbacks with direct <code>arrow_c</code> marshalling</td>
+<td>yes</td>
+<td>yes</td>
+<td>native materialization plus same-process queueing</td>
 </tr>
 <tr>
 <td><code>arrow_ipc + multiprocess_parallel</code></td>
-<td>implemented</td>
-<td>implemented</td>
-<td>native NNG plus owned Arrow IPC bytes; mirai-launched local workers by default; <code>ipc_transport</code> generates <code>abstract</code> (Linux abstract IPC), <code>ipc</code> (NNG IPC), <code>unix</code> (POSIX Unix-domain alias), <code>tcp</code>, or <code>ws</code> endpoints; optional explicit <code>ipc_endpoints</code>; strict plan</td>
+<td>yes</td>
+<td>yes</td>
+<td>native NNG plus owned Arrow IPC request/result bytes and R workers</td>
 </tr>
 </tbody>
 </table>
-<p><code>arrow_r + serial</code> is the semantic reference. Other implemented plans are tested against it and use exactly their selected marshalling path. Use <code><a href="reference/rducks_explain_udf.html">rducks_explain_udf()</a></code> to inspect the plan and native counters for a registered scalar UDF.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_vec_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
-<span>  <span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"native_marshalling"</span>,</span>
-<span>  <span class="st">"evaluator"</span>, <span class="st">"arrow_r_chunks"</span>, <span class="st">"arrow_c_chunks"</span>, <span class="st">"arrow_ipc_chunks"</span></span>
-<span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;             name       mode        plan_id native_marshalling evaluator</span></span>
-<span><span class="co">#&gt; 1 r_vec_plus_one vectorized arrow_r+serial            arrow_r         R</span></span>
-<span><span class="co">#&gt;   arrow_r_chunks arrow_c_chunks arrow_ipc_chunks</span></span>
-<span><span class="co">#&gt; 1             21              0                0</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="in-process-queued-execution">In-process queued execution<a class="anchor" aria-label="anchor" href="#in-process-queued-execution"></a>
-</h2>
-<p><code><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc()</a></code> lets DuckDB worker threads enqueue same-process R calls for scalar UDFs while the recorded main R thread drains the queue. This is for safety and liveness, not automatic speed: R API work still runs on the main thread.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">arrow_c_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_inproc_plus_one"</span>,</span>
+<span>  <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"serial"</span><span class="op">)</span>,</span>
+<span>  threads <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  external_threads <span class="op">=</span> <span class="fl">1</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">arrow_c_plus_one_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_arrow_c_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">DOUBLE</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
-<span><span class="co">#&gt;   registered:      yes</span></span>
-<span><span class="co">#&gt;   name:            r_inproc_plus_one</span></span>
-<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
-<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
-<span><span class="co">#&gt;   signature:       r_inproc_plus_one(DOUBLE) -&gt; DOUBLE</span></span>
-<span></span>
-<span><span class="fu"><a href="reference/rducks_enable_inproc.html">rducks_enable_inproc</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="fl">4</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"CREATE TEMP TABLE inproc_input AS SELECT i::DOUBLE AS x FROM range(200000) AS t(i)"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 2e+05</span></span>
-<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_inproc_plus_one(x)) AS total FROM inproc_input"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;         total</span></span>
-<span><span class="co">#&gt; 1 20000100000</span></span>
-<span><span class="fu"><a href="reference/rducks_inproc_stats.html">rducks_inproc_stats</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"submitted"</span>, <span class="st">"executed"</span>, <span class="st">"pending_max"</span>, <span class="st">"main_drain_batches"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   submitted executed pending_max main_drain_batches</span></span>
-<span><span class="co">#&gt; 1        38       38           1                 38</span></span>
-<span><span class="fu"><a href="reference/rducks_disable_inproc.html">rducks_disable_inproc</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="multiprocess-arrow-ipc-execution">Multiprocess Arrow IPC execution<a class="anchor" aria-label="anchor" href="#multiprocess-arrow-ipc-execution"></a>
-</h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> is the native NNG/Arrow IPC path: DuckDB chunks become owned Arrow IPC bytes, native NNG sends them to R worker loops, and Arrow IPC result bytes are imported back into DuckDB output vectors. Local workers are mirai daemons running Rducks worker loops. If <code>ipc_endpoints</code> is supplied, Rducks connects to worker URLs that the caller starts and stops.</p>
-<p>Operationally:</p>
-<ul>
-<li>
-<code>ipc_workers</code> is the number of persistent R worker processes.</li>
-<li>
-<code>ipc_transport</code> chooses local mirai worker endpoints: <code>abstract</code>, <code>ipc</code>, <code>unix</code>, <code>tcp</code>, or <code>ws</code>.</li>
-<li>
-<code>ipc_timeout</code> is used for worker registration/control requests and for native NNG send/receive on each scalar UDF’s client pool.</li>
-<li>Worker providers are reused by runtime, worker count, max-pending limit, and endpoint/transport choice. Registering another scalar UDF with the same IPC provider key reuses the existing workers; changing that key starts another provider. Changing the default plan does not stop old providers.</li>
-<li>
-<code>rducks_release(con)</code> stops Rducks-launched local providers when the last Rducks anchor for the DuckDB runtime is released. For caller-supplied <code>ipc_endpoints</code>, release closes Rducks bookkeeping but does not send stop requests to the processes listening at those URLs. <code>rducks_nng_quiesce()</code> is lower-level: it only closes native client pools for local IPC providers.</li>
-</ul>
-<div class="section level3">
-<h3 id="large-ipc-globals-with-mori">Large IPC globals with mori<a class="anchor" aria-label="anchor" href="#large-ipc-globals-with-mori"></a>
-</h3>
-<p>Automatic global discovery for parallel workers is subtle. Rducks uses <code>globals::globalsOf(..., method = "dfs", recursive = TRUE)</code> when available, following the futureverse fix around <code>globals::findGlobals(..., method = "dfs")</code>; see Henrik Bengtsson’s discussion of why conservative <code>codetools</code>-style discovery can miss globals needed by worker processes: <a href="https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/" class="external-link uri">https://www.jottr.org/2025/06/23/future-got-better-at-finding-global-variables/</a>. For production UDFs with large dependencies, prefer explicit <code>ipc_globals</code>. When the workers are on the same host, <code>ipc_globals_share = "mori"</code> applies <code><a href="https://shikokuchuo.net/mori/reference/share.html" class="external-link">mori::share()</a></code> to each selected global before worker registration so large atomic vectors, lists, and data frames travel as compact shared-memory references rather than full serialized copies. Rducks keeps those shared objects anchored for the registered scalar UDF lifetime.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">large_lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">1e6</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">mori_ipc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>  <span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span>,</span>
-<span>  ipc_workers <span class="op">=</span> <span class="fl">2L</span>,</span>
-<span>  ipc_globals <span class="op">=</span> <span class="st">"large_lookup"</span>,</span>
-<span>  ipc_globals_share <span class="op">=</span> <span class="st">"mori"</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">mori_ipc_plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_with_large_lookup"</span>,</span>
-<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="va">large_lookup</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>  args <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
-<span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
+<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>This mori path is only for sharing R globals. Built-in IPC backends do not yet support SQL chunk shared-memory handles. A future shared-memory data plane for DuckDB chunks should use Rducks-owned raw byte buffers and NNG handle messages, not per-chunk ALTREP objects or R C API calls from DuckDB worker threads. See <code>docs/SHARED_MEMORY_IPC.md</code> and the local diagnostic <code>tools/benchmark_ipc_data_plane.R</code> before adding any user-facing data-plane option.</p>
-<p>The example below registers the same vectorized R function three ways. Keep <code>threads = 1</code> while registering; raise DuckDB <code>threads</code> for the IPC query phase so chunks can fan out to the IPC workers. <code>ripc_inflight_max</code> reports observed native IPC concurrency and is scheduler-dependent.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">chunk_plus_one</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span> <span class="co"># visible chunk work for the comparison, not required by Rducks</span></span>
-<span>  <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span></span>
-<span><span class="op">}</span></span>
+<span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">csv_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"rducks-ipc-csv-"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Sys.getpid.html" class="external-link">Sys.getpid</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.create</a></span><span class="op">(</span><span class="va">csv_dir</span>, showWarnings <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="va">rows_per_file</span> <span class="op">&lt;-</span> <span class="fl">4096L</span></span>
-<span><span class="va">parts</span> <span class="op">&lt;-</span> <span class="fl">8L</span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">part</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">parts</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">values</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq.int</a></span><span class="op">(</span><span class="op">(</span><span class="va">part</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span> <span class="op">*</span> <span class="va">rows_per_file</span>, <span class="va">part</span> <span class="op">*</span> <span class="va">rows_per_file</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"i"</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">values</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">csv_dir</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"part-%02d.csv"</span>, <span class="va">part</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span><span class="va">csv_glob</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">csv_dir</span>, <span class="st">"part-*.csv"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_arrow_c_plus_one(i::INTEGER)) AS total FROM range(5) AS t(i)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   total</span></span>
+<span><span class="co">#&gt; 1    15</span></span>
+<span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_arrow_c_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"name"</span>, <span class="st">"mode"</span>, <span class="st">"plan_id"</span>, <span class="st">"evaluator"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;                 name       mode        plan_id evaluator</span></span>
+<span><span class="co">#&gt; 1 r_arrow_c_plus_one vectorized arrow_c+serial       RCV</span></span>
 <span></span>
-<span><span class="va">serial_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span></span>
-<span><span class="va">inproc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"inproc_concurrent"</span><span class="op">)</span></span>
-<span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
-<span><span class="va">ipc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
+<span><span class="va">serial_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<p>For process isolation, choose the Arrow IPC plan. Local providers are launched as mirai workers and communicate with the extension over generated NNG endpoints. Explicit <code>ipc_globals</code>, <code>ipc_packages</code>, and <code>ipc_globals_share = "mori"</code> are available when worker functions need external R objects.</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">ipc_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span>,</span>
+<span>  ipc_workers <span class="op">=</span> <span class="fl">1L</span>,</span>
 <span>  ipc_transport <span class="op">=</span> <span class="st">"tcp"</span>,</span>
-<span>  ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
 <span>  ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
 <span><span class="op">)</span></span>
+<span><span class="va">ipc_plan_active</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">ipc_plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">register_for_plan</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">name</span>, <span class="va">plan</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/invisible.html" class="external-link">invisible</a></span><span class="op">(</span><span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
-<span>    <span class="va">con</span>,</span>
-<span>    name <span class="op">=</span> <span class="va">name</span>,</span>
-<span>    fun <span class="op">=</span> <span class="va">chunk_plus_one</span>,</span>
-<span>    args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>    returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
-<span>    mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
-<span>    side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span>  <span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_serial"</span>, <span class="va">serial_plan</span><span class="op">)</span></span>
-<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_inproc"</span>, <span class="va">inproc_plan</span><span class="op">)</span></span>
-<span><span class="fu">register_for_plan</span><span class="op">(</span><span class="st">"r_cmp_ipc"</span>, <span class="va">ipc_plan</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">run_comparison</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">label</span>, <span class="va">name</span>, <span class="va">plan</span>, <span class="va">threads</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="va">threads</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span>  <span class="va">elapsed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
-<span>      <span class="st">"SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)"</span>,</span>
-<span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteIdentifier.html" class="external-link">dbQuoteIdentifier</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">name</span><span class="op">)</span>,</span>
-<span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteString.html" class="external-link">dbQuoteString</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">csv_glob</span><span class="op">)</span></span>
-<span>    <span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
-<span>  <span class="va">info</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">name</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>    plan <span class="op">=</span> <span class="va">label</span>,</span>
-<span>    threads <span class="op">=</span> <span class="va">threads</span>,</span>
-<span>    total <span class="op">=</span> <span class="va">result</span><span class="op">$</span><span class="va">total</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>    elapsed_sec <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">elapsed</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
-<span>    evaluator <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">evaluator</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>    arrow_r_chunks <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">arrow_r_chunks</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>    arrow_ipc_chunks <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">arrow_ipc_chunks</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>    ripc_inflight_max <span class="op">=</span> <span class="va">info</span><span class="op">$</span><span class="va">ripc_inflight_max</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
-<span>    stringsAsFactors <span class="op">=</span> <span class="cn">FALSE</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span></span>
-<span><span class="va">comparison</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
-<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"sequential arrow_r"</span>, <span class="st">"r_cmp_serial"</span>, <span class="va">serial_plan</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
-<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"in-process queue"</span>, <span class="st">"r_cmp_inproc"</span>, <span class="va">inproc_plan</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
-<span>  <span class="fu">run_comparison</span><span class="op">(</span><span class="st">"2-process Arrow IPC"</span>, <span class="st">"r_cmp_ipc"</span>, <span class="va">ipc_plan</span>, threads <span class="op">=</span> <span class="va">ipc_workers</span><span class="op">)</span></span>
+<span><span class="va">ipc_plus_one_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_ipc_plus_one"</span>,</span>
+<span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
+<span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
+<span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">comparison</span></span>
-<span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.874         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.802         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.045      RIPC              0</span></span>
-<span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
-<span><span class="co">#&gt; 1                0                 0</span></span>
-<span><span class="co">#&gt; 2                0                 0</span></span>
-<span><span class="co">#&gt; 3               16                 2</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">csv_dir</span>, recursive <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">serial_plan</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
-</div>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_ipc_plus_one(i::INTEGER)) AS total FROM range(10) AS t(i)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   total</span></span>
+<span><span class="co">#&gt; 1    55</span></span>
+<span><span class="fu"><a href="reference/rducks_explain_udf.html">rducks_explain_udf</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"r_ipc_plus_one"</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"plan_id"</span>, <span class="st">"evaluator"</span>, <span class="st">"arrow_ipc_chunks"</span>, <span class="st">"ripc_inflight_max"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;                           plan_id evaluator arrow_ipc_chunks ripc_inflight_max</span></span>
+<span><span class="co">#&gt; 1 arrow_ipc+multiprocess_parallel      RIPC                1                 1</span></span>
+<span></span>
+<span><span class="va">serial_plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span>, threads <span class="op">=</span> <span class="fl">1</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic">Demo: duckplyr with no fallback, using Rducks for custom R logic<a class="anchor" aria-label="anchor" href="#demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic"></a>
+<h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
 </h2>
-<p>This example keeps a stingy duckplyr pipeline in DuckDB without writing <code>dd$...</code> calls. Rducks registers <code>local_score()</code> as a dynamic-argument scalar UDF, so only the return type is declared here; DuckDB binds the concrete argument types from the query before Rducks materializes the inputs.</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>  <span class="va">old_collect</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_COLLECT"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
-<span>  <span class="va">old_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_INFO"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
-<span>  <span class="va">old_upload</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_AUTOUPLOAD"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span></span>
-<span>    DUCKPLYR_FALLBACK_COLLECT <span class="op">=</span> <span class="st">"0"</span>,</span>
-<span>    DUCKPLYR_FALLBACK_INFO <span class="op">=</span> <span class="st">"0"</span>,</span>
-<span>    DUCKPLYR_FALLBACK_AUTOUPLOAD <span class="op">=</span> <span class="st">"0"</span></span>
-<span>  <span class="op">)</span></span>
-<span>  <span class="va">restore_env</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">name</span>, <span class="va">value</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">value</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>      <span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.unsetenv</a></span><span class="op">(</span><span class="va">name</span><span class="op">)</span></span>
-<span>    <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
-<span>      <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">Sys.setenv</span>, <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/setNames.html" class="external-link">setNames</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">value</span><span class="op">)</span>, <span class="va">name</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="op">}</span></span>
-<span>  <span class="op">}</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_COLLECT"</span>, <span class="va">old_collect</span><span class="op">)</span></span>
-<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_INFO"</span>, <span class="va">old_info</span><span class="op">)</span></span>
-<span>    <span class="fu">restore_env</span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_AUTOUPLOAD"</span>, <span class="va">old_upload</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<p><code><a href="reference/rducks_with_duckplyr.html">rducks_with_duckplyr()</a></code> and the <code><a href="reference/rducks_with_duckplyr.html">with.duckdb_connection()</a></code> method let ordinary R calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing <code>dd$...</code> calls. The fallback-blocking demonstration lives in <code>inst/examples/no_fallback_duckplyr.R</code>; the README keeps the shape minimal.</p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">demo_con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
+<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  dbdir <span class="op">=</span> <span class="st">":memory:"</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">demo_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
+<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbWriteTable.html" class="external-link">dbWriteTable</a></span><span class="op">(</span><span class="va">demo_con</span>, <span class="st">"scores"</span>, <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span>,</span>
+<span>  x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">21</span>, <span class="fl">34</span><span class="op">)</span>,</span>
+<span>  label <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span></span>
+<span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">suppressPackageStartupMessages</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dplyr.tidyverse.org" class="external-link">dplyr</a></span><span class="op">)</span></span>
-<span>    <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://duckplyr.tidyverse.org" class="external-link">duckplyr</a></span><span class="op">)</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
+<span><span class="va">scores</span> <span class="op">&lt;-</span> <span class="fu">duckplyr</span><span class="fu">::</span><span class="fu"><a href="https://duckplyr.tidyverse.org/reference/read_sql_duckdb.html" class="external-link">read_sql_duckdb</a></span><span class="op">(</span><span class="st">"SELECT * FROM scores"</span>, con <span class="op">=</span> <span class="va">demo_con</span>, prudence <span class="op">=</span> <span class="st">"stingy"</span><span class="op">)</span></span>
+<span><span class="va">local_score</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/double.html" class="external-link">as.double</a></span><span class="op">(</span><span class="va">x</span> <span class="op">+</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="kw">else</span> <span class="fl">0</span><span class="op">)</span></span>
 <span></span>
-<span>  <span class="va">demo_con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
-<span>    <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>    dbdir <span class="op">=</span> <span class="st">":memory:"</span></span>
-<span>  <span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">demo_con</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span>    <span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span>  <span class="op">}</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
+<span>  <span class="va">demo_con</span>,</span>
+<span>  <span class="va">scores</span> <span class="op">|&gt;</span></span>
+<span>    <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>    <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">score</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>    <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  rducks_returns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>local_score <span class="op">=</span> <span class="va">DOUBLE</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">out</span></span>
+<span><span class="co">#&gt; # A tibble: 3 × 2</span></span>
+<span><span class="co">#&gt;      id score</span></span>
+<span><span class="co">#&gt; * &lt;int&gt; &lt;dbl&gt;</span></span>
+<span><span class="co">#&gt; 1     1     2</span></span>
+<span><span class="co">#&gt; 2     2   121</span></span>
+<span><span class="co">#&gt; 3     3   134</span></span>
 <span></span>
-<span>  <span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">demo_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">input</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>    id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">6</span>,</span>
-<span>    x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">5</span>, <span class="fl">8</span>, <span class="fl">13</span>, <span class="fl">21</span>, <span class="fl">34</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>    label <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"low"</span>, <span class="st">"mid"</span>, <span class="st">"mid"</span>, <span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span>  <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbWriteTable.html" class="external-link">dbWriteTable</a></span><span class="op">(</span><span class="va">demo_con</span>, <span class="st">"demo_input"</span>, <span class="va">input</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">stingy</span> <span class="op">&lt;-</span> <span class="fu">duckplyr</span><span class="fu">::</span><span class="fu"><a href="https://duckplyr.tidyverse.org/reference/read_sql_duckdb.html" class="external-link">read_sql_duckdb</a></span><span class="op">(</span></span>
-<span>    <span class="st">"SELECT * FROM demo_input"</span>,</span>
-<span>    con <span class="op">=</span> <span class="va">demo_con</span>,</span>
-<span>    prudence <span class="op">=</span> <span class="st">"stingy"</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">local_score</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="va">bonus</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="kw">else</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"mid"</span><span class="op">)</span><span class="op">)</span> <span class="fl">10</span> <span class="kw">else</span> <span class="fl">0</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/double.html" class="external-link">as.double</a></span><span class="op">(</span><span class="va">x</span> <span class="op">+</span> <span class="va">bonus</span><span class="op">)</span></span>
-<span>  <span class="op">}</span></span>
-<span></span>
-<span>  <span class="va">fallback_blocked</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="op">{</span></span>
-<span>    <span class="va">stingy</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span></span>
-<span>    <span class="cn">FALSE</span></span>
-<span>  <span class="op">}</span>, error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="op">{</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">message</a></span><span class="op">(</span><span class="st">"Fallback blocked as expected: "</span>, <span class="fu"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="cn">TRUE</span></span>
-<span>  <span class="op">}</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Logic.html" class="external-link">isTRUE</a></span><span class="op">(</span><span class="va">fallback_blocked</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
-<span>    <span class="va">demo_con</span>,</span>
-<span>    <span class="va">stingy</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">score</span> <span class="op">&gt;=</span> <span class="fl">100</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">label</span>, <span class="va">score</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/arrange.html" class="external-link">arrange</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>      <span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span>,</span>
-<span>    rducks_returns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>local_score <span class="op">=</span> <span class="va">DOUBLE</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">out</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html" class="external-link">stopifnot</a></span><span class="op">(</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">id</span>, <span class="fl">5</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">label</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"high"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">out</span><span class="op">$</span><span class="va">score</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">121</span>, <span class="fl">134</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt; # A tibble: 2 × 3</span></span>
-<span><span class="co">#&gt;      id label score</span></span>
-<span><span class="co">#&gt; * &lt;int&gt; &lt;chr&gt; &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1     5 high    121</span></span>
-<span><span class="co">#&gt; 2     6 high    134</span></span></code></pre></div>
+<span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">demo_con</span><span class="op">)</span></span>
+<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
-<p>The package builds its DuckDB extension during installation using <code>configure</code> or <code>configure.win</code>. The extension metadata footer is appended by <code>tools/append_extension_metadata.R</code>.</p>
-<p>DuckDB C API headers are refreshed explicitly with:</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
-<p>The DuckDB Arrow C Data path requires DuckDB’s unstable C extension API, so the extension metadata uses <code>C_STRUCT_UNSTABLE</code> and must match the bundled DuckDB header/runtime version. See <code>docs/BUILD.md</code> for the extension build and metadata details.</p>
-</div>
-<div class="section level2">
-<h2 id="duckdb-c-extension-abi-surface">DuckDB C extension ABI surface<a class="anchor" aria-label="anchor" href="#duckdb-c-extension-abi-surface"></a>
-</h2>
-<p>The extension entrypoint receives the DuckDB database handle from DuckDB’s extension access struct, stores it in a per-database runtime record, and opens extension-owned DuckDB connections for native callback support and native query streaming. On extension reload, Rducks verifies that the active connection has the SQL surface registered and re-registers it when needed.</p>
-<p>The unstable DuckDB C extension ABI entries are tracked by <code>tools/used_duckdb_unstable_api.R</code> and documented in <code>docs/BUILD.md</code>. The README intentionally does not source repository helper scripts while rendering. The current output of <code>source("tools/used_duckdb_unstable_api.R"); cat(rducks_used_duckdb_unstable_api_markdown("."))</code> is:</p>
-<table class="table">
-<colgroup>
-<col width="13%">
-<col width="84%">
-<col width="2%">
-</colgroup>
-<thead><tr>
-<th>ABI group</th>
-<th>Functions used</th>
-<th align="right">Count</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><code>unstable_new_arrow_functions</code></td>
-<td>
-<code>duckdb_data_chunk_from_arrow</code>, <code>duckdb_data_chunk_to_arrow</code>, <code>duckdb_destroy_arrow_converted_schema</code>, <code>duckdb_schema_from_arrow</code>, <code>duckdb_to_arrow_schema</code>
-</td>
-<td align="right">5</td>
-</tr>
-<tr>
-<td><code>unstable_new_error_data_functions</code></td>
-<td>
-<code>duckdb_destroy_error_data</code>, <code>duckdb_error_data_has_error</code>, <code>duckdb_error_data_message</code>
-</td>
-<td align="right">3</td>
-</tr>
-<tr>
-<td><code>unstable_new_open_connect_functions</code></td>
-<td>
-<code>duckdb_client_context_get_connection_id</code>, <code>duckdb_connection_get_arrow_options</code>, <code>duckdb_destroy_arrow_options</code>, <code>duckdb_destroy_client_context</code>
-</td>
-<td align="right">4</td>
-</tr>
-<tr>
-<td><code>unstable_new_scalar_function_functions</code></td>
-<td>
-<code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_get_client_context</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>
-</td>
-<td align="right">6</td>
-</tr>
-<tr>
-<td><code>unstable_new_scalar_function_state_functions</code></td>
-<td>
-<code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_client_context</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_init</code>
-</td>
-<td align="right">7</td>
-</tr>
-<tr>
-<td><code>unstable_new_vector_functions</code></td>
-<td>
-<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_vector_copy_sel</code>
-</td>
-<td align="right">4</td>
-</tr>
-</tbody>
-</table>
+<p>The package builds its DuckDB extension during installation with <code>configure</code> or <code>configure.win</code>. Vendored NNG/Mbed TLS support is optional at build time but used by the native Arrow IPC provider when available. DuckDB C API headers are refreshed explicitly when the supported DuckDB version changes.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<p>The extension uses DuckDB’s unstable C extension ABI for Arrow conversion, connection/runtime access, scalar-function bind/init hooks, and selection-vector helpers. The current surface is tracked by <code>tools/used_duckdb_unstable_api.R</code> and documented in <code>docs/BUILD.md</code>.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
