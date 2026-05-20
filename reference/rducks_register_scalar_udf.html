@@ -154,9 +154,13 @@ rather than being tied to the registering DBI connection. Choose the desired
 execution plan before registration with
 <code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>; the
 selected evaluator/marshalling metadata is then stored with the native catalog
-entry. For <code>arrow_ipc</code> plans, the UDF closure and discovered globals are
-copied once to each NNG worker in the shared provider pool and retained for
-that pool's lifetime.</p>
+entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
+not durable schema objects: they are visible to sibling connections while the
+same DuckDB database runtime remains open, but a file-backed database must be
+enabled and registered again after it is fully closed and reopened. For
+<code>arrow_ipc</code> plans, the UDF closure and discovered globals are copied once to
+each NNG worker in the shared provider pool and retained for that pool's
+lifetime.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
