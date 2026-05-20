@@ -1,6 +1,30 @@
 library(Rducks)
 
 local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit({
+    try(rducks_release(con), silent = TRUE)
+    DBI::dbDisconnect(con, shutdown = TRUE)
+  }, add = TRUE)
+  rducks_enable(con, threads = "single")
+
+  env <- new.env(parent = baseenv())
+  env$sentinel <- 41L
+  expect_equal(with(con, sentinel + 1L, rducks_env = env), 42L)
+  expect_error(
+    Rducks:::rducks_duckplyr_register_udfs(
+      con,
+      list(missing_duckplyr_udf = INTEGER),
+      env,
+      null_handling = "default",
+      exception_handling = "rethrow",
+      side_effects = FALSE
+    ),
+    "cannot find R function"
+  )
+})
+
+local({
   old_collect <- Sys.getenv("DUCKPLYR_FALLBACK_COLLECT", unset = NA_character_)
   old_info <- Sys.getenv("DUCKPLYR_FALLBACK_INFO", unset = NA_character_)
   old_upload <- Sys.getenv("DUCKPLYR_FALLBACK_AUTOUPLOAD", unset = NA_character_)

@@ -70,6 +70,16 @@ local({
   rducks_enable(con, threads = "single")
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
 
+  invisible(rducks_register_scalar_udf(
+    con,
+    "rducks_arrow_c_error_null",
+    function(x) stop("arrow_c boom"),
+    INTEGER,
+    INTEGER,
+    exception_handling = "return_null"
+  ))
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT rducks_arrow_c_error_null(1::INTEGER) AS x")$x))
+
   invisible(rducks_register_scalar_udf(con, "rducks_arrow_c_i32_nan_bad", function() NaN, character(), INTEGER))
   expect_error(
     DBI::dbGetQuery(con, "SELECT rducks_arrow_c_i32_nan_bad() AS x"),

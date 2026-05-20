@@ -1,10 +1,5 @@
 rducks_evaluator_ref_store <- function() {
-  store <- .rducks_state$evaluator_refs
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$evaluator_refs <- store
-  }
-  store
+  rducks_get_or_init_store("evaluator_refs")
 }
 
 rducks_next_evaluator_id <- function() {
@@ -266,12 +261,12 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
   }
+  if (!identical(typeof(fun), "closure")) {
+    stop("fun must be an R closure with finite formal arguments", call. = FALSE)
+  }
   if (!is.numeric(chunk_size) || length(chunk_size) != 1L || is.na(chunk_size) ||
       !is.finite(chunk_size) || chunk_size < 1 || chunk_size > 1024 || chunk_size != as.integer(chunk_size)) {
     stop("chunk_size must be an integer between 1 and 1024", call. = FALSE)
-  }
-  if (!identical(typeof(fun), "closure")) {
-    stop("fun must be an R closure with finite formal arguments", call. = FALSE)
   }
   table_formals <- formals(fun)
   if (is.null(table_formals)) table_formals <- pairlist()

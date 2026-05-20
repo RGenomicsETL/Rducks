@@ -83,6 +83,9 @@ phase has produced owned result data.
 
 ## Runtime scopes
 
+`docs/SUPPORT_MATRIX.md` contains the compact scope/lifetime table; this section
+is the narrative source for how those scopes interact.
+
 - **R process/package**: recorded R-thread token, provider factories, release
   queues, and package diagnostics.
 - **DuckDB database runtime/catalog**: SQL functions, evaluator handles,

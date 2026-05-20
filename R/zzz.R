@@ -6,6 +6,15 @@
   function(x, y) if (is.null(x)) y else x
 }
 
+rducks_get_or_init_store <- function(key, hash = FALSE) {
+  store <- .rducks_state[[key]]
+  if (is.null(store)) {
+    store <- new.env(parent = emptyenv(), hash = hash)
+    .rducks_state[[key]] <- store
+  }
+  store
+}
+
 rducks_main_thread_token <- function() {
   token <- .rducks_state$main_thread_token
   if (is.null(token)) {

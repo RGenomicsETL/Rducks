@@ -12,7 +12,6 @@ rducks_test_replace_namespace_value <- function(name, value) {
 
 local({
   if (!"tcp" %in% Rducks:::rducks_nng_runtime_transports()) {
-    expect_true(TRUE)
     return(invisible(NULL))
   }
 

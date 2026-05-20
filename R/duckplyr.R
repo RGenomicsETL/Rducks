@@ -87,11 +87,12 @@ rducks_duckplyr_eval_expr <- function(con, expr, returns, env,
 #' This helper intentionally requires return-type declarations: DuckDB needs a
 #' scalar function's return type during planning even when its input arguments
 #' are accepted dynamically. Dynamic arguments are a duckplyr-oriented
-#' convenience path that uses nanoarrow's default input conversion; use explicit
-#' `args` in
+#' convenience path that uses nanoarrow's default input conversion. The duckplyr
+#' bridge registers these UDFs with `mode = "scalar"`; it does not expose
+#' Rducks' vectorized chunk-call mode. Use explicit `args` in
 #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
-#' when you need Rducks' declared composite, exotic, or special-NULL input
-#' semantics.
+#' when you need Rducks' declared composite, exotic, special-NULL, or vectorized
+#' input semantics.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param expr A duckplyr expression or pipeline to evaluate.

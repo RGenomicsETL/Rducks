@@ -1,19 +1,9 @@
 rducks_query_stream_store <- function() {
-  store <- .rducks_state$query_streams
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$query_streams <- store
-  }
-  store
+  rducks_get_or_init_store("query_streams")
 }
 
 rducks_query_stream_batch_store <- function() {
-  store <- .rducks_state$query_stream_batches
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$query_stream_batches <- store
-  }
-  store
+  rducks_get_or_init_store("query_stream_batches")
 }
 
 rducks_query_stream_token_store <- function(token) {

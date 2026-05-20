@@ -2,7 +2,6 @@ library(Rducks)
 
 local({
   if (!requireNamespace("mori", quietly = TRUE)) {
-    expect_true(TRUE)
     return(invisible(NULL))
   }
 

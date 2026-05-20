@@ -2,6 +2,8 @@
 
 This document summarizes the supported execution-plan surface. The code-level
 truth is the plan/type validation predicates and the generated marshalling matrix.
+For thread-boundary details, treat `docs/ARCHITECTURE.md` as the narrative source
+and this document as the compact support table.
 
 ## Scalar-UDF execution engines
 
@@ -22,12 +24,14 @@ Invalid marshalling/concurrency pairs fail validation.
 ## Aggregate functions
 
 `rducks_register_aggregate()` is a separate DuckDB aggregate-function surface,
-not an execution-plan variant of DuckDB scalar UDFs. The only supported
-state representation is native DuckDB aggregate memory containing a copied R
-`raw` vector. `update()` and optional `combine()` must return raw state or
-`NULL`; `finalize()` returns the declared scalar result. Registration and R
-callbacks require the recorded calling R thread (`external_threads=1` and
-`PRAGMA threads=1`); parallel worker-thread R callbacks are rejected.
+not an execution-plan variant of DuckDB scalar UDFs. The supported state
+representation is an R object reference preserved by Rducks and stored through
+native DuckDB aggregate state; `NULL` means empty/no state. Row-wise
+`update()`/`combine()` callbacks and optional chunk callbacks may return any R
+object state or `NULL`; `finalize()` returns the declared scalar result.
+Registration and R callbacks require the recorded calling R thread
+(`external_threads=1` and `PRAGMA threads=1`); parallel worker-thread R callbacks
+are rejected.
 
 ## Streaming queries
 
@@ -44,7 +48,7 @@ does not survive connection release.
 
 | Type family | Examples | `arrow_r` | `arrow_c` | `arrow_ipc` | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | yes | Values are materialized/copied as R values or vectors. |
+| Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | yes | Values are materialized/copied as R values or vectors. The Arrow C Data bridge accepts both packed Arrow booleans and the `arrow.bool8` extension storage used by some Arrow producers; validity bitmaps remain authoritative for NULLs. |
 | String/binary/bit | `VARCHAR`, `BLOB`, `BIT` | yes | yes | yes | Returned data is copied into DuckDB-owned output storage. |
 | Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | yes | Uses Rducks value classes where base R has no exact scalar. |

@@ -7,7 +7,7 @@
 rducks_type_normalize(x)
 }
 \arguments{
-\item{x}{Character scalar scalar-type token or a \code{rducks_type} descriptor.}
+\item{x}{Character scalar type token or a \code{rducks_type} descriptor.}
 }
 \value{
 Canonical scalar token for character input, or the descriptor's wire

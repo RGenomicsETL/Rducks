@@ -92,6 +92,21 @@ local({
   expect_true(stream_next_calls >= 3L)
   expect_equal(stream_close_calls, 1L)
 
+  cardinality_probe <- rducks_table_stream(
+    prototype = data.frame(i = integer()),
+    next_batch = function(n) NULL,
+    cardinality = 7,
+    exact = TRUE
+  )
+  expect_equal(
+    Rducks:::rducks_table_stream_cardinality(cardinality_probe),
+    list(known = TRUE, rows = 7, exact = TRUE)
+  )
+  expect_error(
+    rducks_table_stream(data.frame(i = integer()), function(n) NULL, cardinality = 1.5),
+    "cardinality"
+  )
+
   stream_count_close_calls <- 0L
   invisible(rducks_register_table(
     con,
@@ -155,6 +170,24 @@ local({
   expect_error(
     DBI::dbGetQuery(con, "SELECT * FROM rducks_table_streaming_exact_underflow()"),
     "different row count"
+  )
+
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_streaming_exact_overflow",
+    function() {
+      rducks_table_stream(
+        prototype = data.frame(i = integer()),
+        cardinality = 2,
+        exact = TRUE,
+        next_batch = function(n) data.frame(i = 1:3)
+      )
+    },
+    chunk_size = 2L
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM rducks_table_streaming_exact_overflow()"),
+    "more rows|different row count"
   )
 
   invisible(rducks_register_table(

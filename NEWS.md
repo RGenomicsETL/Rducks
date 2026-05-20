@@ -1,5 +1,8 @@
 # Rducks 0.1.0
 
+- Tightened execution-plan and support documentation, documented `arrow.bool8`
+  boolean extension handling, clarified aggregate state ownership, and expanded
+  tests for IPC, duckplyr, query streams, and table-stream cardinality.
 - Added package vignettes for getting started, type/value semantics, execution
   plans and IPC worker lifecycle, and current internal implementation details.
 - Added dynamic-argument scalar UDF registration: omitting `args` in

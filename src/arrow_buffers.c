@@ -39,7 +39,9 @@ SEXP RDUCKS_arrow_bool_to_logical(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_
     if (bool8 && nbytes >= end_bit) {
         byte_per_value = 1;
         for (int i = 0; i < n; i++) {
-            Rbyte b = bytes[(R_xlen_t)offset + i];
+            Rbyte b;
+            if (LOGICAL(valid_sexp)[i] != TRUE) continue;
+            b = bytes[(R_xlen_t)offset + i];
             if (b != 0 && b != 1) {
                 byte_per_value = 0;
                 break;

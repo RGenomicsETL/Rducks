@@ -72,13 +72,37 @@ expect_equal(ipc$ipc_provider, "nng")
 expect_equal(ipc$engine_id, "ipc_nng_pool")
 expect_equal(ipc$ipc_max_pending, 64L)
 expect_equal(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = NULL)$ipc_max_pending,
+  64L
+)
+expect_equal(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 2L)$ipc_max_pending,
   2L
 )
+expect_equal(rducks_execution_plan("arrow_r", "serial")$ipc_max_pending, NA_integer_)
 expect_error(
   rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 0L),
   "ipc_max_pending"
 )
+expect_error(
+  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 1.5),
+  "ipc_max_pending"
+)
+shortcut_expected <- list(
+  reference = "arrow_r+serial",
+  arrow_r = "arrow_r+serial",
+  arrow_c = "arrow_c+serial",
+  arrow_r_serial = "arrow_r+serial",
+  arrow_r_main_queue = "arrow_r+inproc_concurrent",
+  arrow_c_direct_serial = "arrow_c+serial",
+  arrow_c_direct_main_queue = "arrow_c+inproc_concurrent",
+  ipc_nng_pool = "arrow_ipc+multiprocess_parallel"
+)
+for (shortcut in names(shortcut_expected)) {
+  expect_equal(Rducks:::rducks_as_execution_plan(shortcut)$plan_id, shortcut_expected[[shortcut]])
+}
+expect_error(Rducks:::rducks_as_execution_plan("serial"), "unknown Rducks execution plan shortcut")
+expect_error(Rducks:::rducks_as_execution_plan("inproc_concurrent"), "unknown Rducks execution plan shortcut")
 expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$engine_id, "ipc_nng_pool")
 expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = TRUE)$ipc_options$globals)
 expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = FALSE)$ipc_options$globals)
@@ -96,6 +120,10 @@ expect_error(
 expect_error(
   rducks_execution_plan("arrow_r", "multiprocess_parallel"),
   "requires marshalling = 'arrow_ipc'"
+)
+expect_error(
+  Rducks:::rducks_plan_engine_id("arrow_r", "multiprocess_parallel"),
+  "unsupported Rducks execution-plan pair"
 )
 vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
   "vec", function(x) x, INTEGER, INTEGER, mode = "vectorized"

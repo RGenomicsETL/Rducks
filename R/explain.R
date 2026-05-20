@@ -1,10 +1,5 @@
 rducks_registration_store <- function() {
-  store <- .rducks_state$registrations
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$registrations <- store
-  }
-  store
+  rducks_get_or_init_store("registrations")
 }
 
 rducks_database_registration_key <- function(con, required = TRUE) {
@@ -105,42 +100,57 @@ rducks_counter_value <- function(stats, name) {
   if (length(value) != 1L || is.na(value)) 0 else value
 }
 
+rducks_explain_udf_columns <- list(
+  name = character,
+  mode = character,
+  plan_id = character,
+  engine_id = character,
+  marshalling = character,
+  concurrency = character,
+  native_marshalling = character,
+  evaluator = character,
+  args = character,
+  returns = character,
+  r_side_record = logical,
+  null_handling = character,
+  exception_handling = character,
+  side_effects = logical,
+  dispatch_chunks = numeric,
+  dispatch_rows = numeric,
+  direct_chunks = numeric,
+  queued_chunks = numeric,
+  queue_pending_current = numeric,
+  queue_pending_max = numeric,
+  arrow_r_chunks = numeric,
+  arrow_c_chunks = numeric,
+  arrow_c_input_snapshot_chunks = numeric,
+  arrow_c_owned_result_chunk_chunks = numeric,
+  arrow_ipc_chunks = numeric,
+  ripc_collect_batches = numeric,
+  ripc_collect_requests = numeric,
+  ripc_collect_max_batch = numeric,
+  ripc_submit_wave_max = numeric,
+  ripc_collect_ready_max = numeric,
+  ripc_inflight_current = numeric,
+  ripc_inflight_max = numeric
+)
+
+rducks_explain_udf_frame <- function(values = NULL) {
+  if (is.null(values)) {
+    values <- lapply(rducks_explain_udf_columns, function(factory) factory())
+  } else {
+    missing <- setdiff(names(rducks_explain_udf_columns), names(values))
+    extra <- setdiff(names(values), names(rducks_explain_udf_columns))
+    if (length(missing) || length(extra)) {
+      stop("Rducks explain UDF schema mismatch", call. = FALSE)
+    }
+    values <- values[names(rducks_explain_udf_columns)]
+  }
+  data.frame(values, stringsAsFactors = FALSE)
+}
+
 rducks_explain_udf_empty <- function() {
-  data.frame(
-    name = character(),
-    mode = character(),
-    plan_id = character(),
-    engine_id = character(),
-    marshalling = character(),
-    concurrency = character(),
-    native_marshalling = character(),
-    evaluator = character(),
-    args = character(),
-    returns = character(),
-    r_side_record = logical(),
-    null_handling = character(),
-    exception_handling = character(),
-    side_effects = logical(),
-    dispatch_chunks = numeric(),
-    dispatch_rows = numeric(),
-    direct_chunks = numeric(),
-    queued_chunks = numeric(),
-    queue_pending_current = numeric(),
-    queue_pending_max = numeric(),
-    arrow_r_chunks = numeric(),
-    arrow_c_chunks = numeric(),
-    arrow_c_input_snapshot_chunks = numeric(),
-    arrow_c_owned_result_chunk_chunks = numeric(),
-    arrow_ipc_chunks = numeric(),
-    ripc_collect_batches = numeric(),
-    ripc_collect_requests = numeric(),
-    ripc_collect_max_batch = numeric(),
-    ripc_submit_wave_max = numeric(),
-    ripc_collect_ready_max = numeric(),
-    ripc_inflight_current = numeric(),
-    ripc_inflight_max = numeric(),
-    stringsAsFactors = FALSE
-  )
+  rducks_explain_udf_frame()
 }
 
 rducks_explain_udf_row <- function(con, name) {
@@ -148,7 +158,7 @@ rducks_explain_udf_row <- function(con, name) {
   stats <- rducks_native_udf_stats(con, name)
   plan <- if (!is.null(record)) record$execution_plan else NULL
 
-  data.frame(
+  rducks_explain_udf_frame(list(
     name = unname(stats[["name"]]),
     mode = if (!is.null(record)) record$mode else NA_character_,
     plan_id = if (!is.null(plan)) plan$plan_id else NA_character_,
@@ -180,9 +190,8 @@ rducks_explain_udf_row <- function(con, name) {
     ripc_submit_wave_max = rducks_counter_value(stats, "ripc_submit_wave_max"),
     ripc_collect_ready_max = rducks_counter_value(stats, "ripc_collect_ready_max"),
     ripc_inflight_current = rducks_counter_value(stats, "ripc_inflight_current"),
-    ripc_inflight_max = rducks_counter_value(stats, "ripc_inflight_max"),
-    stringsAsFactors = FALSE
-  )
+    ripc_inflight_max = rducks_counter_value(stats, "ripc_inflight_max")
+  ))
 }
 
 #' Explain a registered Rducks scalar UDF

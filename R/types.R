@@ -84,7 +84,7 @@ rducks_reject_character_composite_type <- function(token) {
 #' and `varchar`. Composite, DECIMAL, ENUM, and UNION types are represented by
 #' constructed `rducks_type` descriptors rather than quoted type strings.
 #'
-#' @param x Character scalar scalar-type token or a `rducks_type` descriptor.
+#' @param x Character scalar type token or a `rducks_type` descriptor.
 #' @return Canonical scalar token for character input, or the descriptor's wire
 #'   token for a `rducks_type`.
 #' @export

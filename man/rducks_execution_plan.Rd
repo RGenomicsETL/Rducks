@@ -77,10 +77,11 @@ environments unless that memory cost is intended or \code{ipc_globals_share = "m
 \item{ipc_workers}{Number of persistent NNG workers.}
 
 \item{ipc_max_pending}{Maximum simultaneous native NNG requests admitted per
-registered scalar-UDF client pool. The current provider still uses synchronous
-request/reply per callback rather than collect-many batching, but this value
-is enforced as a bounded pending/in-flight guard before a callback enters
-the native request path.}
+registered scalar-UDF client pool. \code{NULL} uses the provider default of 64.
+Non-IPC plans store \code{NA_integer_} for this field. The current provider still
+uses synchronous request/reply per callback rather than collect-many
+batching, but this value is enforced as a bounded pending/in-flight guard
+before a callback enters the native request path.}
 }
 \value{
 An object of class \code{rducks_execution_plan}.

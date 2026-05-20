@@ -89,6 +89,14 @@ local({
   expect_equal(explain_ipc$arrow_r_chunks, 0)
   expect_equal(explain_ipc$arrow_c_chunks, 0)
 
+  invisible(rducks_register_scalar_udf(
+    con, "plan_ipc_error_null", function(x) stop("ipc boom"),
+    INTEGER, INTEGER,
+    exception_handling = "return_null",
+    side_effects = TRUE
+  ))
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT plan_ipc_error_null(1::INTEGER) AS x")$x))
+
   reg_ipc_enum <- rducks_register_scalar_udf(
     con, "plan_ipc_enum", function(x) x,
     ENUM(c("red", "blue")), ENUM(c("red", "blue")),

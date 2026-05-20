@@ -368,12 +368,7 @@ rducks_nng_transact <- function(endpoint, request,
 }
 
 rducks_nng_provider_store <- function() {
-  store <- .rducks_state$nng_providers
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$nng_providers <- store
-  }
-  store
+  rducks_get_or_init_store("nng_providers")
 }
 
 rducks_nng_ping_endpoints <- function(endpoints, transport, timeout = rducks_nng_defaults$startup_timeout) {

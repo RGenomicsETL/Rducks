@@ -113,6 +113,17 @@ local({
   expect_null(exotic$next_batch())
   expect_true(isTRUE(exotic$close()))
 
+  union_stream <- rducks_query_stream(
+    con,
+    "SELECT union_value(code := 42::INTEGER)::UNION(code INTEGER, label VARCHAR) AS choice",
+    batch_size = 2L
+  )
+  union_batch <- union_stream$next_batch()
+  expect_equal(union_batch$choice[[1L]]$tag, "code")
+  expect_equal(union_batch$choice[[1L]]$value, 42L)
+  expect_null(union_stream$next_batch())
+  expect_true(isTRUE(union_stream$close()))
+
   rb_stream <- rducks_query_stream(
     con,
     "SELECT i::INTEGER AS i, ('row-' || i::VARCHAR) AS label FROM range(1, 5) t(i) ORDER BY i",

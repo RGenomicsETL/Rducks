@@ -46,6 +46,28 @@ static SEXP rducks_rc_subset_with_bracket(SEXP values, idx_t row, int *ok) {
     return out;
 }
 
+static int rducks_rc_has_known_scalar_class(SEXP values) {
+    return Rf_inherits(values, "Date") || Rf_inherits(values, "POSIXct") ||
+           Rf_inherits(values, "rducks_bigint") || Rf_inherits(values, "rducks_ubigint") ||
+           Rf_inherits(values, "rducks_hugeint") || Rf_inherits(values, "rducks_uhugeint") ||
+           Rf_inherits(values, "rducks_uuid") || Rf_inherits(values, "rducks_enum");
+}
+
+static void rducks_rc_copy_known_scalar_attrib(SEXP values, SEXP out) {
+    SEXP klass;
+    if (!rducks_rc_has_known_scalar_class(values)) return;
+    klass = Rf_getAttrib(values, R_ClassSymbol);
+    if (klass != R_NilValue) Rf_setAttrib(out, R_ClassSymbol, klass);
+    if (Rf_inherits(values, "rducks_enum") || Rf_inherits(values, "factor")) {
+        SEXP levels = Rf_getAttrib(values, R_LevelsSymbol);
+        if (levels != R_NilValue) Rf_setAttrib(out, R_LevelsSymbol, levels);
+    }
+    if (Rf_inherits(values, "POSIXct")) {
+        SEXP tzone = Rf_getAttrib(values, Rf_install("tzone"));
+        if (tzone != R_NilValue) Rf_setAttrib(out, Rf_install("tzone"), tzone);
+    }
+}
+
 static SEXP rducks_rc_vector_value_at(SEXP values, idx_t row, int *ok) {
     R_xlen_t i = (R_xlen_t)row;
     SEXP out;
@@ -65,35 +87,35 @@ static SEXP rducks_rc_vector_value_at(SEXP values, idx_t row, int *ok) {
         if (i < 0 || i >= XLENGTH(values)) { *ok = 0; return R_NilValue; }
         out = PROTECT(Rf_allocVector(LGLSXP, 1));
         LOGICAL(out)[0] = LOGICAL(values)[i];
-        Rf_copyMostAttrib(values, out);
+        rducks_rc_copy_known_scalar_attrib(values, out);
         UNPROTECT(1);
         return out;
     case INTSXP:
         if (i < 0 || i >= XLENGTH(values)) { *ok = 0; return R_NilValue; }
         out = PROTECT(Rf_allocVector(INTSXP, 1));
         INTEGER(out)[0] = INTEGER(values)[i];
-        Rf_copyMostAttrib(values, out);
+        rducks_rc_copy_known_scalar_attrib(values, out);
         UNPROTECT(1);
         return out;
     case REALSXP:
         if (i < 0 || i >= XLENGTH(values)) { *ok = 0; return R_NilValue; }
         out = PROTECT(Rf_allocVector(REALSXP, 1));
         REAL(out)[0] = REAL(values)[i];
-        Rf_copyMostAttrib(values, out);
+        rducks_rc_copy_known_scalar_attrib(values, out);
         UNPROTECT(1);
         return out;
     case STRSXP:
         if (i < 0 || i >= XLENGTH(values)) { *ok = 0; return R_NilValue; }
         out = PROTECT(Rf_allocVector(STRSXP, 1));
         SET_STRING_ELT(out, 0, STRING_ELT(values, i));
-        Rf_copyMostAttrib(values, out);
+        rducks_rc_copy_known_scalar_attrib(values, out);
         UNPROTECT(1);
         return out;
     case RAWSXP:
         if (i < 0 || i >= XLENGTH(values)) { *ok = 0; return R_NilValue; }
         out = PROTECT(Rf_allocVector(RAWSXP, 1));
         RAW(out)[0] = RAW(values)[i];
-        Rf_copyMostAttrib(values, out);
+        rducks_rc_copy_known_scalar_attrib(values, out);
         UNPROTECT(1);
         return out;
     default:

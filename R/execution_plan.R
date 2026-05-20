@@ -78,7 +78,7 @@ rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng"
     `arrow_r+inproc_concurrent` = "arrow_r_main_queue",
     `arrow_c+serial` = "arrow_c_direct_serial",
     `arrow_c+inproc_concurrent` = "arrow_c_direct_main_queue",
-    NA_character_
+    stop("unsupported Rducks execution-plan pair: ", key, call. = FALSE)
   )
 }
 
@@ -208,10 +208,11 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   "mori"` is appropriate.
 #' @param ipc_workers Number of persistent NNG workers.
 #' @param ipc_max_pending Maximum simultaneous native NNG requests admitted per
-#'   registered scalar-UDF client pool. The current provider still uses synchronous
-#'   request/reply per callback rather than collect-many batching, but this value
-#'   is enforced as a bounded pending/in-flight guard before a callback enters
-#'   the native request path.
+#'   registered scalar-UDF client pool. `NULL` uses the provider default of 64.
+#'   Non-IPC plans store `NA_integer_` for this field. The current provider still
+#'   uses synchronous request/reply per callback rather than collect-many
+#'   batching, but this value is enforced as a bounded pending/in-flight guard
+#'   before a callback enters the native request path.
 #' @return An object of class `rducks_execution_plan`.
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
@@ -236,9 +237,13 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
     ipc_provider <- "none"
   }
   ipc_workers <- rducks_validate_thread_count(ipc_workers, "ipc_workers")
-  if (!is.null(ipc_max_pending) &&
-      (!is.numeric(ipc_max_pending) || length(ipc_max_pending) != 1L || is.na(ipc_max_pending) || ipc_max_pending <= 0)) {
-    stop("ipc_max_pending must be NULL or a positive numeric scalar", call. = FALSE)
+  if (is.null(ipc_max_pending)) {
+    ipc_max_pending <- 64L
+  } else if (!is.numeric(ipc_max_pending) || length(ipc_max_pending) != 1L || is.na(ipc_max_pending) ||
+      ipc_max_pending <= 0 || ipc_max_pending != floor(ipc_max_pending)) {
+    stop("ipc_max_pending must be NULL or a positive integer-like numeric scalar", call. = FALSE)
+  } else {
+    ipc_max_pending <- as.integer(ipc_max_pending)
   }
   rducks_validate_execution_plan_values(marshalling, concurrency)
   backend <- rducks_plan_backend(concurrency)
@@ -272,7 +277,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
       ipc_options = ipc_options,
       ipc_provider = if (identical(marshalling, "arrow_ipc")) ipc_provider else "none",
       ipc_workers = if (identical(marshalling, "arrow_ipc")) ipc_workers else NA_integer_,
-      ipc_max_pending = if (identical(marshalling, "arrow_ipc")) ipc_max_pending else NA_real_,
+      ipc_max_pending = if (identical(marshalling, "arrow_ipc")) ipc_max_pending else NA_integer_,
       in_process = !identical(concurrency, "multiprocess_parallel"),
       uses_r_thread = !identical(marshalling, "arrow_ipc")
     ),
@@ -304,8 +309,6 @@ rducks_as_execution_plan <- function(plan) {
     return(switch(
       plan,
       reference = rducks_execution_plan("arrow_r", "serial"),
-      serial = rducks_execution_plan("arrow_r", "serial"),
-      inproc_concurrent = rducks_execution_plan("arrow_r", "inproc_concurrent"),
       arrow_r = rducks_execution_plan("arrow_r", "serial"),
       arrow_c = rducks_execution_plan("arrow_c", "serial"),
       arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
@@ -320,21 +323,11 @@ rducks_as_execution_plan <- function(plan) {
 }
 
 rducks_connection_plan_store <- function() {
-  store <- .rducks_state$connection_plans
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$connection_plans <- store
-  }
-  store
+  rducks_get_or_init_store("connection_plans")
 }
 
 rducks_connection_ref_token_store <- function() {
-  store <- .rducks_state$connection_ref_tokens
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$connection_ref_tokens <- store
-  }
-  store
+  rducks_get_or_init_store("connection_ref_tokens")
 }
 
 rducks_connection_ref <- function(con) {
@@ -377,21 +370,11 @@ rducks_attached_runtime_token <- function(con) {
 }
 
 rducks_runtime_anchor_store <- function() {
-  store <- .rducks_state$runtime_anchors
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$runtime_anchors <- store
-  }
-  store
+  rducks_get_or_init_store("runtime_anchors")
 }
 
 rducks_connection_runtime_token_store <- function() {
-  store <- .rducks_state$connection_runtime_tokens
-  if (is.null(store)) {
-    store <- new.env(parent = emptyenv())
-    .rducks_state$connection_runtime_tokens <- store
-  }
-  store
+  rducks_get_or_init_store("connection_runtime_tokens")
 }
 
 rducks_remove_store_entry <- function(store, key) {

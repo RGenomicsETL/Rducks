@@ -37,10 +37,11 @@ marshalling engine to another.
 
 Aggregate functions registered with `rducks_register_aggregate()` are separate
 from the scalar-UDF evaluation-mode/execution-plan matrix. Their state contract
-is explicit: DuckDB aggregate state stores copied raw bytes, not R object
-pointers; R `update()`/`combine()` callbacks must return raw state or `NULL`;
-`finalize()` returns the declared scalar result. R callbacks are single-threaded
-and require the recorded calling R thread.
+is explicit: DuckDB aggregate state stores preserved R object references managed
+by Rducks, and `NULL` means empty/no state. Row-wise callbacks use
+`update(state, ...)`, `combine(left, right)`, and `finalize(state)`; optional
+chunk callbacks operate on lists of state objects. R callbacks are
+single-threaded and require the recorded calling R thread.
 
 Table functions registered with `rducks_register_table()` are separate from this
 scalar-UDF evaluation-mode/execution-plan matrix. Rducks infers the positional
@@ -53,30 +54,10 @@ streaming results use only the prototype at bind time and call `next_batch()`
 during scan to import successive batches. Worker-thread calls into R are
 rejected; use `rducks_enable(con, threads = "single")` for this path.
 
-DuckDB table functions are more general than the current Rducks table API. Their
-bind phase can inspect constant input arguments, decide the output schema
-dynamically, and
-DuckDB's function catalog can contain overloads with distinct input signatures.
-Rducks should not model table functions as inherently declared-schema or
-zero-argument; this API supports dynamic output schemas and dynamic positional
-input types, while SQL argument count is currently fixed by the R function's
-formal argument count.
-
-DuckDB's R package is the important registration-time no-materialization
-precedent for static R data frames. `duckdb_register()` creates a DuckDB view
-over `r_dataframe_scan(POINTER(df), ...)`; the `r_dataframe_scan` bind callback
-inspects the R `data.frame`, builds DuckDB column names/types from the R
-columns, stores protected references plus raw column data pointers in bind data,
-and fills projected DuckDB chunks from those R vectors. Environment scans use
-replacement-scan rewriting to produce the same table-function call. That route
-avoids Rducks' per-value result marshalling and should remain the recommended
-path when the table already exists as an R data frame at registration time.
-
-Future Rducks table-function work should build on this nanoarrow/DuckDB-chunk
-path rather than reintroducing per-value result marshalling. Remaining design
-work includes named/optional parameters, broader Arrow ArrayStream handling,
-overload-aware registration where each SQL input signature is explicit, and
-backend choices that do not redefine SQL type/null/result semantics.
+DuckDB table functions are more general than the current Rducks table API, but
+this document describes only the implemented Rducks surface: dynamic output
+schema from the bind-time R result/prototype, dynamic positional input values,
+and SQL argument count fixed by the R function's formal argument count.
 
 ## Strict-plan rule
 
@@ -140,19 +121,18 @@ For `arrow_ipc`, Rducks transports enum columns as their underlying DuckDB enum
 index storage, with Arrow dictionaries removed at the IPC boundary. The worker
 reconstructs `rducks_enum` values from the declared levels and storage indexes.
 
-## Validation expectations
+## Current validation coverage
 
-For any non-reference plan, tests should compare against the matching
-`arrow_r + serial` behavior for supported signatures. Useful checks include:
+The test suite exercises the reference `arrow_r + serial` path, supported
+`arrow_c` direct paths, same-process queue paths, and the NNG-backed
+`arrow_ipc + multiprocess_parallel` path. Coverage includes scalar and
+vectorized calls, default and special NULL handling, `exception_handling =
+"return_null"` on non-reference plans, unsupported signature validation, native
+counter checks for selected engines, IPC codec validation, provider startup
+retry behavior, and generated/dynamic marshalling matrices for declared and
+bind-time argument types.
 
-- result equality with `IS NOT DISTINCT FROM` or an equivalent R comparison
-- result DuckDB type identity via `typeof()` where relevant
-- default and special NULL handling
-- `exception_handling = "rethrow"` and `"return_null"`
-- vectorized return-length errors
-- unsupported signatures failing at registration/plan validation
-- native counters proving the selected engine ran and sibling engines did not
-- concurrency/timeout tests for queued and IPC plans
-
-The generated marshalling matrix is the main broad-coverage tool, but docs should
-state what the code and tests actually cover, not a wish list of completed work.
+The generated marshalling matrix remains the broadest conformance check. Narrow
+unit tests cover helper contracts such as execution-plan shortcut resolution,
+mode/value semantic tables, query-stream type reconstruction, and IPC worker
+introspection.
