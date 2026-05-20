@@ -157,6 +157,41 @@ rducks_runtime_lifecycle_body <- function() {
   })
 
   local({
+    db_path <- tempfile(fileext = ".duckdb")
+    on.exit(unlink(c(db_path, paste0(db_path, ".wal")), force = TRUE), add = TRUE)
+
+    con <- DBI::dbConnect(duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true")))
+    rducks_enable(con, threads = "single")
+    rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+    DBI::dbExecute(con, "CREATE TABLE durable_values(i INTEGER)")
+    DBI::dbExecute(con, "INSERT INTO durable_values VALUES (1), (41)")
+    invisible(rducks_register_scalar_udf(
+      con, "rducks_lifecycle_file_plus", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER
+    ))
+    expect_equal(
+      DBI::dbGetQuery(con, "SELECT sum(rducks_lifecycle_file_plus(i))::INTEGER AS x FROM durable_values")$x,
+      44L
+    )
+    expect_true("rducks_lifecycle_file_plus" %in% rducks_list_udfs(con)$name)
+    DBI::dbDisconnect(con, shutdown = TRUE)
+
+    reopened <- DBI::dbConnect(duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true")))
+    on.exit(DBI::dbDisconnect(reopened, shutdown = TRUE), add = TRUE)
+    expect_equal(DBI::dbGetQuery(reopened, "SELECT sum(i)::INTEGER AS x FROM durable_values")$x, 42L)
+    expect_error(
+      DBI::dbGetQuery(reopened, "SELECT rducks_lifecycle_file_plus(41::INTEGER) AS x"),
+      "function|Function|Catalog"
+    )
+    rducks_enable(reopened, threads = "single")
+    expect_equal(NROW(rducks_list_udfs(reopened)), 0L)
+    expect_error(
+      DBI::dbGetQuery(reopened, "SELECT rducks_lifecycle_file_plus(41::INTEGER) AS x"),
+      "function|Function|Catalog"
+    )
+    expect_equal(DBI::dbGetQuery(reopened, "SELECT rducks_version() AS v")$v[[1L]], "Rducks extension loaded")
+  })
+
+  local({
     path_a <- tempfile(fileext = ".duckdb")
     path_b <- tempfile(fileext = ".duckdb")
     on.exit(unlink(c(path_a, path_b, paste0(path_a, ".wal"), paste0(path_b, ".wal")), force = TRUE), add = TRUE)

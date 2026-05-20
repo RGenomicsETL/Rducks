@@ -118,9 +118,13 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' execution plan before registration with
 #' \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}; the
 #' selected evaluator/marshalling metadata is then stored with the native catalog
-#' entry. For `arrow_ipc` plans, the UDF closure and discovered globals are
-#' copied once to each NNG worker in the shared provider pool and retained for
-#' that pool's lifetime.
+#' entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
+#' not durable schema objects: they are visible to sibling connections while the
+#' same DuckDB database runtime remains open, but a file-backed database must be
+#' enabled and registered again after it is fully closed and reopened. For
+#' `arrow_ipc` plans, the UDF closure and discovered globals are copied once to
+#' each NNG worker in the shared provider pool and retained for that pool's
+#' lifetime.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
