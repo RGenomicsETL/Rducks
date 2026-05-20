@@ -279,9 +279,6 @@ local({
   options(rducks.ipc_globals.warn_bytes = Inf)
   on.exit(options(rducks.ipc_globals.warn_bytes = old_warn), add = TRUE)
 
-  con <- rducks_semantic_connection()
-  on.exit(rducks_semantic_cleanup(con, stop_nng = TRUE), add = TRUE)
-
   plans <- list(
     arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
     arrow_r_inproc = rducks_execution_plan("arrow_r", "inproc_concurrent"),
@@ -299,41 +296,46 @@ local({
 
   for (plan_name in names(plans)) {
     plan <- plans[[plan_name]]
-    rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
-    declared_name <- paste0("sem_vec_declared_", plan_name)
-    dynamic_name <- paste0("sem_vec_dynamic_", plan_name)
-    invisible(rducks_register_scalar_udf(
-      con,
-      declared_name,
-      rducks_semantic_vector,
-      args = rducks_semantic_nested_null_type,
-      returns = VARCHAR,
-      mode = "vectorized",
-      null_handling = "special",
-      side_effects = TRUE
-    ))
-    invisible(rducks_register_scalar_udf(
-      con,
-      dynamic_name,
-      rducks_semantic_vector,
-      returns = VARCHAR,
-      mode = "vectorized",
-      null_handling = "special",
-      side_effects = TRUE
-    ))
+    con <- rducks_semantic_connection()
+    tryCatch({
+      rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+      declared_name <- paste0("sem_vec_declared_", plan_name)
+      dynamic_name <- paste0("sem_vec_dynamic_", plan_name)
+      invisible(rducks_register_scalar_udf(
+        con,
+        declared_name,
+        rducks_semantic_vector,
+        args = rducks_semantic_nested_null_type,
+        returns = VARCHAR,
+        mode = "vectorized",
+        null_handling = "special",
+        side_effects = TRUE
+      ))
+      invisible(rducks_register_scalar_udf(
+        con,
+        dynamic_name,
+        rducks_semantic_vector,
+        returns = VARCHAR,
+        mode = "vectorized",
+        null_handling = "special",
+        side_effects = TRUE
+      ))
 
-    expr <- rducks_semantic_nested_null_sql("i")
-    declared <- DBI::dbGetQuery(
-      con,
-      sprintf("SELECT %s(%s) AS x FROM range(1, 4) t(i)", declared_name, expr)
-    )$x
-    dynamic <- DBI::dbGetQuery(
-      con,
-      sprintf("SELECT %s(%s) AS x FROM range(1, 4) t(i)", dynamic_name, expr)
-    )$x
-    expect_equal(declared, expected, info = sprintf("declared vectorized nested internal NULLs under %s", plan$plan_id))
-    expect_equal(dynamic, expected, info = sprintf("dynamic vectorized nested internal NULLs under %s", plan$plan_id))
-    expect_equal(dynamic, declared, info = sprintf("dynamic vectorized nested internal NULLs match declared under %s", plan$plan_id))
+      expr <- rducks_semantic_nested_null_sql("i")
+      declared <- DBI::dbGetQuery(
+        con,
+        sprintf("SELECT %s(%s) AS x FROM range(1, 4) t(i)", declared_name, expr)
+      )$x
+      dynamic <- DBI::dbGetQuery(
+        con,
+        sprintf("SELECT %s(%s) AS x FROM range(1, 4) t(i)", dynamic_name, expr)
+      )$x
+      expect_equal(declared, expected, info = sprintf("declared vectorized nested internal NULLs under %s", plan$plan_id))
+      expect_equal(dynamic, expected, info = sprintf("dynamic vectorized nested internal NULLs under %s", plan$plan_id))
+      expect_equal(dynamic, declared, info = sprintf("dynamic vectorized nested internal NULLs match declared under %s", plan$plan_id))
+    }, finally = {
+      rducks_semantic_cleanup(con, stop_nng = identical(plan$marshalling, "arrow_ipc"))
+    })
   }
 })
 
