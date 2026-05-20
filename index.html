@@ -53,6 +53,13 @@
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed <a href="https://duckdb.org/docs/stable/extensions/overview" class="external-link">DuckDB C extension</a>. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks and query streaming. It is built around explicit type descriptors, DuckDB Arrow C Data/<a href="https://arrow.apache.org/nanoarrow/latest/r/" class="external-link">nanoarrow</a> marshalling, and a strict rule that R object work runs on the recorded R thread unless it is intentionally moved to R worker processes through the Arrow IPC plan.</p>
 <p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, execution plan, and R-side query consumption. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Execution plans select the marshalling/concurrency backend (<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>). With <code>arrow_ipc</code>, the extension uses the <a href="https://nng.nanomsg.org/" class="external-link">NNG C API</a> for native request/reply transport; the default local worker lifecycle is launched by <a href="https://mirai.r-lib.org/" class="external-link">mirai</a>, with optional <a href="https://shikokuchuo.net/mori/" class="external-link">mori</a> sharing for selected globals. Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>, table functions use <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> with optional <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code> producers, and query consumers can use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> for native streaming batches.</p>
 <div class="section level2">
+<h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
+</h2>
+<p>Rducks loads a small DuckDB extension that records the database instance and keeps extension-owned connections for registration callbacks, table scans, and query streaming. R closures are preserved while DuckDB catalog metadata can call them, and scalar calls either run on the recorded R thread or are marshalled to explicit R worker processes by the Arrow IPC plan.</p>
+<p>The “Arrow dance” is the shared boundary. DuckDB produces vectors in standard chunks; Rducks exposes those chunks through DuckDB Arrow C Data, uses <a href="https://arrow.apache.org/nanoarrow/latest/r/" class="external-link">nanoarrow</a> to materialize typed R inputs, calls the R function, and writes typed results back to DuckDB. The <code>arrow_r</code> plan keeps most conversion in R/nanoarrow, <code>arrow_c</code> uses native C materialization for supported types, and <code>arrow_ipc</code> serializes owned Arrow IPC request/result bytes over <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> so separate R worker processes can do the R evaluation. Dynamic omitted-<code>args</code> UDFs still bind concrete DuckDB types at the SQL call site before this marshalling begins.</p>
+<p>A future transport could use DuckDB’s <a href="https://github.com/duckdb/duckdb-quack" class="external-link">Quack-style format</a>: DuckDB <code>BinarySerializer</code> messages carrying logical types and <code>DataChunk</code> payloads, rather than Arrow IPC bytes. That could remove some Arrow encode/decode work and align worker transport more closely with DuckDB’s native chunk model. It is not a runtime dependency today; adopting it would require a versioned C implementation, strict compatibility checks, and the same explicit ownership and R-thread rules that the Arrow paths enforce now.</p>
+</div>
+<div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
@@ -383,28 +390,33 @@
 </tr>
 </tbody>
 </table>
-<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one typed CSV scan with many DuckDB-sized vectors. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <a href="https://shikokuchuo.net/mori/" class="external-link"><code>ipc_globals_share = "mori"</code></a>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths.</p>
+<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one typed CSV scan with many DuckDB-sized vectors. A padded column makes the single CSV large enough for DuckDB’s parallel CSV scanner to split; the UDF still operates on the integer column. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <a href="https://shikokuchuo.net/mori/" class="external-link"><code>ipc_globals_share = "mori"</code></a>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample.int</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fl">1000L</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="va">slow_lookup</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.1</span><span class="op">)</span></span>
 <span>  <span class="va">x</span> <span class="op">+</span> <span class="va">lookup</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="op">}</span></span>
 <span></span>
 <span><span class="va">duckdb_vector_size</span> <span class="op">&lt;-</span> <span class="fl">2048L</span></span>
 <span><span class="va">csv_rows</span> <span class="op">&lt;-</span> <span class="va">duckdb_vector_size</span> <span class="op">*</span> <span class="fl">64L</span></span>
+<span><span class="va">csv_pad</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/strrep.html" class="external-link">strrep</a></span><span class="op">(</span><span class="st">"x"</span>, <span class="fl">128L</span><span class="op">)</span></span>
 <span><span class="va">csv_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="st">"rducks-readme-csv-"</span>, fileext <span class="op">=</span> <span class="st">".csv"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"i"</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq.int</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">csv_rows</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>, <span class="va">csv_path</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"i,pad"</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq.int</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">csv_rows</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span>, <span class="st">","</span>, <span class="va">csv_pad</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  <span class="va">csv_path</span></span>
+<span><span class="op">)</span></span>
 <span></span>
+<span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
 <span><span class="va">plans</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  arrow_r <span class="op">=</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_r"</span>, <span class="st">"serial"</span><span class="op">)</span>,</span>
 <span>  arrow_c <span class="op">=</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"serial"</span><span class="op">)</span>,</span>
 <span>  arrow_ipc_mori <span class="op">=</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
 <span>    <span class="st">"arrow_ipc"</span>, <span class="st">"multiprocess_parallel"</span>,</span>
-<span>    ipc_workers <span class="op">=</span> <span class="fl">2L</span>,</span>
-<span>    ipc_transport <span class="op">=</span> <span class="st">"tcp"</span>,</span>
-<span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span>,</span>
+<span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
+<span>    ipc_transport <span class="op">=</span> <span class="st">"ipc"</span>,</span>
+<span>    ipc_timeout <span class="op">=</span> <span class="fl">60</span>,</span>
 <span>    ipc_globals <span class="op">=</span> <span class="st">"lookup"</span>,</span>
 <span>    ipc_globals_share <span class="op">=</span> <span class="st">"mori"</span></span>
 <span>  <span class="op">)</span></span>
@@ -424,26 +436,47 @@
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">run_plan</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">label</span>, <span class="va">udf</span>, <span class="va">plan</span>, <span class="va">threads</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="va">threads</span>, external_threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">run_plan</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">label</span>, <span class="va">udf</span>, <span class="va">plan</span>, <span class="va">threads</span>, <span class="va">external_threads</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
+<span>    <span class="va">con</span>,</span>
+<span>    <span class="va">plan</span>,</span>
+<span>    threads <span class="op">=</span> <span class="va">threads</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="va">external_threads</span></span>
+<span>  <span class="op">)</span></span>
 <span>  <span class="va">elapsed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>    <span class="va">result</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
 <span>      <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>        <span class="st">"SELECT sum(%s((i %% 1000)::INTEGER)) AS total"</span>,</span>
 <span>        <span class="st">"FROM read_csv(%s, header = true,"</span>,</span>
-<span>        <span class="st">"columns = {'i': 'INTEGER'}, parallel = true)"</span></span>
+<span>        <span class="st">"columns = {'i': 'INTEGER', 'pad': 'VARCHAR'}, parallel = true)"</span></span>
 <span>      <span class="op">)</span>,</span>
 <span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteIdentifier.html" class="external-link">dbQuoteIdentifier</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">udf</span><span class="op">)</span>,</span>
 <span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteString.html" class="external-link">dbQuoteString</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">csv_path</span><span class="op">)</span></span>
 <span>    <span class="op">)</span><span class="op">)</span></span>
 <span>  <span class="op">}</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>label <span class="op">=</span> <span class="va">label</span>, total <span class="op">=</span> <span class="va">result</span><span class="op">$</span><span class="va">total</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, elapsed_sec <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">elapsed</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>    label <span class="op">=</span> <span class="va">label</span>,</span>
+<span>    total <span class="op">=</span> <span class="va">result</span><span class="op">$</span><span class="va">total</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    elapsed_sec <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">elapsed</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span></span>
 <span><span class="va">benchmark</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
-<span>  <span class="fu">run_plan</span><span class="op">(</span><span class="st">"arrow_r serial"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
-<span>  <span class="fu">run_plan</span><span class="op">(</span><span class="st">"arrow_c serial"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span>, threads <span class="op">=</span> <span class="fl">1</span><span class="op">)</span>,</span>
-<span>  <span class="fu">run_plan</span><span class="op">(</span><span class="st">"arrow_ipc + mori"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">3</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">3</span><span class="op">]</span><span class="op">]</span>, threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span>  <span class="fu">run_plan</span><span class="op">(</span></span>
+<span>    <span class="st">"arrow_r serial"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    threads <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="fl">1</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  <span class="fu">run_plan</span><span class="op">(</span></span>
+<span>    <span class="st">"arrow_c serial"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    threads <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="fl">1</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  <span class="fu">run_plan</span><span class="op">(</span></span>
+<span>    <span class="st">"arrow_ipc + mori"</span>, <span class="va">udfs</span><span class="op">[[</span><span class="fl">3</span><span class="op">]</span><span class="op">]</span>, <span class="va">plans</span><span class="op">[[</span><span class="fl">3</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>    threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
+<span>    external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
+<span>  <span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/unlink.html" class="external-link">unlink</a></span><span class="op">(</span><span class="va">csv_path</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
@@ -454,9 +487,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344       7.092</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344       7.038</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       7.082</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344      10.145</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344       9.975</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.774</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
@@ -483,7 +516,7 @@
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/double.html" class="external-link">as.double</a></span><span class="op">(</span><span class="va">x</span> <span class="op">+</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">label</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span> <span class="fl">100</span> <span class="kw">else</span> <span class="fl">0</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
 <span>  <span class="va">demo_con</span>,</span>
 <span>  <span class="va">scores</span> <span class="op">|&gt;</span></span>
 <span>    <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>score <span class="op">=</span> <span class="fu">local_score</span><span class="op">(</span><span class="va">x</span>, <span class="va">label</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
@@ -491,7 +524,6 @@
 <span>    <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/compute.html" class="external-link">collect</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  rducks_returns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>local_score <span class="op">=</span> <span class="va">DOUBLE</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">out</span></span>
 <span><span class="co">#&gt; # A tibble: 3 × 2</span></span>
 <span><span class="co">#&gt;      id score</span></span>
 <span><span class="co">#&gt; * &lt;int&gt; &lt;dbl&gt;</span></span>
@@ -594,13 +626,6 @@
 </tbody>
 </table>
 <p>See <code>docs/BUILD.md</code> for the build and ABI details.</p>
-</div>
-<div class="section level2">
-<h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
-</h2>
-<p>Rducks loads a small DuckDB extension that records the database instance and keeps extension-owned connections for registration callbacks, table scans, and query streaming. R closures are preserved while DuckDB catalog metadata can call them, and scalar calls either run on the recorded R thread or are marshalled to explicit R worker processes by the Arrow IPC plan.</p>
-<p>The “Arrow dance” is the shared boundary. DuckDB produces vectors in standard chunks; Rducks exposes those chunks through DuckDB Arrow C Data, uses <a href="https://arrow.apache.org/nanoarrow/latest/r/" class="external-link">nanoarrow</a> to materialize typed R inputs, calls the R function, and writes typed results back to DuckDB. The <code>arrow_r</code> plan keeps most conversion in R/nanoarrow, <code>arrow_c</code> uses native C materialization for supported types, and <code>arrow_ipc</code> serializes owned Arrow IPC request/result bytes over <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> so separate R worker processes can do the R evaluation. Dynamic omitted-<code>args</code> UDFs still bind concrete DuckDB types at the SQL call site before this marshalling begins.</p>
-<p>A future transport could use DuckDB’s <a href="https://github.com/duckdb/duckdb-quack" class="external-link">Quack-style format</a>: DuckDB <code>BinarySerializer</code> messages carrying logical types and <code>DataChunk</code> payloads, rather than Arrow IPC bytes. That could remove some Arrow encode/decode work and align worker transport more closely with DuckDB’s native chunk model. It is not a runtime dependency today; adopting it would require a versioned C implementation, strict compatibility checks, and the same explicit ownership and R-thread rules that the Arrow paths enforce now.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
