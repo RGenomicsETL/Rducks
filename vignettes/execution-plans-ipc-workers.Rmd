@@ -80,10 +80,14 @@ rducks_set_execution_plan(
 `arrow_ipc + multiprocess_parallel` starts or connects to persistent R workers
 that receive Arrow IPC-encoded chunks over NNG. Registration still happens under
 single-thread DuckDB settings; widen `threads` / `external_threads` afterwards
-for query execution.
+for query execution. This vignette uses loopback TCP for the local NNG transport
+because it is the most portable choice for executed documentation builds; local
+IPC transports such as `"ipc"`, `"unix"`, or Linux `"abstract"` remain available
+when supported by the host.
 
 ```{r ipc-plan}
-ipc_workers <- 2L
+ipc_workers <- 1L
+ipc_transport <- "tcp"
 
 rducks_set_execution_plan(
   con,
@@ -91,7 +95,7 @@ rducks_set_execution_plan(
     "arrow_ipc",
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
-    ipc_transport = "ipc",
+    ipc_transport = ipc_transport,
     ipc_timeout = 30
   ),
   threads = 1L,
@@ -117,7 +121,7 @@ rducks_set_execution_plan(
     "arrow_ipc",
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
-    ipc_transport = "ipc",
+    ipc_transport = ipc_transport,
     ipc_timeout = 30
   ),
   threads = ipc_workers + 1L,
@@ -138,7 +142,7 @@ Rducks connects to them but does not stop them.
 
 ```{r ipc-workers}
 rducks_ipc_workers(con)
-rducks_ipc_workers(con, ping = TRUE, timeout = 1)
+rducks_ipc_workers(con, ping = TRUE, timeout = 5)
 ```
 
 The result is an R-side provider view: runtime token, provider key, backend,
