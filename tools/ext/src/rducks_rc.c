@@ -2153,26 +2153,81 @@ static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SE
     return 0;
 }
 
-static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
-                                         idx_t row, SEXP value, char *err_msg, size_t err_cap) {
-    if (rducks_rc_value_is_null_for_output(desc, value)) {
-        rducks_rc_output_set_null(output, row);
-        if (desc->kind == RDUCKS_KIND_UNION) {
-            /* See the UNION input path: DuckDB stores UNION vectors as STRUCT
-             * vectors with a tag child followed by one child per member.
-             */
-            duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
-            rducks_rc_direct_vector_view_t tag_view;
-            rducks_rc_direct_view_init(&tag_view, tag_vector);
-            rducks_rc_output_set_null(&tag_view, row);
-            for (size_t i = 0; i < desc->field_count; i++) {
-                duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
-                rducks_rc_direct_vector_view_t member_view;
-                rducks_rc_direct_view_init(&member_view, member_vector);
-                rducks_rc_output_set_null(&member_view, row);
+static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
+                                              rducks_rc_direct_vector_view_t *output,
+                                              idx_t row, char *err_msg, size_t err_cap) {
+    if (!desc || !output) return 1;
+    rducks_rc_output_set_null(output, row);
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_MAP) {
+        duckdb_list_entry *entries = (duckdb_list_entry *)output->data;
+        if (entries) {
+            entries[row].offset = duckdb_list_vector_get_size(output->vector);
+            entries[row].length = 0U;
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        duckdb_vector child = duckdb_array_vector_get_child(output->vector);
+        rducks_rc_direct_vector_view_t child_view;
+        idx_t base = 0;
+        if (!child) return 1;
+        if (!rducks_rc_idx_mul(row, desc->array_size, &base)) {
+            snprintf(err_msg, err_cap, "Rducks ARRAY null child index overflow");
+            return 0;
+        }
+        rducks_rc_direct_view_init(&child_view, child);
+        for (idx_t j = 0; j < desc->array_size; j++) {
+            idx_t child_row = 0;
+            if (!rducks_rc_idx_add(base, j, &child_row) ||
+                !rducks_rc_write_null_direct_output(desc->child, &child_view, child_row, err_msg, err_cap)) {
+                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB ARRAY null child value");
+                return 0;
             }
         }
         return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        for (size_t i = 0; i < desc->field_count; i++) {
+            duckdb_vector child = duckdb_struct_vector_get_child(output->vector, (idx_t)i);
+            rducks_rc_direct_vector_view_t child_view;
+            if (!child) continue;
+            rducks_rc_direct_view_init(&child_view, child);
+            if (!rducks_rc_write_null_direct_output(desc->field_types[i], &child_view, row, err_msg, err_cap)) {
+                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB STRUCT null child value");
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        /* See the UNION input path: DuckDB stores UNION vectors as STRUCT
+         * vectors with a tag child followed by one child per member.
+         */
+        duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
+        rducks_rc_direct_vector_view_t tag_view;
+        if (tag_vector) {
+            rducks_rc_direct_view_init(&tag_view, tag_vector);
+            rducks_rc_output_set_null(&tag_view, row);
+        }
+        for (size_t i = 0; i < desc->field_count; i++) {
+            duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
+            rducks_rc_direct_vector_view_t member_view;
+            if (!member_vector) continue;
+            rducks_rc_direct_view_init(&member_view, member_vector);
+            if (!rducks_rc_write_null_direct_output(desc->field_types[i], &member_view, row, err_msg, err_cap)) {
+                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION null member value");
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
+                                         idx_t row, SEXP value, char *err_msg, size_t err_cap) {
+    if (rducks_rc_value_is_null_for_output(desc, value)) {
+        return rducks_rc_write_null_direct_output(desc, output, row, err_msg, err_cap);
     }
     rducks_rc_output_set_valid_if_needed(output, row);
     if (desc->kind == RDUCKS_KIND_LIST) {
@@ -2378,7 +2433,11 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
             rducks_rc_direct_vector_view_t member_view;
             rducks_rc_direct_view_init(&member_view, member_vector);
-            rducks_rc_output_set_null(&member_view, row);
+            if (!rducks_rc_write_null_direct_output(desc->field_types[i], &member_view, row, err_msg, err_cap)) {
+                UNPROTECT(2);
+                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION inactive member");
+                return 0;
+            }
         }
         rducks_rc_output_set_valid_if_needed(&tag_view, row);
         ((uint8_t *)tag_view.data)[row] = (uint8_t)tag_index;
@@ -3342,7 +3401,7 @@ static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta
             }
         }
         if (meta->null_handling == RDUCKS_NULL_DEFAULT && has_null) {
-            rducks_rc_output_set_null(output_view, row);
+            if (!rducks_rc_write_null_direct_output(meta->return_desc, output_view, row, err_msg, err_cap)) return 0;
             continue;
         }
 
@@ -3360,7 +3419,7 @@ static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta
         if (r_err) {
             UNPROTECT(2); /* value, args */
             if (meta->exception_handling == RDUCKS_EXCEPTION_RETURN_NULL) {
-                rducks_rc_output_set_null(output_view, row);
+                if (!rducks_rc_write_null_direct_output(meta->return_desc, output_view, row, err_msg, err_cap)) return 0;
                 continue;
             }
             snprintf(err_msg, err_cap, "Rducks RC R function error");
