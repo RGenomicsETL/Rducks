@@ -392,11 +392,97 @@
 <span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
+<h2 id="arrow-conversion-options">Arrow conversion options<a class="anchor" aria-label="anchor" href="#arrow-conversion-options"></a>
+</h2>
+<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> sets <code>arrow_lossless_conversion=true</code> on the user connection, and the extension sets the same option on its internal DuckDB connections. That is required for Rducks’ typed boundary: DuckDB-specific logical types such as <code>UUID</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>INTERVAL</code>, <code>BIT</code>, and enums must keep their type metadata when chunks cross DuckDB Arrow C Data. Without that setting, Arrow conversion can erase type identity and dynamic omitted-<code>args</code> calls would no longer be equivalent to explicit descriptors.</p>
+</div>
+<div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
-<p>The package builds its DuckDB extension during installation with <code>configure</code> or <code>configure.win</code>. Vendored NNG/Mbed TLS support is optional at build time but used by the native Arrow IPC provider when available. DuckDB C API headers are refreshed explicitly when the supported DuckDB version changes.</p>
+<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. During source-package installation, <code>configure</code> writes the generated artifact to <code>inst/rducks_extension/build/rducks.duckdb_extension</code> in the build tree; after installation the runtime path is <code>rducks_extension/build/rducks.duckdb_extension</code> inside the installed package. <code>cleanup</code> removes only the generated artifact, not the source tree needed by <code>R CMD build</code>. DuckDB C API headers are refreshed explicitly when the supported DuckDB version changes.</p>
 <div class="sourceCode" id="cb13"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
-<p>The extension uses DuckDB’s unstable C extension ABI for Arrow conversion, connection/runtime access, scalar-function bind/init hooks, and selection-vector helpers. The current surface is tracked by <code>tools/used_duckdb_unstable_api.R</code> and documented in <code>docs/BUILD.md</code>.</p>
+<p>The extension uses DuckDB’s unstable C extension ABI for Arrow conversion, connection/runtime access, scalar-function bind/init hooks, dynamic bind-time argument inspection, and selection-vector helpers. The current detected surface is:</p>
+<table class="table">
+<colgroup>
+<col width="11%">
+<col width="86%">
+<col width="1%">
+</colgroup>
+<thead><tr>
+<th>ABI group</th>
+<th>Functions used</th>
+<th align="right">Count</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>unstable_deprecated</code></td>
+<td>
+<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_stream_fetch_chunk</code>
+</td>
+<td align="right">3</td>
+</tr>
+<tr>
+<td><code>unstable_new_arrow_functions</code></td>
+<td>
+<code>duckdb_data_chunk_from_arrow</code>, <code>duckdb_data_chunk_to_arrow</code>, <code>duckdb_destroy_arrow_converted_schema</code>, <code>duckdb_schema_from_arrow</code>, <code>duckdb_to_arrow_schema</code>
+</td>
+<td align="right">5</td>
+</tr>
+<tr>
+<td><code>unstable_new_error_data_functions</code></td>
+<td>
+<code>duckdb_destroy_error_data</code>, <code>duckdb_error_data_has_error</code>, <code>duckdb_error_data_message</code>
+</td>
+<td align="right">3</td>
+</tr>
+<tr>
+<td><code>unstable_new_expression_functions</code></td>
+<td>
+<code>duckdb_destroy_expression</code>, <code>duckdb_expression_return_type</code>
+</td>
+<td align="right">2</td>
+</tr>
+<tr>
+<td><code>unstable_new_open_connect_functions</code></td>
+<td>
+<code>duckdb_client_context_get_connection_id</code>, <code>duckdb_connection_get_arrow_options</code>, <code>duckdb_destroy_arrow_options</code>, <code>duckdb_destroy_client_context</code>
+</td>
+<td align="right">4</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_functions</code></td>
+<td>
+<code>duckdb_scalar_function_bind_get_argument</code>, <code>duckdb_scalar_function_bind_get_argument_count</code>, <code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_get_client_context</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>
+</td>
+<td align="right">8</td>
+</tr>
+<tr>
+<td><code>unstable_new_scalar_function_state_functions</code></td>
+<td>
+<code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_client_context</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_init</code>
+</td>
+<td align="right">7</td>
+</tr>
+<tr>
+<td><code>unstable_new_string_functions</code></td>
+<td><code>duckdb_value_to_string</code></td>
+<td align="right">1</td>
+</tr>
+<tr>
+<td><code>unstable_new_value_functions</code></td>
+<td><code>duckdb_get_time_ns</code></td>
+<td align="right">1</td>
+</tr>
+<tr>
+<td><code>unstable_new_vector_functions</code></td>
+<td>
+<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_vector_copy_sel</code>
+</td>
+<td align="right">4</td>
+</tr>
+</tbody>
+</table>
+<p><code>tools/used_duckdb_unstable_api.R</code> regenerates this table. See <code>docs/BUILD.md</code> for the build and ABI details.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

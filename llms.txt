@@ -392,13 +392,29 @@ Rducks::rducks_release(demo_con)
 DBI::dbDisconnect(demo_con, shutdown = TRUE)
 ```
 
+## Arrow conversion options
+
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+sets `arrow_lossless_conversion=true` on the user connection, and the
+extension sets the same option on its internal DuckDB connections. That
+is required for Rducks’ typed boundary: DuckDB-specific logical types
+such as `UUID`, `HUGEINT`, `UHUGEINT`, `INTERVAL`, `BIT`, and enums must
+keep their type metadata when chunks cross DuckDB Arrow C Data. Without
+that setting, Arrow conversion can erase type identity and dynamic
+omitted-`args` calls would no longer be equivalent to explicit
+descriptors.
+
 ## Build notes
 
-The package builds its DuckDB extension during installation with
-`configure` or `configure.win`. Vendored NNG/Mbed TLS support is
-optional at build time but used by the native Arrow IPC provider when
-available. DuckDB C API headers are refreshed explicitly when the
-supported DuckDB version changes.
+The source and vendored native dependencies used by `configure` live
+under `tools/ext/`. During source-package installation, `configure`
+writes the generated artifact to
+`inst/rducks_extension/build/rducks.duckdb_extension` in the build tree;
+after installation the runtime path is
+`rducks_extension/build/rducks.duckdb_extension` inside the installed
+package. `cleanup` removes only the generated artifact, not the source
+tree needed by `R CMD build`. DuckDB C API headers are refreshed
+explicitly when the supported DuckDB version changes.
 
 ``` sh
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
@@ -406,8 +422,24 @@ Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 
 The extension uses DuckDB’s unstable C extension ABI for Arrow
 conversion, connection/runtime access, scalar-function bind/init hooks,
-and selection-vector helpers. The current surface is tracked by
-`tools/used_duckdb_unstable_api.R` and documented in `docs/BUILD.md`.
+dynamic bind-time argument inspection, and selection-vector helpers. The
+current detected surface is:
+
+| ABI group | Functions used | Count |
+|----|----|---:|
+| `unstable_deprecated` | `duckdb_pending_prepared_streaming`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk` | 3 |
+| `unstable_new_arrow_functions` | `duckdb_data_chunk_from_arrow`, `duckdb_data_chunk_to_arrow`, `duckdb_destroy_arrow_converted_schema`, `duckdb_schema_from_arrow`, `duckdb_to_arrow_schema` | 5 |
+| `unstable_new_error_data_functions` | `duckdb_destroy_error_data`, `duckdb_error_data_has_error`, `duckdb_error_data_message` | 3 |
+| `unstable_new_expression_functions` | `duckdb_destroy_expression`, `duckdb_expression_return_type` | 2 |
+| `unstable_new_open_connect_functions` | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_arrow_options`, `duckdb_destroy_arrow_options`, `duckdb_destroy_client_context` | 4 |
+| `unstable_new_scalar_function_functions` | `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` | 8 |
+| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_client_context`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init` | 7 |
+| `unstable_new_string_functions` | `duckdb_value_to_string` | 1 |
+| `unstable_new_value_functions` | `duckdb_get_time_ns` | 1 |
+| `unstable_new_vector_functions` | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel` | 4 |
+
+`tools/used_duckdb_unstable_api.R` regenerates this table. See
+`docs/BUILD.md` for the build and ABI details.
 
 # Package index
 
