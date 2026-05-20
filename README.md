@@ -5,6 +5,8 @@
 
 [![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
 [![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
+[![Lifecycle:
+experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 
 Rducks registers R functions as DuckDB SQL functions using a
 package-managed DuckDB C extension. The extension records the DuckDB
@@ -362,9 +364,9 @@ Execution plans are fixed at scalar-UDF registration time.
 | `arrow_ipc + multiprocess_parallel` | yes         | yes             | native NNG plus owned Arrow IPC request/result bytes and R workers       |
 
 The benchmark below registers the same sleeping vectorized UDF on three
-real plans and runs the queries against one CSV with many DuckDB-sized
-vectors. The UDF closes over a random R lookup vector; the Arrow IPC
-registration sends that global explicitly using
+real plans and runs the queries against one typed CSV scan with many
+DuckDB-sized vectors. The UDF closes over a random R lookup vector; the
+Arrow IPC registration sends that global explicitly using
 `ipc_globals_share = "mori"`. Timings are illustrative and
 machine-dependent, but the code exercises the actual `arrow_r`,
 `arrow_c`, and native NNG/Arrow IPC paths.
@@ -373,13 +375,13 @@ machine-dependent, but the code exercises the actual `arrow_r`,
 set.seed(1)
 lookup <- sample.int(20L, 1000L, replace = TRUE)
 slow_lookup <- function(x) {
-  Sys.sleep(0.02)
+  Sys.sleep(0.05)
   x + lookup[[1L]]
 }
 
 duckdb_vector_size <- 2048L
-csv_rows <- duckdb_vector_size * 32L
-csv_path <- file.path(tempdir(), paste0("rducks-readme-csv-", Sys.getpid()))
+csv_rows <- duckdb_vector_size * 64L
+csv_path <- tempfile("rducks-readme-csv-", fileext = ".csv")
 writeLines(c("i", as.character(seq.int(0L, csv_rows - 1L))), csv_path)
 
 plans <- list(
@@ -415,7 +417,8 @@ run_plan <- function(label, udf, plan, threads) {
     result <- DBI::dbGetQuery(con, sprintf(
       paste(
         "SELECT sum(%s((i %% 1000)::INTEGER)) AS total",
-        "FROM read_csv_auto(%s, header = true)"
+        "FROM read_csv(%s, header = true,",
+        "columns = {'i': 'INTEGER'}, parallel = true)"
       ),
       DBI::dbQuoteIdentifier(con, udf),
       DBI::dbQuoteString(con, csv_path)
@@ -438,9 +441,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 32873024       2.212
-#> 2   arrow_c serial 32873024       2.182
-#> 3 arrow_ipc + mori 32873024       2.614
+#> 1   arrow_r serial 65961344       7.104
+#> 2   arrow_c serial 65961344       6.937
+#> 3 arrow_ipc + mori 65961344       7.309
 ```
 
 ## duckplyr integration
