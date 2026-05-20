@@ -76,7 +76,8 @@ other input types.
 
 Aggregates are separate from scalar-UDF execution plans. The current
 aggregate API stores R object state and calls R
-[`update()`](https://rdrr.io/r/stats/update.html), `combine()`, and
+[`update()`](https://rdrr.io/r/stats/update.html),
+[`combine()`](https://dplyr.tidyverse.org/reference/defunct.html), and
 `finalize()` callbacks on the recorded R thread.
 
 ``` r

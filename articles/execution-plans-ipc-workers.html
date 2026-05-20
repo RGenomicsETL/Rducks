@@ -36,6 +36,7 @@
 <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul>
 </li>
@@ -147,10 +148,13 @@ query execution. This vignette uses loopback TCP for the local NNG
 transport because it is the most portable choice for executed
 documentation builds; local IPC transports such as <code>"ipc"</code>,
 <code>"unix"</code>, or Linux <code>"abstract"</code> remain available
-when supported by the host.</p>
+when supported by the host. Windows documentation builds also use a
+longer startup/register timeout because worker process startup can be
+slower there.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">1L</span></span>
 <span><span class="va">ipc_transport</span> <span class="op">&lt;-</span> <span class="st">"tcp"</span></span>
+<span><span class="va">ipc_timeout</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Sys.info.html" class="external-link">Sys.info</a></span><span class="op">(</span><span class="op">)</span><span class="op">[[</span><span class="st">"sysname"</span><span class="op">]</span><span class="op">]</span>, <span class="st">"Windows"</span><span class="op">)</span><span class="op">)</span> <span class="fl">120</span> <span class="kw">else</span> <span class="fl">30</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -159,7 +163,7 @@ when supported by the host.</p>
 <span>    <span class="st">"multiprocess_parallel"</span>,</span>
 <span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
 <span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
-<span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
+<span>    ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
 <span>  external_threads <span class="op">=</span> <span class="fl">1L</span></span>
@@ -191,7 +195,7 @@ when supported by the host.</p>
 <span>    <span class="st">"multiprocess_parallel"</span>,</span>
 <span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
 <span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
-<span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
+<span>    ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
 <span>  external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
@@ -215,13 +219,13 @@ each endpoint responds.</p>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
 <span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running &lt;NA&gt;</span></span>
 <span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:34036</span></span>
-<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="co">#&gt;  tcp://127.0.0.1:22547</span></span>
+<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">ipc_timeout</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; &lt;rducks_ipc_workers: 1 worker&gt;</span></span>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
 <span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok</span></span>
 <span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:34036</span></span></code></pre></div>
+<span><span class="co">#&gt;  tcp://127.0.0.1:22547</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

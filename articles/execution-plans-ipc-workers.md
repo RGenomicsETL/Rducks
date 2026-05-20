@@ -81,12 +81,15 @@ still happens under single-thread DuckDB settings; widen `threads` /
 loopback TCP for the local NNG transport because it is the most portable
 choice for executed documentation builds; local IPC transports such as
 `"ipc"`, `"unix"`, or Linux `"abstract"` remain available when supported
-by the host.
+by the host. Windows documentation builds also use a longer
+startup/register timeout because worker process startup can be slower
+there.
 
 ``` r
 
 ipc_workers <- 1L
 ipc_transport <- "tcp"
+ipc_timeout <- if (identical(Sys.info()[["sysname"]], "Windows")) 120 else 30
 
 rducks_set_execution_plan(
   con,
@@ -95,7 +98,7 @@ rducks_set_execution_plan(
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
     ipc_transport = ipc_transport,
-    ipc_timeout = 30
+    ipc_timeout = ipc_timeout
   ),
   threads = 1L,
   external_threads = 1L
@@ -127,7 +130,7 @@ rducks_set_execution_plan(
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
     ipc_transport = ipc_transport,
-    ipc_timeout = 30
+    ipc_timeout = ipc_timeout
   ),
   threads = ipc_workers + 1L,
   external_threads = ipc_workers
@@ -154,13 +157,13 @@ rducks_ipc_workers(con)
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running <NA>
 #>               endpoint
-#>  tcp://127.0.0.1:34036
-rducks_ipc_workers(con, ping = TRUE, timeout = 5)
+#>  tcp://127.0.0.1:22547
+rducks_ipc_workers(con, ping = TRUE, timeout = min(ipc_timeout, 30))
 #> <rducks_ipc_workers: 1 worker>
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:34036
+#>  tcp://127.0.0.1:22547
 ```
 
 The result is an R-side provider view: runtime token, provider key,

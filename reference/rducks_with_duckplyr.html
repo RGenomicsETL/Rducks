@@ -31,6 +31,7 @@ explicit return type."></head><body>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -68,11 +69,19 @@ explicit return type.</p>
 <span>  env <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sys.parent.html" class="external-link">parent.frame</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  null_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"default"</span>, <span class="st">"special"</span><span class="op">)</span>,</span>
 <span>  exception_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rethrow"</span>, <span class="st">"return_null"</span><span class="op">)</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  mode <span class="op">=</span> <span class="st">"scalar"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'duckdb_connection'</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span><span class="va">data</span>, <span class="va">expr</span>, <span class="va">...</span>, <span class="va">rducks_returns</span>, rducks_env <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sys.parent.html" class="external-link">parent.frame</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span></span>
+<span>  <span class="va">data</span>,</span>
+<span>  <span class="va">expr</span>,</span>
+<span>  <span class="va">...</span>,</span>
+<span>  <span class="va">rducks_returns</span>,</span>
+<span>  rducks_env <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sys.parent.html" class="external-link">parent.frame</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  rducks_mode <span class="op">=</span> <span class="st">"scalar"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -102,6 +111,12 @@ descriptors or scalar type tokens, e.g. <code>list(score_fun = DOUBLE)</code>.</
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>.</p></dd>
 
 
+<dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
+<dd><p>Rducks scalar-UDF evaluation mode for registered helpers.
+<code>"scalar"</code> calls the R helper once per row; <code>"vectorized"</code> calls it once
+per DuckDB chunk and requires a vectorized helper.</p></dd>
+
+
 <dt id="arg-data">data<a class="anchor" aria-label="anchor" href="#arg-data"></a></dt>
 <dd><p>A <code>duckdb_connection</code> with Rducks enabled.</p></dd>
 
@@ -117,6 +132,11 @@ descriptors or scalar type tokens, e.g. <code>list(score_fun = DOUBLE)</code>.</
 <dt id="arg-rducks-env">rducks_env<a class="anchor" aria-label="anchor" href="#arg-rducks-env"></a></dt>
 <dd><p>Evaluation environment for <code>expr</code> and function lookup.</p></dd>
 
+
+<dt id="arg-rducks-mode">rducks_mode<a class="anchor" aria-label="anchor" href="#arg-rducks-mode"></a></dt>
+<dd><p>Rducks scalar-UDF evaluation mode for helpers registered
+through <code>with.duckdb_connection()</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -128,11 +148,16 @@ descriptors or scalar type tokens, e.g. <code>list(score_fun = DOUBLE)</code>.</
 scalar function's return type during planning even when its input arguments
 are accepted dynamically. Dynamic arguments are a duckplyr-oriented
 convenience path that uses nanoarrow's default input conversion. The duckplyr
-bridge registers these UDFs with <code>mode = "scalar"</code>; it does not expose
-Rducks' vectorized chunk-call mode. Use explicit <code>args</code> in
+bridge defaults to <code>mode = "scalar"</code> because ordinary R calls in duckplyr SQL
+expressions are written as row-wise scalar functions. Set <code>mode = "vectorized"</code>
+only for helpers that accept full vectors/chunks and return a vector of the
+same length. The selected Rducks execution plan is still taken from <code>con</code>, so
+<code>arrow_c</code> and <code>arrow_ipc</code> plans can be selected with
+<code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code> before
+evaluating the duckplyr expression. Use explicit <code>args</code> in
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>
-when you need Rducks' declared composite, exotic, special-NULL, or vectorized
-input semantics.</p>
+when you need Rducks' declared composite, exotic, or special-NULL input
+semantics.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

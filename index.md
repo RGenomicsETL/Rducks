@@ -539,9 +539,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344      10.278
-#> 2   arrow_c serial 65961344      10.183
-#> 3 arrow_ipc + mori 65961344       5.963
+#> 1   arrow_r serial 65961344      10.555
+#> 2   arrow_c serial 65961344      10.383
+#> 3 arrow_ipc + mori 65961344       5.975
 ```
 
 ## duckplyr integration
@@ -550,10 +550,12 @@ benchmark
 and the
 [`with.duckdb_connection()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
 method let ordinary R calls inside duckplyr expressions resolve to
-Rducks scalar UDFs, without writing `dd$...` calls. The
-fallback-blocking demonstration lives in
-`inst/examples/no_fallback_duckplyr.R`; the README keeps the shape
-minimal.
+Rducks scalar UDFs, without writing `dd$...` calls. The bridge defaults
+to row-wise `mode = "scalar"` and can use `mode = "vectorized"` for
+vectorized helpers; its marshalling comes from the current Rducks
+execution plan. The fallback-blocking demonstration lives in
+`inst/examples/no_fallback_duckplyr.R`, with a fuller walkthrough in the
+`duckplyr-integration` vignette; the README keeps the shape minimal.
 
 ``` r
 

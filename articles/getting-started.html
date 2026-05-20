@@ -36,6 +36,7 @@
 <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul>
 </li>
@@ -139,7 +140,7 @@ signature and fail binding of other input types.</p>
 </h2>
 <p>Aggregates are separate from scalar-UDF execution plans. The current
 aggregate API stores R object state and calls R <code><a href="https://rdrr.io/r/stats/update.html" class="external-link">update()</a></code>,
-<code>combine()</code>, and <code>finalize()</code> callbacks on the
+<code><a href="https://dplyr.tidyverse.org/reference/defunct.html" class="external-link">combine()</a></code>, and <code>finalize()</code> callbacks on the
 recorded R thread.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_register_aggregate.html">rducks_register_aggregate</a></span><span class="op">(</span></span>

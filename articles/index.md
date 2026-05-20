@@ -12,6 +12,11 @@
 - [Execution Plans and IPC
   Workers](https://sounkou-bioinfo.github.io/Rducks/articles/execution-plans-ipc-workers.md):
 
+### Integrations
+
+- [duckplyr
+  Integration](https://sounkou-bioinfo.github.io/Rducks/articles/duckplyr-integration.md):
+
 ### Internals
 
 - [Internal Current Implementation

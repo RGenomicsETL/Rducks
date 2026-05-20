@@ -38,6 +38,7 @@
 <li><a class="dropdown-item" href="articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="articles/type-value-semantics.html">Type and Value Semantics</a></li>
     <li><a class="dropdown-item" href="articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul>
 </li>
@@ -496,14 +497,14 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344      10.278</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344      10.183</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.963</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344      10.555</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344      10.383</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.975</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
 </h2>
-<p><code><a href="reference/rducks_with_duckplyr.html">rducks_with_duckplyr()</a></code> and the <code><a href="reference/rducks_with_duckplyr.html">with.duckdb_connection()</a></code> method let ordinary R calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing <code>dd$...</code> calls. The fallback-blocking demonstration lives in <code>inst/examples/no_fallback_duckplyr.R</code>; the README keeps the shape minimal.</p>
+<p><code><a href="reference/rducks_with_duckplyr.html">rducks_with_duckplyr()</a></code> and the <code><a href="reference/rducks_with_duckplyr.html">with.duckdb_connection()</a></code> method let ordinary R calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing <code>dd$...</code> calls. The bridge defaults to row-wise <code>mode = "scalar"</code> and can use <code>mode = "vectorized"</code> for vectorized helpers; its marshalling comes from the current Rducks execution plan. The fallback-blocking demonstration lives in <code>inst/examples/no_fallback_duckplyr.R</code>, with a fuller walkthrough in the <code>duckplyr-integration</code> vignette; the README keeps the shape minimal.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">demo_con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
 <span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span>,</span>
