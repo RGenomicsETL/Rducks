@@ -239,7 +239,7 @@ local({
   explain_c <- rducks_explain_udf(con, "rducks_queue_plus_one_c")
   expect_equal(explain_c$evaluator, "RC")
   expect_true(explain_c$dispatch_chunks >= 1)
-  expect_true(explain_c$direct_chunks >= 1)
+  expect_true(explain_c$queued_chunks >= 1)
   expect_true(explain_c$arrow_c_chunks >= 1)
   expect_equal(explain_c$arrow_r_chunks, 0)
   explain_c_vec <- rducks_explain_udf(con, "rducks_queue_plus_one_c_vec")
@@ -295,6 +295,9 @@ local({
     side_effects = TRUE
   ))
 
+  # Use multiple rducks_parallel_range() chunks. Very small ranges can be
+  # scheduled entirely on a DuckDB worker thread on some DuckDB/R builds; the
+  # in-process queue then has no main-thread callback available to drain it.
   snapshot_n <- 4096L
   snapshot_expected <- sum(c(
     0L,

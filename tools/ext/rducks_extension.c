@@ -509,10 +509,11 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                       rducks_r_scalar_local_state_t *local_state,
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap);
-static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *runtime,
-                                                      rducks_r_scalar_meta_t *meta,
-                                                      duckdb_data_chunk input, duckdb_vector output,
-                                                      char *err_msg, size_t err_cap);
+static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t *runtime,
+                                                         rducks_r_scalar_meta_t *meta,
+                                                         rducks_r_scalar_local_state_t *local_state,
+                                                         duckdb_data_chunk input, duckdb_vector output,
+                                                         char *err_msg, size_t err_cap);
 static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, size_t endpoint_count,
                                                             int timeout_ms, uint64_t max_pending,
                                                             char *err_msg, size_t err_cap);
