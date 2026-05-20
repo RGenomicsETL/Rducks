@@ -127,11 +127,12 @@ descriptors or scalar type tokens, e.g. <code>list(score_fun = DOUBLE)</code>.</
     <p>This helper intentionally requires return-type declarations: DuckDB needs a
 scalar function's return type during planning even when its input arguments
 are accepted dynamically. Dynamic arguments are a duckplyr-oriented
-convenience path that uses nanoarrow's default input conversion; use explicit
-<code>args</code> in
+convenience path that uses nanoarrow's default input conversion. The duckplyr
+bridge registers these UDFs with <code>mode = "scalar"</code>; it does not expose
+Rducks' vectorized chunk-call mode. Use explicit <code>args</code> in
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>
-when you need Rducks' declared composite, exotic, or special-NULL input
-semantics.</p>
+when you need Rducks' declared composite, exotic, special-NULL, or vectorized
+input semantics.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

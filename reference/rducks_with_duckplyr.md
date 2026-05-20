@@ -75,7 +75,9 @@ This helper intentionally requires return-type declarations: DuckDB
 needs a scalar function's return type during planning even when its
 input arguments are accepted dynamically. Dynamic arguments are a
 duckplyr-oriented convenience path that uses nanoarrow's default input
-conversion; use explicit `args` in
+conversion. The duckplyr bridge registers these UDFs with
+`mode = "scalar"`; it does not expose Rducks' vectorized chunk-call
+mode. Use explicit `args` in
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
-when you need Rducks' declared composite, exotic, or special-NULL input
-semantics.
+when you need Rducks' declared composite, exotic, special-NULL, or
+vectorized input semantics.

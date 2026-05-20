@@ -109,10 +109,12 @@ rducks_execution_plan(
 - ipc_max_pending:
 
   Maximum simultaneous native NNG requests admitted per registered
-  scalar-UDF client pool. The current provider still uses synchronous
-  request/reply per callback rather than collect-many batching, but this
-  value is enforced as a bounded pending/in-flight guard before a
-  callback enters the native request path.
+  scalar-UDF client pool. `NULL` uses the provider default of 64.
+  Non-IPC plans store `NA_integer_` for this field. The current provider
+  still uses synchronous request/reply per callback rather than
+  collect-many batching, but this value is enforced as a bounded
+  pending/in-flight guard before a callback enters the native request
+  path.
 
 ## Value
 

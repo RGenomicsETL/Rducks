@@ -15,7 +15,7 @@ rducks_type_normalize(x)
 
 - x:
 
-  Character scalar scalar-type token or a `rducks_type` descriptor.
+  Character scalar type token or a `rducks_type` descriptor.
 
 ## Value
 

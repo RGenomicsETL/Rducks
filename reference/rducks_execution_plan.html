@@ -160,10 +160,11 @@ environments unless that memory cost is intended or <code>ipc_globals_share = "m
 
 <dt id="arg-ipc-max-pending">ipc_max_pending<a class="anchor" aria-label="anchor" href="#arg-ipc-max-pending"></a></dt>
 <dd><p>Maximum simultaneous native NNG requests admitted per
-registered scalar-UDF client pool. The current provider still uses synchronous
-request/reply per callback rather than collect-many batching, but this value
-is enforced as a bounded pending/in-flight guard before a callback enters
-the native request path.</p></dd>
+registered scalar-UDF client pool. <code>NULL</code> uses the provider default of 64.
+Non-IPC plans store <code>NA_integer_</code> for this field. The current provider still
+uses synchronous request/reply per callback rather than collect-many
+batching, but this value is enforced as a bounded pending/in-flight guard
+before a callback enters the native request path.</p></dd>
 
 </dl></div>
     <div class="section level2">
