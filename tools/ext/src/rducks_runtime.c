@@ -669,8 +669,6 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
             return;
         }
     }
-    rducks_current_thread_token(state->worker_thread_token, sizeof(state->worker_thread_token));
-
     duckdb_scalar_function_init_set_state(info, state, rducks_r_scalar_local_state_destroy);
 }
 

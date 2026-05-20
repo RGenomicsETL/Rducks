@@ -2,21 +2,6 @@
 
 static int rducks_is_recorded_main_thread(rducks_runtime_entry_t *runtime);
 
-static void rducks_current_thread_token(char *buf, size_t cap) {
-    if (!buf || cap == 0U) return;
-#ifdef _WIN32
-    snprintf(buf, cap, "win:%lu", (unsigned long)GetCurrentThreadId());
-#else
-    /* Diagnostic label only. POSIX treats pthread_t as opaque, so do not
-     * serialize its bytes or compare its representation. Main-thread identity
-     * checks use pthread_equal() against the package-owned pthread_t pointer
-     * passed through rducks_set_main_thread_token().
-     */
-    snprintf(buf, cap, "posix:pthread");
-#endif
-    buf[cap - 1U] = '\0';
-}
-
 static int rducks_set_main_thread_token(rducks_runtime_entry_t *runtime, const char *token) {
     if (!runtime || !token || !token[0]) return 0;
 #ifdef _WIN32

@@ -98,7 +98,7 @@ rducks_ipc_globals_from_globals_package <- function(fun) {
   }
   found <- globals::globalsOf(
     fun,
-    envir = environment(fun) %||% parent.frame(),
+    envir = environment(fun) %||% .GlobalEnv,
     method = "dfs",
     recursive = TRUE,
     mustExist = FALSE,
@@ -145,7 +145,7 @@ rducks_ipc_globals_for_function_codetools <- function(fun) {
     seen[[length(seen) + 1L]] <- current
 
     names <- rducks_ipc_find_globals_codetools(current)
-    env <- environment(current) %||% parent.frame()
+    env <- environment(current) %||% .GlobalEnv
     for (name in names) {
       if (rducks_ipc_ignored_global_name(name)) next
       binding_env <- rducks_ipc_find_binding_env(name, env)
@@ -274,7 +274,7 @@ rducks_ipc_worker_globals <- function(fun, globals, share = "none") {
   if (is.character(globals)) {
     globals <- unique(globals)
     if (!is.function(fun)) stop("ipc_globals character names require an R function", call. = FALSE)
-    env <- environment(fun) %||% parent.frame()
+    env <- environment(fun) %||% .GlobalEnv
     found <- vapply(globals, exists, logical(1), envir = env, inherits = TRUE)
     missing <- globals[!found]
     if (length(missing)) {

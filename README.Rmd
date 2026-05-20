@@ -486,8 +486,11 @@ benchmark
 
 `rducks_with_duckplyr()` and the `with.duckdb_connection()` method let ordinary R
 calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing
-`dd$...` calls. The fallback-blocking demonstration lives in
-`inst/examples/no_fallback_duckplyr.R`; the README keeps the shape minimal.
+`dd$...` calls. The bridge defaults to row-wise `mode = "scalar"` and can use
+`mode = "vectorized"` for vectorized helpers; its marshalling comes from the
+current Rducks execution plan. The fallback-blocking demonstration lives in
+`inst/examples/no_fallback_duckplyr.R`, with a fuller walkthrough in the
+`duckplyr-integration` vignette; the README keeps the shape minimal.
 
 ```{r duckplyr}
 demo_con <- DBI::dbConnect(

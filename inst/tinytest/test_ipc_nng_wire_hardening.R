@@ -7,6 +7,11 @@ expect_equal(
 expect_error(Rducks:::rducks_nng_wire_u32(-1), "uint32 value is out of range")
 expect_error(Rducks:::rducks_nng_wire_u32(2^32), "uint32 value is out of range")
 expect_error(Rducks:::rducks_nng_wire_u32(1.5), "uint32 value is out of range")
+expect_error(Rducks:::rducks_nng_wire_u64(2^53), "uint64 value is out of range")
+expect_error(
+  Rducks:::rducks_nng_wire_read_u64(c(Rducks:::rducks_nng_wire_u32(0), Rducks:::rducks_nng_wire_u32(2^21)), 1L),
+  "exceeds R's exact numeric range"
+)
 
 oversized_row_request <- Rducks:::rducks_nng_wire_encode_request(
   Rducks:::rducks_nng_wire_type_execute,
@@ -67,4 +72,12 @@ expect_identical(decoded_request$dynamic_arg_tokens, tokens)
 expect_error(
   Rducks:::rducks_nng_wire_decode_dynamic_payload(charToRaw("not dynamic")),
   "invalid Rducks dynamic NNG payload"
+)
+expect_error(
+  Rducks:::rducks_nng_wire_decode_dynamic_payload(c(
+    Rducks:::rducks_nng_dynamic_payload_magic,
+    Rducks:::rducks_nng_wire_u32(Rducks:::rducks_nng_dynamic_arg_count_limit + 1L),
+    Rducks:::rducks_nng_wire_u64(0)
+  )),
+  "too many argument types"
 )

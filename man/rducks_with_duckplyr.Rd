@@ -12,10 +12,18 @@ rducks_with_duckplyr(
   env = parent.frame(),
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
-  side_effects = FALSE
+  side_effects = FALSE,
+  mode = "scalar"
 )
 
-\method{with}{duckdb_connection}(data, expr, ..., rducks_returns, rducks_env = parent.frame())
+\method{with}{duckdb_connection}(
+  data,
+  expr,
+  ...,
+  rducks_returns,
+  rducks_env = parent.frame(),
+  rducks_mode = "scalar"
+)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection} with Rducks enabled.}
@@ -31,6 +39,10 @@ descriptors or scalar type tokens, e.g. \code{list(score_fun = DOUBLE)}.}
 \item{null_handling, exception_handling, side_effects}{Passed to
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}.}
 
+\item{mode}{Rducks scalar-UDF evaluation mode for registered helpers.
+\code{"scalar"} calls the R helper once per row; \code{"vectorized"} calls it once
+per DuckDB chunk and requires a vectorized helper.}
+
 \item{data}{A \code{duckdb_connection} with Rducks enabled.}
 
 \item{...}{Reserved for future extensions; must be empty.}
@@ -38,6 +50,9 @@ descriptors or scalar type tokens, e.g. \code{list(score_fun = DOUBLE)}.}
 \item{rducks_returns}{Named return-type list for dynamic Rducks UDFs.}
 
 \item{rducks_env}{Evaluation environment for \code{expr} and function lookup.}
+
+\item{rducks_mode}{Rducks scalar-UDF evaluation mode for helpers registered
+through \code{with.duckdb_connection()}.}
 }
 \value{
 The value of the evaluated expression.
@@ -55,9 +70,14 @@ This helper intentionally requires return-type declarations: DuckDB needs a
 scalar function's return type during planning even when its input arguments
 are accepted dynamically. Dynamic arguments are a duckplyr-oriented
 convenience path that uses nanoarrow's default input conversion. The duckplyr
-bridge registers these UDFs with \code{mode = "scalar"}; it does not expose
-Rducks' vectorized chunk-call mode. Use explicit \code{args} in
+bridge defaults to \code{mode = "scalar"} because ordinary R calls in duckplyr SQL
+expressions are written as row-wise scalar functions. Set \code{mode = "vectorized"}
+only for helpers that accept full vectors/chunks and return a vector of the
+same length. The selected Rducks execution plan is still taken from \code{con}, so
+\code{arrow_c} and \code{arrow_ipc} plans can be selected with
+\code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}} before
+evaluating the duckplyr expression. Use explicit \code{args} in
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
-when you need Rducks' declared composite, exotic, special-NULL, or vectorized
-input semantics.
+when you need Rducks' declared composite, exotic, or special-NULL input
+semantics.
 }

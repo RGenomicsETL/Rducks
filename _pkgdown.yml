@@ -12,6 +12,10 @@ articles:
     contents:
       - type-value-semantics
       - execution-plans-ipc-workers
+  - title: Integrations
+    navbar: ~
+    contents:
+      - duckplyr-integration
   - title: Internals
     navbar: ~
     contents:

@@ -8,6 +8,11 @@ rducks_nng_wire_type_ping <- 4L
 rducks_nng_wire_type_response <- 100L
 rducks_nng_wire_request_header_size <- 36L
 rducks_nng_wire_response_header_size <- 32L
+# R stores numeric wire lengths/counts as doubles. Keep the R-side u64 codec
+# exact by accepting only values below 2^53; larger 64-bit values are rejected
+# instead of being rounded silently.
+rducks_nng_wire_u64_exact_limit <- 2^53
+rducks_nng_dynamic_arg_count_limit <- 10000L
 
 rducks_nng_wire_check_uint <- function(x, max_exclusive, what) {
   x <- as.numeric(x)
@@ -46,7 +51,7 @@ rducks_nng_wire_u32 <- function(x) {
 }
 
 rducks_nng_wire_u64 <- function(x) {
-  x <- rducks_nng_wire_check_uint(x, 2^53, "uint64")
+  x <- rducks_nng_wire_check_uint(x, rducks_nng_wire_u64_exact_limit, "uint64")
   lo <- x %% 2^32
   hi <- floor(x / 2^32)
   c(rducks_nng_wire_u32(lo), rducks_nng_wire_u32(hi))
@@ -61,7 +66,11 @@ rducks_nng_wire_read_u32 <- function(buf, pos) {
 rducks_nng_wire_read_u64 <- function(buf, pos) {
   lo <- rducks_nng_wire_read_u32(buf, pos)
   hi <- rducks_nng_wire_read_u32(buf, lo$pos)
-  list(value = lo$value + hi$value * 2^32, pos = hi$pos)
+  value <- lo$value + hi$value * 2^32
+  if (value >= rducks_nng_wire_u64_exact_limit) {
+    stop("NNG wire uint64 value exceeds R's exact numeric range", call. = FALSE)
+  }
+  list(value = value, pos = hi$pos)
 }
 
 rducks_nng_wire_check_magic <- function(buf) {
@@ -75,7 +84,7 @@ rducks_nng_wire_decode_dynamic_payload <- function(payload) {
   pos <- 5L
   count <- rducks_nng_wire_read_u32(payload, pos); pos <- count$pos
   arrow_len <- rducks_nng_wire_read_u64(payload, pos); pos <- arrow_len$pos
-  if (count$value > .Machine$integer.max) {
+  if (count$value > rducks_nng_dynamic_arg_count_limit) {
     stop("Rducks dynamic NNG payload has too many argument types", call. = FALSE)
   }
   tokens <- character(as.integer(count$value))
@@ -83,10 +92,11 @@ rducks_nng_wire_decode_dynamic_payload <- function(payload) {
     len <- rducks_nng_wire_read_u32(payload, pos); pos <- len$pos
     token_raw <- rducks_nng_wire_slice(payload, pos, len$value, "Rducks dynamic NNG payload")
     tokens[[i]] <- rawToChar(token_raw)
-    pos <- pos + len$value
+    pos <- rducks_nng_wire_check_pos(pos + len$value)
+    if (pos > length(payload) + 1L) stop("truncated Rducks dynamic NNG payload", call. = FALSE)
   }
   arrow_payload <- rducks_nng_wire_slice(payload, pos, arrow_len$value, "Rducks dynamic NNG payload")
-  pos <- pos + arrow_len$value
+  pos <- rducks_nng_wire_check_pos(pos + arrow_len$value)
   if (pos != length(payload) + 1L) {
     stop("truncated Rducks dynamic NNG payload", call. = FALSE)
   }

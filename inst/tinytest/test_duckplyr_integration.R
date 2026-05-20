@@ -97,4 +97,34 @@ local({
     rducks_returns = list(local_score = DOUBLE)
   )
   expect_equal(out_with, out)
+
+  local_score_vec <- function(x, label) {
+    as.double(x + ifelse(label == "high", 100, ifelse(label == "mid", 10, 0)))
+  }
+  out_vec <- rducks_with_duckplyr(
+    con,
+    df |>
+      dplyr::mutate(score = local_score_vec(x, label)) |>
+      dplyr::filter(score >= 100) |>
+      dplyr::select(id, label, score) |>
+      dplyr::arrange(id) |>
+      dplyr::collect(),
+    returns = list(local_score_vec = DOUBLE),
+    mode = "vectorized"
+  )
+  expect_equal(out_vec, out)
+
+  local_score_with_vec <- local_score_vec
+  out_with_vec <- with(
+    con,
+    df |>
+      dplyr::mutate(score = local_score_with_vec(x, label)) |>
+      dplyr::filter(score >= 100) |>
+      dplyr::select(id, label, score) |>
+      dplyr::arrange(id) |>
+      dplyr::collect(),
+    rducks_returns = list(local_score_with_vec = DOUBLE),
+    rducks_mode = "vectorized"
+  )
+  expect_equal(out_with_vec, out)
 })

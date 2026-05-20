@@ -312,7 +312,7 @@ Exercise the native in-process queue and return the number of self-test iteratio
 
 - Kind: `R function / duckplyr integration`
 - Category: `integration`
-- Signature: `rducks_with_duckplyr(con, expr, rducks_returns, ...)`
+- Signature: `rducks_with_duckplyr(con, expr, returns, mode = c('scalar', 'vectorized'), ...)`
 - Returns: `value of expr`
 - Aliases: `with.duckdb_connection`
 - Lifecycle: `experimental`
@@ -322,7 +322,9 @@ Evaluate duckplyr code with ordinary R calls in expressions resolved to dynamic 
 
 Notes:
 
-- DuckDB still requires explicit return descriptors through rducks_returns.
+- DuckDB still requires explicit return descriptors through returns/rducks_returns.
+- The bridge defaults to scalar row-call mode; vectorized mode is available for helpers that accept full chunks and return same-length vectors.
+- The selected connection execution plan controls arrow_r, arrow_c, or arrow_ipc marshalling.
 
 ## `rducks_type_objects`
 

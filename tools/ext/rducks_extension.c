@@ -214,7 +214,6 @@ typedef struct rducks_r_scalar_bind_state {
 typedef struct rducks_r_scalar_local_state {
     rducks_runtime_entry_t *runtime;
     idx_t connection_id;
-    char worker_thread_token[128];
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_local_state_t;

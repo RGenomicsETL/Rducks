@@ -276,7 +276,7 @@
     "name": "rducks_with_duckplyr",
     "kind": "R function / duckplyr integration",
     "category": "integration",
-    "signature": "rducks_with_duckplyr(con, expr, rducks_returns, ...)",
+    "signature": "rducks_with_duckplyr(con, expr, returns, mode = c('scalar', 'vectorized'), ...)",
     "returns": "value of expr",
     "aliases": [
       "with.duckdb_connection"
@@ -285,7 +285,9 @@
     "lifecycle": "experimental",
     "since": "0.1.0",
     "notes": [
-      "DuckDB still requires explicit return descriptors through rducks_returns."
+      "DuckDB still requires explicit return descriptors through returns/rducks_returns.",
+      "The bridge defaults to scalar row-call mode; vectorized mode is available for helpers that accept full chunks and return same-length vectors.",
+      "The selected connection execution plan controls arrow_r, arrow_c, or arrow_ipc marshalling."
     ]
   },
   {

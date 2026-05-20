@@ -32,6 +32,7 @@ rducks_nng_defaults <- list(
   retry_sleep = 0.01,
   per_attempt_timeout = 0.25,
   worker_send_timeout = 5,
+  worker_registry_max_entries = 4096L,
   startup_attempts = 3L,
   startup_retry_sleep = 0.05
 )
@@ -218,9 +219,20 @@ rducks_nng_endpoint_bundle <- function(workers, transport = NULL) {
   list(endpoints = endpoints, cleanup_paths = cleanup_paths, transport = transport)
 }
 
+rducks_nng_worker_registry_limit <- function() {
+  value <- getOption("rducks.nng.worker_registry_max_entries", rducks_nng_defaults$worker_registry_max_entries)
+  value <- suppressWarnings(as.integer(value))
+  if (length(value) != 1L || is.na(value) || value < 1L) {
+    value <- rducks_nng_defaults$worker_registry_max_entries
+  }
+  value
+}
+
 rducks_nng_worker_loop <- function(endpoint) {
   suppressPackageStartupMessages(library(Rducks))
   registry <- new.env(parent = emptyenv())
+  registry_order <- character()
+  registry_max <- rducks_nng_worker_registry_limit()
   sock <- nanonext::socket("rep", listen = endpoint)
   ctx <- nanonext::context(sock)
   on.exit({
@@ -253,6 +265,11 @@ rducks_nng_worker_loop <- function(endpoint) {
           environment(rec$fun) <- fun_env
         }
         assign(req$udf_id, rec, envir = registry)
+        registry_order <- c(registry_order[registry_order != req$udf_id], req$udf_id)
+        while (length(registry_order) > registry_max) {
+          rm(list = registry_order[[1L]], envir = registry)
+          registry_order <- registry_order[-1L]
+        }
         rducks_nng_wire_encode_response("ok", raw())
       } else if (identical(req$type, rducks_nng_wire_type_execute)) {
         if (!exists(req$udf_id, envir = registry, inherits = FALSE)) {
@@ -376,6 +393,11 @@ rducks_nng_provider_store <- function() {
   rducks_get_or_init_store("nng_providers")
 }
 
+rducks_nng_plan_timeout <- function(plan, default) {
+  opts <- plan$ipc_options %||% list()
+  opts$timeout %||% default
+}
+
 rducks_nng_ping_endpoints <- function(endpoints, transport, timeout = rducks_nng_defaults$startup_timeout) {
   ping <- rducks_nng_wire_encode_request(rducks_nng_wire_type_ping)
   for (endpoint in endpoints) {
@@ -411,7 +433,11 @@ rducks_nng_backend_external <- function(endpoints, transport) {
       supports_remote_endpoints = TRUE
     ),
     start = function(state, plan = NULL) {
-      rducks_nng_ping_endpoints(state$endpoints, state$transport)
+      rducks_nng_ping_endpoints(
+        state$endpoints,
+        state$transport,
+        timeout = rducks_nng_plan_timeout(plan, rducks_nng_defaults$startup_timeout)
+      )
       list(endpoints = state$endpoints, cleanup_paths = character(), tasks = list())
     },
     stop = function(state, timeout, quiet = FALSE) {
@@ -444,7 +470,7 @@ rducks_nng_backend_mirai <- function(compute, workers, transport) {
         mirai::daemons(workers, dispatcher = FALSE, .compute = compute)
         setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = compute)
         setup_value <- mirai::collect_mirai(setup)
-        if (inherits(setup_value, "errorValue")) stop(as.character(setup_value), call. = FALSE)
+        if (mirai::is_mirai_error(setup_value)) stop(as.character(setup_value), call. = FALSE)
         bundle <- rducks_nng_endpoint_bundle(workers, transport)
         if (length(bundle$endpoints) != workers) {
           stop(
@@ -462,7 +488,11 @@ rducks_nng_backend_mirai <- function(compute, workers, transport) {
         }
         record <- list(endpoints = bundle$endpoints, cleanup_paths = bundle$cleanup_paths, tasks = tasks)
         last_record <<- record
-        rducks_nng_ping_endpoints(record$endpoints, transport)
+        rducks_nng_ping_endpoints(
+          record$endpoints,
+          transport,
+          timeout = rducks_nng_plan_timeout(plan, rducks_nng_defaults$startup_timeout)
+        )
         record
       }
 
@@ -964,7 +994,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
       provider = "nng",
       endpoints = provider$endpoints(),
       udf_id = udf_id,
-      timeout_ms = as.integer(ceiling(as.numeric(opts$timeout) * 1000)),
+      timeout_ms = as.integer(ceiling(as.numeric(opts$timeout %||% rducks_nng_defaults$register_timeout) * 1000)),
       max_pending = engine$plan$ipc_max_pending %||% Inf,
       external_endpoints = !is.null(opts$endpoints)
     )
