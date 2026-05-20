@@ -143,9 +143,14 @@ settings match the UDF metadata being exercised.</p>
 persistent R workers that receive Arrow IPC-encoded chunks over NNG.
 Registration still happens under single-thread DuckDB settings; widen
 <code>threads</code> / <code>external_threads</code> afterwards for
-query execution.</p>
+query execution. This vignette uses loopback TCP for the local NNG
+transport because it is the most portable choice for executed
+documentation builds; local IPC transports such as <code>"ipc"</code>,
+<code>"unix"</code>, or Linux <code>"abstract"</code> remain available
+when supported by the host.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
+<code class="sourceCode R"><span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">1L</span></span>
+<span><span class="va">ipc_transport</span> <span class="op">&lt;-</span> <span class="st">"tcp"</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -153,7 +158,7 @@ query execution.</p>
 <span>    <span class="st">"arrow_ipc"</span>,</span>
 <span>    <span class="st">"multiprocess_parallel"</span>,</span>
 <span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
-<span>    ipc_transport <span class="op">=</span> <span class="st">"ipc"</span>,</span>
+<span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
 <span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
@@ -185,7 +190,7 @@ query execution.</p>
 <span>    <span class="st">"arrow_ipc"</span>,</span>
 <span>    <span class="st">"multiprocess_parallel"</span>,</span>
 <span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
-<span>    ipc_transport <span class="op">=</span> <span class="st">"ipc"</span>,</span>
+<span>    ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
 <span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
@@ -206,21 +211,17 @@ current R process. With <code>ping = TRUE</code>, it also checks whether
 each endpoint responds.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_ipc_workers: 2 workers&gt;</span></span>
+<span><span class="co">#&gt; &lt;rducks_ipc_workers: 1 worker&gt;</span></span>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
-<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;                                    endpoint</span></span>
-<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
-<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
-<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; &lt;rducks_ipc_workers: 2 workers&gt;</span></span>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;               endpoint</span></span>
+<span><span class="co">#&gt;  tcp://127.0.0.1:34036</span></span>
+<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_ipc_workers: 1 worker&gt;</span></span>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
-<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running   ok</span></span>
-<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running   ok</span></span>
-<span><span class="co">#&gt;                                    endpoint</span></span>
-<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
-<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span></code></pre></div>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok</span></span>
+<span><span class="co">#&gt;               endpoint</span></span>
+<span><span class="co">#&gt;  tcp://127.0.0.1:34036</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

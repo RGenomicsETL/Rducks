@@ -77,11 +77,16 @@ rducks_set_execution_plan(
 `arrow_ipc + multiprocess_parallel` starts or connects to persistent R
 workers that receive Arrow IPC-encoded chunks over NNG. Registration
 still happens under single-thread DuckDB settings; widen `threads` /
-`external_threads` afterwards for query execution.
+`external_threads` afterwards for query execution. This vignette uses
+loopback TCP for the local NNG transport because it is the most portable
+choice for executed documentation builds; local IPC transports such as
+`"ipc"`, `"unix"`, or Linux `"abstract"` remain available when supported
+by the host.
 
 ``` r
 
-ipc_workers <- 2L
+ipc_workers <- 1L
+ipc_transport <- "tcp"
 
 rducks_set_execution_plan(
   con,
@@ -89,7 +94,7 @@ rducks_set_execution_plan(
     "arrow_ipc",
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
-    ipc_transport = "ipc",
+    ipc_transport = ipc_transport,
     ipc_timeout = 30
   ),
   threads = 1L,
@@ -121,7 +126,7 @@ rducks_set_execution_plan(
     "arrow_ipc",
     "multiprocess_parallel",
     ipc_workers = ipc_workers,
-    ipc_transport = "ipc",
+    ipc_transport = ipc_transport,
     ipc_timeout = 30
   ),
   threads = ipc_workers + 1L,
@@ -145,21 +150,17 @@ it also checks whether each endpoint responds.
 ``` r
 
 rducks_ipc_workers(con)
-#> <rducks_ipc_workers: 2 workers>
+#> <rducks_ipc_workers: 1 worker>
 #>             runtime backend transport worker started task_state ping
-#>  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running <NA>
-#>  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running <NA>
-#>                                    endpoint
-#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
-#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
-rducks_ipc_workers(con, ping = TRUE, timeout = 1)
-#> <rducks_ipc_workers: 2 workers>
+#>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running <NA>
+#>               endpoint
+#>  tcp://127.0.0.1:34036
+rducks_ipc_workers(con, ping = TRUE, timeout = 5)
+#> <rducks_ipc_workers: 1 worker>
 #>             runtime backend transport worker started task_state ping
-#>  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running   ok
-#>  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running   ok
-#>                                    endpoint
-#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
-#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
+#>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
+#>               endpoint
+#>  tcp://127.0.0.1:34036
 ```
 
 The result is an R-side provider view: runtime token, provider key,
