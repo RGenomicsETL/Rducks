@@ -929,7 +929,15 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
     {
         rducks_type_id_t scalar = rducks_type_id_from_duckdb_type(type_id);
         if (scalar == RDUCKS_TYPE_INVALID) {
-            snprintf(err, err_cap, "unsupported dynamic Rducks argument type id %d", (int)type_id);
+            if (type_id == DUCKDB_TYPE_INVALID || type_id == DUCKDB_TYPE_SQLNULL || type_id == DUCKDB_TYPE_ANY) {
+                snprintf(
+                    err,
+                    err_cap,
+                    "dynamic Rducks arguments must bind to concrete DuckDB types; cast NULL/parameter markers or declare args explicitly"
+                );
+            } else {
+                snprintf(err, err_cap, "unsupported dynamic Rducks argument type id %d", (int)type_id);
+            }
             return 0;
         }
         desc = rducks_type_desc_new(RDUCKS_KIND_SCALAR);
