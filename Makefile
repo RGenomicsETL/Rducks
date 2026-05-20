@@ -34,7 +34,7 @@ install: build
 	RDUCKS_EXTENSION_ABI_TYPE=$(RDUCKS_EXTENSION_ABI_TYPE) \
 	R CMD INSTALL $(PKGNAME)_$(PKGVERS).tar.gz
 
-build: rd
+build: rd catalog
 	R CMD build .
 
 check: build

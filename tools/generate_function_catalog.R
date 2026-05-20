@@ -153,20 +153,70 @@ md_inline_code <- function(x) {
   paste0("`", x, "`")
 }
 
-lines <- c("# Rducks Function Catalog", "")
+json_array_chr <- function(x) {
+  if (is.null(x) || !length(x)) return(character())
+  vapply(x, as.character, character(1L))
+}
+
+md_inline_code_list <- function(x) {
+  values <- json_array_chr(x)
+  if (!length(values)) return(NULL)
+  paste(md_inline_code(values), collapse = ", ")
+}
+
+item_field <- function(item, name) {
+  value <- item[[name]]
+  if (is.null(value) || !length(value)) NULL else value
+}
+
+required <- c("name", "kind", "category", "signature", "returns", "description")
+for (idx in seq_along(items)) {
+  missing <- required[!vapply(required, function(field) {
+    value <- item_field(items[[idx]], field)
+    !is.null(value) && nzchar(as.character(value[[1L]]))
+  }, logical(1L))]
+  if (length(missing)) {
+    stop(
+      "function catalog item ", idx, " is missing required field(s): ",
+      paste(missing, collapse = ", "),
+      call. = FALSE
+    )
+  }
+}
+
+lines <- c(
+  "# Rducks Function Catalog",
+  "",
+  "Generated from `inst/function_catalog/functions.json` by",
+  "`tools/generate_function_catalog.R`.",
+  ""
+)
 for (item in items) {
-  lines <- c(
-    lines,
-    sprintf("## %s", md_inline_code(item$name)),
-    "",
+  aliases <- md_inline_code_list(item_field(item, "aliases"))
+  notes <- json_array_chr(item_field(item, "notes"))
+  examples <- json_array_chr(item_field(item, "examples"))
+  details <- c(
     sprintf("- Kind: %s", md_inline_code(item$kind)),
     sprintf("- Category: %s", md_inline_code(item$category)),
     sprintf("- Signature: %s", md_inline_code(item$signature)),
-    sprintf("- Returns: %s", md_inline_code(item$returns)),
-    "",
-    item$description,
-    ""
+    sprintf("- Returns: %s", md_inline_code(item$returns))
   )
+  if (!is.null(aliases)) details <- c(details, sprintf("- Aliases: %s", aliases))
+  if (!is.null(item_field(item, "lifecycle"))) {
+    details <- c(details, sprintf("- Lifecycle: %s", md_inline_code(item$lifecycle)))
+  }
+  if (!is.null(item_field(item, "since"))) {
+    details <- c(details, sprintf("- Since: %s", md_inline_code(item$since)))
+  }
+
+  lines <- c(lines, sprintf("## %s", md_inline_code(item$name)), "", details, "", item$description)
+  if (length(notes)) {
+    lines <- c(lines, "", "Notes:", "", paste0("- ", notes))
+  }
+  if (length(examples)) {
+    lines <- c(lines, "", "Examples:", "", paste0("- ", examples))
+  }
+  lines <- c(lines, "")
 }
 
 writeLines(lines, out, useBytes = TRUE)

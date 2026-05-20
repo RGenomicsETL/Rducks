@@ -9,13 +9,15 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 
 Rducks registers R functions as DuckDB SQL functions using a
-package-managed DuckDB C extension. The extension records the DuckDB
-database instance at load time and keeps extension-owned connections for
-native registration callbacks and query streaming. It is built around
-explicit type descriptors, DuckDB Arrow C Data/nanoarrow marshalling,
-and a strict rule that R object work runs on the recorded R thread
-unless it is intentionally moved to R worker processes through the Arrow
-IPC plan.
+package-managed [DuckDB C
+extension](https://duckdb.org/docs/stable/extensions/overview). The
+extension records the DuckDB database instance at load time and keeps
+extension-owned connections for native registration callbacks and query
+streaming. It is built around explicit type descriptors, DuckDB Arrow C
+Data/[nanoarrow](https://arrow.apache.org/nanoarrow/latest/r/)
+marshalling, and a strict rule that R object work runs on the recorded R
+thread unless it is intentionally moved to R worker processes through
+the Arrow IPC plan.
 
 Rducks is organized around DuckDB function kind, scalar-UDF evaluation
 mode, execution plan, and R-side query consumption. Scalar UDFs are
@@ -23,6 +25,11 @@ registered with `rducks_register_scalar_udf()` and choose
 `mode = "scalar"` for one R call per row or `mode = "vectorized"` for
 one R call per DuckDB chunk. Execution plans select the
 marshalling/concurrency backend (`arrow_r`, `arrow_c`, or `arrow_ipc`).
+With `arrow_ipc`, the extension uses the [NNG C
+API](https://nng.nanomsg.org/) for native request/reply transport; the
+default local worker lifecycle is launched by
+[mirai](https://mirai.r-lib.org/), with optional
+[mori](https://shikokuchuo.net/mori/) sharing for selected globals.
 Aggregates use `rducks_register_aggregate()`, table functions use
 `rducks_register_table()` with optional `rducks_table_stream()`
 producers, and query consumers can use `rducks_query_stream()` for
@@ -380,9 +387,9 @@ The benchmark below registers the same sleeping vectorized UDF on three
 real plans and runs the queries against one typed CSV scan with many
 DuckDB-sized vectors. The UDF closes over a random R lookup vector; the
 Arrow IPC registration sends that global explicitly using
-`ipc_globals_share = "mori"`. Timings are illustrative and
-machine-dependent, but the code exercises the actual `arrow_r`,
-`arrow_c`, and native NNG/Arrow IPC paths.
+[`ipc_globals_share = "mori"`](https://shikokuchuo.net/mori/). Timings
+are illustrative and machine-dependent, but the code exercises the
+actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths.
 
 ``` r
 set.seed(1)
@@ -454,9 +461,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       7.137
-#> 2   arrow_c serial 65961344       6.986
-#> 3 arrow_ipc + mori 65961344       7.424
+#> 1   arrow_r serial 65961344       7.092
+#> 2   arrow_c serial 65961344       7.038
+#> 3 arrow_ipc + mori 65961344       7.082
 ```
 
 ## duckplyr integration
@@ -528,18 +535,22 @@ writes the generated artifact to
 after installation the runtime path is
 `rducks_extension/build/rducks.duckdb_extension` inside the installed
 package. `cleanup` removes only the generated artifact, not the source
-tree needed by `R CMD build`. DuckDB C API headers are refreshed
-explicitly when the supported DuckDB version changes.
+tree needed by `R CMD build`. This package-bundled extension layout
+follows precedents such as
+[Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
+DuckDB C API headers are refreshed explicitly when the supported DuckDB
+version changes.
 
 ``` sh
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
 ```
 
-The extension uses DuckDB’s unstable C extension ABI for Arrow
-conversion, connection/runtime access, scalar-function bind/init hooks,
-dynamic bind-time argument inspection, and selection-vector helpers.
-This table is generated from `tools/used_duckdb_unstable_api.R` when
-`README.Rmd` is rendered:
+The extension uses DuckDB’s [C extension
+API](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+and unstable C extension ABI for Arrow conversion, connection/runtime
+access, scalar-function bind/init hooks, dynamic bind-time argument
+inspection, and selection-vector helpers. This table is generated from
+`tools/used_duckdb_unstable_api.R` when `README.Rmd` is rendered:
 
 | ABI group                                      | Functions used                                                                                                                                                                                                                                                                                                                                           | Count |
 |------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
@@ -567,15 +578,17 @@ the Arrow IPC plan.
 
 The “Arrow dance” is the shared boundary. DuckDB produces vectors in
 standard chunks; Rducks exposes those chunks through DuckDB Arrow C
-Data, uses nanoarrow to materialize typed R inputs, calls the R
-function, and writes typed results back to DuckDB. The `arrow_r` plan
-keeps most conversion in R/nanoarrow, `arrow_c` uses native C
-materialization for supported types, and `arrow_ipc` serializes owned
-Arrow IPC request/result bytes over NNG so separate R worker processes
-can do the R evaluation. Dynamic omitted-`args` UDFs still bind concrete
+Data, uses [nanoarrow](https://arrow.apache.org/nanoarrow/latest/r/) to
+materialize typed R inputs, calls the R function, and writes typed
+results back to DuckDB. The `arrow_r` plan keeps most conversion in
+R/nanoarrow, `arrow_c` uses native C materialization for supported
+types, and `arrow_ipc` serializes owned Arrow IPC request/result bytes
+over [NNG](https://nng.nanomsg.org/) so separate R worker processes can
+do the R evaluation. Dynamic omitted-`args` UDFs still bind concrete
 DuckDB types at the SQL call site before this marshalling begins.
 
-A future transport could use DuckDB’s Quack-style format: DuckDB
+A future transport could use DuckDB’s [Quack-style
+format](https://github.com/duckdb/duckdb-quack): DuckDB
 `BinarySerializer` messages carrying logical types and `DataChunk`
 payloads, rather than Arrow IPC bytes. That could remove some Arrow
 encode/decode work and align worker transport more closely with DuckDB’s
@@ -583,3 +596,18 @@ native chunk model. It is not a runtime dependency today; adopting it
 would require a versioned C implementation, strict compatibility checks,
 and the same explicit ownership and R-thread rules that the Arrow paths
 enforce now.
+
+## References
+
+- [DuckDB extension
+  overview](https://duckdb.org/docs/stable/extensions/overview)
+- [DuckDB C extension API
+  notes](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+- [Apache Arrow nanoarrow for
+  R](https://arrow.apache.org/nanoarrow/latest/r/)
+- [NNG C library](https://nng.nanomsg.org/)
+- [nanonext and mirai](https://mirai.r-lib.org/)
+- [mori shared objects for R](https://shikokuchuo.net/mori/)
+- [DuckDB Quack extension](https://github.com/duckdb/duckdb-quack)
+- [Rduckhts bundled-extension
+  precedent](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts)
