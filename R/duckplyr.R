@@ -88,8 +88,10 @@ rducks_duckplyr_eval_expr <- function(con, expr, returns, env,
 #' scalar function's return type during planning even when its input arguments
 #' are accepted dynamically. Dynamic arguments are a duckplyr-oriented
 #' convenience path that uses nanoarrow's default input conversion; use explicit
-#' `args` in [rducks_register_scalar_udf()] when you need Rducks' declared
-#' composite, exotic, or special-NULL input semantics.
+#' `args` in
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+#' when you need Rducks' declared composite, exotic, or special-NULL input
+#' semantics.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param expr A duckplyr expression or pipeline to evaluate.
@@ -98,7 +100,7 @@ rducks_duckplyr_eval_expr <- function(con, expr, returns, env,
 #'   descriptors or scalar type tokens, e.g. `list(score_fun = DOUBLE)`.
 #' @param env Evaluation environment for `expr` and function lookup.
 #' @param null_handling,exception_handling,side_effects Passed to
-#'   [rducks_register_scalar_udf()].
+#'   \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}.
 #' @return The value of the evaluated expression.
 #' @export
 rducks_with_duckplyr <- function(con, expr, returns, env = parent.frame(),

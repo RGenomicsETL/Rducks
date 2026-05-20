@@ -1,6 +1,6 @@
 Package: Rducks
 Title: Register R User-Defined Functions in DuckDB
-Version: 0.0.2
+Version: 0.1.0
 Authors@R: c(
     person(given = "Sounkou Mahamane", family = "Toure",
     email = "sounkoutoure@gmail.com", role = c("aut", "cre")),
@@ -44,7 +44,10 @@ Suggests:
     dplyr,
     duckplyr,
     globals (>= 0.18.0),
+    knitr,
     mori,
+    rmarkdown,
     tinytest
+VignetteBuilder: knitr
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

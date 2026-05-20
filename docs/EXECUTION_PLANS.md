@@ -29,9 +29,11 @@ These are execution-plan choices for scalar UDFs:
 - concurrency: `serial`, `inproc_concurrent`, or `multiprocess_parallel`
 - IPC worker options for `arrow_ipc + multiprocess_parallel`
 
-The plan active at registration time is frozen into that registered DuckDB
-scalar UDF's catalog metadata. Changing a connection's default plan later
-affects only future scalar-UDF registrations.
+The plan active at registration time selects the evaluator and marshalling
+metadata stored with that registered DuckDB scalar UDF. Changing a connection's
+default plan later affects future scalar-UDF registrations and updates the native
+runtime backend/thread settings, but it does not rewrite an existing UDF from one
+marshalling engine to another.
 
 Aggregate functions registered with `rducks_register_aggregate()` are separate
 from the scalar-UDF evaluation-mode/execution-plan matrix. Their state contract
@@ -41,15 +43,15 @@ pointers; R `update()`/`combine()` callbacks must return raw state or `NULL`;
 and require the recorded calling R thread.
 
 Table functions registered with `rducks_register_table()` are separate from this
-scalar-UDF evaluation-mode/execution-plan matrix. The current implementation is
-a one-shot, finite table function: Rducks infers the positional SQL argument
-count from the R function formals, registers those input slots as DuckDB `ANY`, converts the
-actual SQL bind values to R values, calls the R function during bind on the
-recorded calling R thread, infers the output schema dynamically from the
-returned data-frame/list columns, imports the result through nanoarrow Arrow C
-Data, then emits row batches from that imported DuckDB chunk. Worker-thread
-calls into R are rejected; use `rducks_enable(con, threads = "single")` for this
-path.
+scalar-UDF evaluation-mode/execution-plan matrix. Rducks infers the positional
+SQL argument count from the R function formals, registers those input slots as
+DuckDB `ANY`, converts the actual SQL bind values to R values, and calls the R
+function during bind on the recorded calling R thread. The R function may return
+a finite data-frame/list/nanoarrow result or a `rducks_table_stream()` object.
+Finite results are imported once during bind through nanoarrow Arrow C Data;
+streaming results use only the prototype at bind time and call `next_batch()`
+during scan to import successive batches. Worker-thread calls into R are
+rejected; use `rducks_enable(con, threads = "single")` for this path.
 
 DuckDB table functions are more general than the current Rducks table API. Their
 bind phase can inspect constant input arguments, decide the output schema
@@ -72,21 +74,24 @@ path when the table already exists as an R data frame at registration time.
 
 Future Rducks table-function work should build on this nanoarrow/DuckDB-chunk
 path rather than reintroducing per-value result marshalling. Remaining design
-work includes Arrow ArrayStream producers with multiple batches, named/optional
-parameters, explicit lifetime and main-thread callback rules, and overload-aware
-registration where each SQL input signature is an explicit DuckDB table-function
-registration and backend choice does not redefine SQL type/null/result semantics.
+work includes named/optional parameters, broader Arrow ArrayStream handling,
+overload-aware registration where each SQL input signature is explicit, and
+backend choices that do not redefine SQL type/null/result semantics.
 
 ## Strict-plan rule
 
-A registered DuckDB scalar UDF resolves to one engine:
+A registered DuckDB scalar UDF resolves to one evaluator/marshalling engine:
 
 ```text
 scalar-UDF registration spec + connection default plan
   -> plan validation
-  -> frozen native scalar-UDF metadata
-  -> that engine for every invocation
+  -> native scalar-UDF evaluator/marshalling metadata
+  -> no fallback to another marshalling engine
 ```
+
+For concurrency demonstrations and benchmarks, set the matching plan again before
+execution so the native runtime backend and DuckDB thread settings match the UDF
+metadata being exercised.
 
 Unsupported combinations must fail. They must not silently switch:
 

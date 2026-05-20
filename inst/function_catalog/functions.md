@@ -10,7 +10,7 @@ Generated from `inst/function_catalog/functions.json` by
 - Signature: `rducks_enable(con, extension_path = rducks_extension_path(), threads = c('single', 'multi'))`
 - Returns: `duckdb_connection invisibly`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Load the bundled Rducks DuckDB extension into a DuckDB connection and configure Arrow conversion options required by Rducks typed marshalling.
 
@@ -24,10 +24,10 @@ Notes:
 - Kind: `R function`
 - Category: `connection`
 - Signature: `rducks_release(con)`
-- Returns: `logical scalar invisibly`
+- Returns: `duckdb_connection invisibly`
 - Aliases: `rducks_detach`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Detach connection-local Rducks state and stop local IPC workers associated with the connection's DuckDB runtime when the last attachment is released.
 
@@ -42,7 +42,7 @@ Notes:
 - Signature: `rducks_extension_path()`
 - Returns: `character scalar`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Return the installed path to the bundled rducks.duckdb_extension artifact used by rducks_enable().
 
@@ -53,7 +53,7 @@ Return the installed path to the bundled rducks.duckdb_extension artifact used b
 - Signature: `rducks_register_scalar_udf(con, name, fun, args, returns, mode = c('scalar', 'vectorized'), null_handling, exception_handling, side_effects, ...)`
 - Returns: `rducks_scalar_udf_registration`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Register an R function as a DuckDB scalar UDF. DuckDB receives one SQL value per logical row; Rducks mode controls whether R is called once per row or once per DuckDB chunk.
 
@@ -70,7 +70,7 @@ Notes:
 - Signature: `rducks_register_table(con, name, fun, parameter_count = NULL, chunk_size = 2048L)`
 - Returns: `rducks_table_registration`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Register an R function as a DuckDB table function. The R function is called at table-function bind time and may return a data frame, list, nanoarrow batch/stream, or rducks_table_stream().
 
@@ -81,7 +81,7 @@ Register an R function as a DuckDB table function. The R function is called at t
 - Signature: `rducks_table_stream(prototype, next_batch, close = NULL, cardinality = NULL, exact = FALSE)`
 - Returns: `rducks_table_stream`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Create a scan-time streaming result object for rducks_register_table(). next_batch() is called repeatedly and returns batches until it returns NULL.
 
@@ -97,7 +97,7 @@ Notes:
 - Signature: `rducks_register_aggregate(con, name, initialize, update, combine, finalize, args, state, returns)`
 - Returns: `rducks_aggregate_registration`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Register an R aggregate function in DuckDB using explicit state and return descriptors.
 
@@ -108,7 +108,7 @@ Register an R aggregate function in DuckDB using explicit state and return descr
 - Signature: `rducks_query_stream(con, sql, batch_size = 1024L, format = c('data.frame', 'record_batch', 'nanoarrow'))`
 - Returns: `rducks_query_stream`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Open a true native DuckDB streaming-result cursor and consume it as R data-frame batches or owned nanoarrow record batches.
 
@@ -124,7 +124,7 @@ Notes:
 - Signature: `rducks_execution_plan(marshalling = c('arrow_r', 'arrow_c', 'arrow_ipc'), concurrency = c('serial', 'inproc_concurrent', 'multiprocess_parallel'), ...)`
 - Returns: `rducks_execution_plan`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Build a scalar-UDF execution-plan descriptor that selects the marshalling backend and concurrency model used at registration time.
 
@@ -140,7 +140,7 @@ Notes:
 - Signature: `rducks_set_execution_plan(con, plan, threads = NULL, external_threads = NULL)`
 - Returns: `rducks_execution_plan invisibly`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Set the current scalar-UDF execution plan for future registrations on a connection and optionally update DuckDB thread settings.
 
@@ -155,7 +155,7 @@ Notes:
 - Signature: `rducks_current_execution_plan(con)`
 - Returns: `rducks_execution_plan`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect the default execution plan that will be used for later scalar-UDF registrations on a connection.
 
@@ -166,7 +166,7 @@ Inspect the default execution plan that will be used for later scalar-UDF regist
 - Signature: `rducks_native_execution_backend(con)`
 - Returns: `character scalar`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect the native execution backend currently recorded by the loaded extension for the connection.
 
@@ -177,7 +177,7 @@ Inspect the native execution backend currently recorded by the loaded extension 
 - Signature: `rducks_mode_semantics(mode = NULL)`
 - Returns: `data.frame or list`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Describe the semantics of scalar and vectorized Rducks scalar-UDF evaluation modes.
 
@@ -188,7 +188,7 @@ Describe the semantics of scalar and vectorized Rducks scalar-UDF evaluation mod
 - Signature: `rducks_ipc_workers(con = NULL, ping = FALSE, timeout = 1)`
 - Returns: `rducks_ipc_workers data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 List Rducks-managed Arrow IPC/NNG worker providers currently known to this R process, optionally filtered to one DuckDB runtime and optionally pinged.
 
@@ -204,7 +204,7 @@ Notes:
 - Signature: `rducks_explain_udf(con, name)`
 - Returns: `data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Explain a registered Rducks scalar UDF, including its mode, plan, signature, counters, and native/R-side metadata where available.
 
@@ -215,7 +215,7 @@ Explain a registered Rducks scalar UDF, including its mode, plan, signature, cou
 - Signature: `rducks_list_udfs(con)`
 - Returns: `data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 List scalar UDFs known to the Rducks registry for a connection's DuckDB runtime.
 
@@ -230,7 +230,7 @@ Notes:
 - Signature: `rducks_reset_udf_counters(con, name = NULL)`
 - Returns: `logical scalar`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Reset native scalar-UDF execution counters for one registered function or for all functions in the runtime registry.
 
@@ -241,7 +241,7 @@ Reset native scalar-UDF execution counters for one registered function or for al
 - Signature: `rducks_inproc_stats(con)`
 - Returns: `data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect counters for the in-process queued scalar-UDF execution path.
 
@@ -252,7 +252,7 @@ Inspect counters for the in-process queued scalar-UDF execution path.
 - Signature: `rducks_release_stats(con)`
 - Returns: `data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect counters for preserved R objects that were queued and released by Rducks native cleanup paths.
 
@@ -263,7 +263,7 @@ Inspect counters for preserved R objects that were queued and released by Rducks
 - Signature: `rducks_runtime_stats(con)`
 - Returns: `data.frame`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect native runtime registry counters such as active entries, stale entries, and extension-owned connection opens/closes.
 
@@ -274,7 +274,7 @@ Inspect native runtime registry counters such as active entries, stale entries, 
 - Signature: `rducks_enable_inproc(con, threads = NULL, external_threads = NULL)`
 - Returns: `logical scalar invisibly`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Compatibility helper that enables the in-process queued scalar-UDF backend for later registrations.
 
@@ -289,7 +289,7 @@ Notes:
 - Signature: `rducks_disable_inproc(con, threads = NULL, external_threads = NULL)`
 - Returns: `logical scalar invisibly`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Compatibility helper that restores the serial native backend for later registrations.
 
@@ -304,7 +304,7 @@ Notes:
 - Signature: `rducks_inproc_self_test(con, iterations = 1L)`
 - Returns: `numeric scalar`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Exercise the native in-process queue and return the number of self-test iterations completed by the extension.
 
@@ -316,7 +316,7 @@ Exercise the native in-process queue and return the number of self-test iteratio
 - Returns: `value of expr`
 - Aliases: `with.duckdb_connection`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Evaluate duckplyr code with ordinary R calls in expressions resolved to dynamic Rducks scalar UDFs instead of falling back to local R execution.
 
@@ -332,7 +332,7 @@ Notes:
 - Returns: `rducks_type descriptor`
 - Aliases: `rducks_is_type`, `BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`, `DECIMAL`, `ENUM`, `LIST`, `ARRAY`, `MAP`, `STRUCT`, `UNION`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Provide formal Rducks descriptors for DuckDB scalar, exact, temporal, and composite SQL types used in registrations and value checks.
 
@@ -344,7 +344,7 @@ Provide formal Rducks descriptors for DuckDB scalar, exact, temporal, and compos
 - Returns: `character, integer, list, or descriptor metadata`
 - Aliases: `rducks_type_sql`, `rducks_type_kind`, `rducks_type_children`, `rducks_type_child_names`, `rducks_type_size`, `rducks_type_parameters`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect normalized Rducks type descriptors and their DuckDB SQL spelling, kind, child descriptors, child names, size, and parameters.
 
@@ -355,7 +355,7 @@ Inspect normalized Rducks type descriptors and their DuckDB SQL spelling, kind, 
 - Signature: `rducks_type_normalize(x)`
 - Returns: `rducks_type descriptor`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Normalize quoted type tokens, descriptor objects, or descriptor lists into canonical Rducks type descriptors.
 
@@ -366,7 +366,7 @@ Normalize quoted type tokens, descriptor objects, or descriptor lists into canon
 - Signature: `rducks_duckdb_types(types)`
 - Returns: `character vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Convert Rducks type descriptors to DuckDB SQL type strings.
 
@@ -377,7 +377,7 @@ Convert Rducks type descriptors to DuckDB SQL type strings.
 - Signature: `rducks_duckdb_signature(name, args, returns)`
 - Returns: `character scalar`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Format a DuckDB scalar function signature from an Rducks function name, argument descriptors, and return descriptor.
 
@@ -388,7 +388,7 @@ Format a DuckDB scalar function signature from an Rducks function name, argument
 - Signature: `rducks_argument_type_mapping(type = NULL)`
 - Returns: `data.frame or list`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Describe how Rducks argument descriptors are materialized and passed to R functions, including copy and borrow behavior.
 
@@ -400,7 +400,7 @@ Describe how Rducks argument descriptors are materialized and passed to R functi
 - Returns: `x invisibly on success`
 - Aliases: `rducks_check_argument`, `rducks_check_return`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Validate that an R value is compatible with a DuckDB/Rducks type descriptor before using it as an argument or return value.
 
@@ -411,7 +411,7 @@ Validate that an R value is compatible with a DuckDB/Rducks type descriptor befo
 - Signature: `rducks_value_semantics(topic = NULL)`
 - Returns: `data.frame or list`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Describe Rducks NULL, NA, NaN, Inf, and exception-handling semantics for scalar-UDF arguments and returns.
 
@@ -423,7 +423,7 @@ Describe Rducks NULL, NA, NaN, Inf, and exception-handling semantics for scalar-
 - Returns: `character scalar`
 - Aliases: `rducks_duckdb_literal`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Inspect Rducks exact value classes and format them as DuckDB SQL literals when supported.
 
@@ -434,7 +434,7 @@ Inspect Rducks exact value classes and format them as DuckDB SQL literals when s
 - Signature: `rducks_bigint(x = character())`
 - Returns: `rducks_bigint vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct exact DuckDB BIGINT values backed by character strings for boundary-safe marshalling.
 
@@ -445,7 +445,7 @@ Construct exact DuckDB BIGINT values backed by character strings for boundary-sa
 - Signature: `rducks_ubigint(x = character())`
 - Returns: `rducks_ubigint vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct exact DuckDB UBIGINT values backed by character strings for unsigned 64-bit values.
 
@@ -456,7 +456,7 @@ Construct exact DuckDB UBIGINT values backed by character strings for unsigned 6
 - Signature: `rducks_hugeint(x = character())`
 - Returns: `rducks_hugeint vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct exact DuckDB HUGEINT values backed by character strings for signed 128-bit values.
 
@@ -467,7 +467,7 @@ Construct exact DuckDB HUGEINT values backed by character strings for signed 128
 - Signature: `rducks_uhugeint(x = character())`
 - Returns: `rducks_uhugeint vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct exact DuckDB UHUGEINT values backed by character strings for unsigned 128-bit values.
 
@@ -478,7 +478,7 @@ Construct exact DuckDB UHUGEINT values backed by character strings for unsigned 
 - Signature: `rducks_decimal(x = character(), width, scale = 0L)`
 - Returns: `rducks_decimal vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct exact DuckDB DECIMAL values with explicit width and scale.
 
@@ -489,7 +489,7 @@ Construct exact DuckDB DECIMAL values with explicit width and scale.
 - Signature: `rducks_uuid(x = character())`
 - Returns: `rducks_uuid vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct DuckDB UUID values from canonical UUID strings.
 
@@ -500,7 +500,7 @@ Construct DuckDB UUID values from canonical UUID strings.
 - Signature: `rducks_interval(months = 0L, days = 0L, micros = 0L)`
 - Returns: `rducks_interval vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct DuckDB INTERVAL values with month, day, and microsecond components.
 
@@ -512,7 +512,7 @@ Construct DuckDB INTERVAL values with month, day, and microsecond components.
 - Returns: `rducks_bits vector`
 - Aliases: `rducks_bits_raw`, `rducks_bits_xor`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct DuckDB BIT values and expose helpers for raw packed bytes and bitwise exclusive-or.
 
@@ -523,7 +523,7 @@ Construct DuckDB BIT values and expose helpers for raw packed bytes and bitwise 
 - Signature: `rducks_enum(x, levels = NULL)`
 - Returns: `rducks_enum vector`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct DuckDB ENUM values with explicit dictionary levels.
 
@@ -534,7 +534,7 @@ Construct DuckDB ENUM values with explicit dictionary levels.
 - Signature: `rducks_union(tag, value)`
 - Returns: `rducks_union vector/list`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Construct DuckDB UNION values from a tag and corresponding payload value.
 
@@ -546,7 +546,7 @@ Construct DuckDB UNION values from a tag and corresponding payload value.
 - Returns: `R value shaped for Rducks temporal marshalling`
 - Aliases: `rducks_as_timestamp`, `rducks_as_time`, `rducks_as_interval`, `rducks_interval_between`
 - Lifecycle: `experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Convert R date/time values to the exact shapes expected by Rducks temporal scalar-UDF marshalling.
 
@@ -558,7 +558,7 @@ Convert R date/time values to the exact shapes expected by Rducks temporal scala
 - Returns: `DuckDB scalar values`
 - Aliases: `rducks_version`, `rducks_runtime_token`, `rducks_register_scalar`, `rducks_register_table`, `rducks_register_aggregate`, `rducks_query_stream_open`, `rducks_query_stream_schema`, `rducks_query_stream_next`, `rducks_query_stream_close`
 - Lifecycle: `internal/experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Built-in SQL functions installed by the Rducks extension and used by the R wrappers for registration, runtime identity, and native query-stream control.
 
@@ -574,7 +574,7 @@ Notes:
 - Returns: `DuckDB scalar values or diagnostic rows`
 - Aliases: `rducks_execution_backend`, `rducks_set_execution_backend`, `rducks_udf_stat`, `rducks_udf_stat_fields`, `rducks_reset_udf_stats`, `rducks_queue_submitted`, `rducks_queue_executed`, `rducks_queue_timeouts`, `rducks_queue_pending_current`, `rducks_queue_pending_max`, `rducks_queue_running_current`, `rducks_queue_running_max`, `rducks_release_queue_queued`, `rducks_release_queue_released`, `rducks_release_queue_failed`, `rducks_release_queue_pending`, `rducks_runtime_registry_entries`, `rducks_runtime_active_entries`, `rducks_runtime_stale_entries`, `rducks_runtime_entries_created`, `rducks_runtime_stale_aliases`, `rducks_runtime_connections_opened`, `rducks_runtime_connections_closed`, `rducks_runtime_connection_open_failed`, `rducks_runtime_queue_init_failed`, `rducks_nng_quiesce`, `rducks_parallel_range`, `rducks_parallel_thread_probe`
 - Lifecycle: `internal/experimental`
-- Since: `0.0.2`
+- Since: `0.1.0`
 
 Native diagnostics and test/development helpers exposed by the extension for R wrapper introspection and focused concurrency tests.
 

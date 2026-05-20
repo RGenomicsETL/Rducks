@@ -20,7 +20,8 @@ Returns the R-side registration metadata together with native execution
 counters for a DuckDB scalar UDF registered by
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. The
 \code{mode} column is the Rducks scalar-UDF evaluation mode, while \code{plan_id},
-\code{marshalling}, and \code{concurrency} describe the frozen execution plan. The
+\code{marshalling}, and \code{concurrency} describe the plan recorded at registration
+time. The
 \code{r_side_record} column is \code{FALSE} when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed

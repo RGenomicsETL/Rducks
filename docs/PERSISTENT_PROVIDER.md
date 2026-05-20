@@ -42,12 +42,46 @@ The NNG provider separates control/data transport from worker lifecycle. The
 internal lifecycle backend contract currently covers `start()`, `stop()`,
 `cleanup()`, endpoint publication, and capability metadata. The default managed
 backend starts local mirai workers that run the Rducks NNG worker loop. The
-external-endpoint backend only health-checks caller-supplied endpoints and never
-stops those processes. Capability metadata distinguishes long-lived mori global
-sharing (`supports_mori_global_sharing`) from SQL chunk shared-memory handles
-(`supports_chunk_shared_memory_handles`, currently false for built-in backends).
-This split is deliberately below SQL/UDF semantics: backend choice must not
-redefine type mapping, null handling, or result shapes.
+provider is keyed by DuckDB runtime token, worker count, pending limit, endpoint
+set, and transport, so multiple scalar UDFs in the same runtime can share one
+provider pool. The external-endpoint backend only health-checks caller-supplied
+endpoints and never stops those processes. Capability metadata distinguishes
+long-lived mori global sharing (`supports_mori_global_sharing`) from SQL chunk
+shared-memory handles (`supports_chunk_shared_memory_handles`, currently false
+for built-in backends). This split is deliberately below SQL/UDF semantics:
+backend choice must not redefine type mapping, null handling, or result shapes.
+
+Managed worker startup happens during scalar-UDF registration for an
+`arrow_ipc + multiprocess_parallel` plan. Rducks starts `ipc_workers` mirai
+daemons, creates one NNG endpoint per worker (`abstract` on Linux by default,
+`ipc` elsewhere unless overridden), launches `rducks_nng_worker_loop()` in each
+process, and pings every endpoint before registration continues. UDF registration
+then broadcasts the closure, type metadata, NULL/error policy, output schema,
+packages, and globals to every worker.
+
+`rducks_ipc_workers(con, ping = TRUE)` lists the providers currently known to the
+R process, optionally filtered to a connection's runtime token. It reports the
+backend, compute name, transport, endpoint, mirai task state, and optional ping
+status. This is an R-side provider view; it is not a DuckDB catalog listing.
+
+`rducks_release(con)` is the deterministic cleanup path for a connection
+attachment. It first provides a safe main-thread drain point for preserved R
+objects queued by native destructors. If this connection is the last Rducks
+attachment to the DuckDB runtime, it asks the native extension to quiesce local
+NNG client pools, detaches the R-side runtime anchor, sends stop requests to
+Rducks-managed local worker endpoints, waits briefly for mirai tasks to resolve,
+collects resolved tasks, calls `mirai::daemons(0, .compute = ...)`, unlinks local
+IPC socket paths, and removes the provider from the process-local store. Release
+is intentionally non-destructive for DuckDB catalog functions and native catalog
+metadata: it does not unregister SQL functions or release closures still owned by
+live catalog entries. Caller-supplied `ipc_endpoints` are caller-owned; Rducks may
+close its local client pools but does not stop those external worker processes.
+
+Weak-reference finalizers provide best-effort mid-session cleanup when a DBI
+connection object is garbage-collected, but they are not a substitute for
+`rducks_release(con)`. Runtime-anchor finalizers are not run at R session exit;
+mirai child processes are expected to be terminated by the operating system with
+the parent R process, avoiding unsafe late nanonext/NNG calls during shutdown.
 
 ## Globals discovery and shared memory
 

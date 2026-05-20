@@ -49,7 +49,8 @@ and is independent of the execution plan.
 
 An execution plan chooses marshalling and concurrency (`arrow_r`, `arrow_c`, or
 `arrow_ipc`; `serial`, `inproc_concurrent`, or `multiprocess_parallel`) for
-future scalar-UDF registrations. It must not redefine DuckDB SQL type, NULL, or
+future scalar-UDF registrations and updates the native runtime backend used for
+matching concurrent execution. It must not redefine DuckDB SQL type, NULL, or
 result semantics.
 
 ## Thread boundary
@@ -85,7 +86,8 @@ phase has produced owned result data.
 - **R process/package**: recorded R-thread token, provider factories, release
   queues, and package diagnostics.
 - **DuckDB database runtime/catalog**: SQL functions, evaluator handles,
-  preserved closures, frozen execution-plan metadata, and counters.
+  preserved closures, frozen evaluator/marshalling metadata, runtime backend,
+  and counters.
 - **DBI connection attachment**: default execution plan for future registrations,
   finalizer bookkeeping, and the R-side registry view.
 

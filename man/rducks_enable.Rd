@@ -28,6 +28,7 @@ explicitly. \code{rducks_enable()} also sets DuckDB's
 \code{arrow_lossless_conversion=true} option on the user connection; the extension
 applies the same setting to its internal connections so DuckDB-specific Arrow
 metadata is preserved for typed scalar-UDF, table, and query-stream
-marshalling. After registering UDFs, call \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
-the extension-owned in-process queue.
+marshalling. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+before scalar-UDF registration to select a non-reference marshalling or
+concurrency plan.
 }

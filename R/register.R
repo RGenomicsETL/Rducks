@@ -114,11 +114,13 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' registration; unsupported plan/evaluation-mode/type combinations fail instead
 #' of switching engines. If a later call registers the same SQL name/signature,
 #' the callable implementation is replaced in the shared DuckDB database catalog
-#' rather than being tied to the registering DBI connection. After registration,
-#' use \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
-#' queued same-process execution. For `arrow_ipc` plans, the UDF closure and
-#' discovered globals are copied once to each NNG worker in the shared provider
-#' pool and retained for that pool's lifetime.
+#' rather than being tied to the registering DBI connection. Choose the desired
+#' execution plan before registration with
+#' \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}; the
+#' selected evaluator/marshalling metadata is then stored with the native catalog
+#' entry. For `arrow_ipc` plans, the UDF closure and discovered globals are
+#' copied once to each NNG worker in the shared provider pool and retained for
+#' that pool's lifetime.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.

@@ -191,7 +191,8 @@ rducks_explain_udf_row <- function(con, name) {
 #' counters for a DuckDB scalar UDF registered by
 #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. The
 #' `mode` column is the Rducks scalar-UDF evaluation mode, while `plan_id`,
-#' `marshalling`, and `concurrency` describe the frozen execution plan. The
+#' `marshalling`, and `concurrency` describe the plan recorded at registration
+#' time. The
 #' `r_side_record` column is `FALSE` when native catalog metadata is still
 #' present but the connection-local R registry view was detached or is otherwise
 #' unavailable. The native counters are useful for checking that a plan executed

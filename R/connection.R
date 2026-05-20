@@ -21,8 +21,9 @@ rducks_extension_path <- function() {
 #' `arrow_lossless_conversion=true` option on the user connection; the extension
 #' applies the same setting to its internal connections so DuckDB-specific Arrow
 #' metadata is preserved for typed scalar-UDF, table, and query-stream
-#' marshalling. After registering UDFs, call \code{\link[=rducks_enable_inproc]{rducks_enable_inproc()}} to opt into
-#' the extension-owned in-process queue.
+#' marshalling. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+#' before scalar-UDF registration to select a non-reference marshalling or
+#' concurrency plan.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.
@@ -60,20 +61,20 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 
 #' Enable in-process queued scalar-UDF execution
 #'
-#' Switches a Rducks-enabled DuckDB connection to the in-process queued
-#' scalar-UDF backend. This backend preserves R's thread discipline: DuckDB
+#' Switches a Rducks-enabled DuckDB connection to an `inproc_concurrent`
+#' execution plan for subsequent scalar-UDF registrations and updates the native
+#' runtime backend. This backend preserves R's thread discipline: DuckDB
 #' worker-side scalar-UDF callbacks submit chunk requests to an extension-owned
 #' queue, and the recorded main R thread drains the queue and performs all R API
-#' work. This is a
-#' same-process scheduling mode, not a performance promise; R function calls are
-#' still serialized on the main R thread. This helper changes only the
-#' concurrency part of the active execution plan; marshalling stays `arrow_r` or
-#' `arrow_c` according to \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}.
+#' work. This is a same-process scheduling mode, not a performance promise; R
+#' function calls are still serialized on the main R thread.
 #'
-#' Register scalar UDFs while the connection is in the registration-safe
-#' configuration, then call `rducks_enable_inproc()` before running queries that
-#' should use the queued in-process path. Use `threads`/`external_threads` here
-#' to adjust DuckDB's thread settings for queued execution.
+#' This is a compatibility helper for the `arrow_r`/`arrow_c` in-process queue.
+#' New code can call \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+#' directly with `rducks_execution_plan("arrow_r", "inproc_concurrent")` or
+#' `rducks_execution_plan("arrow_c", "inproc_concurrent")`. Select the plan
+#' before registering scalar UDFs whose reported execution plan should be the
+#' queued in-process path.
 #'
 #' @param con A `duckdb_connection` already enabled with \code{\link[=rducks_enable]{rducks_enable()}}.
 #' @param threads Optional positive integer to set with `PRAGMA threads` before

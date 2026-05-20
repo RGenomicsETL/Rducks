@@ -141,7 +141,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' An execution plan describes how Rducks should marshal DuckDB chunks and what
 #' concurrency model is allowed. When stored on a connection it is the default
 #' for future \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
-#' calls; the selected evaluator/marshalling is frozen into each registered
+#' calls and updates the native runtime backend used for matching concurrent
+#' execution; the selected evaluator/marshalling is frozen into each registered
 #' scalar UDF's database-catalog metadata. It is separate from DuckDB function
 #' kind and from scalar-UDF registration semantics such as Rducks evaluation
 #' mode (`"scalar"` row calls versus `"vectorized"` chunk calls),

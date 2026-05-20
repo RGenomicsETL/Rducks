@@ -21,19 +21,19 @@ than \code{threads} (for example \verb{threads = 4, external_threads = 1}).}
 \code{con}, invisibly.
 }
 \description{
-Switches a Rducks-enabled DuckDB connection to the in-process queued
-scalar-UDF backend. This backend preserves R's thread discipline: DuckDB
+Switches a Rducks-enabled DuckDB connection to an \code{inproc_concurrent}
+execution plan for subsequent scalar-UDF registrations and updates the native
+runtime backend. This backend preserves R's thread discipline: DuckDB
 worker-side scalar-UDF callbacks submit chunk requests to an extension-owned
 queue, and the recorded main R thread drains the queue and performs all R API
-work. This is a
-same-process scheduling mode, not a performance promise; R function calls are
-still serialized on the main R thread. This helper changes only the
-concurrency part of the active execution plan; marshalling stays \code{arrow_r} or
-\code{arrow_c} according to \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}.
+work. This is a same-process scheduling mode, not a performance promise; R
+function calls are still serialized on the main R thread.
 }
 \details{
-Register scalar UDFs while the connection is in the registration-safe
-configuration, then call \code{rducks_enable_inproc()} before running queries that
-should use the queued in-process path. Use \code{threads}/\code{external_threads} here
-to adjust DuckDB's thread settings for queued execution.
+This is a compatibility helper for the \code{arrow_r}/\code{arrow_c} in-process queue.
+New code can call \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+directly with \code{rducks_execution_plan("arrow_r", "inproc_concurrent")} or
+\code{rducks_execution_plan("arrow_c", "inproc_concurrent")}. Select the plan
+before registering scalar UDFs whose reported execution plan should be the
+queued in-process path.
 }
