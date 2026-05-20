@@ -181,6 +181,22 @@ Inspect the native execution backend currently recorded by the loaded extension 
 
 Describe the semantics of scalar and vectorized Rducks scalar-UDF evaluation modes.
 
+## `rducks_ipc_workers`
+
+- Kind: `R function`
+- Category: `diagnostics`
+- Signature: `rducks_ipc_workers(con = NULL, ping = FALSE, timeout = 1)`
+- Returns: `rducks_ipc_workers data.frame`
+- Lifecycle: `experimental`
+- Since: `0.0.2`
+
+List Rducks-managed Arrow IPC/NNG worker providers currently known to this R process, optionally filtered to one DuckDB runtime and optionally pinged.
+
+Notes:
+
+- The result has one row per configured worker endpoint and includes provider backend, compute name, transport, endpoint, task state, and ping status.
+- Caller-supplied ipc_endpoints are shown as external providers.
+
 ## `rducks_explain_udf`
 
 - Kind: `R function`

@@ -35,6 +35,36 @@ Aggregates use `rducks_register_aggregate()`, table functions use
 producers, and query consumers can use `rducks_query_stream()` for
 native streaming batches.
 
+## How it works
+
+Rducks loads a small DuckDB extension that records the database instance
+and keeps extension-owned connections for registration callbacks, table
+scans, and query streaming. R closures are preserved while DuckDB
+catalog metadata can call them, and scalar calls either run on the
+recorded R thread or are marshalled to explicit R worker processes by
+the Arrow IPC plan.
+
+The “Arrow dance” is the shared boundary. DuckDB produces vectors in
+standard chunks; Rducks exposes those chunks through DuckDB Arrow C
+Data, uses [nanoarrow](https://arrow.apache.org/nanoarrow/latest/r/) to
+materialize typed R inputs, calls the R function, and writes typed
+results back to DuckDB. The `arrow_r` plan keeps most conversion in
+R/nanoarrow, `arrow_c` uses native C materialization for supported
+types, and `arrow_ipc` serializes owned Arrow IPC request/result bytes
+over [NNG](https://nng.nanomsg.org/) so separate R worker processes can
+do the R evaluation. Dynamic omitted-`args` UDFs still bind concrete
+DuckDB types at the SQL call site before this marshalling begins.
+
+A future transport could use DuckDB’s [Quack-style
+format](https://github.com/duckdb/duckdb-quack): DuckDB
+`BinarySerializer` messages carrying logical types and `DataChunk`
+payloads, rather than Arrow IPC bytes. That could remove some Arrow
+encode/decode work and align worker transport more closely with DuckDB’s
+native chunk model. It is not a runtime dependency today; adopting it
+would require a versioned C implementation, strict compatibility checks,
+and the same explicit ownership and R-thread rules that the Arrow paths
+enforce now.
+
 ## Quick start
 
 ``` r
@@ -385,7 +415,9 @@ Execution plans are fixed at scalar-UDF registration time.
 
 The benchmark below registers the same sleeping vectorized UDF on three
 real plans and runs the queries against one typed CSV scan with many
-DuckDB-sized vectors. The UDF closes over a random R lookup vector; the
+DuckDB-sized vectors. A padded column makes the single CSV large enough
+for DuckDB’s parallel CSV scanner to split; the UDF still operates on
+the integer column. The UDF closes over a random R lookup vector; the
 Arrow IPC registration sends that global explicitly using
 [`ipc_globals_share = "mori"`](https://shikokuchuo.net/mori/). Timings
 are illustrative and machine-dependent, but the code exercises the
@@ -395,23 +427,28 @@ actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths.
 set.seed(1)
 lookup <- sample.int(20L, 1000L, replace = TRUE)
 slow_lookup <- function(x) {
-  Sys.sleep(0.05)
+  Sys.sleep(0.1)
   x + lookup[[1L]]
 }
 
 duckdb_vector_size <- 2048L
 csv_rows <- duckdb_vector_size * 64L
+csv_pad <- strrep("x", 128L)
 csv_path <- tempfile("rducks-readme-csv-", fileext = ".csv")
-writeLines(c("i", as.character(seq.int(0L, csv_rows - 1L))), csv_path)
+writeLines(
+  c("i,pad", paste0(seq.int(0L, csv_rows - 1L), ",", csv_pad)),
+  csv_path
+)
 
+ipc_workers <- 2L
 plans <- list(
   arrow_r = rducks_execution_plan("arrow_r", "serial"),
   arrow_c = rducks_execution_plan("arrow_c", "serial"),
   arrow_ipc_mori = rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
-    ipc_workers = 2L,
-    ipc_transport = "tcp",
-    ipc_timeout = 30,
+    ipc_workers = ipc_workers,
+    ipc_transport = "ipc",
+    ipc_timeout = 60,
     ipc_globals = "lookup",
     ipc_globals_share = "mori"
   )
@@ -431,26 +468,47 @@ for (i in seq_along(plans)) {
   )
 }
 
-run_plan <- function(label, udf, plan, threads) {
-  rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
+run_plan <- function(label, udf, plan, threads, external_threads) {
+  rducks_set_execution_plan(
+    con,
+    plan,
+    threads = threads,
+    external_threads = external_threads
+  )
   elapsed <- system.time({
     result <- DBI::dbGetQuery(con, sprintf(
       paste(
         "SELECT sum(%s((i %% 1000)::INTEGER)) AS total",
         "FROM read_csv(%s, header = true,",
-        "columns = {'i': 'INTEGER'}, parallel = true)"
+        "columns = {'i': 'INTEGER', 'pad': 'VARCHAR'}, parallel = true)"
       ),
       DBI::dbQuoteIdentifier(con, udf),
       DBI::dbQuoteString(con, csv_path)
     ))
   })[["elapsed"]]
-  data.frame(label = label, total = result$total[[1]], elapsed_sec = round(elapsed, 3))
+  data.frame(
+    label = label,
+    total = result$total[[1]],
+    elapsed_sec = round(elapsed, 3)
+  )
 }
 
 benchmark <- rbind(
-  run_plan("arrow_r serial", udfs[[1]], plans[[1]], threads = 1),
-  run_plan("arrow_c serial", udfs[[2]], plans[[2]], threads = 1),
-  run_plan("arrow_ipc + mori", udfs[[3]], plans[[3]], threads = 2)
+  run_plan(
+    "arrow_r serial", udfs[[1]], plans[[1]],
+    threads = 1,
+    external_threads = 1
+  ),
+  run_plan(
+    "arrow_c serial", udfs[[2]], plans[[2]],
+    threads = 1,
+    external_threads = 1
+  ),
+  run_plan(
+    "arrow_ipc + mori", udfs[[3]], plans[[3]],
+    threads = ipc_workers + 1L,
+    external_threads = ipc_workers
+  )
 )
 unlink(csv_path, force = TRUE)
 rducks_set_execution_plan(
@@ -461,9 +519,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       7.092
-#> 2   arrow_c serial 65961344       7.038
-#> 3 arrow_ipc + mori 65961344       7.082
+#> 1   arrow_r serial 65961344      10.145
+#> 2   arrow_c serial 65961344       9.975
+#> 3 arrow_ipc + mori 65961344       5.774
 ```
 
 ## duckplyr integration
@@ -495,7 +553,7 @@ local_score <- function(x, label) {
   as.double(x + if (identical(label, "high")) 100 else 0)
 }
 
-out <- with(
+with(
   demo_con,
   scores |>
     dplyr::mutate(score = local_score(x, label)) |>
@@ -503,7 +561,6 @@ out <- with(
     dplyr::collect(),
   rducks_returns = list(local_score = DOUBLE)
 )
-out
 #> # A tibble: 3 × 2
 #>      id score
 #> * <int> <dbl>
@@ -566,36 +623,6 @@ inspection, and selection-vector helpers. This table is generated from
 | `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`                                                                                                                                                                                                                    |     4 |
 
 See `docs/BUILD.md` for the build and ABI details.
-
-## How it works
-
-Rducks loads a small DuckDB extension that records the database instance
-and keeps extension-owned connections for registration callbacks, table
-scans, and query streaming. R closures are preserved while DuckDB
-catalog metadata can call them, and scalar calls either run on the
-recorded R thread or are marshalled to explicit R worker processes by
-the Arrow IPC plan.
-
-The “Arrow dance” is the shared boundary. DuckDB produces vectors in
-standard chunks; Rducks exposes those chunks through DuckDB Arrow C
-Data, uses [nanoarrow](https://arrow.apache.org/nanoarrow/latest/r/) to
-materialize typed R inputs, calls the R function, and writes typed
-results back to DuckDB. The `arrow_r` plan keeps most conversion in
-R/nanoarrow, `arrow_c` uses native C materialization for supported
-types, and `arrow_ipc` serializes owned Arrow IPC request/result bytes
-over [NNG](https://nng.nanomsg.org/) so separate R worker processes can
-do the R evaluation. Dynamic omitted-`args` UDFs still bind concrete
-DuckDB types at the SQL call site before this marshalling begins.
-
-A future transport could use DuckDB’s [Quack-style
-format](https://github.com/duckdb/duckdb-quack): DuckDB
-`BinarySerializer` messages carrying logical types and `DataChunk`
-payloads, rather than Arrow IPC bytes. That could remove some Arrow
-encode/decode work and align worker transport more closely with DuckDB’s
-native chunk model. It is not a runtime dependency today; adopting it
-would require a versioned C implementation, strict compatibility checks,
-and the same explicit ownership and R-thread rules that the Arrow paths
-enforce now.
 
 ## References
 

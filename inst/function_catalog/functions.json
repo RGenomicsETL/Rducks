@@ -160,6 +160,20 @@
     "since": "0.0.2"
   },
   {
+    "name": "rducks_ipc_workers",
+    "kind": "R function",
+    "category": "diagnostics",
+    "signature": "rducks_ipc_workers(con = NULL, ping = FALSE, timeout = 1)",
+    "returns": "rducks_ipc_workers data.frame",
+    "description": "List Rducks-managed Arrow IPC/NNG worker providers currently known to this R process, optionally filtered to one DuckDB runtime and optionally pinged.",
+    "lifecycle": "experimental",
+    "since": "0.0.2",
+    "notes": [
+      "The result has one row per configured worker endpoint and includes provider backend, compute name, transport, endpoint, task state, and ping status.",
+      "Caller-supplied ipc_endpoints are shown as external providers."
+    ]
+  },
+  {
     "name": "rducks_explain_udf",
     "kind": "R function",
     "category": "diagnostics",

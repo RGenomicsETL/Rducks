@@ -605,6 +605,131 @@ rducks_nng_stop_all_providers <- function(quiet = FALSE) {
   rducks_nng_stop_runtime_providers(NULL, quiet = quiet)
 }
 
+rducks_ipc_workers_empty <- function() {
+  out <- data.frame(
+    runtime_token = character(),
+    provider = character(),
+    backend = character(),
+    compute = character(),
+    transport = character(),
+    worker = integer(),
+    workers = integer(),
+    started = logical(),
+    endpoint = character(),
+    task_state = character(),
+    ping = character(),
+    stringsAsFactors = FALSE
+  )
+  class(out) <- c("rducks_ipc_workers", class(out))
+  out
+}
+
+rducks_ipc_worker_task_state <- function(task, external = FALSE, started = FALSE) {
+  if (isTRUE(external)) return(if (isTRUE(started)) "external" else "not_started")
+  if (is.null(task)) return(if (isTRUE(started)) "unknown" else "not_started")
+  unresolved <- tryCatch(mirai::unresolved(task), error = function(e) NA)
+  if (is.na(unresolved)) return("unknown")
+  if (isTRUE(unresolved)) "running" else "resolved"
+}
+
+rducks_ipc_worker_ping <- function(endpoint, timeout) {
+  if (is.na(endpoint) || !nzchar(endpoint)) return(NA_character_)
+  tryCatch({
+    resp <- rducks_nng_transact(
+      endpoint,
+      rducks_nng_wire_encode_request(rducks_nng_wire_type_ping),
+      timeout = timeout,
+      retries = 1L
+    )
+    decoded <- rducks_nng_decode_response_checked(resp, endpoint, "worker ping")
+    if (identical(decoded$status, "ok")) "ok" else paste0("error: ", decoded$error)
+  }, error = function(e) paste0("error: ", conditionMessage(e)))
+}
+
+rducks_ipc_workers_from_store <- function(runtime_token = NULL, ping = FALSE, timeout = 1) {
+  store <- .rducks_state$nng_providers
+  if (is.null(store)) return(rducks_ipc_workers_empty())
+  rows <- list()
+  for (key in ls(store, all.names = TRUE)) {
+    record <- get(key, envir = store, inherits = FALSE)
+    if (!is.null(runtime_token) && !identical(record$runtime_token, runtime_token)) next
+    provider <- record$provider
+    if (!is.list(provider) || !is.function(provider$worker_stats)) next
+    rows[[length(rows) + 1L]] <- provider$worker_stats(
+      runtime_token = record$runtime_token,
+      ping = ping,
+      timeout = timeout
+    )
+  }
+  if (!length(rows)) return(rducks_ipc_workers_empty())
+  out <- do.call(rbind, rows)
+  row.names(out) <- NULL
+  class(out) <- c("rducks_ipc_workers", "data.frame")
+  out
+}
+
+#' List Rducks-managed IPC workers
+#'
+#' Lists the local Rducks NNG providers currently known to this R process. These
+#' are the managed workers used by `arrow_ipc + multiprocess_parallel` scalar-UDF
+#' execution plans when `ipc_endpoints` is not supplied. Caller-supplied external
+#' endpoints are shown as external providers.
+#'
+#' @param con Optional DuckDB connection. When supplied, only providers attached
+#'   to that connection's Rducks runtime token are listed. With `NULL`, all
+#'   providers known to this R process are listed.
+#' @param ping Logical scalar. If `TRUE`, send a lightweight NNG ping to every
+#'   listed endpoint and report `ok` or the ping error.
+#' @param timeout Positive timeout in seconds used for `ping = TRUE`.
+#' @return A data frame with one row per configured worker endpoint.
+#' @export
+rducks_ipc_workers <- function(con = NULL, ping = FALSE, timeout = 1) {
+  if (!is.logical(ping) || length(ping) != 1L || is.na(ping)) {
+    stop("ping must be TRUE or FALSE", call. = FALSE)
+  }
+  timeout <- rducks_nng_check_seconds(timeout, "timeout", default = 1,
+                                      minimum = rducks_nng_defaults$minimum_timeout)
+  runtime_token <- NULL
+  if (!is.null(con)) {
+    rducks_assert_duckdb_connection(con)
+    runtime_token <- rducks_runtime_token(con, required = FALSE)
+    if (is.na(runtime_token)) return(rducks_ipc_workers_empty())
+  }
+  rducks_ipc_workers_from_store(runtime_token = runtime_token, ping = ping,
+                                timeout = timeout)
+}
+
+rducks_shorten_worker_endpoint <- function(x, width = 60L) {
+  x <- as.character(x)
+  missing <- is.na(x) | !nzchar(x)
+  too_wide <- !missing & nchar(x, type = "width") > width
+  x[missing] <- ""
+  x[too_wide] <- paste0(substr(x[too_wide], 1L, width - 3L), "...")
+  x
+}
+
+#' @export
+print.rducks_ipc_workers <- function(x, ..., endpoints = FALSE) {
+  n <- nrow(x)
+  if (!n) {
+    cat("<rducks_ipc_workers> no workers\n")
+    return(invisible(x))
+  }
+  out <- as.data.frame(x)
+  out$runtime <- rducks_shorten_worker_endpoint(out$runtime_token, 20L)
+  out$worker <- paste0(out$worker, "/", out$workers)
+  out$endpoint <- if (isTRUE(endpoints)) {
+    as.character(out$endpoint)
+  } else {
+    rducks_shorten_worker_endpoint(out$endpoint, 42L)
+  }
+  out <- out[, c("runtime", "backend", "transport", "worker", "started",
+                 "task_state", "ping", "endpoint"), drop = FALSE]
+  cat("<rducks_ipc_workers: ", n, " worker", if (n == 1L) "" else "s", ">\n", sep = "")
+  print.data.frame(out, row.names = FALSE, ...)
+  invisible(x)
+}
+
 rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
                                 endpoints = NULL, transport = NULL,
                                 backend = NULL) {
@@ -737,6 +862,40 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       started = isTRUE(state$started),
       transport = state$transport,
       endpoints = length(state$endpoints),
+      stringsAsFactors = FALSE
+    )
+  }
+  provider$worker_stats <- function(runtime_token = NA_character_, ping = FALSE,
+                                    timeout = 1) {
+    n <- max(state$workers, length(state$endpoints), length(state$tasks), 0L)
+    if (!n) return(rducks_ipc_workers_empty())
+    endpoint <- rep(NA_character_, n)
+    endpoint[seq_along(state$endpoints)] <- state$endpoints
+    task_state <- vapply(seq_len(n), function(i) {
+      task <- if (i <= length(state$tasks)) state$tasks[[i]] else NULL
+      rducks_ipc_worker_task_state(
+        task,
+        external = isTRUE(state$external_endpoints),
+        started = isTRUE(state$started)
+      )
+    }, character(1L))
+    ping_status <- rep(NA_character_, n)
+    if (isTRUE(ping)) {
+      ping_status <- vapply(endpoint, rducks_ipc_worker_ping,
+                            character(1L), timeout = timeout)
+    }
+    data.frame(
+      runtime_token = runtime_token,
+      provider = "nng",
+      backend = state$backend$name %||% "custom",
+      compute = state$compute,
+      transport = state$transport,
+      worker = seq_len(n),
+      workers = state$workers,
+      started = isTRUE(state$started),
+      endpoint = endpoint,
+      task_state = task_state,
+      ping = ping_status,
       stringsAsFactors = FALSE
     )
   }
