@@ -421,7 +421,9 @@ the integer column. The UDF closes over a random R lookup vector; the
 Arrow IPC registration sends that global explicitly using
 [`ipc_globals_share = "mori"`](https://shikokuchuo.net/mori/). Timings
 are illustrative and machine-dependent, but the code exercises the
-actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths.
+actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths. Use
+`rducks_ipc_workers(con, ping = TRUE)` while an Arrow IPC plan is active
+to list the managed NNG workers.
 
 ``` r
 set.seed(1)
@@ -519,9 +521,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344      10.145
-#> 2   arrow_c serial 65961344       9.975
-#> 3 arrow_ipc + mori 65961344       5.774
+#> 1   arrow_r serial 65961344      10.278
+#> 2   arrow_c serial 65961344      10.183
+#> 3 arrow_ipc + mori 65961344       5.963
 ```
 
 ## duckplyr integration

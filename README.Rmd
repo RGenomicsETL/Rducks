@@ -382,7 +382,8 @@ closes over a random R lookup vector; the Arrow IPC registration sends that
 global explicitly using
 [`ipc_globals_share = "mori"`](https://shikokuchuo.net/mori/). Timings are
 illustrative and machine-dependent, but the code exercises the actual `arrow_r`,
-`arrow_c`, and native NNG/Arrow IPC paths.
+`arrow_c`, and native NNG/Arrow IPC paths. Use `rducks_ipc_workers(con, ping =
+TRUE)` while an Arrow IPC plan is active to list the managed NNG workers.
 
 ```{r execution-plan-benchmark}
 set.seed(1)
