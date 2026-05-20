@@ -38,28 +38,38 @@ rducks_enable(con, threads = "single")
 score_udf <- rducks_register_scalar_udf(
   con,
   name = "r_score",
-  fun = function(x, label) {
-    bonus <- if (identical(label, "high")) 100 else 0
-    as.double(x + bonus)
+  fun = function(row) {
+    bonus <- if (identical(row$label, "high")) 100 else 0
+    list(
+      score = as.double(row$x + bonus),
+      parts = as.double(c(row$x, bonus))
+    )
   },
-  returns = DOUBLE,
+  returns = STRUCT(score = DOUBLE, parts = DOUBLE[]),
   side_effects = TRUE
 )
 
 dbGetQuery(con, "
-  SELECT r_score(x::DOUBLE, label) AS score
-  FROM (VALUES (2, 'low'), (21, 'high')) AS t(x, label)
+  WITH input AS (
+    SELECT struct_pack(x := x::DOUBLE, label := label) AS payload
+    FROM (VALUES (2, 'low'), (21, 'high')) AS t(x, label)
+  ), scored AS (
+    SELECT r_score(payload) AS result FROM input
+  )
+  SELECT result.score AS score, result.parts AS parts
+  FROM scored
 ")
-#>   score
-#> 1     2
-#> 2   121
+#>   score   parts
+#> 1     2    2, 0
+#> 2   121 21, 100
 ```
 
 `r_score()` omits `args`, so DuckDB registers it as a dynamic varargs
-scalar UDF. The return type is still explicit. At each SQL call site,
-DuckDB binds the concrete argument types and Rducks materializes those
-inputs as if the signature had been declared with `args = ...`. Use
-`args = NULL` only for a true zero-argument UDF.
+scalar UDF. At this SQL call site DuckDB binds a concrete
+`STRUCT(x DOUBLE, label VARCHAR)` input, and the return type is
+explicit: a struct containing a `DOUBLE` and a `DOUBLE[]`. Rducks
+materializes dynamic inputs as if the signature had been declared with
+`args = ...`. Use `args = NULL` only for a true zero-argument UDF.
 
 The returned registration object records the normalized signature and
 options; DuckDB owns the catalog function after registration. Dropping
@@ -441,9 +451,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       7.104
-#> 2   arrow_c serial 65961344       6.937
-#> 3 arrow_ipc + mori 65961344       7.309
+#> 1   arrow_r serial 65961344       7.087
+#> 2   arrow_c serial 65961344       7.020
+#> 3 arrow_ipc + mori 65961344       7.269
 ```
 
 ## duckplyr integration
