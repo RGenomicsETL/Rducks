@@ -52,6 +52,8 @@
   : Inspect in-process queue counters
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)
   : Construct DuckDB INTERVAL values
+- [`rducks_ipc_workers()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ipc_workers.md)
+  : List Rducks-managed IPC workers
 - [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   : List registered Rducks scalar UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)

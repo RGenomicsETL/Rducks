@@ -390,7 +390,7 @@
 </tr>
 </tbody>
 </table>
-<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one typed CSV scan with many DuckDB-sized vectors. A padded column makes the single CSV large enough for DuckDB’s parallel CSV scanner to split; the UDF still operates on the integer column. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <a href="https://shikokuchuo.net/mori/" class="external-link"><code>ipc_globals_share = "mori"</code></a>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths.</p>
+<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one typed CSV scan with many DuckDB-sized vectors. A padded column makes the single CSV large enough for DuckDB’s parallel CSV scanner to split; the UDF still operates on the integer column. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <a href="https://shikokuchuo.net/mori/" class="external-link"><code>ipc_globals_share = "mori"</code></a>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths. Use <code>rducks_ipc_workers(con, ping = TRUE)</code> while an Arrow IPC plan is active to list the managed NNG workers.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample.int</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fl">1000L</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
@@ -487,9 +487,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344      10.145</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344       9.975</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.774</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344      10.278</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344      10.183</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.963</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>

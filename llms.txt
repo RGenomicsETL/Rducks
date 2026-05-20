@@ -438,7 +438,9 @@ the integer column. The UDF closes over a random R lookup vector; the
 Arrow IPC registration sends that global explicitly using
 [`ipc_globals_share = "mori"`](https://shikokuchuo.net/mori/). Timings
 are illustrative and machine-dependent, but the code exercises the
-actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths.
+actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC paths. Use
+`rducks_ipc_workers(con, ping = TRUE)` while an Arrow IPC plan is active
+to list the managed NNG workers.
 
 ``` r
 
@@ -537,9 +539,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344      10.145
-#> 2   arrow_c serial 65961344       9.975
-#> 3 arrow_ipc + mori 65961344       5.774
+#> 1   arrow_r serial 65961344      10.278
+#> 2   arrow_c serial 65961344      10.183
+#> 3 arrow_ipc + mori 65961344       5.963
 ```
 
 ## duckplyr integration
@@ -716,6 +718,8 @@ See `docs/BUILD.md` for the build and ABI details.
   : Inspect in-process queue counters
 - [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md)
   : Construct DuckDB INTERVAL values
+- [`rducks_ipc_workers()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ipc_workers.md)
+  : List Rducks-managed IPC workers
 - [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   : List registered Rducks scalar UDFs
 - [`rducks_mode_semantics()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_mode_semantics.md)
