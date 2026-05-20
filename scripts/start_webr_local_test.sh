@@ -13,7 +13,7 @@ echo "Building Rducks webR artifact with ${WEBR_IMAGE}..."
 docker run --rm -v "${ROOT_DIR}:/work/Rducks" -w /work/Rducks "${WEBR_IMAGE}" bash -lc '
 set -eu
 rm -rf Rducks.Rcheck ..Rcheck README.html inst/rducks_extension/build
-R CMD build .
+R CMD build --no-build-vignettes .
 Rscript -e "if (!requireNamespace(\"pak\", quietly = TRUE)) install.packages(\"pak\", repos = \"https://repo.r-wasm.org/\")"
 Rscript -e "pak::pak(\"r-wasm/rwasm\", ask = FALSE)"
 Rscript -e "version <- read.dcf(\"DESCRIPTION\")[1, \"Version\"]; rwasm::build(sprintf(\"./Rducks_%s.tar.gz\", version))"
