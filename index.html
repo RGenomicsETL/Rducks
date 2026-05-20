@@ -51,7 +51,7 @@
 </h1></div>
 <p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed DuckDB C extension. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks and query streaming. It is built around explicit type descriptors, DuckDB Arrow C Data/nanoarrow marshalling, and a strict rule that R object work runs on the recorded R thread unless it is intentionally moved to R worker processes through the Arrow IPC plan.</p>
-<p>The user-facing surface separates DuckDB function kind, scalar-UDF evaluation mode, execution plan, and R-side query consumption. Scalar UDFs use <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Execution plans choose the marshalling/concurrency backend (<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>). Aggregates, table functions, and <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> are separate APIs, not scalar-UDF plan variants.</p>
+<p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, execution plan, and R-side query consumption. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Execution plans select the marshalling/concurrency backend (<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>). Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>, table functions use <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> with optional <code><a href="reference/rducks_table_stream.html">rducks_table_stream()</a></code> producers, and query consumers can use <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> for native streaming batches.</p>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
@@ -454,9 +454,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344       7.087</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344       7.020</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       7.269</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344       7.132</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344       7.058</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       7.217</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>

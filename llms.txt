@@ -14,16 +14,22 @@ and a strict rule that R object work runs on the recorded R thread
 unless it is intentionally moved to R worker processes through the Arrow
 IPC plan.
 
-The user-facing surface separates DuckDB function kind, scalar-UDF
-evaluation mode, execution plan, and R-side query consumption. Scalar
-UDFs use
+Rducks is organized around DuckDB function kind, scalar-UDF evaluation
+mode, execution plan, and R-side query consumption. Scalar UDFs are
+registered with
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 and choose `mode = "scalar"` for one R call per row or
 `mode = "vectorized"` for one R call per DuckDB chunk. Execution plans
-choose the marshalling/concurrency backend (`arrow_r`, `arrow_c`, or
-`arrow_ipc`). Aggregates, table functions, and
+select the marshalling/concurrency backend (`arrow_r`, `arrow_c`, or
+`arrow_ipc`). Aggregates use
+[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md),
+table functions use
+[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+with optional
+[`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+producers, and query consumers can use
 [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
-are separate APIs, not scalar-UDF plan variants.
+for native streaming batches.
 
 ## Quick start
 
@@ -466,9 +472,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       7.087
-#> 2   arrow_c serial 65961344       7.020
-#> 3 arrow_ipc + mori 65961344       7.269
+#> 1   arrow_r serial 65961344       7.132
+#> 2   arrow_c serial 65961344       7.058
+#> 3 arrow_ipc + mori 65961344       7.217
 ```
 
 ## duckplyr integration
