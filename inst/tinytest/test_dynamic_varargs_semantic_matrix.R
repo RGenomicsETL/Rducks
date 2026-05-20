@@ -106,6 +106,25 @@ rducks_semantic_vector <- function(x) {
   vapply(seq_along(x), function(i) rducks_semantic_value(rducks_semantic_element(x, i)), character(1))
 }
 
+# Keep IPC worker closure capture principled and small: these helpers are the
+# complete R dependency set for the semantic UDFs, so worker plans can serialize
+# this private environment instead of the whole test-file environment.
+rducks_semantic_helper_env <- new.env(parent = baseenv())
+for (nm in c(
+  "rducks_semantic_number",
+  "rducks_semantic_element",
+  "rducks_semantic_value",
+  "rducks_semantic_vector"
+)) {
+  assign(nm, get(nm), envir = rducks_semantic_helper_env)
+}
+for (nm in ls(rducks_semantic_helper_env, all.names = TRUE)) {
+  fn <- get(nm, envir = rducks_semantic_helper_env)
+  environment(fn) <- rducks_semantic_helper_env
+  assign(nm, fn, envir = rducks_semantic_helper_env)
+  assign(nm, fn)
+}
+
 rducks_semantic_nested_null_type <- STRUCT(
   a = INTEGER,
   vals = LIST(INTEGER),
@@ -272,7 +291,8 @@ local({
       "arrow_ipc", "multiprocess_parallel",
       ipc_workers = 1L,
       ipc_transport = "tcp",
-      ipc_timeout = 30
+      ipc_timeout = 30,
+      ipc_globals = FALSE
     )
   )
   expected <- vapply(1:3, rducks_semantic_nested_null_expected, character(1))
