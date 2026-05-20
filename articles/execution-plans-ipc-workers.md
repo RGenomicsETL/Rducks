@@ -20,6 +20,16 @@ chunks are marshalled to R and what concurrency contract is allowed.
 Unsupported combinations fail. Rducks does not silently fall back from
 one engine to another.
 
+``` r
+
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+```
+
 ## Select the plan before registration
 
 The default execution plan stored on a connection is used for future
@@ -40,6 +50,12 @@ rducks_register_scalar_udf(
   args = INTEGER,
   returns = INTEGER
 )
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_plus_one_c
+#>   evaluation_mode: scalar
+#>   plan:            arrow_c+serial
+#>   signature:       r_plus_one_c(INTEGER) -> INTEGER
 ```
 
 For concurrent execution demonstrations, set the matching plan again
@@ -59,7 +75,9 @@ rducks_set_execution_plan(
 ## Arrow IPC worker plan
 
 `arrow_ipc + multiprocess_parallel` starts or connects to persistent R
-workers that receive Arrow IPC-encoded chunks over NNG.
+workers that receive Arrow IPC-encoded chunks over NNG. Registration
+still happens under single-thread DuckDB settings; widen `threads` /
+`external_threads` afterwards for query execution.
 
 ``` r
 
@@ -74,8 +92,8 @@ rducks_set_execution_plan(
     ipc_transport = "ipc",
     ipc_timeout = 30
   ),
-  threads = ipc_workers + 1L,
-  external_threads = ipc_workers
+  threads = 1L,
+  external_threads = 1L
 )
 
 rducks_register_scalar_udf(
@@ -89,6 +107,25 @@ rducks_register_scalar_udf(
   returns = DOUBLE,
   mode = "vectorized",
   side_effects = TRUE
+)
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_slow_square
+#>   evaluation_mode: vectorized
+#>   plan:            arrow_ipc+multiprocess_parallel
+#>   signature:       r_slow_square(DOUBLE) -> DOUBLE
+
+rducks_set_execution_plan(
+  con,
+  rducks_execution_plan(
+    "arrow_ipc",
+    "multiprocess_parallel",
+    ipc_workers = ipc_workers,
+    ipc_transport = "ipc",
+    ipc_timeout = 30
+  ),
+  threads = ipc_workers + 1L,
+  external_threads = ipc_workers
 )
 ```
 
@@ -108,7 +145,21 @@ it also checks whether each endpoint responds.
 ``` r
 
 rducks_ipc_workers(con)
+#> <rducks_ipc_workers: 2 workers>
+#>             runtime backend transport worker started task_state ping
+#>  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running <NA>
+#>  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running <NA>
+#>                                    endpoint
+#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
+#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
 rducks_ipc_workers(con, ping = TRUE, timeout = 1)
+#> <rducks_ipc_workers: 2 workers>
+#>             runtime backend transport worker started task_state ping
+#>  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running   ok
+#>  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running   ok
+#>                                    endpoint
+#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
+#>  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...
 ```
 
 The result is an R-side provider view: runtime token, provider key,

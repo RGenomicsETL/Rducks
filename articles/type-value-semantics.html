@@ -33,10 +33,10 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -93,13 +93,20 @@ with an allowed concurrency model.</li>
 scalar-UDF registrations and the matching native runtime backend; it
 does not rewrite an existing scalar UDF to a different marshalling
 engine.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dbi.r-dbi.org" class="external-link">DBI</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r.duckdb.org/" class="external-link">duckdb</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rducks" class="external-link">Rducks</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="declared-descriptors">Declared descriptors<a class="anchor" aria-label="anchor" href="#declared-descriptors"></a>
 </h2>
 <p>Rducks descriptors describe DuckDB logical types, including
 primitive, exact, and composite values.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">primitive</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span>, <span class="va">DOUBLE</span>, <span class="va">BOOLEAN</span>, <span class="va">VARCHAR</span><span class="op">)</span></span>
 <span><span class="va">exact</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">UUID</span>, <span class="va">HUGEINT</span>, <span class="fu"><a href="../reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">18</span>, <span class="fl">4</span><span class="op">)</span>, <span class="va">INTERVAL</span>, <span class="va">BIT</span><span class="op">)</span></span>
 <span><span class="va">composite</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
@@ -110,29 +117,43 @@ primitive, exact, and composite values.</p>
 <span>  <span class="fu"><a href="../reference/rducks_type_objects.html">UNION</a></span><span class="op">(</span>i <span class="op">=</span> <span class="va">INTEGER</span>, s <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>Declared scalar-UDF arguments pin the SQL signature:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_add_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_add_one</span></span>
+<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
+<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
+<span><span class="co">#&gt;   signature:       r_add_one(INTEGER) -&gt; INTEGER</span></span></code></pre></div>
 <p>Omitting <code>args</code> registers a dynamic DuckDB varargs
 function. At bind time, DuckDB supplies the concrete logical types for
 the SQL call, and Rducks uses those bound types for the same input
 materialization it would use for explicit <code>args</code>.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_payload_label"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">payload</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">payload</span><span class="op">$</span><span class="va">label</span>, <span class="va">payload</span><span class="op">$</span><span class="va">x</span>, sep <span class="op">=</span> <span class="st">":"</span><span class="op">)</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">VARCHAR</span></span>
 <span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_payload_label</span></span>
+<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
+<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
+<span><span class="co">#&gt;   signature:       r_payload_label(...) -&gt; VARCHAR</span></span>
 <span></span>
 <span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"</span></span>
 <span><span class="st">  SELECT r_payload_label(struct_pack(x := 3::INTEGER, label := 'a')) AS label</span></span>
-<span><span class="st">"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="st">"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   label</span></span>
+<span><span class="co">#&gt; 1   a:3</span></span></code></pre></div>
 <p>Use <code>args = NULL</code> for a true zero-argument UDF.</p>
 </div>
 <div class="section level2">
@@ -144,7 +165,7 @@ DuckDB produces SQL <code>NULL</code> without calling R.</p>
 <p><code>null_handling = "special"</code> passes top-level SQL
 <code>NULL</code> inputs through to R as type-specific missing values so
 the R function can decide what to return.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  name <span class="op">=</span> <span class="st">"r_null_special"</span>,</span>
@@ -153,8 +174,16 @@ the R function can decide what to return.</p>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  null_handling <span class="op">=</span> <span class="st">"special"</span></span>
 <span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_null_special</span></span>
+<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
+<span><span class="co">#&gt;   plan:            arrow_r+serial</span></span>
+<span><span class="co">#&gt;   signature:       r_null_special(INTEGER) -&gt; INTEGER</span></span>
 <span></span>
-<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_null_special(NULL::INTEGER) AS x"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_null_special(NULL::INTEGER) AS x"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   x</span></span>
+<span><span class="co">#&gt; 1 5</span></span></code></pre></div>
 <p>Nested NULLs are part of the nested value. Scalar children usually
 become typed <code>NA</code> values, while nested composite NULLs become
 <code>NULL</code>.</p>
@@ -175,20 +204,49 @@ enough for ordinary SQL optimization.</p>
 </h2>
 <p>The package exports compact reference tables so tests and
 documentation can stay aligned with the implemented semantics.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_mode_semantics.html">rducks_mode_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mode"</span>, <span class="st">"call_granularity"</span>, <span class="st">"input_shape"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;         mode            call_granularity</span></span>
+<span><span class="co">#&gt; 1     scalar          one R call per row</span></span>
+<span><span class="co">#&gt; 2 vectorized one R call per DuckDB chunk</span></span>
+<span><span class="co">#&gt;                                                               input_shape</span></span>
+<span><span class="co">#&gt; 1 one scalar/composite R value per declared or dynamically bound argument</span></span>
+<span><span class="co">#&gt; 2     one R vector/list-column per declared or dynamically bound argument</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_value_semantics.html">rducks_value_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">[</span></span>
 <span>  <span class="fu"><a href="../reference/rducks_value_semantics.html">rducks_value_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">$</span><span class="va">duckdb_type</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"INTEGER"</span>, <span class="st">"VARCHAR"</span>, <span class="st">"STRUCT"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"duckdb_type"</span>, <span class="st">"r_value_class"</span>, <span class="st">"special_null_argument"</span><span class="op">)</span></span>
 <span><span class="op">]</span></span>
+<span><span class="co">#&gt;    duckdb_type r_value_class special_null_argument</span></span>
+<span><span class="co">#&gt; 6      INTEGER       integer           NA_integer_</span></span>
+<span><span class="co">#&gt; 12     VARCHAR     character         NA_character_</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  <span class="va">INTEGER</span>,</span>
 <span>  <span class="va">UUID</span>,</span>
 <span>  <span class="fu"><a href="../reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">2</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="../reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;           duckdb_type descriptor_kind  r_value_class      r_argument_shape</span></span>
+<span><span class="co">#&gt; 1             INTEGER          scalar        integer        integer scalar</span></span>
+<span><span class="co">#&gt; 2                UUID          scalar    rducks_uuid    rducks_uuid scalar</span></span>
+<span><span class="co">#&gt; 3      DECIMAL(10, 2)         decimal rducks_decimal rducks_decimal scalar</span></span>
+<span><span class="co">#&gt; 4 STRUCT(a INTEGER[])          struct           list  named list of fields</span></span>
+<span><span class="co">#&gt;   special_null_argument           copy_semantics integer_uses_r_double</span></span>
+<span><span class="co">#&gt; 1           NA_integer_             boxed scalar                 FALSE</span></span>
+<span><span class="co">#&gt; 2                  NULL boxed exact Rducks value                 FALSE</span></span>
+<span><span class="co">#&gt; 3                  NULL boxed exact Rducks value                 FALSE</span></span>
+<span><span class="co">#&gt; 4                  NULL   recursive R allocation                 FALSE</span></span>
+<span><span class="co">#&gt;   float32_widens_to_r_double precision_may_be_lost</span></span>
+<span><span class="co">#&gt; 1                      FALSE                 FALSE</span></span>
+<span><span class="co">#&gt; 2                      FALSE                 FALSE</span></span>
+<span><span class="co">#&gt; 3                      FALSE                 FALSE</span></span>
+<span><span class="co">#&gt; 4                      FALSE                 FALSE</span></span>
+<span><span class="co">#&gt;                           notes</span></span>
+<span><span class="co">#&gt; 1                              </span></span>
+<span><span class="co">#&gt; 2      exact Rducks value class</span></span>
+<span><span class="co">#&gt; 3 exact fixed-point value class</span></span>
+<span><span class="co">#&gt; 4       recursive field mapping</span></span></code></pre></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

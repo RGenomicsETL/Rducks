@@ -33,10 +33,10 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
+    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -92,6 +92,13 @@ persistent R worker processes.</li>
 </ul>
 <p>Unsupported combinations fail. Rducks does not silently fall back
 from one engine to another.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dbi.r-dbi.org" class="external-link">DBI</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r.duckdb.org/" class="external-link">duckdb</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rducks" class="external-link">Rducks</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="select-the-plan-before-registration">Select the plan before registration<a class="anchor" aria-label="anchor" href="#select-the-plan-before-registration"></a>
@@ -99,7 +106,7 @@ from one engine to another.</p>
 <p>The default execution plan stored on a connection is used for future
 scalar-UDF registrations. Register UDFs under the plan you want to test
 or deploy.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"serial"</span><span class="op">)</span></span>
@@ -111,11 +118,17 @@ or deploy.</p>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_plus_one_c</span></span>
+<span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
+<span><span class="co">#&gt;   plan:            arrow_c+serial</span></span>
+<span><span class="co">#&gt;   signature:       r_plus_one_c(INTEGER) -&gt; INTEGER</span></span></code></pre></div>
 <p>For concurrent execution demonstrations, set the matching plan again
 before query execution so the native runtime backend and DuckDB thread
 settings match the UDF metadata being exercised.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"inproc_concurrent"</span><span class="op">)</span>,</span>
@@ -127,8 +140,11 @@ settings match the UDF metadata being exercised.</p>
 <h2 id="arrow-ipc-worker-plan">Arrow IPC worker plan<a class="anchor" aria-label="anchor" href="#arrow-ipc-worker-plan"></a>
 </h2>
 <p><code>arrow_ipc + multiprocess_parallel</code> starts or connects to
-persistent R workers that receive Arrow IPC-encoded chunks over NNG.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+persistent R workers that receive Arrow IPC-encoded chunks over NNG.
+Registration still happens under single-thread DuckDB settings; widen
+<code>threads</code> / <code>external_threads</code> afterwards for
+query execution.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">ipc_workers</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
@@ -140,8 +156,8 @@ persistent R workers that receive Arrow IPC-encoded chunks over NNG.</p>
 <span>    ipc_transport <span class="op">=</span> <span class="st">"ipc"</span>,</span>
 <span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
 <span>  <span class="op">)</span>,</span>
-<span>  threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
-<span>  external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
+<span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
+<span>  external_threads <span class="op">=</span> <span class="fl">1L</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
@@ -155,6 +171,25 @@ persistent R workers that receive Arrow IPC-encoded chunks over NNG.</p>
 <span>  returns <span class="op">=</span> <span class="va">DOUBLE</span>,</span>
 <span>  mode <span class="op">=</span> <span class="st">"vectorized"</span>,</span>
 <span>  side_effects <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
+<span><span class="co">#&gt;   registered:      yes</span></span>
+<span><span class="co">#&gt;   name:            r_slow_square</span></span>
+<span><span class="co">#&gt;   evaluation_mode: vectorized</span></span>
+<span><span class="co">#&gt;   plan:            arrow_ipc+multiprocess_parallel</span></span>
+<span><span class="co">#&gt;   signature:       r_slow_square(DOUBLE) -&gt; DOUBLE</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
+<span>    <span class="st">"arrow_ipc"</span>,</span>
+<span>    <span class="st">"multiprocess_parallel"</span>,</span>
+<span>    ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
+<span>    ipc_transport <span class="op">=</span> <span class="st">"ipc"</span>,</span>
+<span>    ipc_timeout <span class="op">=</span> <span class="fl">30</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  threads <span class="op">=</span> <span class="va">ipc_workers</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
+<span>  external_threads <span class="op">=</span> <span class="va">ipc_workers</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>Managed startup occurs during registration. Rducks starts local mirai
 workers, launches the NNG worker loop, pings each endpoint, then
@@ -169,9 +204,23 @@ does not stop them.</p>
 <p><code><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers()</a></code> lists IPC providers known to the
 current R process. With <code>ping = TRUE</code>, it also checks whether
 each endpoint responds.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; &lt;rducks_ipc_workers: 2 workers&gt;</span></span>
+<span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;                                    endpoint</span></span>
+<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
+<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
+<span><span class="fu"><a href="../reference/rducks_ipc_workers.html">rducks_ipc_workers</a></span><span class="op">(</span><span class="va">con</span>, ping <span class="op">=</span> <span class="cn">TRUE</span>, timeout <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; &lt;rducks_ipc_workers: 2 workers&gt;</span></span>
+<span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    1/2    TRUE    running   ok</span></span>
+<span><span class="co">#&gt;  rducks-runtime-1-1   mirai       ipc    2/2    TRUE    running   ok</span></span>
+<span><span class="co">#&gt;                                    endpoint</span></span>
+<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span>
+<span><span class="co">#&gt;  ipc:///tmp/RtmpSAc5pp/rdn-8792-3188468c...</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

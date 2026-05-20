@@ -63,6 +63,9 @@ DBI::dbGetQuery(con, "
   SELECT result.score AS score, result.parts AS parts
   FROM scored
 ")
+#>   score   parts
+#> 1     2    2, 0
+#> 2   121 21, 100
 ```
 
 Use `args = NULL` only for a true zero-argument UDF. Use an explicit
@@ -89,6 +92,10 @@ rducks_register_aggregate(
   args = INTEGER,
   returns = INTEGER
 )
+#> <rducks_aggregate_registration>
+#>   registered: yes
+#>   name:       r_sum_i32
+#>   signature:  r_sum_i32(INTEGER) -> INTEGER
 
 DBI::dbGetQuery(
   con,
@@ -97,6 +104,8 @@ DBI::dbGetQuery(
     "FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
   )
 )
+#>   total
+#> 1     3
 ```
 
 ## Register a table function
@@ -116,8 +125,16 @@ rducks_register_table(
   fun = function(n) data.frame(i = seq_len(as.integer(n))),
   chunk_size = 2L
 )
+#> <rducks_table_registration>
+#>   registered: yes
+#>   name:       r_rows
+#>   signature:  r_rows(ANY) -> TABLE(<bind-time schema>)
 
 DBI::dbGetQuery(con, "SELECT * FROM r_rows(3) ORDER BY i")
+#>   i
+#> 1 1
+#> 2 2
+#> 3 3
 ```
 
 A streaming table function returns a prototype plus a `next_batch()`
@@ -144,8 +161,14 @@ rducks_register_table(
   },
   chunk_size = 2L
 )
+#> <rducks_table_registration>
+#>   registered: yes
+#>   name:       r_stream_rows
+#>   signature:  r_stream_rows(ANY) -> TABLE(<bind-time schema>)
 
 DBI::dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
+#>   total
+#> 1    15
 ```
 
 ## Stream query results back to R
@@ -168,6 +191,19 @@ repeat {
   if (is.null(batch)) break
   print(batch)
 }
+#>   i sq
+#> 1 0  0
+#> 2 1  1
+#> 3 2  4
+#> 4 3  9
+#>   i sq
+#> 1 4 16
+#> 2 5 25
+#> 3 6 36
+#> 4 7 49
+#>   i sq
+#> 1 8 64
+#> 2 9 81
 
 stream$close()
 ```

@@ -20,6 +20,16 @@ Changing a connection’s default execution plan affects future scalar-UDF
 registrations and the matching native runtime backend; it does not
 rewrite an existing scalar UDF to a different marshalling engine.
 
+``` r
+
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+```
+
 ## Declared descriptors
 
 Rducks descriptors describe DuckDB logical types, including primitive,
@@ -49,6 +59,12 @@ rducks_register_scalar_udf(
   args = INTEGER,
   returns = INTEGER
 )
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_add_one
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       r_add_one(INTEGER) -> INTEGER
 ```
 
 Omitting `args` registers a dynamic DuckDB varargs function. At bind
@@ -64,10 +80,18 @@ rducks_register_scalar_udf(
   fun = function(payload) paste(payload$label, payload$x, sep = ":"),
   returns = VARCHAR
 )
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_payload_label
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       r_payload_label(...) -> VARCHAR
 
 DBI::dbGetQuery(con, "
   SELECT r_payload_label(struct_pack(x := 3::INTEGER, label := 'a')) AS label
 ")
+#>   label
+#> 1   a:3
 ```
 
 Use `args = NULL` for a true zero-argument UDF.
@@ -92,8 +116,16 @@ rducks_register_scalar_udf(
   returns = INTEGER,
   null_handling = "special"
 )
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            r_null_special
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       r_null_special(INTEGER) -> INTEGER
 
 DBI::dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
+#>   x
+#> 1 5
 ```
 
 Nested NULLs are part of the nested value. Scalar children usually
@@ -118,11 +150,20 @@ can stay aligned with the implemented semantics.
 ``` r
 
 rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
+#>         mode            call_granularity
+#> 1     scalar          one R call per row
+#> 2 vectorized one R call per DuckDB chunk
+#>                                                               input_shape
+#> 1 one scalar/composite R value per declared or dynamically bound argument
+#> 2     one R vector/list-column per declared or dynamically bound argument
 
 rducks_value_semantics()[
   rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "STRUCT"),
   c("duckdb_type", "r_value_class", "special_null_argument")
 ]
+#>    duckdb_type r_value_class special_null_argument
+#> 6      INTEGER       integer           NA_integer_
+#> 12     VARCHAR     character         NA_character_
 
 rducks_argument_type_mapping(list(
   INTEGER,
@@ -130,4 +171,24 @@ rducks_argument_type_mapping(list(
   DECIMAL(10, 2),
   STRUCT(a = INTEGER[])
 ))
+#>           duckdb_type descriptor_kind  r_value_class      r_argument_shape
+#> 1             INTEGER          scalar        integer        integer scalar
+#> 2                UUID          scalar    rducks_uuid    rducks_uuid scalar
+#> 3      DECIMAL(10, 2)         decimal rducks_decimal rducks_decimal scalar
+#> 4 STRUCT(a INTEGER[])          struct           list  named list of fields
+#>   special_null_argument           copy_semantics integer_uses_r_double
+#> 1           NA_integer_             boxed scalar                 FALSE
+#> 2                  NULL boxed exact Rducks value                 FALSE
+#> 3                  NULL boxed exact Rducks value                 FALSE
+#> 4                  NULL   recursive R allocation                 FALSE
+#>   float32_widens_to_r_double precision_may_be_lost
+#> 1                      FALSE                 FALSE
+#> 2                      FALSE                 FALSE
+#> 3                      FALSE                 FALSE
+#> 4                      FALSE                 FALSE
+#>                           notes
+#> 1                              
+#> 2      exact Rducks value class
+#> 3 exact fixed-point value class
+#> 4       recursive field mapping
 ```
