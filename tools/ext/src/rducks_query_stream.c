@@ -652,6 +652,15 @@ static int rducks_query_stream_close_native(rducks_runtime_entry_t *runtime, con
     return 1;
 }
 
+static void rducks_query_stream_destroy_detached_list(rducks_query_stream_entry_t *entry) {
+    while (entry) {
+        rducks_query_stream_entry_t *next = entry->next;
+        entry->next = NULL;
+        rducks_query_stream_entry_destroy(entry);
+        entry = next;
+    }
+}
+
 static void rducks_query_stream_close_all(rducks_runtime_entry_t *runtime) {
     rducks_query_stream_entry_t *entry;
     if (!runtime) return;
@@ -659,12 +668,7 @@ static void rducks_query_stream_close_all(rducks_runtime_entry_t *runtime) {
     entry = runtime->query_streams;
     runtime->query_streams = NULL;
     rducks_runtime_unlock();
-    while (entry) {
-        rducks_query_stream_entry_t *next = entry->next;
-        entry->next = NULL;
-        rducks_query_stream_entry_destroy(entry);
-        entry = next;
-    }
+    rducks_query_stream_destroy_detached_list(entry);
 }
 
 static int rducks_query_stream_schema_native(rducks_runtime_entry_t *runtime, const char *token,

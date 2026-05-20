@@ -574,7 +574,7 @@ Notes:
 - Category: `native extension surface`
 - Signature: `rducks_execution_backend(); rducks_set_execution_backend(name); rducks_udf_stat(name, field); rducks_reset_udf_stats(name); queue/runtime/nng diagnostics`
 - Returns: `DuckDB scalar values or diagnostic rows`
-- Aliases: `rducks_execution_backend`, `rducks_set_execution_backend`, `rducks_udf_stat`, `rducks_udf_stat_fields`, `rducks_reset_udf_stats`, `rducks_queue_submitted`, `rducks_queue_executed`, `rducks_queue_timeouts`, `rducks_queue_pending_current`, `rducks_queue_pending_max`, `rducks_queue_running_current`, `rducks_queue_running_max`, `rducks_release_queue_queued`, `rducks_release_queue_released`, `rducks_release_queue_failed`, `rducks_release_queue_pending`, `rducks_runtime_registry_entries`, `rducks_runtime_active_entries`, `rducks_runtime_stale_entries`, `rducks_runtime_entries_created`, `rducks_runtime_stale_aliases`, `rducks_runtime_connections_opened`, `rducks_runtime_connections_closed`, `rducks_runtime_connection_open_failed`, `rducks_runtime_queue_init_failed`, `rducks_nng_quiesce`, `rducks_parallel_range`, `rducks_parallel_thread_probe`
+- Aliases: `rducks_execution_backend`, `rducks_set_execution_backend`, `rducks_udf_stat`, `rducks_udf_stat_fields`, `rducks_reset_udf_stats`, `rducks_queue_submitted`, `rducks_queue_executed`, `rducks_queue_timeouts`, `rducks_queue_pending_current`, `rducks_queue_pending_max`, `rducks_queue_running_current`, `rducks_queue_running_max`, `rducks_queue_main_drains`, `rducks_queue_main_drain_batches`, `rducks_queue_main_drain_max_batch`, `rducks_queue_pending_timeout_ms`, `rducks_queue_running_timeout_supported`, `rducks_release_queue_queued`, `rducks_release_queue_released`, `rducks_release_queue_failed`, `rducks_release_queue_pending`, `rducks_runtime_registry_entries`, `rducks_runtime_active_entries`, `rducks_runtime_stale_entries`, `rducks_runtime_entries_created`, `rducks_runtime_stale_aliases`, `rducks_runtime_connections_opened`, `rducks_runtime_connections_closed`, `rducks_runtime_connection_open_failed`, `rducks_runtime_queue_init_failed`, `rducks_nng_quiesce`, `rducks_parallel_range`, `rducks_parallel_thread_probe`
 - Lifecycle: `internal/experimental`
 - Since: `0.1.0`
 
@@ -583,4 +583,5 @@ Native diagnostics and test/development helpers exposed by the extension for R w
 Notes:
 
 - Development-only surfaces such as rducks_parallel_range and rducks_parallel_thread_probe require RDUCKS_DEV_SURFACES=true.
+- rducks_queue_running_timeout_supported() intentionally returns FALSE: running in-process requests borrow DuckDB callback-frame storage and cannot be safely cancelled after the recorded R thread starts executing them.
 

@@ -258,12 +258,14 @@ static void *rducks_realloc_array(void *ptr, size_t n, size_t size) {
  */
 #ifdef _WIN32
 static CRITICAL_SECTION g_runtime_lock;
+static CRITICAL_SECTION g_registration_lock;
 static INIT_ONCE g_runtime_lock_once = INIT_ONCE_STATIC_INIT;
 static BOOL CALLBACK rducks_runtime_lock_init_once(PINIT_ONCE once, PVOID param, PVOID *context) {
     (void)once;
     (void)param;
     (void)context;
     InitializeCriticalSection(&g_runtime_lock);
+    InitializeCriticalSection(&g_registration_lock);
     return TRUE;
 }
 static void rducks_runtime_lock(void) {
@@ -275,11 +277,19 @@ static int rducks_runtime_try_lock(void) {
     return TryEnterCriticalSection(&g_runtime_lock) ? 1 : 0;
 }
 static void rducks_runtime_unlock(void) { LeaveCriticalSection(&g_runtime_lock); }
+static void rducks_registration_lock(void) {
+    InitOnceExecuteOnce(&g_runtime_lock_once, rducks_runtime_lock_init_once, NULL, NULL);
+    EnterCriticalSection(&g_registration_lock);
+}
+static void rducks_registration_unlock(void) { LeaveCriticalSection(&g_registration_lock); }
 #else
 static pthread_mutex_t g_runtime_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_registration_lock = PTHREAD_MUTEX_INITIALIZER;
 static void rducks_runtime_lock(void) { pthread_mutex_lock(&g_runtime_lock); }
 static int rducks_runtime_try_lock(void) { return pthread_mutex_trylock(&g_runtime_lock) == 0 ? 1 : 0; }
 static void rducks_runtime_unlock(void) { pthread_mutex_unlock(&g_runtime_lock); }
+static void rducks_registration_lock(void) { pthread_mutex_lock(&g_registration_lock); }
+static void rducks_registration_unlock(void) { pthread_mutex_unlock(&g_registration_lock); }
 #endif
 
 static rducks_runtime_entry_t *rducks_runtime_find_locked(duckdb_database database) {

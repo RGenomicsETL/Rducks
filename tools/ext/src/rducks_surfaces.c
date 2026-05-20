@@ -521,6 +521,12 @@ static void rducks_queue_pending_timeout_ms_scalar(duckdb_function_info info, du
     for (idx_t i = 0; i < n; i++) out[i] = value;
 }
 
+/* Running requests borrow DuckDB callback-frame input/output storage. The
+ * queue can safely time out while a request is pending, but once the recorded R
+ * thread is executing it there is no safe native cancellation path that would
+ * leave those borrowed vectors in a well-defined state. Expose this as an
+ * explicit diagnostic capability flag rather than a hidden stub.
+ */
 static void rducks_queue_running_timeout_supported_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                                           duckdb_vector output) {
     (void)info;
@@ -833,6 +839,8 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
     duckdb_connection old_stream_connection = NULL;
     duckdb_connection new_connection = NULL;
     duckdb_connection new_stream_connection = NULL;
+    rducks_query_stream_entry_t *detached_streams = NULL;
+    rducks_r_scalar_meta_t *detached_udfs = NULL;
     if (!runtime || !database) {
         snprintf(err, err_cap, "Rducks runtime refresh is missing database state");
         return 0;
@@ -874,17 +882,21 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
         rducks_runtime_unlock();
         return 0;
     }
-    rducks_query_stream_close_all(runtime);
-    rducks_runtime_forget_udf_registry(runtime);
     rducks_runtime_lock();
+    detached_streams = runtime->query_streams;
+    detached_udfs = runtime->udf_registry_head;
     old_connection = runtime->connection;
     old_stream_connection = runtime->query_stream_connection;
+    runtime->query_streams = NULL;
+    runtime->udf_registry_head = NULL;
     runtime->database = database;
     runtime->connection = new_connection;
     runtime->query_stream_connection = new_stream_connection;
     runtime->query_stream_connection_busy = 0;
     runtime->registration_surface_ready = 0;
     rducks_runtime_unlock();
+    rducks_query_stream_destroy_detached_list(detached_streams);
+    rducks_runtime_destroy_detached_udf_registry(detached_udfs);
     if (old_connection) {
         duckdb_disconnect(&old_connection);
         rducks_runtime_lock();
@@ -914,11 +926,13 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             database = *db_ptr;
         }
     }
+    rducks_registration_lock();
     runtime = rducks_runtime_get_or_create(database, connection, err, sizeof(err));
     if (!runtime) {
         if (access) {
             access->set_error(info, err[0] ? err : "failed to initialize Rducks runtime");
         }
+        rducks_registration_unlock();
         return false;
     }
 
@@ -930,6 +944,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             if (access) {
                 access->set_error(info, err[0] ? err : "failed to refresh Rducks runtime connection");
             }
+            rducks_registration_unlock();
             return false;
         }
         if (!rducks_register_version(connection) || !rducks_register_runtime_token(connection, runtime) ||
@@ -942,11 +957,13 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
             if (access) {
                 access->set_error(info, "failed to register Rducks SQL surface");
             }
+            rducks_registration_unlock();
             return false;
         }
     }
     rducks_runtime_lock();
     runtime->registration_surface_ready = 1;
     rducks_runtime_unlock();
+    rducks_registration_unlock();
     return true;
 }

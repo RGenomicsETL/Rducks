@@ -185,6 +185,21 @@ static void rducks_preserved_release_snapshot(uint64_t *queued, uint64_t *releas
     rducks_runtime_unlock();
 }
 
+static void rducks_runtime_destroy_detached_udf_registry(rducks_r_scalar_meta_t *detached) {
+    /* Metadata destruction may happen later on arbitrary DuckDB threads. This
+     * helper only tears down native RIPC client pools and detached linked-list
+     * bookkeeping; preserved R evaluators remain owned by the metadata and are
+     * released through the safe preserved-release path when DuckDB destroys it.
+     */
+    rducks_r_scalar_meta_t *cur;
+    for (cur = detached; cur; ) {
+        rducks_r_scalar_meta_t *next = cur->registry_next;
+        cur->registry_next = NULL;
+        rducks_nng_client_pool_destroy(&cur->ripc_client_pool);
+        cur = next;
+    }
+}
+
 static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) {
     /* Used when a DuckDB extension reload invalidates catalog-owned function
      * metadata. Detach registry bookkeeping without calling R API. If DuckDB
@@ -195,19 +210,13 @@ static void rducks_runtime_forget_udf_registry(rducks_runtime_entry_t *runtime) 
      * Native RIPC client pools are not R objects; close them here so forgotten
      * metas cannot strand NNG sockets outside the runtime quiesce path.
      */
-    rducks_r_scalar_meta_t *cur;
     rducks_r_scalar_meta_t *detached;
     if (!runtime) return;
     rducks_runtime_lock();
     detached = runtime->udf_registry_head;
     runtime->udf_registry_head = NULL;
     rducks_runtime_unlock();
-    for (cur = detached; cur; ) {
-        rducks_r_scalar_meta_t *next = cur->registry_next;
-        cur->registry_next = NULL;
-        rducks_nng_client_pool_destroy(&cur->ripc_client_pool);
-        cur = next;
-    }
+    rducks_runtime_destroy_detached_udf_registry(detached);
 }
 
 static uint64_t rducks_udf_counter_load(atomic_uint_fast64_t *counter) {

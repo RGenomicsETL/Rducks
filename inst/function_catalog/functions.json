@@ -589,6 +589,11 @@
       "rducks_queue_pending_max",
       "rducks_queue_running_current",
       "rducks_queue_running_max",
+      "rducks_queue_main_drains",
+      "rducks_queue_main_drain_batches",
+      "rducks_queue_main_drain_max_batch",
+      "rducks_queue_pending_timeout_ms",
+      "rducks_queue_running_timeout_supported",
       "rducks_release_queue_queued",
       "rducks_release_queue_released",
       "rducks_release_queue_failed",
@@ -610,7 +615,8 @@
     "lifecycle": "internal/experimental",
     "since": "0.1.0",
     "notes": [
-      "Development-only surfaces such as rducks_parallel_range and rducks_parallel_thread_probe require RDUCKS_DEV_SURFACES=true."
+      "Development-only surfaces such as rducks_parallel_range and rducks_parallel_thread_probe require RDUCKS_DEV_SURFACES=true.",
+      "rducks_queue_running_timeout_supported() intentionally returns FALSE: running in-process requests borrow DuckDB callback-frame storage and cannot be safely cancelled after the recorded R thread starts executing them."
     ]
   }
 ]

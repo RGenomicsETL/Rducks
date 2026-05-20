@@ -226,6 +226,37 @@ local({
 
   invisible(rducks_register_table(
     con,
+    "rducks_table_bigint_args",
+    function(big, ubig, literal) {
+      data.frame(
+        big = as.character(big),
+        ubig = as.character(ubig),
+        literal = as.character(literal),
+        big_class = inherits(big, "rducks_bigint"),
+        ubig_class = inherits(ubig, "rducks_ubigint"),
+        literal_class = inherits(literal, "rducks_bigint")
+      )
+    },
+    chunk_size = 2L
+  ))
+  bigint_args <- DBI::dbGetQuery(
+    con,
+    paste0(
+      "SELECT * FROM rducks_table_bigint_args(",
+      "9223372036854775806::BIGINT, ",
+      "18446744073709551614::UBIGINT, ",
+      "9223372036854775806)"
+    )
+  )
+  expect_equal(bigint_args$big[[1L]], "9223372036854775806")
+  expect_equal(bigint_args$ubig[[1L]], "18446744073709551614")
+  expect_equal(bigint_args$literal[[1L]], "9223372036854775806")
+  expect_true(isTRUE(bigint_args$big_class[[1L]]))
+  expect_true(isTRUE(bigint_args$ubig_class[[1L]]))
+  expect_true(isTRUE(bigint_args$literal_class[[1L]]))
+
+  invisible(rducks_register_table(
+    con,
     "rducks_table_dynamic_args",
     function(kind) {
       if (identical(kind, "numbers")) data.frame(i = 1:2) else data.frame(label = c("a", "b"))

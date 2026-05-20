@@ -156,6 +156,20 @@ static SEXP rducks_r_table_uint64_scalar(uint64_t value) {
     return Rf_ScalarReal((double)value);
 }
 
+static SEXP rducks_r_table_bigint_scalar(int64_t value) {
+    uint8_t bytes[8];
+    uint64_t u;
+    memcpy(&u, &value, sizeof(u));
+    rducks_rc_u64_to_le_bytes(u, bytes);
+    return rducks_rc_make_integer_object_from_le_bytes(bytes, 8, 1, "rducks_bigint");
+}
+
+static SEXP rducks_r_table_ubigint_scalar(uint64_t value) {
+    uint8_t bytes[8];
+    rducks_rc_u64_to_le_bytes(value, bytes);
+    return rducks_rc_make_integer_object_from_le_bytes(bytes, 8, 0, "rducks_ubigint");
+}
+
 static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char *err, size_t err_cap);
 
 static int rducks_r_table_duckdb_value_string_to_r(duckdb_value value, SEXP *out, char *err, size_t err_cap) {
@@ -334,9 +348,12 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
     case DUCKDB_TYPE_INTEGER:
         *out = Rf_ScalarInteger((int)duckdb_get_int32(value));
         break;
-    case DUCKDB_TYPE_INTEGER_LITERAL:
-        *out = rducks_r_table_int64_scalar(duckdb_get_int64(value));
+    case DUCKDB_TYPE_INTEGER_LITERAL: {
+        int64_t v = duckdb_get_int64(value);
+        *out = (v >= (int64_t)INT32_MIN && v <= (int64_t)INT32_MAX) ?
+            Rf_ScalarInteger((int)v) : rducks_r_table_bigint_scalar(v);
         break;
+    }
     case DUCKDB_TYPE_UTINYINT:
         *out = Rf_ScalarInteger((int)duckdb_get_uint8(value));
         break;
@@ -347,10 +364,10 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
         *out = rducks_r_table_uint64_scalar((uint64_t)duckdb_get_uint32(value));
         break;
     case DUCKDB_TYPE_BIGINT:
-        *out = rducks_r_table_int64_scalar(duckdb_get_int64(value));
+        *out = rducks_r_table_bigint_scalar(duckdb_get_int64(value));
         break;
     case DUCKDB_TYPE_UBIGINT:
-        *out = rducks_r_table_uint64_scalar(duckdb_get_uint64(value));
+        *out = rducks_r_table_ubigint_scalar(duckdb_get_uint64(value));
         break;
     case DUCKDB_TYPE_FLOAT:
         *out = Rf_ScalarReal((double)duckdb_get_float(value));
