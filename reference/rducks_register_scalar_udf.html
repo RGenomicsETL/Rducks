@@ -85,13 +85,14 @@ calls the R function once per DuckDB chunk with vector/list-column inputs.</p>
 
 <dt id="arg-args">args<a class="anchor" aria-label="anchor" href="#arg-args"></a></dt>
 <dd><p>Optional argument type specification. If omitted, Rducks registers
-a dynamic-varargs DuckDB scalar function for the <code>arrow_r+serial</code> scalar
-path. Dynamic inputs are materialized with nanoarrow's default conversion
-and are intended for duckplyr-style simple scalar calls; use explicit <code>args</code>
-for Rducks' declared composite, exotic, and special-NULL input semantics.
-Use explicit <code>NULL</code> for a zero-argument scalar UDF. Otherwise use exported
-DuckDB-style type descriptors such as <code>INTEGER</code>, <code>DOUBLE</code>, <code>INTEGER[]</code>,
-<code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
+a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
+argument logical types at bind time, and Rducks materializes those inputs
+with the same typed semantics used for an explicit <code>args = ...</code> signature
+across scalar/vectorized evaluation and supported <code>arrow_r</code>, <code>arrow_c</code>, and
+<code>arrow_ipc</code> execution plans. Use explicit <code>NULL</code> for a zero-argument scalar
+UDF. Otherwise use exported DuckDB-style type descriptors such as <code>INTEGER</code>,
+<code>DOUBLE</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or
+<code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>
@@ -102,7 +103,7 @@ DuckDB-style type descriptors such as <code>INTEGER</code>, <code>DOUBLE</code>,
 <dd><p>Rducks evaluation mode for this DuckDB scalar UDF. <code>"scalar"</code>
 calls the R function once per DuckDB row. <code>"vectorized"</code> calls the R
 function once per DuckDB chunk with one R vector/list-column per declared
-argument.</p></dd>
+or dynamically bound argument.</p></dd>
 
 
 <dt id="arg-null-handling">null_handling<a class="anchor" aria-label="anchor" href="#arg-null-handling"></a></dt>

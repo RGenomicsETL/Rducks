@@ -103,7 +103,7 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT r_plus_one(41::DOUBLE) AS x"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 42</span></span></code></pre></div>
-<p>Omitting <code>args</code> registers a dynamic-varargs DuckDB scalar UDF and is convenient for simple row-wise scalar calls. DuckDB still needs an explicit <code>returns</code> type while planning. Use <code>args = NULL</code> for a true zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as variadic. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
+<p>Omitting <code>args</code> registers a dynamic-varargs DuckDB scalar UDF. DuckDB still needs an explicit <code>returns</code> type while planning, but the concrete input types are resolved at bind time and then materialized with the same Rducks typed semantics used by explicit <code>args = ...</code> signatures. Use <code>args = NULL</code> for a true zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as variadic. <code>null_handling</code> only affects SQL NULL inputs, so the default is appropriate for <code>r_hello()</code>.</p>
 <p><code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> returns an <code>rducks_scalar_udf_registration</code> object that records the connection, normalized signature, and registration options. You do not need to keep this object for the scalar UDF to keep working in DuckDB. Registering the same SQL name/signature again replaces the callable implementation in the shared DuckDB database catalog.</p>
 <div class="section level3">
 <h3 id="release-and-disconnect">Release and disconnect<a class="anchor" aria-label="anchor" href="#release-and-disconnect"></a>
@@ -125,7 +125,7 @@
 <h2 id="what-you-can-register">What you can register<a class="anchor" aria-label="anchor" href="#what-you-can-register"></a>
 </h2>
 <p>Rducks installs a package-managed DuckDB extension and loads it into DuckDB with <code><a href="reference/rducks_enable.html">rducks_enable()</a></code>. The type descriptors below are used by <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> for DuckDB scalar UDF returns and, when declared, DuckDB scalar UDF arguments. They are also used by <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code> for aggregate inputs and returns. Table functions registered with <code><a href="reference/rducks_register_table.html">rducks_register_table()</a></code> infer their output schema dynamically from the returned data frame or named list instead of taking declared type descriptors.</p>
-<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. Omitted scalar-UDF arguments are dynamic DuckDB <code>ANY</code> inputs; they are intended for simple scalar convenience and do not replace explicit descriptors when exact Rducks composite, exotic, or special-NULL semantics matter.</p>
+<p>Supported input/output descriptors are <code>BOOLEAN</code>, <code>TINYINT</code>, <code>UTINYINT</code>, <code>SMALLINT</code>, <code>USMALLINT</code>, <code>INTEGER</code>, <code>UINTEGER</code>, <code>BIGINT</code>, <code>UBIGINT</code>, <code>FLOAT</code>, <code>DOUBLE</code>, <code>VARCHAR</code>, <code>BLOB</code>, <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>UUID</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>DECIMAL(width, scale)</code>, <code>ENUM(levels)</code>, and <code>UNION(...)</code>. Composite inputs and outputs are accepted as constructed type descriptors such as <code>TYPE[]</code>, <code>TYPE[N]</code>, <code>STRUCT(...)</code>, and <code>MAP(...)</code>, recursively over supported child types. Omitted scalar-UDF arguments are dynamic DuckDB <code>ANY</code> inputs at registration; at bind time DuckDB supplies the concrete logical types, which Rducks maps back to these descriptors for typed materialization.</p>
 <p>Declared <code>ENUM(...)</code> descriptors are supported by all implemented execution plans. On the native <code>arrow_ipc</code> NNG path, Rducks does not depend on Arrow IPC dictionary transport for enums: declared enum levels are registration metadata, and the IPC payload carries the underlying DuckDB enum index storage as Arrow integer buffers.</p>
 <p>Rducks also provides explicit R value classes for exact or DuckDB-specific values: <code><a href="reference/rducks_bigint.html">rducks_bigint()</a></code>, <code><a href="reference/rducks_ubigint.html">rducks_ubigint()</a></code>, <code><a href="reference/rducks_uuid.html">rducks_uuid()</a></code>, <code><a href="reference/rducks_interval.html">rducks_interval()</a></code>, <code><a href="reference/rducks_decimal.html">rducks_decimal()</a></code>, <code><a href="reference/rducks_hugeint.html">rducks_hugeint()</a></code>, <code><a href="reference/rducks_uhugeint.html">rducks_uhugeint()</a></code>, <code><a href="reference/rducks_bits.html">rducks_bits()</a></code>, <code><a href="reference/rducks_enum.html">rducks_enum()</a></code>, and <code><a href="reference/rducks_union.html">rducks_union()</a></code>. Constructed DuckDB type descriptors use the formal S7 <code>rducks_type</code> class and structural validation via <code><a href="reference/rducks_type_objects.html">rducks_is_type()</a></code>.</p>
 </div>
@@ -153,7 +153,7 @@
 <div class="section level2">
 <h2 id="duckdb-scalar-udfs-rducks_register_scalar_udf">DuckDB scalar UDFs (<code>rducks_register_scalar_udf()</code>)<a class="anchor" aria-label="anchor" href="#duckdb-scalar-udfs-rducks_register_scalar_udf"></a>
 </h2>
-<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Omitting <code>args</code> is allowed for row-wise scalar UDFs on the default <code>arrow_r + serial</code> plan and registers a dynamic DuckDB varargs function. Declare <code>args</code> when using vectorized mode, non-default execution plans, composite/exotic inputs, or <code>null_handling = "special"</code> input semantics. Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per declared argument.</p>
+<p>DuckDB scalar UDFs return one SQL value per logical input row. Rducks can evaluate the backing R function row-wise (<code>mode = "scalar"</code>) or chunk-wise (<code>mode = "vectorized"</code>). Omitting <code>args</code> registers a dynamic DuckDB varargs function; each call site is resolved by DuckDB at bind time and then behaves like an explicitly typed signature for the bound argument types across the supported <code>arrow_r</code>, <code>arrow_c</code>, and <code>arrow_ipc</code> execution plans. Vectorized mode calls the R function once per DuckDB chunk with one R vector/list-column per bound or declared argument.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">reg_vec_plus_one</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -168,7 +168,7 @@
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_vec_plus_one(i::DOUBLE)) AS x FROM range(5) AS t(i)"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    x</span></span>
 <span><span class="co">#&gt; 1 15</span></span></code></pre></div>
-<p>In vectorized evaluation mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as row-wise scalar evaluation. The return length must match the number of evaluated rows. Vectorized mode currently requires at least one declared argument.</p>
+<p>In vectorized evaluation mode, <code>null_handling = "default"</code> evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back into the result. <code>null_handling = "special"</code> passes all rows using the same NA/NULL shapes as row-wise scalar evaluation. The return length must match the number of evaluated rows. Vectorized mode currently requires at least one declared or dynamically bound argument.</p>
 <div class="section level3">
 <h3 id="scalar-udf-evaluation-mode-benchmark">Scalar-UDF evaluation-mode benchmark<a class="anchor" aria-label="anchor" href="#scalar-udf-evaluation-mode-benchmark"></a>
 </h3>
@@ -183,8 +183,8 @@
 <span><span class="co">#&gt; # A tibble: 2 × 4</span></span>
 <span><span class="co">#&gt;   expression   median `itr/sec` mem_alloc</span></span>
 <span><span class="co">#&gt;   &lt;bch:expr&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;</span></span>
-<span><span class="co">#&gt; 1 scalar        288ms      3.49  998.35KB</span></span>
-<span><span class="co">#&gt; 2 vectorized    230ms      4.34    2.34MB</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 scalar        294ms      3.38    1.97MB</span></span>
+<span><span class="co">#&gt; 2 vectorized    232ms      4.28    2.34MB</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -196,14 +196,14 @@
 <col width="1%">
 <col width="1%">
 <col width="2%">
-<col width="4%">
 <col width="6%">
-<col width="14%">
 <col width="6%">
+<col width="13%">
+<col width="5%">
 <col width="12%">
 <col width="15%">
 <col width="21%">
-<col width="14%">
+<col width="13%">
 </colgroup>
 <thead><tr>
 <th align="left">mode</th>
@@ -223,7 +223,7 @@
 <td align="left">scalar</td>
 <td align="left">implemented</td>
 <td align="left">one R call per row</td>
-<td align="left">one scalar/composite R value per declared argument</td>
+<td align="left">one scalar/composite R value per declared or dynamically bound argument</td>
 <td align="left">one scalar/composite R value compatible with the declared return type</td>
 <td align="left">default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values</td>
 <td align="left">one output value per R function call</td>
@@ -236,7 +236,7 @@
 <td align="left">vectorized</td>
 <td align="left">implemented</td>
 <td align="left">one R call per DuckDB chunk</td>
-<td align="left">one R vector/list-column per declared argument</td>
+<td align="left">one R vector/list-column per declared or dynamically bound argument</td>
 <td align="left">one R vector/list of values compatible with the declared return type</td>
 <td align="left">default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values</td>
 <td align="left">return length must equal the number of evaluated rows in the chunk</td>
@@ -978,9 +978,9 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <span><span class="op">)</span></span>
 <span><span class="va">comparison</span></span>
 <span><span class="co">#&gt;                  plan threads     total elapsed_sec evaluator arrow_r_chunks</span></span>
-<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.871         R             16</span></span>
-<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.830         R             16</span></span>
-<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.054      RIPC              0</span></span>
+<span><span class="co">#&gt; 1  sequential arrow_r       1 536887296       1.874         R             16</span></span>
+<span><span class="co">#&gt; 2    in-process queue       1 536887296       1.802         R             16</span></span>
+<span><span class="co">#&gt; 3 2-process Arrow IPC       2 536887296       1.045      RIPC              0</span></span>
 <span><span class="co">#&gt;   arrow_ipc_chunks ripc_inflight_max</span></span>
 <span><span class="co">#&gt; 1                0                 0</span></span>
 <span><span class="co">#&gt; 2                0                 0</span></span>
@@ -993,7 +993,7 @@ Expand for scalar-UDF NULL, NA, NaN, Inf, and value-class semantics
 <div class="section level2">
 <h2 id="demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic">Demo: duckplyr with no fallback, using Rducks for custom R logic<a class="anchor" aria-label="anchor" href="#demo-duckplyr-with-no-fallback-using-rducks-for-custom-r-logic"></a>
 </h2>
-<p>This example keeps a stingy duckplyr pipeline in DuckDB without writing <code>dd$...</code> calls. Rducks registers <code>local_score()</code> as a dynamic-argument scalar UDF, so only the return type is declared here; argument types are intentionally omitted for this simple scalar path.</p>
+<p>This example keeps a stingy duckplyr pipeline in DuckDB without writing <code>dd$...</code> calls. Rducks registers <code>local_score()</code> as a dynamic-argument scalar UDF, so only the return type is declared here; DuckDB binds the concrete argument types from the query before Rducks materializes the inputs.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html" class="external-link">local</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">old_collect</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DUCKPLYR_FALLBACK_COLLECT"</span>, unset <span class="op">=</span> <span class="cn">NA_character_</span><span class="op">)</span></span>

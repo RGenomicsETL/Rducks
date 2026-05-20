@@ -97,12 +97,13 @@ dbGetQuery(con, "SELECT r_plus_one(41::DOUBLE) AS x")
 #> 1 42
 ```
 
-Omitting `args` registers a dynamic-varargs DuckDB scalar UDF and is
-convenient for simple row-wise scalar calls. DuckDB still needs an
-explicit `returns` type while planning. Use `args = NULL` for a true
-zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as
-variadic. `null_handling` only affects SQL NULL inputs, so the default
-is appropriate for `r_hello()`.
+Omitting `args` registers a dynamic-varargs DuckDB scalar UDF. DuckDB
+still needs an explicit `returns` type while planning, but the concrete
+input types are resolved at bind time and then materialized with the
+same Rducks typed semantics used by explicit `args = ...` signatures.
+Use `args = NULL` for a true zero-argument scalar UDF; otherwise DuckDB
+treats omitted arguments as variadic. `null_handling` only affects SQL
+NULL inputs, so the default is appropriate for `r_hello()`.
 
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 returns an `rducks_scalar_udf_registration` object that records the
@@ -173,9 +174,9 @@ Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 inputs and outputs are accepted as constructed type descriptors such as
 `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types. Omitted scalar-UDF arguments are dynamic DuckDB
-`ANY` inputs; they are intended for simple scalar convenience and do not
-replace explicit descriptors when exact Rducks composite, exotic, or
-special-NULL semantics matter.
+`ANY` inputs at registration; at bind time DuckDB supplies the concrete
+logical types, which Rducks maps back to these descriptors for typed
+materialization.
 
 Declared `ENUM(...)` descriptors are supported by all implemented
 execution plans. On the native `arrow_ipc` NNG path, Rducks does not
@@ -226,13 +227,13 @@ rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))
 
 DuckDB scalar UDFs return one SQL value per logical input row. Rducks
 can evaluate the backing R function row-wise (`mode = "scalar"`) or
-chunk-wise (`mode = "vectorized"`). Omitting `args` is allowed for
-row-wise scalar UDFs on the default `arrow_r + serial` plan and
-registers a dynamic DuckDB varargs function. Declare `args` when using
-vectorized mode, non-default execution plans, composite/exotic inputs,
-or `null_handling = "special"` input semantics. Vectorized mode calls
-the R function once per DuckDB chunk with one R vector/list-column per
-declared argument.
+chunk-wise (`mode = "vectorized"`). Omitting `args` registers a dynamic
+DuckDB varargs function; each call site is resolved by DuckDB at bind
+time and then behaves like an explicitly typed signature for the bound
+argument types across the supported `arrow_r`, `arrow_c`, and
+`arrow_ipc` execution plans. Vectorized mode calls the R function once
+per DuckDB chunk with one R vector/list-column per bound or declared
+argument.
 
 ``` r
 
@@ -256,7 +257,7 @@ only rows with no top-level SQL NULL inputs and scatters SQL NULLs back
 into the result. `null_handling = "special"` passes all rows using the
 same NA/NULL shapes as row-wise scalar evaluation. The return length
 must match the number of evaluated rows. Vectorized mode currently
-requires at least one declared argument.
+requires at least one declared or dynamically bound argument.
 
 ### Scalar-UDF evaluation-mode benchmark
 
@@ -275,8 +276,8 @@ bench::mark(
 #> # A tibble: 2 × 4
 #>   expression   median `itr/sec` mem_alloc
 #>   <bch:expr> <bch:tm>     <dbl> <bch:byt>
-#> 1 scalar        288ms      3.49  998.35KB
-#> 2 vectorized    230ms      4.34    2.34MB
+#> 1 scalar        294ms      3.38    1.97MB
+#> 2 vectorized    232ms      4.28    2.34MB
 ```
 
 ## Scalar-UDF evaluation-mode semantics
@@ -288,8 +289,8 @@ and applies to DuckDB scalar UDFs registered with
 
 | mode | status | call_granularity | input_shape | return_shape | null_semantics | length_semantics | error_semantics | threading | copy_semantics | notes |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
-| scalar | implemented | one R call per row | one scalar/composite R value per declared argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values | one output value per R function call | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
-| vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared argument | one R vector/list of values compatible with the declared return type | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet |
+| scalar | implemented | one R call per row | one scalar/composite R value per declared or dynamically bound argument | one scalar/composite R value compatible with the declared return type | default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values | one output value per R function call | R function errors become SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding | DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation |
+| vectorized | implemented | one R call per DuckDB chunk | one R vector/list-column per declared or dynamically bound argument | one R vector/list of values compatible with the declared return type | default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values | return length must equal the number of evaluated rows in the chunk | R function errors make all evaluated rows SQL NULL with exception_handling = ‘return_null’; type-checking and marshalling errors abort the query | arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider | arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport | batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet |
 
 ## Scalar-UDF argument values passed to R functions
 
@@ -893,9 +894,9 @@ comparison <- rbind(
 )
 comparison
 #>                  plan threads     total elapsed_sec evaluator arrow_r_chunks
-#> 1  sequential arrow_r       1 536887296       1.871         R             16
-#> 2    in-process queue       1 536887296       1.830         R             16
-#> 3 2-process Arrow IPC       2 536887296       1.054      RIPC              0
+#> 1  sequential arrow_r       1 536887296       1.874         R             16
+#> 2    in-process queue       1 536887296       1.802         R             16
+#> 3 2-process Arrow IPC       2 536887296       1.045      RIPC              0
 #>   arrow_ipc_chunks ripc_inflight_max
 #> 1                0                 0
 #> 2                0                 0
@@ -909,8 +910,9 @@ rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 
 This example keeps a stingy duckplyr pipeline in DuckDB without writing
 `dd$...` calls. Rducks registers `local_score()` as a dynamic-argument
-scalar UDF, so only the return type is declared here; argument types are
-intentionally omitted for this simple scalar path.
+scalar UDF, so only the return type is declared here; DuckDB binds the
+concrete argument types from the query before Rducks materializes the
+inputs.
 
 ``` r
 

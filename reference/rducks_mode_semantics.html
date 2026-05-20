@@ -5,7 +5,7 @@ rducks_register_scalar_udf(). This
 is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 Rducks execution plans. mode = "scalar" calls the R function once for each
 DuckDB row. mode = "vectorized" calls the R function once per DuckDB chunk
-with one R vector/list-column per declared argument. Vectorized mode is
+with one R vector/list-column per declared or dynamically bound argument. Vectorized mode is
 exposed for arrow_r, direct arrow_c, and worker-provider arrow_ipc
 plans.'><meta property="og:description" content='rducks_mode_semantics() is the package-level schema for Rducks evaluation
 modes used by DuckDB scalar UDFs registered with
@@ -13,7 +13,7 @@ rducks_register_scalar_udf(). This
 is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 Rducks execution plans. mode = "scalar" calls the R function once for each
 DuckDB row. mode = "vectorized" calls the R function once per DuckDB chunk
-with one R vector/list-column per declared argument. Vectorized mode is
+with one R vector/list-column per declared or dynamically bound argument. Vectorized mode is
 exposed for arrow_r, direct arrow_c, and worker-provider arrow_ipc
 plans.'></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -56,7 +56,7 @@ modes used by DuckDB scalar UDFs registered with
 is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 Rducks execution plans. <code>mode = "scalar"</code> calls the R function once for each
 DuckDB row. <code>mode = "vectorized"</code> calls the R function once per DuckDB chunk
-with one R vector/list-column per declared argument. Vectorized mode is
+with one R vector/list-column per declared or dynamically bound argument. Vectorized mode is
 exposed for <code>arrow_r</code>, direct <code>arrow_c</code>, and worker-provider <code>arrow_ipc</code>
 plans.</p>
     </div>
