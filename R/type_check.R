@@ -167,7 +167,7 @@ rducks_check_enum_value <- function(type, x, what) {
 rducks_check_union_value <- function(type, x, what) {
   tag <- x$tag
   value <- x$value
-  if (!is.character(tag) || length(tag) != 1L || is.na(tag) || !nzchar(tag)) {
+  if (!rducks_is_non_empty_character_scalar(tag)) {
     stop(what, " must have a non-empty union tag", call. = FALSE)
   }
   member_names <- rducks_type_child_names(type)

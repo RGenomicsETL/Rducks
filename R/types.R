@@ -92,7 +92,7 @@ rducks_type_normalize <- function(x) {
   if (inherits(x, "rducks_type")) {
     return(rducks_type_token(x))
   }
-  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+  if (!rducks_is_non_empty_character_scalar(x)) {
     stop("type must be a non-empty scalar token or rducks_type descriptor", call. = FALSE)
   }
   chars <- strsplit(x, "", fixed = TRUE)[[1L]]
@@ -357,7 +357,7 @@ NULL
 #' @rdname rducks_type_objects
 #' @export
 rducks_is_type <- function(x) {
-  ok_scalar <- function(value) is.character(value) && length(value) == 1L && !is.na(value) && nzchar(value)
+  ok_scalar <- rducks_is_non_empty_character_scalar
   ok_names <- function(value) is.character(value) && length(value) > 0L && !anyNA(value) && all(nzchar(value)) && !anyDuplicated(value)
   rec <- function(x, depth = 0L) {
     if (depth > 64L || !inherits(x, "rducks_type") || !inherits(x, "S7_object") || !is.list(x)) {
@@ -957,9 +957,7 @@ rducks_duckdb_types <- function(x) {
 #' @return Character scalar signature such as `f(INTEGER) -> DOUBLE`.
 #' @export
 rducks_duckdb_signature <- function(name, args, returns) {
-  if (!is.character(name) || length(name) != 1L || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(name, "name")
   arg_sql <- paste(rducks_duckdb_types(args), collapse = ", ")
   ret_sql <- rducks_duckdb_types(returns)
   sprintf("%s(%s) -> %s", name, arg_sql, ret_sql)

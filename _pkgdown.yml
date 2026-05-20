@@ -2,3 +2,18 @@ url: https://sounkou-bioinfo.github.io/Rducks/
 template:
   bootstrap: 5
 
+articles:
+  - title: Getting Started
+    navbar: ~
+    contents:
+      - getting-started
+  - title: Semantics and Execution
+    navbar: ~
+    contents:
+      - type-value-semantics
+      - execution-plans-ipc-workers
+  - title: Internals
+    navbar: ~
+    contents:
+      - internal-current-implementation
+

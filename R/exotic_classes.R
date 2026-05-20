@@ -562,9 +562,7 @@ print.rducks_enum <- function(x, ...) {
 #' @return Object of class `rducks_union`.
 #' @export
 rducks_union <- function(tag, value) {
-  if (!is.character(tag) || length(tag) != 1L || is.na(tag) || !nzchar(tag)) {
-    stop("tag must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(tag, "tag")
   structure(list(tag = tag, value = value), class = "rducks_union")
 }
 

@@ -11,7 +11,7 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  eval = FALSE
+  eval = TRUE
 )
 ```
 
@@ -32,6 +32,15 @@ marshalled to R and what concurrency contract is allowed.
 
 Unsupported combinations fail. Rducks does not silently fall back from one engine
 to another.
+
+```{r setup-connection}
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+```
 
 ## Select the plan before registration
 
@@ -69,7 +78,9 @@ rducks_set_execution_plan(
 ## Arrow IPC worker plan
 
 `arrow_ipc + multiprocess_parallel` starts or connects to persistent R workers
-that receive Arrow IPC-encoded chunks over NNG.
+that receive Arrow IPC-encoded chunks over NNG. Registration still happens under
+single-thread DuckDB settings; widen `threads` / `external_threads` afterwards
+for query execution.
 
 ```{r ipc-plan}
 ipc_workers <- 2L
@@ -83,8 +94,8 @@ rducks_set_execution_plan(
     ipc_transport = "ipc",
     ipc_timeout = 30
   ),
-  threads = ipc_workers + 1L,
-  external_threads = ipc_workers
+  threads = 1L,
+  external_threads = 1L
 )
 
 rducks_register_scalar_udf(
@@ -98,6 +109,19 @@ rducks_register_scalar_udf(
   returns = DOUBLE,
   mode = "vectorized",
   side_effects = TRUE
+)
+
+rducks_set_execution_plan(
+  con,
+  rducks_execution_plan(
+    "arrow_ipc",
+    "multiprocess_parallel",
+    ipc_workers = ipc_workers,
+    ipc_transport = "ipc",
+    ipc_timeout = 30
+  ),
+  threads = ipc_workers + 1L,
+  external_threads = ipc_workers
 )
 ```
 
@@ -145,3 +169,8 @@ name/signature to replace a scalar UDF implementation.
 Weak-reference finalizers provide best-effort cleanup if a connection object is
 garbage-collected, but deterministic code should call `rducks_release(con)`
 before `DBI::dbDisconnect(con)`.
+
+```{r cleanup, include=FALSE}
+rducks_release(con)
+DBI::dbDisconnect(con, shutdown = TRUE)
+```

@@ -59,6 +59,14 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   invisible(con)
 }
 
+rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_threads = NULL) {
+  rducks_assert_duckdb_connection(con)
+  current <- rducks_current_execution_plan(con)
+  plan <- rducks_execution_plan(current$marshalling, concurrency)
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
+  invisible(con)
+}
+
 #' Enable in-process queued scalar-UDF execution
 #'
 #' Switches a Rducks-enabled DuckDB connection to an `inproc_concurrent`
@@ -86,11 +94,7 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 #' @return `con`, invisibly.
 #' @export
 rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
-  rducks_assert_duckdb_connection(con)
-  current <- rducks_current_execution_plan(con)
-  plan <- rducks_execution_plan(current$marshalling, "inproc_concurrent")
-  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
-  invisible(con)
+  rducks_set_inproc_state(con, "inproc_concurrent", threads = threads, external_threads = external_threads)
 }
 
 #' Disable in-process queued scalar-UDF execution
@@ -105,11 +109,7 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 #' @return `con`, invisibly.
 #' @export
 rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) {
-  rducks_assert_duckdb_connection(con)
-  current <- rducks_current_execution_plan(con)
-  plan <- rducks_execution_plan(current$marshalling, "serial")
-  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
-  invisible(con)
+  rducks_set_inproc_state(con, "serial", threads = threads, external_threads = external_threads)
 }
 
 #' Detach Rducks connection-local state

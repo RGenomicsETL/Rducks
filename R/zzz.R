@@ -6,13 +6,24 @@
   function(x, y) if (is.null(x)) y else x
 }
 
-rducks_get_or_init_store <- function(key, hash = FALSE) {
+rducks_get_or_init_store <- function(key) {
   store <- .rducks_state[[key]]
   if (is.null(store)) {
-    store <- new.env(parent = emptyenv(), hash = hash)
+    store <- new.env(parent = emptyenv())
     .rducks_state[[key]] <- store
   }
   store
+}
+
+rducks_is_non_empty_character_scalar <- function(x) {
+  is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
+}
+
+rducks_assert_non_empty_character_scalar <- function(x, name) {
+  if (!rducks_is_non_empty_character_scalar(x)) {
+    stop(name, " must be a non-empty character scalar", call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 rducks_main_thread_token <- function() {

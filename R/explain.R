@@ -216,9 +216,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' @export
 rducks_explain_udf <- function(con, name) {
   rducks_assert_duckdb_connection(con)
-  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(name, "name")
 
   rducks_explain_udf_row(con, name)
 }
@@ -239,7 +237,7 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
   rducks_assert_duckdb_connection(con)
   if (is.null(name)) {
     name <- ""
-  } else if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+  } else if (!rducks_is_non_empty_character_scalar(name)) {
     stop("name must be NULL or a non-empty character scalar", call. = FALSE)
   }
   ok <- DBI::dbGetQuery(

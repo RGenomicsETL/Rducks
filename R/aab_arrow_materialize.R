@@ -479,12 +479,6 @@ rducks_arrow_union_array <- function(type, results, schema) {
 }
 
 rducks_arrow_sequence_slice <- function(type, values, rows) {
-  if (!length(rows)) {
-    return(values[integer()])
-  }
-  if (inherits(type, "rducks_scalar_type") || inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
-    return(values[rows])
-  }
   values[rows]
 }
 
@@ -550,38 +544,30 @@ rducks_arrow_struct_array_to_values <- function(type, array, schema = NULL) {
   out
 }
 
-rducks_arrow_import_child_schema <- function(type, schema) {
-  out <- nanoarrow::as_nanoarrow_schema(schema)
-  if (inherits(type, "rducks_enum_type")) {
-    return(rducks_arrow_enum_storage_schema(out))
-  }
+rducks_arrow_map_type_tree <- function(type, node, leaf) {
+  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  out <- leaf(type, node)
   if (inherits(type, c("rducks_list_type", "rducks_array_type"))) {
-    out$children[[1L]] <- rducks_arrow_import_child_schema(rducks_type_children(type)[[1L]], out$children[[1L]])
-    return(out)
-  }
-  if (inherits(type, "rducks_struct_type")) {
+    out$children[[1L]] <- rducks_arrow_map_type_tree(rducks_type_children(type)[[1L]], out$children[[1L]], leaf)
+  } else if (inherits(type, c("rducks_struct_type", "rducks_union_type"))) {
     children <- rducks_type_children(type)
     for (i in seq_along(children)) {
-      out$children[[i]] <- rducks_arrow_import_child_schema(children[[i]], out$children[[i]])
+      out$children[[i]] <- rducks_arrow_map_type_tree(children[[i]], out$children[[i]], leaf)
     }
-    return(out)
-  }
-  if (inherits(type, "rducks_map_type")) {
+  } else if (inherits(type, "rducks_map_type")) {
     children <- rducks_type_children(type)
     entries <- out$children[[1L]]
-    entries$children[[1L]] <- rducks_arrow_import_child_schema(children[[1L]], entries$children[[1L]])
-    entries$children[[2L]] <- rducks_arrow_import_child_schema(children[[2L]], entries$children[[2L]])
+    entries$children[[1L]] <- rducks_arrow_map_type_tree(children[[1L]], entries$children[[1L]], leaf)
+    entries$children[[2L]] <- rducks_arrow_map_type_tree(children[[2L]], entries$children[[2L]], leaf)
     out$children[[1L]] <- entries
-    return(out)
-  }
-  if (inherits(type, "rducks_union_type")) {
-    children <- rducks_type_children(type)
-    for (i in seq_along(children)) {
-      out$children[[i]] <- rducks_arrow_import_child_schema(children[[i]], out$children[[i]])
-    }
-    return(out)
   }
   out
+}
+
+rducks_arrow_import_child_schema <- function(type, schema) {
+  rducks_arrow_map_type_tree(type, nanoarrow::as_nanoarrow_schema(schema), function(type, node) {
+    if (inherits(type, "rducks_enum_type")) rducks_arrow_enum_storage_schema(node) else node
+  })
 }
 
 rducks_arrow_import_schema <- function(type, output_schema) {
@@ -600,45 +586,10 @@ rducks_arrow_type_contains_enum <- function(type) {
 }
 
 rducks_arrow_ipc_storage_array_for_type <- function(type, array) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
-  out <- nanoarrow::as_nanoarrow_array(array)
-
-  if (inherits(type, "rducks_enum_type")) {
-    out$dictionary <- NULL
-    return(out)
-  }
-
-  if (inherits(type, c("rducks_list_type", "rducks_array_type"))) {
-    out$children[[1L]] <- rducks_arrow_ipc_storage_array_for_type(rducks_type_children(type)[[1L]], out$children[[1L]])
-    return(out)
-  }
-
-  if (inherits(type, "rducks_struct_type")) {
-    children <- rducks_type_children(type)
-    for (i in seq_along(children)) {
-      out$children[[i]] <- rducks_arrow_ipc_storage_array_for_type(children[[i]], out$children[[i]])
-    }
-    return(out)
-  }
-
-  if (inherits(type, "rducks_map_type")) {
-    children <- rducks_type_children(type)
-    entries <- out$children[[1L]]
-    entries$children[[1L]] <- rducks_arrow_ipc_storage_array_for_type(children[[1L]], entries$children[[1L]])
-    entries$children[[2L]] <- rducks_arrow_ipc_storage_array_for_type(children[[2L]], entries$children[[2L]])
-    out$children[[1L]] <- entries
-    return(out)
-  }
-
-  if (inherits(type, "rducks_union_type")) {
-    children <- rducks_type_children(type)
-    for (i in seq_along(children)) {
-      out$children[[i]] <- rducks_arrow_ipc_storage_array_for_type(children[[i]], out$children[[i]])
-    }
-    return(out)
-  }
-
-  out
+  rducks_arrow_map_type_tree(type, nanoarrow::as_nanoarrow_array(array), function(type, node) {
+    if (inherits(type, "rducks_enum_type")) node$dictionary <- NULL
+    node
+  })
 }
 
 rducks_arrow_ipc_storage_input <- function(arg_types, input_array, input_schema) {

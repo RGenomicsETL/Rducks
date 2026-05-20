@@ -3,20 +3,24 @@
 # Kept separate from aab_arrow_materialize.R so Arrow array decoding and
 # scalar-UDF return encoding can evolve independently.
 
+rducks_arrow_results_as <- function(results, null_value, coerce, prototype) {
+  vapply(results, function(x) if (is.null(x)) null_value else coerce(x)[[1L]], prototype)
+}
+
 rducks_arrow_results_as_logical <- function(results) {
-  vapply(results, function(x) if (is.null(x)) NA else as.logical(x)[[1L]], logical(1))
+  rducks_arrow_results_as(results, NA, as.logical, logical(1))
 }
 
 rducks_arrow_results_as_integer <- function(results) {
-  vapply(results, function(x) if (is.null(x)) NA_integer_ else as.integer(x)[[1L]], integer(1))
+  rducks_arrow_results_as(results, NA_integer_, as.integer, integer(1))
 }
 
 rducks_arrow_results_as_numeric <- function(results) {
-  vapply(results, function(x) if (is.null(x)) NA_real_ else as.numeric(x)[[1L]], numeric(1))
+  rducks_arrow_results_as(results, NA_real_, as.numeric, numeric(1))
 }
 
 rducks_arrow_results_as_character <- function(results) {
-  vapply(results, function(x) if (is.null(x)) NA_character_ else as.character(x)[[1L]], character(1))
+  rducks_arrow_results_as(results, NA_character_, as.character, character(1))
 }
 
 rducks_scalar_udf_return_needs_length_one <- function(type) {

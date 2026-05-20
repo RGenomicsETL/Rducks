@@ -2,6 +2,13 @@ rducks_evaluator_ref_store <- function() {
   rducks_get_or_init_store("evaluator_refs")
 }
 
+rducks_assert_optional_function <- function(x, name) {
+  if (!is.null(x) && !is.function(x)) {
+    stop(name, " must be NULL or a function", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 rducks_next_evaluator_id <- function() {
   counter <- .rducks_state$evaluator_ref_counter %||% 0
   counter <- counter + 1
@@ -55,9 +62,7 @@ rducks_evaluator_ref_remove <- function(handle) {
 }
 
 rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, dynamic_args = FALSE) {
-  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(name, "name")
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
   }
@@ -255,9 +260,7 @@ print.rducks_scalar_udf_registration <- function(x, ...) {
 }
 
 rducks_table_registration_spec <- function(name, fun, chunk_size) {
-  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(name, "name")
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
   }
@@ -328,9 +331,7 @@ rducks_table_stream <- function(prototype, next_batch, close = NULL,
   if (!is.function(next_batch)) {
     stop("next_batch must be a function", call. = FALSE)
   }
-  if (!is.null(close) && !is.function(close)) {
-    stop("close must be NULL or a function", call. = FALSE)
-  }
+  rducks_assert_optional_function(close, "close")
   if (!is.numeric(cardinality) || length(cardinality) != 1L || is.na(cardinality)) {
     cardinality <- NA_real_
   } else if (!is.finite(cardinality) || cardinality < 0 || cardinality != floor(cardinality)) {
@@ -573,33 +574,15 @@ print.rducks_table_registration <- function(x, ...) {
 rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine,
                                                 update_chunk = NULL, combine_chunk = NULL, finalize_chunk = NULL,
                                                 copy = NULL, copy_chunk = NULL) {
-  if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
-    stop("name must be a non-empty character scalar", call. = FALSE)
-  }
-  if (!is.null(update) && !is.function(update)) {
-    stop("update must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(finalize) && !is.function(finalize)) {
-    stop("finalize must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(combine) && !is.function(combine)) {
-    stop("combine must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(copy) && !is.function(copy)) {
-    stop("copy must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(copy_chunk) && !is.function(copy_chunk)) {
-    stop("copy_chunk must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(update_chunk) && !is.function(update_chunk)) {
-    stop("update_chunk must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(combine_chunk) && !is.function(combine_chunk)) {
-    stop("combine_chunk must be NULL or a function", call. = FALSE)
-  }
-  if (!is.null(finalize_chunk) && !is.function(finalize_chunk)) {
-    stop("finalize_chunk must be NULL or a function", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(name, "name")
+  rducks_assert_optional_function(update, "update")
+  rducks_assert_optional_function(finalize, "finalize")
+  rducks_assert_optional_function(combine, "combine")
+  rducks_assert_optional_function(copy, "copy")
+  rducks_assert_optional_function(copy_chunk, "copy_chunk")
+  rducks_assert_optional_function(update_chunk, "update_chunk")
+  rducks_assert_optional_function(combine_chunk, "combine_chunk")
+  rducks_assert_optional_function(finalize_chunk, "finalize_chunk")
   if (is.null(update) && is.null(update_chunk)) {
     stop("at least one of update or update_chunk must be supplied", call. = FALSE)
   }

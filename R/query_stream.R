@@ -40,7 +40,7 @@ rducks_query_stream_batch_key <- function(native_token) {
   paste0("batch::", native_token)
 }
 
-rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_names, type_objects = NULL) {
+rducks_query_stream_validate_batch_args <- function(array, schema, type_specs, column_names, type_objects = NULL) {
   if (!nanoarrow::nanoarrow_pointer_is_valid(array)) {
     stop("query stream nanoarrow array pointer is not valid", call. = FALSE)
   }
@@ -60,6 +60,11 @@ rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_na
       stop("query stream type metadata does not match native type metadata", call. = FALSE)
     }
   }
+  list(type_specs = type_specs, column_names = column_names, type_objects = type_objects)
+}
+
+rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_names, type_objects = NULL) {
+  meta <- rducks_query_stream_validate_batch_args(array, schema, type_specs, column_names, type_objects)
   # DuckDB's Arrow C Data export filled `array`, and nanoarrow's owning
   # external pointer finalizer will call the ArrowArray release callback.
   # Attach the schema so callers can consume the struct array as a nanoarrow
@@ -69,9 +74,9 @@ rducks_query_stream_arrow_batch <- function(array, schema, type_specs, column_na
     list(
       array = array,
       schema = schema,
-      type_specs = type_specs,
-      type_objects = type_objects,
-      column_names = column_names
+      type_specs = meta$type_specs,
+      type_objects = meta$type_objects,
+      column_names = meta$column_names
     ),
     class = "rducks_query_stream_arrow_batch"
   )
@@ -120,34 +125,16 @@ rducks_query_stream_type_from_native_spec <- function(spec) {
 }
 
 rducks_query_stream_materialize_arrow_batch <- function(array, schema, type_specs, column_names, type_objects = NULL) {
-  if (!nanoarrow::nanoarrow_pointer_is_valid(array)) {
-    stop("query stream nanoarrow array pointer is not valid", call. = FALSE)
-  }
-  if (!nanoarrow::nanoarrow_pointer_is_valid(schema)) {
-    stop("query stream nanoarrow schema pointer is not valid", call. = FALSE)
-  }
+  meta <- rducks_query_stream_validate_batch_args(array, schema, type_specs, column_names, type_objects)
   n_raw <- as.numeric(array$length)
   if (!is.finite(n_raw) || n_raw < 0 || n_raw > .Machine$integer.max || n_raw != floor(n_raw)) {
     stop("query stream batch is too large to materialize as an R data frame", call. = FALSE)
   }
   n <- as.integer(n_raw)
-  type_specs <- as.list(type_specs)
-  column_names <- as.character(column_names)
-  if (length(type_specs) != length(column_names) || length(type_specs) != length(array$children)) {
-    stop("query stream Arrow schema does not match native type metadata", call. = FALSE)
-  }
-  if (is.null(type_objects)) {
-    type_objects <- lapply(type_specs, rducks_query_stream_type_from_native_spec)
-  } else {
-    type_objects <- as.list(type_objects)
-    if (length(type_objects) != length(type_specs)) {
-      stop("query stream type metadata does not match native type metadata", call. = FALSE)
-    }
-  }
 
-  columns <- vector("list", length(type_specs))
-  for (i in seq_along(type_specs)) {
-    type <- type_objects[[i]]
+  columns <- vector("list", length(meta$type_specs))
+  for (i in seq_along(meta$type_specs)) {
+    type <- meta$type_objects[[i]]
     if (is.null(type)) {
       values <- rep(NA, n)
     } else {
@@ -158,10 +145,10 @@ rducks_query_stream_materialize_arrow_batch <- function(array, schema, type_spec
     }
     columns[[i]] <- values
   }
-  names(columns) <- column_names
+  names(columns) <- meta$column_names
   out <- structure(columns, class = "data.frame", row.names = .set_row_names(n))
   attr(out, "rducks_nanoarrow_schema") <- schema
-  attr(out, "rducks_query_stream_types") <- type_objects
+  attr(out, "rducks_query_stream_types") <- meta$type_objects
   out
 }
 
@@ -255,7 +242,7 @@ rducks_query_stream_native_open <- function(con, sql) {
     con,
     sprintf("SELECT rducks_query_stream_open(%s) AS token", rducks_sql_string(sql))
   )$token[[1L]]
-  if (!is.character(out) || length(out) != 1L || is.na(out) || !nzchar(out)) {
+  if (!rducks_is_non_empty_character_scalar(out)) {
     stop("native Rducks query stream did not return a stream token", call. = FALSE)
   }
   out
@@ -432,9 +419,7 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
 #' @export
 rducks_query_stream <- function(con, sql, batch_size = 1024L, format = c("data.frame", "record_batch", "nanoarrow")) {
   rducks_assert_duckdb_connection(con)
-  if (!is.character(sql) || length(sql) != 1L || is.na(sql) || !nzchar(sql)) {
-    stop("sql must be a non-empty character scalar", call. = FALSE)
-  }
+  rducks_assert_non_empty_character_scalar(sql, "sql")
   batch_size <- rducks_query_stream_check_batch_size(batch_size)
   format <- rducks_query_stream_check_format(match.arg(format))
   rducks_runtime_token(con, required = TRUE)

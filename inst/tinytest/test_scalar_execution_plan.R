@@ -90,8 +90,6 @@ expect_error(
 )
 shortcut_expected <- list(
   reference = "arrow_r+serial",
-  arrow_r = "arrow_r+serial",
-  arrow_c = "arrow_c+serial",
   arrow_r_serial = "arrow_r+serial",
   arrow_r_main_queue = "arrow_r+inproc_concurrent",
   arrow_c_direct_serial = "arrow_c+serial",
@@ -103,6 +101,8 @@ for (shortcut in names(shortcut_expected)) {
 }
 expect_error(Rducks:::rducks_as_execution_plan("serial"), "unknown Rducks execution plan shortcut")
 expect_error(Rducks:::rducks_as_execution_plan("inproc_concurrent"), "unknown Rducks execution plan shortcut")
+expect_error(Rducks:::rducks_as_execution_plan("arrow_r"), "unknown Rducks execution plan shortcut")
+expect_error(Rducks:::rducks_as_execution_plan("arrow_c"), "unknown Rducks execution plan shortcut")
 expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$engine_id, "ipc_nng_pool")
 expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = TRUE)$ipc_options$globals)
 expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = FALSE)$ipc_options$globals)

@@ -366,6 +366,55 @@ static const char *rducks_udf_stat_fields_text(void) {
            "ripc_inflight_max";
 }
 
+typedef struct rducks_udf_counter_stat {
+    const char *name;
+    size_t offset;
+} rducks_udf_counter_stat_t;
+
+#define RDUCKS_UDF_COUNTER_STAT(name, member) { name, offsetof(rducks_r_scalar_meta_t, member) }
+
+static const rducks_udf_counter_stat_t rducks_udf_counter_stats[] = {
+    RDUCKS_UDF_COUNTER_STAT("dispatch_chunks", dispatch_chunks),
+    RDUCKS_UDF_COUNTER_STAT("dispatch_rows", dispatch_rows),
+    RDUCKS_UDF_COUNTER_STAT("direct_chunks", direct_chunks),
+    RDUCKS_UDF_COUNTER_STAT("queued_chunks", queued_chunks),
+    RDUCKS_UDF_COUNTER_STAT("queue_pending_current", queue_pending_current),
+    RDUCKS_UDF_COUNTER_STAT("queue_pending_max", queue_pending_max),
+    RDUCKS_UDF_COUNTER_STAT("arrow_r_chunks", arrow_r_chunks),
+    RDUCKS_UDF_COUNTER_STAT("arrow_c_chunks", arrow_c_chunks),
+    RDUCKS_UDF_COUNTER_STAT("arrow_c_input_snapshot_chunks", arrow_c_input_snapshot_chunks),
+    RDUCKS_UDF_COUNTER_STAT("arrow_c_owned_result_chunk_chunks", arrow_c_owned_result_chunk_chunks),
+    RDUCKS_UDF_COUNTER_STAT("arrow_ipc_chunks", arrow_ipc_chunks),
+    RDUCKS_UDF_COUNTER_STAT("ripc_collect_batches", ripc_collect_batches),
+    RDUCKS_UDF_COUNTER_STAT("ripc_collect_requests", ripc_collect_requests),
+    RDUCKS_UDF_COUNTER_STAT("ripc_collect_max_batch", ripc_collect_max_batch),
+    RDUCKS_UDF_COUNTER_STAT("ripc_submit_wave_max", ripc_submit_wave_max),
+    RDUCKS_UDF_COUNTER_STAT("ripc_collect_ready_max", ripc_collect_ready_max),
+    RDUCKS_UDF_COUNTER_STAT("ripc_inflight_current", ripc_inflight_current),
+    RDUCKS_UDF_COUNTER_STAT("ripc_inflight_max", ripc_inflight_max)
+};
+
+#undef RDUCKS_UDF_COUNTER_STAT
+
+static atomic_uint_fast64_t *rducks_udf_counter_stat_ptr(rducks_r_scalar_meta_t *meta,
+                                                         const rducks_udf_counter_stat_t *stat) {
+    return (atomic_uint_fast64_t *)((char *)meta + stat->offset);
+}
+
+static int rducks_runtime_format_counter_stat(rducks_r_scalar_meta_t *meta, const char *field,
+                                              char *out, size_t out_cap) {
+    size_t n = sizeof(rducks_udf_counter_stats) / sizeof(rducks_udf_counter_stats[0]);
+    for (size_t i = 0U; i < n; i++) {
+        if (strcmp(field, rducks_udf_counter_stats[i].name) == 0) {
+            snprintf(out, out_cap, "%llu",
+                     (unsigned long long)rducks_udf_counter_load(
+                         rducks_udf_counter_stat_ptr(meta, &rducks_udf_counter_stats[i])));
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void rducks_runtime_reset_udf_stats_locked(rducks_r_scalar_meta_t *meta) {
     if (!meta) return;
     rducks_udf_counter_store(&meta->dispatch_chunks, 0U);
@@ -446,43 +495,7 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     } else if (strcmp(field, "marshalling") == 0) {
         snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" :
                  (meta->eval_mode == RDUCKS_EVAL_RIPC ? "arrow_ipc" : "arrow_c"));
-    } else if (strcmp(field, "dispatch_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->dispatch_chunks));
-    } else if (strcmp(field, "dispatch_rows") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->dispatch_rows));
-    } else if (strcmp(field, "direct_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->direct_chunks));
-    } else if (strcmp(field, "queued_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queued_chunks));
-    } else if (strcmp(field, "queue_pending_current") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queue_pending_current));
-    } else if (strcmp(field, "queue_pending_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->queue_pending_max));
-    } else if (strcmp(field, "arrow_r_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_r_chunks));
-    } else if (strcmp(field, "arrow_c_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_chunks));
-    } else if (strcmp(field, "arrow_c_input_snapshot_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_input_snapshot_chunks));
-    } else if (strcmp(field, "arrow_c_owned_result_chunk_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_c_owned_result_chunk_chunks));
-    } else if (strcmp(field, "arrow_ipc_chunks") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->arrow_ipc_chunks));
-    } else if (strcmp(field, "ripc_collect_batches") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_batches));
-    } else if (strcmp(field, "ripc_collect_requests") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_requests));
-    } else if (strcmp(field, "ripc_collect_max_batch") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_max_batch));
-    } else if (strcmp(field, "ripc_submit_wave_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_submit_wave_max));
-    } else if (strcmp(field, "ripc_collect_ready_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_collect_ready_max));
-    } else if (strcmp(field, "ripc_inflight_current") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_inflight_current));
-    } else if (strcmp(field, "ripc_inflight_max") == 0) {
-        snprintf(out, out_cap, "%llu", (unsigned long long)rducks_udf_counter_load(&meta->ripc_inflight_max));
-    } else {
+    } else if (!rducks_runtime_format_counter_stat(meta, field, out, out_cap)) {
         ok = 0;
     }
     rducks_runtime_unlock();

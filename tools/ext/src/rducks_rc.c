@@ -280,13 +280,7 @@ typedef struct rducks_rc_direct_vector_view {
     uint64_t *validity;
 } rducks_rc_direct_vector_view_t;
 
-static void rducks_rc_direct_input_view_init(rducks_rc_direct_vector_view_t *view, duckdb_vector vector) {
-    view->vector = vector;
-    view->data = duckdb_vector_get_data(vector);
-    view->validity = duckdb_vector_get_validity(vector);
-}
-
-static void rducks_rc_direct_output_view_init(rducks_rc_direct_vector_view_t *view, duckdb_vector vector) {
+static void rducks_rc_direct_view_init(rducks_rc_direct_vector_view_t *view, duckdb_vector vector) {
     view->vector = vector;
     view->data = duckdb_vector_get_data(vector);
     view->validity = duckdb_vector_get_validity(vector);
@@ -443,7 +437,7 @@ static int rducks_rc_direct_scalar_snapshot_input_views(rducks_r_scalar_meta_t *
             return 0;
         }
         for (size_t col = 0; col < meta->arity; col++) {
-            rducks_rc_direct_input_view_init(&frame->inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
+            rducks_rc_direct_view_init(&frame->inputs[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
         }
     }
     return 1;
@@ -457,7 +451,7 @@ static int rducks_rc_direct_scalar_snapshot_views(rducks_r_scalar_meta_t *meta,
     if (!rducks_rc_direct_scalar_snapshot_input_views(meta, input, frame, err_msg, err_cap)) {
         return 0;
     }
-    rducks_rc_direct_output_view_init(&frame->output, output);
+    rducks_rc_direct_view_init(&frame->output, output);
     return 1;
 }
 
@@ -1276,7 +1270,7 @@ static SEXP rducks_rc_direct_sequence_arg(const rducks_type_desc_t *child_desc, 
         Rf_error("Rducks LIST/ARRAY value is too large to materialize in R");
     }
     n = (R_xlen_t)len;
-    rducks_rc_direct_input_view_init(&child_view, child_vector);
+    rducks_rc_direct_view_init(&child_view, child_vector);
     if (child_desc->kind == RDUCKS_KIND_ENUM) {
         out = PROTECT(rducks_rc_make_enum_vector(child_desc, n));
         for (idx_t j = 0; j < len; j++) {
@@ -1403,7 +1397,7 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
             duckdb_vector child = duckdb_struct_vector_get_child(input->vector, (idx_t)i);
             rducks_rc_direct_vector_view_t child_view;
             SET_STRING_ELT(names, (R_xlen_t)i, Rf_mkChar(desc->field_names[i] ? desc->field_names[i] : ""));
-            rducks_rc_direct_input_view_init(&child_view, child);
+            rducks_rc_direct_view_init(&child_view, child);
             SET_VECTOR_ELT(out, (R_xlen_t)i, rducks_rc_direct_arg(desc->field_types[i], &child_view, row));
         }
         Rf_setAttrib(out, R_NamesSymbol, names);
@@ -1437,13 +1431,13 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
          */
         duckdb_vector tag_vector = duckdb_struct_vector_get_child(input->vector, 0);
         rducks_rc_direct_vector_view_t tag_view;
-        rducks_rc_direct_input_view_init(&tag_view, tag_vector);
+        rducks_rc_direct_view_init(&tag_view, tag_vector);
         if (!rducks_rc_direct_view_valid_at(&tag_view, row)) return R_NilValue;
         uint8_t tag = ((uint8_t *)tag_view.data)[row];
         if ((size_t)tag >= desc->field_count) return R_NilValue;
         duckdb_vector member_vector = duckdb_struct_vector_get_child(input->vector, (idx_t)tag + 1U);
         rducks_rc_direct_vector_view_t member_view;
-        rducks_rc_direct_input_view_init(&member_view, member_vector);
+        rducks_rc_direct_view_init(&member_view, member_vector);
         SEXP payload = PROTECT(rducks_rc_direct_arg(desc->field_types[tag], &member_view, row));
         out = PROTECT(rducks_rc_make_union_value(desc->field_names[tag], payload));
         UNPROTECT(2);
@@ -1741,7 +1735,7 @@ static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckd
                                            char *err_msg, size_t err_cap) {
     rducks_rc_direct_vector_view_t view;
     SEXP out;
-    rducks_rc_direct_input_view_init(&view, vector);
+    rducks_rc_direct_view_init(&view, vector);
 
     if (desc->kind == RDUCKS_KIND_ENUM) {
         out = PROTECT(rducks_rc_make_enum_vector(desc, (R_xlen_t)n));
@@ -2054,7 +2048,7 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
     for (size_t col = 0; col < meta->arity; col++) {
         duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
         rducks_rc_direct_vector_view_t view;
-        rducks_rc_direct_input_view_init(&view, vector);
+        rducks_rc_direct_view_init(&view, vector);
         SEXP col_nulls = PROTECT(rducks_rc_direct_column_nulls(&view, n));
         SEXP values = PROTECT(rducks_rc_direct_column_values(meta->args[col], vector, n, err_msg, err_cap));
         if (err_msg[0]) {
@@ -2094,7 +2088,7 @@ static int rducks_rc_write_direct_results(rducks_r_scalar_meta_t *meta, SEXP res
         return 0;
     }
     rducks_rc_direct_vector_view_t output_view;
-    rducks_rc_direct_output_view_init(&output_view, output);
+    rducks_rc_direct_view_init(&output_view, output);
     for (idx_t row = 0; row < n; row++) {
         SEXP value = VECTOR_ELT(results, (R_xlen_t)row);
         if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, value, err_msg, err_cap)) {
@@ -2153,12 +2147,12 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
              */
             duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
             rducks_rc_direct_vector_view_t tag_view;
-            rducks_rc_direct_output_view_init(&tag_view, tag_vector);
+            rducks_rc_direct_view_init(&tag_view, tag_vector);
             rducks_rc_output_set_null(&tag_view, row);
             for (size_t i = 0; i < desc->field_count; i++) {
                 duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
                 rducks_rc_direct_vector_view_t member_view;
-                rducks_rc_direct_output_view_init(&member_view, member_vector);
+                rducks_rc_direct_view_init(&member_view, member_vector);
                 rducks_rc_output_set_null(&member_view, row);
             }
         }
@@ -2181,7 +2175,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             return 0;
         }
         child = duckdb_list_vector_get_child(output->vector);
-        rducks_rc_direct_output_view_init(&child_view, child);
+        rducks_rc_direct_view_init(&child_view, child);
         for (R_xlen_t j = 0; j < len; j++) {
             int ok = 1;
             SEXP element = PROTECT(rducks_rc_vector_value_at(value, (idx_t)j, &ok));
@@ -2214,7 +2208,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             return 0;
         }
         child = duckdb_array_vector_get_child(output->vector);
-        rducks_rc_direct_output_view_init(&child_view, child);
+        rducks_rc_direct_view_init(&child_view, child);
         for (R_xlen_t j = 0; j < len; j++) {
             int ok = 1;
             SEXP element = PROTECT(rducks_rc_vector_value_at(value, (idx_t)j, &ok));
@@ -2239,7 +2233,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             duckdb_vector child = duckdb_struct_vector_get_child(output->vector, (idx_t)i);
             rducks_rc_direct_vector_view_t child_view;
             SEXP field = PROTECT(rducks_rc_struct_field(value, desc->field_names[i], i, &ok));
-            rducks_rc_direct_output_view_init(&child_view, child);
+            rducks_rc_direct_view_init(&child_view, child);
             if (!ok || !rducks_rc_write_direct_output(desc->field_types[i], &child_view, row, field, err_msg, err_cap)) {
                 UNPROTECT(1);
                 if (!ok) {
@@ -2299,8 +2293,8 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         entry_vector = duckdb_list_vector_get_child(output->vector);
         key_vector = duckdb_struct_vector_get_child(entry_vector, 0);
         value_vector = duckdb_struct_vector_get_child(entry_vector, 1);
-        rducks_rc_direct_output_view_init(&key_view, key_vector);
-        rducks_rc_direct_output_view_init(&value_view, value_vector);
+        rducks_rc_direct_view_init(&key_view, key_vector);
+        rducks_rc_direct_view_init(&value_view, value_vector);
         for (R_xlen_t j = 0; j < len; j++) {
             int key_ok = 1;
             int value_ok = 1;
@@ -2359,10 +2353,10 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
          */
         duckdb_vector tag_vector = duckdb_struct_vector_get_child(output->vector, 0);
         rducks_rc_direct_vector_view_t tag_view;
-        rducks_rc_direct_output_view_init(&tag_view, tag_vector);
+        rducks_rc_direct_view_init(&tag_view, tag_vector);
         duckdb_vector selected_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)tag_index + 1U);
         rducks_rc_direct_vector_view_t selected_view;
-        rducks_rc_direct_output_view_init(&selected_view, selected_vector);
+        rducks_rc_direct_view_init(&selected_view, selected_vector);
         if (!rducks_rc_write_direct_output(desc->field_types[tag_index], &selected_view, row, payload, err_msg, err_cap)) {
             UNPROTECT(2);
             if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION member");
@@ -2372,7 +2366,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             if (i == tag_index) continue;
             duckdb_vector member_vector = duckdb_struct_vector_get_child(output->vector, (idx_t)i + 1U);
             rducks_rc_direct_vector_view_t member_view;
-            rducks_rc_direct_output_view_init(&member_view, member_vector);
+            rducks_rc_direct_view_init(&member_view, member_vector);
             rducks_rc_output_set_null(&member_view, row);
         }
         rducks_rc_output_set_valid_if_needed(&tag_view, row);
@@ -3026,7 +3020,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
             snprintf(err_msg, err_cap, "Rducks owned Arrow variable result writeback is missing offsets");
             return 0;
         }
-        rducks_rc_direct_output_view_init(&output_view, output);
+        rducks_rc_direct_view_init(&output_view, output);
         for (idx_t row = 0; row < payload->n; row++) {
             if (validity && !rducks_rc_arrow_bitmap_get(validity, row)) {
                 rducks_rc_output_set_null(&output_view, row);
@@ -3050,7 +3044,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
         return 0;
     }
 
-    rducks_rc_direct_output_view_init(&output_view, output);
+    rducks_rc_direct_view_init(&output_view, output);
     for (idx_t row = 0; row < payload->n; row++) {
         if (validity && !rducks_rc_arrow_bitmap_get(validity, row)) {
             rducks_rc_output_set_null(&output_view, row);

@@ -384,7 +384,7 @@ static void rducks_r_aggregate_update(duckdb_function_info info, duckdb_data_chu
             return;
         }
         for (size_t col = 0; col < meta->arity; col++) {
-            rducks_rc_direct_input_view_init(&views[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
+            rducks_rc_direct_view_init(&views[col], duckdb_data_chunk_get_vector(input, (idx_t)col));
         }
     }
 
@@ -803,7 +803,7 @@ static void rducks_r_aggregate_finalize(duckdb_function_info info, duckdb_aggreg
         return;
     }
     rducks_preserved_release_drain_on_main(meta->runtime);
-    rducks_rc_direct_output_view_init(&output_view, result);
+    rducks_rc_direct_view_init(&output_view, result);
 
     if (Rf_isFunction(meta->finalize_chunk_fun)) {
         if (!rducks_r_aggregate_finalize_vectorized(info, meta, source, &output_view, count, offset, err, sizeof(err))) {

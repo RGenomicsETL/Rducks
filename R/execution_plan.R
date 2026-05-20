@@ -309,8 +309,6 @@ rducks_as_execution_plan <- function(plan) {
     return(switch(
       plan,
       reference = rducks_execution_plan("arrow_r", "serial"),
-      arrow_r = rducks_execution_plan("arrow_r", "serial"),
-      arrow_c = rducks_execution_plan("arrow_c", "serial"),
       arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
       arrow_r_main_queue = rducks_execution_plan("arrow_r", "inproc_concurrent"),
       arrow_c_direct_serial = rducks_execution_plan("arrow_c", "serial"),

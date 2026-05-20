@@ -1,10 +1,11 @@
-rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handling,
-                                      plan = rducks_execution_plan()) {
+rducks_make_arrow_engine <- function(fun, spec, null_handling, exception_handling,
+                                     plan, eval_rows) {
   force(fun)
   force(spec)
   force(null_handling)
   force(exception_handling)
   force(plan)
+  force(eval_rows)
   list(
     fun = fun,
     arg_types = spec$arg_types,
@@ -13,7 +14,7 @@ rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handli
     exception_handling = exception_handling,
     plan = plan,
     prepare_inputs = rducks_scalar_prepare_inputs,
-    eval_rows = rducks_scalar_eval_prepared_rows,
+    eval_rows = eval_rows,
     results_to_arrow = rducks_scalar_results_to_arrow,
     serialization = if (identical(plan$serialization, "arrow_ipc")) list(
       kind = "arrow_ipc",
@@ -23,29 +24,14 @@ rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handli
   )
 }
 
+rducks_make_scalar_engine <- function(fun, spec, null_handling, exception_handling,
+                                      plan = rducks_execution_plan()) {
+  rducks_make_arrow_engine(fun, spec, null_handling, exception_handling, plan, rducks_scalar_eval_prepared_rows)
+}
+
 rducks_make_vectorized_engine <- function(fun, spec, null_handling, exception_handling,
                                           plan = rducks_execution_plan()) {
-  force(fun)
-  force(spec)
-  force(null_handling)
-  force(exception_handling)
-  force(plan)
-  list(
-    fun = fun,
-    arg_types = spec$arg_types,
-    return_type = spec$return_type,
-    null_handling = null_handling,
-    exception_handling = exception_handling,
-    plan = plan,
-    prepare_inputs = rducks_scalar_prepare_inputs,
-    eval_rows = rducks_vectorized_eval_prepared_chunk,
-    results_to_arrow = rducks_scalar_results_to_arrow,
-    serialization = if (identical(plan$serialization, "arrow_ipc")) list(
-      kind = "arrow_ipc",
-      encode = rducks_arrow_ipc_encode,
-      decode_stream = rducks_arrow_ipc_decode_stream
-    ) else NULL
-  )
+  rducks_make_arrow_engine(fun, spec, null_handling, exception_handling, plan, rducks_vectorized_eval_prepared_chunk)
 }
 
 rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,

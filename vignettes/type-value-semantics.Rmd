@@ -11,7 +11,7 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  eval = FALSE
+  eval = TRUE
 )
 ```
 
@@ -32,6 +32,15 @@ Three concepts are intentionally separate:
 Changing a connection's default execution plan affects future scalar-UDF
 registrations and the matching native runtime backend; it does not rewrite an
 existing scalar UDF to a different marshalling engine.
+
+```{r setup-connection}
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+```
 
 ## Declared descriptors
 
@@ -136,4 +145,9 @@ rducks_argument_type_mapping(list(
   DECIMAL(10, 2),
   STRUCT(a = INTEGER[])
 ))
+```
+
+```{r cleanup, include=FALSE}
+rducks_release(con)
+DBI::dbDisconnect(con, shutdown = TRUE)
 ```
