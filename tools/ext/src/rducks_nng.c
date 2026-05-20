@@ -429,6 +429,182 @@ static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr) 
     (void)rducks_nng_global_quiesce(NULL, 0);
 }
 
+typedef struct rducks_nng_pool_ref_test_task {
+    rducks_nng_client_pool_t *pool;
+    atomic_uint_fast64_t *attempted;
+    int delay_ms;
+    int acquired;
+    int released;
+} rducks_nng_pool_ref_test_task_t;
+
+static void rducks_nng_pool_ref_test_worker_run(rducks_nng_pool_ref_test_task_t *task) {
+    char err[128];
+    err[0] = '\0';
+    if (!task) return;
+    task->acquired = rducks_nng_client_pool_acquire(task->pool, err, sizeof(err));
+    atomic_fetch_add_explicit(task->attempted, 1U, memory_order_release);
+    if (task->acquired) {
+        nng_msleep(task->delay_ms);
+        rducks_nng_client_pool_release(task->pool);
+        task->released = 1;
+    }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI rducks_nng_pool_ref_test_worker_thread(LPVOID arg) {
+    rducks_nng_pool_ref_test_worker_run((rducks_nng_pool_ref_test_task_t *)arg);
+    return 0;
+}
+#else
+static void *rducks_nng_pool_ref_test_worker_thread(void *arg) {
+    rducks_nng_pool_ref_test_worker_run((rducks_nng_pool_ref_test_task_t *)arg);
+    return NULL;
+}
+#endif
+
+static uint64_t rducks_nng_client_pool_refs_for_test(rducks_nng_client_pool_t *pool) {
+    uint64_t refs = 0U;
+    if (!pool || !pool->sync_initialized) return 0U;
+    rducks_nng_mutex_lock(&pool->lock);
+    refs = pool->refs;
+    rducks_nng_mutex_unlock(&pool->lock);
+    return refs;
+}
+
+static int rducks_nng_pool_ref_self_test_native(uint64_t worker_count, char *err_msg, size_t err_cap) {
+    rducks_nng_client_pool_t *pool = NULL;
+    rducks_nng_pool_ref_test_task_t *tasks = NULL;
+    atomic_uint_fast64_t attempted;
+    size_t created = 0U;
+    int ok = 0;
+#ifdef _WIN32
+    HANDLE *threads = NULL;
+#else
+    pthread_t *threads = NULL;
+#endif
+
+    if (worker_count < 1U || worker_count > 64U) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "Rducks NNG pool self-test worker count must be between 1 and 64");
+        return 0;
+    }
+    pool = (rducks_nng_client_pool_t *)rducks_calloc_array(1, sizeof(*pool));
+    tasks = (rducks_nng_pool_ref_test_task_t *)rducks_calloc_array((size_t)worker_count, sizeof(*tasks));
+#ifdef _WIN32
+    threads = (HANDLE *)rducks_calloc_array((size_t)worker_count, sizeof(*threads));
+#else
+    threads = (pthread_t *)rducks_calloc_array((size_t)worker_count, sizeof(*threads));
+#endif
+    if (!pool || !tasks || !threads) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "out of memory preparing Rducks NNG pool self-test");
+        goto cleanup_after_join;
+    }
+
+    rducks_nng_mutex_init(&pool->lock);
+    rducks_nng_cond_init(&pool->cv);
+    pool->sync_initialized = 1;
+    pool->max_pending = 1U;
+    atomic_init(&pool->next_ticket, 0U);
+    atomic_init(&pool->pending, 0U);
+    rducks_nng_pool_count_add();
+    atomic_init(&attempted, 0U);
+
+    for (created = 0U; created < (size_t)worker_count; created++) {
+        tasks[created].pool = pool;
+        tasks[created].attempted = &attempted;
+        tasks[created].delay_ms = 250;
+#ifdef _WIN32
+        threads[created] = CreateThread(NULL, 0, rducks_nng_pool_ref_test_worker_thread,
+                                        &tasks[created], 0, NULL);
+        if (!threads[created]) {
+            if (err_msg && err_cap) snprintf(err_msg, err_cap, "failed to start Rducks NNG pool self-test thread");
+            break;
+        }
+#else
+        if (pthread_create(&threads[created], NULL, rducks_nng_pool_ref_test_worker_thread,
+                           &tasks[created]) != 0) {
+            if (err_msg && err_cap) snprintf(err_msg, err_cap, "failed to start Rducks NNG pool self-test thread");
+            break;
+        }
+#endif
+    }
+
+    for (int spin = 0; spin < 400 &&
+         atomic_load_explicit(&attempted, memory_order_acquire) < (uint_fast64_t)created; spin++) {
+        nng_msleep(5);
+    }
+
+    if (created != (size_t)worker_count) {
+        if (err_msg && err_cap && !err_msg[0]) snprintf(err_msg, err_cap, "failed to start all Rducks NNG pool self-test threads");
+        goto cleanup_after_safe_destroy;
+    }
+    if (atomic_load_explicit(&attempted, memory_order_acquire) != (uint_fast64_t)created) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "Rducks NNG pool self-test threads did not reach acquire barrier");
+        goto cleanup_after_join;
+    }
+    if (rducks_nng_client_pool_refs_for_test(pool) != worker_count) {
+        if (err_msg && err_cap) snprintf(err_msg, err_cap, "Rducks NNG pool self-test did not acquire expected refs");
+        goto cleanup_after_safe_destroy;
+    }
+
+    rducks_nng_client_pool_destroy(&pool);
+
+#ifdef _WIN32
+    for (size_t i = 0U; i < created; i++) {
+        if (threads[i]) {
+            WaitForSingleObject(threads[i], INFINITE);
+            CloseHandle(threads[i]);
+            threads[i] = NULL;
+        }
+    }
+#else
+    for (size_t i = 0U; i < created; i++) pthread_join(threads[i], NULL);
+#endif
+
+    for (size_t i = 0U; i < created; i++) {
+        if (!tasks[i].acquired || !tasks[i].released) {
+            if (err_msg && err_cap) snprintf(err_msg, err_cap, "Rducks NNG pool self-test worker did not release cleanly");
+            goto cleanup_no_threads;
+        }
+    }
+    ok = pool == NULL;
+    if (!ok && err_msg && err_cap) snprintf(err_msg, err_cap, "Rducks NNG pool self-test did not destroy pool");
+    goto cleanup_no_threads;
+
+cleanup_after_join:
+#ifdef _WIN32
+    for (size_t i = 0U; i < created; i++) {
+        if (threads && threads[i]) {
+            WaitForSingleObject(threads[i], INFINITE);
+            CloseHandle(threads[i]);
+            threads[i] = NULL;
+        }
+    }
+#else
+    for (size_t i = 0U; i < created; i++) pthread_join(threads[i], NULL);
+#endif
+    if (pool) rducks_nng_client_pool_destroy(&pool);
+    goto cleanup_no_threads;
+
+cleanup_after_safe_destroy:
+    if (pool) rducks_nng_client_pool_destroy(&pool);
+#ifdef _WIN32
+    for (size_t i = 0U; i < created; i++) {
+        if (threads && threads[i]) {
+            WaitForSingleObject(threads[i], INFINITE);
+            CloseHandle(threads[i]);
+            threads[i] = NULL;
+        }
+    }
+#else
+    for (size_t i = 0U; i < created; i++) pthread_join(threads[i], NULL);
+#endif
+
+cleanup_no_threads:
+    free(threads);
+    free(tasks);
+    return ok;
+}
+
 static size_t rducks_nng_client_pool_choose(rducks_nng_client_pool_t *pool) {
     uint64_t ticket;
     uint64_t best_load = UINT64_MAX;
@@ -587,6 +763,12 @@ static int rducks_nng_pair_self_test(char *err_msg, size_t err_cap) {
     return 0;
 }
 
+static int rducks_nng_pool_ref_self_test_native(uint64_t worker_count, char *err_msg, size_t err_cap) {
+    (void)worker_count;
+    if (err_msg && err_cap) snprintf(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
+    return 0;
+}
+
 static int rducks_nng_global_quiesce_allow_open(uint64_t allowed_open_pools,
                                                 char *err_msg, size_t err_cap) {
     (void)allowed_open_pools;
@@ -708,6 +890,28 @@ static void rducks_nng_self_test_scalar(duckdb_function_info info, duckdb_data_c
         return;
     }
     for (idx_t i = 0; i < n; i++) out[i] = true;
+}
+
+static void rducks_nng_pool_ref_self_test_scalar(duckdb_function_info info, duckdb_data_chunk input,
+                                                 duckdb_vector output) {
+    idx_t n = duckdb_data_chunk_get_size(input);
+    duckdb_vector workers_vector = duckdb_data_chunk_get_vector(input, 0);
+    uint64_t *workers = (uint64_t *)duckdb_vector_get_data(workers_vector);
+    uint64_t *validity = duckdb_vector_get_validity(workers_vector);
+    bool *out = (bool *)duckdb_vector_get_data(output);
+    for (idx_t i = 0; i < n; i++) {
+        char err[256];
+        err[0] = '\0';
+        if (validity && !duckdb_validity_row_is_valid(validity, i)) {
+            duckdb_scalar_function_set_error(info, "Rducks NNG pool self-test worker count must not be NULL");
+            return;
+        }
+        if (!rducks_nng_pool_ref_self_test_native(workers[i], err, sizeof(err))) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks NNG pool self-test failed");
+            return;
+        }
+        out[i] = true;
+    }
 }
 
 static void rducks_nng_quiesce_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {

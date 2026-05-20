@@ -23,4 +23,5 @@ local({
   expect_true(nzchar(version))
   expect_true(grepl("^1\\.", version))
   expect_true(DBI::dbGetQuery(con, "SELECT rducks_nng_self_test() AS ok")$ok[[1L]])
+  expect_true(DBI::dbGetQuery(con, "SELECT rducks_nng_pool_ref_self_test(8::UBIGINT) AS ok")$ok[[1L]])
 })

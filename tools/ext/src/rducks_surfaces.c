@@ -597,7 +597,10 @@ static bool rducks_register_dev_diagnostic_surfaces(duckdb_connection con, rduck
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_version", DUCKDB_TYPE_VARCHAR,
                                            rducks_nng_version_scalar, false) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_self_test", DUCKDB_TYPE_BOOLEAN,
-                                           rducks_nng_self_test_scalar, true);
+                                           rducks_nng_self_test_scalar, true) &&
+           rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_nng_pool_ref_self_test",
+                                                       DUCKDB_TYPE_BOOLEAN,
+                                                       rducks_nng_pool_ref_self_test_scalar);
 }
 
 static void rducks_runtime_token_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
