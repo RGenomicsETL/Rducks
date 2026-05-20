@@ -284,13 +284,15 @@ local({
     con, "rducks_queue_arrow_c_error_null_list",
     function(x) stop("expected list error"),
     INTEGER, INTEGER[],
-    exception_handling = "return_null"
+    exception_handling = "return_null",
+    side_effects = TRUE
   ))
   invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_error_null_struct",
     function(x) stop("expected struct error"),
     INTEGER, STRUCT(a = INTEGER, b = VARCHAR),
-    exception_handling = "return_null"
+    exception_handling = "return_null",
+    side_effects = TRUE
   ))
 
   snapshot_n <- 4096L
@@ -372,7 +374,7 @@ local({
     paste(
       "SELECT count(rducks_queue_arrow_c_error_null_list(i::INTEGER)) AS list_nonnull,",
       "count(rducks_queue_arrow_c_error_null_struct(i::INTEGER)) AS struct_nonnull",
-      "FROM rducks_parallel_range(4::UBIGINT) AS t(i)"
+      sprintf("FROM rducks_parallel_range(%d::UBIGINT) AS t(i)", snapshot_n)
     )
   )
   expect_equal(nested_error_null$list_nonnull, 0)
