@@ -499,6 +499,31 @@ cat(rducks_used_duckdb_unstable_api_markdown("."))
 
 See `docs/BUILD.md` for the build and ABI details.
 
+## How it works
+
+Rducks loads a small DuckDB extension that records the database instance and
+keeps extension-owned connections for registration callbacks, table scans, and
+query streaming. R closures are preserved while DuckDB catalog metadata can call
+them, and scalar calls either run on the recorded R thread or are marshalled to
+explicit R worker processes by the Arrow IPC plan.
+
+The "Arrow dance" is the shared boundary. DuckDB produces vectors in standard
+chunks; Rducks exposes those chunks through DuckDB Arrow C Data, uses nanoarrow to
+materialize typed R inputs, calls the R function, and writes typed results back to
+DuckDB. The `arrow_r` plan keeps most conversion in R/nanoarrow, `arrow_c` uses
+native C materialization for supported types, and `arrow_ipc` serializes owned
+Arrow IPC request/result bytes over NNG so separate R worker processes can do the
+R evaluation. Dynamic omitted-`args` UDFs still bind concrete DuckDB types at the
+SQL call site before this marshalling begins.
+
+A future transport could use DuckDB's Quack-style format: DuckDB
+`BinarySerializer` messages carrying logical types and `DataChunk` payloads,
+rather than Arrow IPC bytes. That could remove some Arrow encode/decode work and
+align worker transport more closely with DuckDB's native chunk model. It is not a
+runtime dependency today; adopting it would require a versioned C implementation,
+strict compatibility checks, and the same explicit ownership and R-thread rules
+that the Arrow paths enforce now.
+
 ```{r cleanup, include=FALSE}
 rducks_release(con)
 dbDisconnect(con, shutdown = TRUE)
