@@ -49,7 +49,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a></p>
+<p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed DuckDB C extension. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks and query streaming. It is built around explicit type descriptors, DuckDB Arrow C Data/nanoarrow marshalling, and a strict rule that R object work runs on the recorded R thread unless it is intentionally moved to R worker processes through the Arrow IPC plan.</p>
 <p>The user-facing surface separates DuckDB function kind, scalar-UDF evaluation mode, execution plan, and R-side query consumption. Scalar UDFs use <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Execution plans choose the marshalling/concurrency backend (<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>). Aggregates, table functions, and <code><a href="reference/rducks_query_stream.html">rducks_query_stream()</a></code> are separate APIs, not scalar-UDF plan variants.</p>
 <div class="section level2">
@@ -374,18 +374,18 @@
 </tr>
 </tbody>
 </table>
-<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one CSV with many DuckDB-sized vectors. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <code>ipc_globals_share = "mori"</code>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths.</p>
+<p>The benchmark below registers the same sleeping vectorized UDF on three real plans and runs the queries against one typed CSV scan with many DuckDB-sized vectors. The UDF closes over a random R lookup vector; the Arrow IPC registration sends that global explicitly using <code>ipc_globals_share = "mori"</code>. Timings are illustrative and machine-dependent, but the code exercises the actual <code>arrow_r</code>, <code>arrow_c</code>, and native NNG/Arrow IPC paths.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample.int</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fl">1000L</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="va">slow_lookup</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.02</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Sys.sleep.html" class="external-link">Sys.sleep</a></span><span class="op">(</span><span class="fl">0.05</span><span class="op">)</span></span>
 <span>  <span class="va">x</span> <span class="op">+</span> <span class="va">lookup</span><span class="op">[[</span><span class="fl">1L</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="op">}</span></span>
 <span></span>
 <span><span class="va">duckdb_vector_size</span> <span class="op">&lt;-</span> <span class="fl">2048L</span></span>
-<span><span class="va">csv_rows</span> <span class="op">&lt;-</span> <span class="va">duckdb_vector_size</span> <span class="op">*</span> <span class="fl">32L</span></span>
-<span><span class="va">csv_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir</a></span><span class="op">(</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"rducks-readme-csv-"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Sys.getpid.html" class="external-link">Sys.getpid</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">csv_rows</span> <span class="op">&lt;-</span> <span class="va">duckdb_vector_size</span> <span class="op">*</span> <span class="fl">64L</span></span>
+<span><span class="va">csv_path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="st">"rducks-readme-csv-"</span>, fileext <span class="op">=</span> <span class="st">".csv"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/writeLines.html" class="external-link">writeLines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"i"</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq.int</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">csv_rows</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>, <span class="va">csv_path</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">plans</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
@@ -421,7 +421,8 @@
 <span>    <span class="va">result</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span></span>
 <span>      <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
 <span>        <span class="st">"SELECT sum(%s((i %% 1000)::INTEGER)) AS total"</span>,</span>
-<span>        <span class="st">"FROM read_csv_auto(%s, header = true)"</span></span>
+<span>        <span class="st">"FROM read_csv(%s, header = true,"</span>,</span>
+<span>        <span class="st">"columns = {'i': 'INTEGER'}, parallel = true)"</span></span>
 <span>      <span class="op">)</span>,</span>
 <span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteIdentifier.html" class="external-link">dbQuoteIdentifier</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">udf</span><span class="op">)</span>,</span>
 <span>      <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbQuoteString.html" class="external-link">dbQuoteString</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">csv_path</span><span class="op">)</span></span>
@@ -444,9 +445,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 32873024       2.212</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 32873024       2.182</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 32873024       2.614</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344       7.104</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344       6.937</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       7.309</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
