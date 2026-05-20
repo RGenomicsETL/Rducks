@@ -332,11 +332,11 @@ Execution plans are fixed at scalar-UDF registration time.
 | `arrow_ipc + multiprocess_parallel` | yes | yes | native NNG plus owned Arrow IPC request/result bytes and R workers |
 
 The benchmark below registers the same sleeping vectorized UDF on three real
-plans and runs the queries against small CSV files. The UDF closes over a random
-R lookup vector; the Arrow IPC registration sends that global explicitly using
-`ipc_globals_share = "mori"`. Timings are illustrative and machine-dependent,
-but the code exercises the actual `arrow_r`, `arrow_c`, and native NNG/Arrow IPC
-paths.
+plans and runs the queries against one CSV with many DuckDB-sized vectors. The
+UDF closes over a random R lookup vector; the Arrow IPC registration sends that
+global explicitly using `ipc_globals_share = "mori"`. Timings are illustrative
+and machine-dependent, but the code exercises the actual `arrow_r`, `arrow_c`,
+and native NNG/Arrow IPC paths.
 
 ```{r execution-plan-benchmark}
 set.seed(1)
@@ -346,16 +346,10 @@ slow_lookup <- function(x) {
   x + lookup[[1L]]
 }
 
-csv_dir <- file.path(tempdir(), paste0("rducks-readme-csv-", Sys.getpid()))
-dir.create(csv_dir, showWarnings = FALSE)
-for (part in seq_len(4L)) {
-  values <- seq.int((part - 1L) * 256L, part * 256L - 1L)
-  writeLines(
-    c("i", as.character(values)),
-    file.path(csv_dir, sprintf("part-%02d.csv", part))
-  )
-}
-csv_glob <- file.path(csv_dir, "part-*.csv")
+duckdb_vector_size <- 2048L
+csv_rows <- duckdb_vector_size * 32L
+csv_path <- file.path(tempdir(), paste0("rducks-readme-csv-", Sys.getpid()))
+writeLines(c("i", as.character(seq.int(0L, csv_rows - 1L))), csv_path)
 
 plans <- list(
   arrow_r = rducks_execution_plan("arrow_r", "serial"),
@@ -388,9 +382,12 @@ run_plan <- function(label, udf, plan, threads) {
   rducks_set_execution_plan(con, plan, threads = threads, external_threads = 1)
   elapsed <- system.time({
     result <- DBI::dbGetQuery(con, sprintf(
-      "SELECT sum(%s(i::INTEGER)) AS total FROM read_csv_auto(%s, header = true)",
+      paste(
+        "SELECT sum(%s((i %% 1000)::INTEGER)) AS total",
+        "FROM read_csv_auto(%s, header = true)"
+      ),
       DBI::dbQuoteIdentifier(con, udf),
-      DBI::dbQuoteString(con, csv_glob)
+      DBI::dbQuoteString(con, csv_path)
     ))
   })[["elapsed"]]
   data.frame(label = label, total = result$total[[1]], elapsed_sec = round(elapsed, 3))
@@ -401,7 +398,7 @@ benchmark <- rbind(
   run_plan("arrow_c serial", udfs[[2]], plans[[2]], threads = 1),
   run_plan("arrow_ipc + mori", udfs[[3]], plans[[3]], threads = 2)
 )
-unlink(csv_dir, recursive = TRUE, force = TRUE)
+unlink(csv_path, force = TRUE)
 rducks_set_execution_plan(
   con,
   rducks_execution_plan("arrow_r", "serial"),
