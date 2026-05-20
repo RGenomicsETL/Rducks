@@ -95,8 +95,9 @@ nested_type <- STRUCT(
 
 rducks_is_type(nested_type)
 #> [1] TRUE
-rducks_type_sql(nested_type)
-#> [1] "STRUCT(id INTEGER, label ENUM('low', 'high'), payload UNION(code INTEGER, note VARCHAR), values DECIMAL(10, 2)[])"
+cat(strwrap(rducks_type_sql(nested_type), width = 70), sep = "\n")
+#> STRUCT(id INTEGER, label ENUM('low', 'high'), payload UNION(code
+#> INTEGER, note VARCHAR), values DECIMAL(10, 2)[])
 rducks_type_child_names(nested_type)
 #> [1] "id"      "label"   "payload" "values"
 ```
@@ -172,7 +173,16 @@ nested_sql <- "
   )
 "
 
-dbGetQuery(con, sprintf("\n  SELECT\n    r_nested_declared(%1$s) AS declared,\n    r_nested_dynamic(%1$s) AS dynamic\n", nested_sql))
+nested_query <- sprintf(
+  paste(
+    "SELECT",
+    "  r_nested_declared(%1$s) AS declared,",
+    "  r_nested_dynamic(%1$s) AS dynamic",
+    sep = "\n"
+  ),
+  nested_sql
+)
+dbGetQuery(con, nested_query)
 #>         declared        dynamic
 #> 1 7:high:note=ok 7:high:note=ok
 ```
@@ -208,9 +218,13 @@ rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
 #>                                                               input_shape
 #> 1 one scalar/composite R value per declared or dynamically bound argument
 #> 2     one R vector/list-column per declared or dynamically bound argument
-rducks_argument_type_mapping(list(INTEGER, UUID, DECIMAL(10, 2), STRUCT(a = INTEGER[])))[,
-  c("duckdb_type", "r_value_class", "special_null_argument")
-]
+mapping <- rducks_argument_type_mapping(list(
+  INTEGER,
+  UUID,
+  DECIMAL(10, 2),
+  STRUCT(a = INTEGER[])
+))
+mapping[, c("duckdb_type", "r_value_class", "special_null_argument")]
 #>           duckdb_type  r_value_class special_null_argument
 #> 1             INTEGER        integer           NA_integer_
 #> 2                UUID    rducks_uuid                  NULL
@@ -240,7 +254,13 @@ sum_i32_aggregate <- rducks_register_aggregate(
   returns = INTEGER
 )
 
-dbGetQuery(con, "SELECT r_sum_i32(i) AS total FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)")
+dbGetQuery(
+  con,
+  paste(
+    "SELECT r_sum_i32(i) AS total",
+    "FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+  )
+)
 #>   total
 #> 1     3
 ```
@@ -360,7 +380,10 @@ csv_dir <- file.path(tempdir(), paste0("rducks-readme-csv-", Sys.getpid()))
 dir.create(csv_dir, showWarnings = FALSE)
 for (part in seq_len(4L)) {
   values <- seq.int((part - 1L) * 256L, part * 256L - 1L)
-  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
+  writeLines(
+    c("i", as.character(values)),
+    file.path(csv_dir, sprintf("part-%02d.csv", part))
+  )
 }
 csv_glob <- file.path(csv_dir, "part-*.csv")
 
@@ -409,12 +432,17 @@ benchmark <- rbind(
   run_plan("arrow_ipc + mori", udfs[[3]], plans[[3]], threads = 2)
 )
 unlink(csv_dir, recursive = TRUE, force = TRUE)
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1, external_threads = 1)
+rducks_set_execution_plan(
+  con,
+  rducks_execution_plan("arrow_r", "serial"),
+  threads = 1,
+  external_threads = 1
+)
 benchmark
 #>              label  total elapsed_sec
-#> 1   arrow_r serial 527872       0.139
-#> 2   arrow_c serial 527872       0.141
-#> 3 arrow_ipc + mori 527872       0.116
+#> 1   arrow_r serial 527872       0.147
+#> 2   arrow_c serial 527872       0.134
+#> 3 arrow_ipc + mori 527872       0.113
 ```
 
 ## duckplyr integration
@@ -437,8 +465,14 @@ DBI::dbWriteTable(demo_con, "scores", data.frame(
   label = c("low", "high", "high")
 ))
 
-scores <- duckplyr::read_sql_duckdb("SELECT * FROM scores", con = demo_con, prudence = "stingy")
-local_score <- function(x, label) as.double(x + if (identical(label, "high")) 100 else 0)
+scores <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM scores",
+  con = demo_con,
+  prudence = "stingy"
+)
+local_score <- function(x, label) {
+  as.double(x + if (identical(label, "high")) 100 else 0)
+}
 
 out <- with(
   demo_con,

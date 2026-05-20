@@ -11,6 +11,7 @@ knitr::opts_chunk$set(
   warning = FALSE,
   message = FALSE
 )
+options(width = 80)
 library(Rducks)
 ```
 
@@ -101,7 +102,7 @@ nested_type <- STRUCT(
 )
 
 rducks_is_type(nested_type)
-rducks_type_sql(nested_type)
+cat(strwrap(rducks_type_sql(nested_type), width = 70), sep = "\n")
 rducks_type_child_names(nested_type)
 ```
 
@@ -173,7 +174,16 @@ nested_sql <- "
   )
 "
 
-dbGetQuery(con, sprintf("\n  SELECT\n    r_nested_declared(%1$s) AS declared,\n    r_nested_dynamic(%1$s) AS dynamic\n", nested_sql))
+nested_query <- sprintf(
+  paste(
+    "SELECT",
+    "  r_nested_declared(%1$s) AS declared,",
+    "  r_nested_dynamic(%1$s) AS dynamic",
+    sep = "\n"
+  ),
+  nested_sql
+)
+dbGetQuery(con, nested_query)
 ```
 
 With `null_handling = "default"`, a top-level SQL `NULL` input produces a SQL
@@ -199,9 +209,13 @@ For type-by-type details, use the exported reference tables:
 
 ```{r semantic-tables}
 rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
-rducks_argument_type_mapping(list(INTEGER, UUID, DECIMAL(10, 2), STRUCT(a = INTEGER[])))[,
-  c("duckdb_type", "r_value_class", "special_null_argument")
-]
+mapping <- rducks_argument_type_mapping(list(
+  INTEGER,
+  UUID,
+  DECIMAL(10, 2),
+  STRUCT(a = INTEGER[])
+))
+mapping[, c("duckdb_type", "r_value_class", "special_null_argument")]
 ```
 
 ## Aggregates, table functions, and query streams
@@ -226,7 +240,13 @@ sum_i32_aggregate <- rducks_register_aggregate(
   returns = INTEGER
 )
 
-dbGetQuery(con, "SELECT r_sum_i32(i) AS total FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)")
+dbGetQuery(
+  con,
+  paste(
+    "SELECT r_sum_i32(i) AS total",
+    "FROM (VALUES (1::INTEGER), (2::INTEGER), (NULL::INTEGER)) t(i)"
+  )
+)
 ```
 
 ### Table functions
@@ -330,7 +350,10 @@ csv_dir <- file.path(tempdir(), paste0("rducks-readme-csv-", Sys.getpid()))
 dir.create(csv_dir, showWarnings = FALSE)
 for (part in seq_len(4L)) {
   values <- seq.int((part - 1L) * 256L, part * 256L - 1L)
-  writeLines(c("i", as.character(values)), file.path(csv_dir, sprintf("part-%02d.csv", part)))
+  writeLines(
+    c("i", as.character(values)),
+    file.path(csv_dir, sprintf("part-%02d.csv", part))
+  )
 }
 csv_glob <- file.path(csv_dir, "part-*.csv")
 
@@ -379,7 +402,12 @@ benchmark <- rbind(
   run_plan("arrow_ipc + mori", udfs[[3]], plans[[3]], threads = 2)
 )
 unlink(csv_dir, recursive = TRUE, force = TRUE)
-rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1, external_threads = 1)
+rducks_set_execution_plan(
+  con,
+  rducks_execution_plan("arrow_r", "serial"),
+  threads = 1,
+  external_threads = 1
+)
 benchmark
 ```
 
@@ -402,8 +430,14 @@ DBI::dbWriteTable(demo_con, "scores", data.frame(
   label = c("low", "high", "high")
 ))
 
-scores <- duckplyr::read_sql_duckdb("SELECT * FROM scores", con = demo_con, prudence = "stingy")
-local_score <- function(x, label) as.double(x + if (identical(label, "high")) 100 else 0)
+scores <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM scores",
+  con = demo_con,
+  prudence = "stingy"
+)
+local_score <- function(x, label) {
+  as.double(x + if (identical(label, "high")) 100 else 0)
+}
 
 out <- with(
   demo_con,
