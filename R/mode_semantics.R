@@ -3,7 +3,7 @@ rducks_mode_semantics_rows <- list(
     mode = "scalar",
     status = "implemented",
     call_granularity = "one R call per row",
-    input_shape = "one scalar/composite R value per declared argument",
+    input_shape = "one scalar/composite R value per declared or dynamically bound argument",
     return_shape = "one scalar/composite R value compatible with the declared return type",
     null_semantics = "default NULL-in/NULL-out short-circuits; special mode passes scalar-shaped NA/NULL values",
     length_semantics = "one output value per R function call",
@@ -16,7 +16,7 @@ rducks_mode_semantics_rows <- list(
     mode = "vectorized",
     status = "implemented",
     call_granularity = "one R call per DuckDB chunk",
-    input_shape = "one R vector/list-column per declared argument",
+    input_shape = "one R vector/list-column per declared or dynamically bound argument",
     return_shape = "one R vector/list of values compatible with the declared return type",
     null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
     length_semantics = "return length must equal the number of evaluated rows in the chunk",
@@ -40,7 +40,7 @@ rducks_match_mode <- function(mode) {
 #' is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 #' Rducks execution plans. `mode = "scalar"` calls the R function once for each
 #' DuckDB row. `mode = "vectorized"` calls the R function once per DuckDB chunk
-#' with one R vector/list-column per declared argument. Vectorized mode is
+#' with one R vector/list-column per declared or dynamically bound argument. Vectorized mode is
 #' exposed for `arrow_r`, direct `arrow_c`, and worker-provider `arrow_ipc`
 #' plans.
 #'

@@ -590,18 +590,6 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
       call. = FALSE
     )
   }
-  if (isTRUE(spec$dynamic_args)) {
-    if (!identical(spec$mode, "scalar")) {
-      stop("dynamic scalar-UDF arguments currently require mode = 'scalar'", call. = FALSE)
-    }
-    if (!identical(plan$marshalling, "arrow_r") || !identical(plan$concurrency, "serial")) {
-      stop(
-        "dynamic scalar-UDF arguments currently require execution plan arrow_r+serial; ",
-        "declare args explicitly for ", plan$plan_id,
-        call. = FALSE
-      )
-    }
-  }
   if (identical(plan$marshalling, "arrow_c")) {
     types <- c(spec$arg_types %||% list(), list(spec$return_type))
     unsupported <- unique(unlist(lapply(types, rducks_arrow_c_direct_unsupported_types), use.names = FALSE))
@@ -626,8 +614,8 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
       )
     }
   }
-  if (identical(spec$mode, "vectorized") && !length(spec$arg_types %||% list())) {
-    stop("mode = 'vectorized' currently requires at least one declared argument", call. = FALSE)
+  if (identical(spec$mode, "vectorized") && !isTRUE(spec$dynamic_args) && !length(spec$arg_types %||% list())) {
+    stop("mode = 'vectorized' currently requires at least one declared argument or omitted args for dynamic arguments", call. = FALSE)
   }
   invisible(TRUE)
 }

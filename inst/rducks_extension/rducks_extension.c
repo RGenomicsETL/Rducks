@@ -206,12 +206,16 @@ struct rducks_r_scalar_meta {
 typedef struct rducks_r_scalar_bind_state {
     rducks_runtime_entry_t *runtime;
     idx_t connection_id;
+    size_t arity;
+    rducks_type_desc_t **args;
 } rducks_r_scalar_bind_state_t;
 
 typedef struct rducks_r_scalar_local_state {
     rducks_runtime_entry_t *runtime;
     idx_t connection_id;
     char worker_thread_token[128];
+    size_t arity;
+    rducks_type_desc_t **args;
 } rducks_r_scalar_local_state_t;
 
 static rducks_runtime_entry_t **g_runtime_entries = NULL;
@@ -482,6 +486,7 @@ static int rducks_rc_vectorized_execute(rducks_runtime_entry_t *runtime, rducks_
                                         duckdb_data_chunk input, duckdb_vector output,
                                         char *err_msg, size_t err_cap);
 static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                      rducks_r_scalar_local_state_t *local_state,
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap);
 static int rducks_queue_execute_scalar_inline_on_main(rducks_runtime_entry_t *runtime,

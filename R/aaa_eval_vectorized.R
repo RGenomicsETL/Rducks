@@ -85,6 +85,7 @@ rducks_vectorized_eval_one <- function(fun, args, n, exception_handling) {
 
 rducks_vectorized_eval_prepared_chunk <- function(fun, arg_types, return_type, prepared,
                                                   null_handling, exception_handling) {
+  arg_types <- rducks_resolve_dynamic_arg_types(arg_types, prepared$dynamic_arg_tokens %||% NULL)
   n <- as.integer(prepared$n %||% length(prepared$top_level_null))
   all_rows <- if (n) seq_len(n) else integer()
   eval_rows <- if (identical(null_handling, "default")) {

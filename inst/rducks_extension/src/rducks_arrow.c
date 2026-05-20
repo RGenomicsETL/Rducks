@@ -751,7 +751,7 @@ static int rducks_r_scalar_prepare_inprocess_arrow(rducks_runtime_entry_t *runti
 
     *input_schema_xptr = PROTECT(nanoarrow_schema_owning_xptr());
     (*protect_count)++;
-    if (meta && meta->dynamic_args) {
+    if (meta && meta->dynamic_args && meta->arity == 0U) {
         if (!rducks_fill_dynamic_input_arrow_schema_native(runtime, nanoarrow_output_schema_from_xptr(*input_schema_xptr), input, err_msg, err_cap)) return 0;
     } else {
         if (!rducks_fill_input_arrow_schema(runtime, *input_schema_xptr, meta, err_msg, err_cap)) return 0;
@@ -768,13 +768,39 @@ static int rducks_r_scalar_prepare_inprocess_arrow(rducks_runtime_entry_t *runti
     return 1;
 }
 
+static SEXP rducks_dynamic_arg_tokens_sexp(rducks_r_scalar_meta_t *meta) {
+    SEXP out;
+    if (!meta || !meta->dynamic_args) return R_NilValue;
+    if (meta->arity > (size_t)R_XLEN_T_MAX) return R_NilValue;
+    out = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)meta->arity));
+    for (size_t i = 0; i < meta->arity; i++) {
+        char *token = rducks_type_desc_token(meta->args[i]);
+        if (!token) {
+            UNPROTECT(1);
+            return R_NilValue;
+        }
+        SET_STRING_ELT(out, (R_xlen_t)i, Rf_mkCharCE(token, CE_UTF8));
+        free(token);
+    }
+    UNPROTECT(1);
+    return out;
+}
+
 static SEXP rducks_r_scalar_eval_arrow_on_r_thread(rducks_r_scalar_meta_t *meta,
                                                    SEXP input_array_xptr, SEXP input_schema_xptr,
                                                    SEXP output_schema_xptr, idx_t n,
                                                    int *protect_count, int *r_err) {
     SEXP n_sexp = PROTECT(Rf_ScalarReal((double)n));
     (*protect_count)++;
-    SEXP call = PROTECT(Rf_lang5(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
+    SEXP call;
+    SEXP tokens = R_NilValue;
+    if (meta && meta->dynamic_args) {
+        tokens = PROTECT(rducks_dynamic_arg_tokens_sexp(meta));
+        (*protect_count)++;
+        call = PROTECT(Rf_lang6(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp, tokens));
+    } else {
+        call = PROTECT(Rf_lang5(meta->fun, input_array_xptr, input_schema_xptr, output_schema_xptr, n_sexp));
+    }
     (*protect_count)++;
     SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, r_err));
     (*protect_count)++;
@@ -1002,6 +1028,71 @@ static uint64_t rducks_wire_get_u64(const uint8_t *p) {
     return ((uint64_t)rducks_wire_get_u32(p)) | ((uint64_t)rducks_wire_get_u32(p + 4) << 32);
 }
 
+static int rducks_ripc_wrap_dynamic_payload(rducks_r_scalar_meta_t *meta,
+                                             const uint8_t *payload, size_t payload_size,
+                                             rducks_owned_bytes_t *wrapped,
+                                             char *err_msg, size_t err_cap) {
+    size_t token_bytes = 0;
+    size_t total;
+    uint8_t *p;
+    char **tokens = NULL;
+    if (!meta || !wrapped || payload_size > (size_t)UINT64_MAX) {
+        snprintf(err_msg, err_cap, "RIPC dynamic payload metadata is missing");
+        return 0;
+    }
+    if (meta->arity > UINT32_MAX || meta->arity > SIZE_MAX / sizeof(*tokens)) {
+        snprintf(err_msg, err_cap, "RIPC dynamic payload has too many argument types");
+        return 0;
+    }
+    tokens = (char **)rducks_calloc_array(meta->arity ? meta->arity : 1U, sizeof(*tokens));
+    if (!tokens) {
+        snprintf(err_msg, err_cap, "out of memory allocating RIPC dynamic type tokens");
+        return 0;
+    }
+    for (size_t i = 0; i < meta->arity; i++) {
+        size_t len;
+        tokens[i] = rducks_type_desc_token(meta->args[i]);
+        if (!tokens[i]) {
+            snprintf(err_msg, err_cap, "failed to format RIPC dynamic argument type");
+            goto fail;
+        }
+        len = strlen(tokens[i]);
+        if (len > UINT32_MAX || token_bytes > SIZE_MAX - 4U - len) {
+            snprintf(err_msg, err_cap, "RIPC dynamic argument type token is too large");
+            goto fail;
+        }
+        token_bytes += 4U + len;
+    }
+    if (payload_size > SIZE_MAX - 16U || token_bytes > SIZE_MAX - 16U - payload_size) {
+        snprintf(err_msg, err_cap, "RIPC dynamic payload is too large");
+        goto fail;
+    }
+    total = 16U + token_bytes + payload_size;
+    wrapped->data = (uint8_t *)malloc(total ? total : 1U);
+    if (!wrapped->data) {
+        snprintf(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
+        goto fail;
+    }
+    wrapped->size = total;
+    p = wrapped->data;
+    memcpy(p, "RDT1", 4); p += 4;
+    rducks_wire_put_u32(p, (uint32_t)meta->arity); p += 4;
+    rducks_wire_put_u64(p, (uint64_t)payload_size); p += 8;
+    for (size_t i = 0; i < meta->arity; i++) {
+        size_t len = strlen(tokens[i]);
+        rducks_wire_put_u32(p, (uint32_t)len); p += 4;
+        if (len) { memcpy(p, tokens[i], len); p += len; }
+    }
+    if (payload_size) memcpy(p, payload, payload_size);
+    for (size_t i = 0; i < meta->arity; i++) free(tokens[i]);
+    free(tokens);
+    return 1;
+fail:
+    for (size_t i = 0; i < meta->arity; i++) free(tokens[i]);
+    free(tokens);
+    return 0;
+}
+
 static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t row_count,
                                              const uint8_t *payload, size_t payload_size,
                                              rducks_owned_bytes_t *request,
@@ -1009,19 +1100,33 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     size_t udf_len;
     size_t total;
     uint8_t *p;
+    const uint8_t *wire_payload = payload;
+    size_t wire_payload_size = payload_size;
+    uint32_t reserved = 0U;
+    rducks_owned_bytes_t wrapped_payload = {0};
     if (!meta || !meta->ripc_udf_id || !payload || !request) {
         snprintf(err_msg, err_cap, "RIPC request metadata is missing");
         return 0;
     }
+    if (meta->dynamic_args) {
+        if (!rducks_ripc_wrap_dynamic_payload(meta, payload, payload_size, &wrapped_payload, err_msg, err_cap)) {
+            return 0;
+        }
+        wire_payload = wrapped_payload.data;
+        wire_payload_size = wrapped_payload.size;
+        reserved = 1U;
+    }
     udf_len = strlen(meta->ripc_udf_id);
-    if (udf_len > UINT32_MAX || row_count > (idx_t)UINT64_MAX || payload_size > (size_t)UINT64_MAX ||
-        payload_size > SIZE_MAX - 36U - udf_len) {
+    if (udf_len > UINT32_MAX || row_count > (idx_t)UINT64_MAX || wire_payload_size > (size_t)UINT64_MAX ||
+        wire_payload_size > SIZE_MAX - 36U - udf_len) {
+        rducks_owned_bytes_reset(&wrapped_payload);
         snprintf(err_msg, err_cap, "RIPC request is too large");
         return 0;
     }
-    total = 36U + udf_len + payload_size;
+    total = 36U + udf_len + wire_payload_size;
     request->data = (uint8_t *)malloc(total ? total : 1U);
     if (!request->data) {
+        rducks_owned_bytes_reset(&wrapped_payload);
         snprintf(err_msg, err_cap, "out of memory allocating RIPC request");
         return 0;
     }
@@ -1031,11 +1136,12 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, (uint32_t)udf_len); p += 4;
-    rducks_wire_put_u32(p, 0U); p += 4;
+    rducks_wire_put_u32(p, reserved); p += 4;
     rducks_wire_put_u64(p, (uint64_t)row_count); p += 8;
-    rducks_wire_put_u64(p, (uint64_t)payload_size); p += 8;
+    rducks_wire_put_u64(p, (uint64_t)wire_payload_size); p += 8;
     if (udf_len) { memcpy(p, meta->ripc_udf_id, udf_len); p += udf_len; }
-    if (payload_size) memcpy(p, payload, payload_size);
+    if (wire_payload_size) memcpy(p, wire_payload, wire_payload_size);
+    rducks_owned_bytes_reset(&wrapped_payload);
     return 1;
 }
 
@@ -1417,9 +1523,14 @@ static int rducks_r_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtim
 
 static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     rducks_r_scalar_meta_t *meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_get_extra_info(info);
+    rducks_r_scalar_local_state_t *local_state = info ? (rducks_r_scalar_local_state_t *)duckdb_scalar_function_get_state(info) : NULL;
+    rducks_r_scalar_meta_t effective_meta_storage;
+    rducks_r_scalar_meta_t *exec_meta = meta;
     rducks_runtime_entry_t *runtime = rducks_runtime_from_function_info(info, meta);
     char err_msg[256];
     err_msg[0] = '\0';
+    memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
+    rducks_effective_meta_for_state(meta, local_state, &effective_meta_storage, &exec_meta);
 
     if (!runtime) {
         duckdb_scalar_function_set_error(info, "Rducks scalar UDF is missing per-connection runtime state");
@@ -1429,14 +1540,14 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     if (!rducks_is_main_thread(runtime)) {
         if (rducks_concurrent_inproc_enabled(runtime)) {
             rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
-            if (!rducks_queue_submit_scalar(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            if (!rducks_queue_submit_scalar(runtime, meta, local_state, input, output, err_msg, sizeof(err_msg))) {
                 duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks queued scalar R function failed");
             }
             return;
         }
-        if (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        if (rducks_multiprocess_parallel_enabled(runtime) && exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
             rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
-            if (!rducks_ripc_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+            if (!rducks_ripc_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
                 duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks native RIPC UDF failed");
             }
             return;
@@ -1451,9 +1562,9 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     rducks_preserved_release_drain_on_main(runtime);
 
-    if (rducks_multiprocess_parallel_enabled(runtime) && meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+    if (rducks_multiprocess_parallel_enabled(runtime) && exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
         rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
-        if (!rducks_ripc_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+        if (!rducks_ripc_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks native RIPC UDF failed");
         }
         return;
@@ -1461,7 +1572,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     if (rducks_concurrent_inproc_enabled(runtime)) {
         rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
-        if (!rducks_queue_execute_scalar_inline_on_main(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+        if (!rducks_queue_execute_scalar_inline_on_main(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks main-thread scalar R function failed");
         }
         return;
@@ -1469,35 +1580,35 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 0);
 
-    if (meta && meta->eval_mode == RDUCKS_EVAL_RC) {
-        if (!rducks_rc_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+    if (exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RC) {
+        if (!rducks_rc_scalar_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC scalar R function failed");
             return;
         }
         return;
     }
 
-    if (meta && meta->eval_mode == RDUCKS_EVAL_RCV) {
+    if (exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RCV) {
         /* Reached only after the non-main-thread guard above. RCV materializes
          * DuckDB vectors into R objects and calls the R function, so it must run
          * on the recorded main R thread or through the queued main-thread path.
          */
-        if (!rducks_rc_vectorized_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+        if (!rducks_rc_vectorized_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RC vectorized R function failed");
             return;
         }
         return;
     }
 
-    if (meta && meta->eval_mode == RDUCKS_EVAL_RIPC) {
-        if (!rducks_ripc_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+    if (exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        if (!rducks_ripc_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks native RIPC UDF failed");
             return;
         }
         return;
     }
 
-    if (!rducks_r_scalar_execute(runtime, meta, input, output, err_msg, sizeof(err_msg))) {
+    if (!rducks_r_scalar_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
         duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks scalar R function failed");
         return;
     }

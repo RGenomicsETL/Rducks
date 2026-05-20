@@ -494,7 +494,10 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
 }
 
 static void rducks_r_scalar_bind_state_destroy(void *ptr) {
-    free(ptr);
+    rducks_r_scalar_bind_state_t *state = (rducks_r_scalar_bind_state_t *)ptr;
+    if (!state) return;
+    rducks_type_desc_array_destroy(state->args, state->arity);
+    free(state);
 }
 
 static void *rducks_r_scalar_bind_state_copy(void *ptr) {
@@ -503,17 +506,78 @@ static void *rducks_r_scalar_bind_state_copy(void *ptr) {
     if (!src) return NULL;
     dst = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*dst));
     if (!dst) return NULL;
-    memcpy(dst, src, sizeof(*dst));
+    dst->runtime = src->runtime;
+    dst->connection_id = src->connection_id;
+    dst->arity = src->arity;
+    if (src->arity) {
+        dst->args = rducks_type_desc_array_clone(src->args, src->arity);
+        if (!dst->args) {
+            free(dst);
+            return NULL;
+        }
+    }
     return dst;
 }
 
 static void rducks_r_scalar_local_state_destroy(void *ptr) {
-    free(ptr);
+    rducks_r_scalar_local_state_t *state = (rducks_r_scalar_local_state_t *)ptr;
+    if (!state) return;
+    rducks_type_desc_array_destroy(state->args, state->arity);
+    free(state);
 }
 
 static idx_t rducks_client_context_connection_id(duckdb_client_context context) {
     if (!context) return 0;
     return duckdb_client_context_get_connection_id(context);
+}
+
+static int rducks_r_scalar_resolve_dynamic_bind_args(duckdb_bind_info info,
+                                                     rducks_r_scalar_bind_state_t *state,
+                                                     char *err, size_t err_cap) {
+    idx_t count;
+    if (!info || !state) {
+        snprintf(err, err_cap, "invalid dynamic Rducks bind state");
+        return 0;
+    }
+    count = duckdb_scalar_function_bind_get_argument_count(info);
+    state->arity = (size_t)count;
+    if (!count) return 1;
+    if ((size_t)count > SIZE_MAX / sizeof(*state->args)) {
+        snprintf(err, err_cap, "dynamic Rducks scalar UDF has too many arguments");
+        return 0;
+    }
+    state->args = (rducks_type_desc_t **)rducks_calloc_array((size_t)count, sizeof(*state->args));
+    if (!state->args) {
+        snprintf(err, err_cap, "out of memory resolving dynamic Rducks arguments");
+        return 0;
+    }
+    for (idx_t i = 0; i < count; i++) {
+        duckdb_expression expr = duckdb_scalar_function_bind_get_argument(info, i);
+        duckdb_logical_type logical_type = expr ? duckdb_expression_return_type(expr) : NULL;
+        int ok;
+        if (expr) duckdb_destroy_expression(&expr);
+        if (!logical_type) {
+            snprintf(err, err_cap, "failed to inspect dynamic Rducks argument %llu", (unsigned long long)(i + 1));
+            return 0;
+        }
+        ok = rducks_type_desc_from_logical_type(logical_type, &state->args[i], err, err_cap);
+        duckdb_destroy_logical_type(&logical_type);
+        if (!ok) return 0;
+    }
+    return 1;
+}
+
+static void rducks_effective_meta_for_state(rducks_r_scalar_meta_t *meta,
+                                            rducks_r_scalar_local_state_t *state,
+                                            rducks_r_scalar_meta_t *effective,
+                                            rducks_r_scalar_meta_t **out) {
+    if (!out) return;
+    *out = meta;
+    if (!meta || !state || !meta->dynamic_args || !state->args) return;
+    *effective = *meta;
+    effective->arity = state->arity;
+    effective->args = state->args;
+    *out = effective;
 }
 
 static void rducks_r_scalar_bind(duckdb_bind_info info) {
@@ -539,6 +603,16 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
     if (context) {
         state->connection_id = rducks_client_context_connection_id(context);
         duckdb_destroy_client_context(&context);
+    }
+
+    if (meta->dynamic_args) {
+        char err_msg[256];
+        err_msg[0] = '\0';
+        if (!rducks_r_scalar_resolve_dynamic_bind_args(info, state, err_msg, sizeof(err_msg))) {
+            rducks_r_scalar_bind_state_destroy(state);
+            duckdb_scalar_function_bind_set_error(info, err_msg[0] ? err_msg : "failed to resolve dynamic Rducks argument types");
+            return;
+        }
     }
 
     duckdb_scalar_function_set_bind_data(info, state, rducks_r_scalar_bind_state_destroy);
@@ -572,6 +646,15 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
     if (context) {
         state->connection_id = rducks_client_context_connection_id(context);
         duckdb_destroy_client_context(&context);
+    }
+    if (bind_state && bind_state->arity) {
+        state->arity = bind_state->arity;
+        state->args = rducks_type_desc_array_clone(bind_state->args, bind_state->arity);
+        if (!state->args) {
+            free(state);
+            duckdb_scalar_function_init_set_error(info, "out of memory copying dynamic Rducks argument types");
+            return;
+        }
     }
     rducks_current_thread_token(state->worker_thread_token, sizeof(state->worker_thread_token));
 

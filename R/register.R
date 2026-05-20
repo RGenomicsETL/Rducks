@@ -124,18 +124,19 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @param name SQL function name.
 #' @param fun R function.
 #' @param args Optional argument type specification. If omitted, Rducks registers
-#'   a dynamic-varargs DuckDB scalar function for the `arrow_r+serial` scalar
-#'   path. Dynamic inputs are materialized with nanoarrow's default conversion
-#'   and are intended for duckplyr-style simple scalar calls; use explicit `args`
-#'   for Rducks' declared composite, exotic, and special-NULL input semantics.
-#'   Use explicit `NULL` for a zero-argument scalar UDF. Otherwise use exported
-#'   DuckDB-style type descriptors such as `INTEGER`, `DOUBLE`, `INTEGER[]`,
-#'   `INTEGER[3]`, `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
+#'   a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
+#'   argument logical types at bind time, and Rducks materializes those inputs
+#'   with the same typed semantics used for an explicit `args = ...` signature
+#'   across scalar/vectorized evaluation and supported `arrow_r`, `arrow_c`, and
+#'   `arrow_ipc` execution plans. Use explicit `NULL` for a zero-argument scalar
+#'   UDF. Otherwise use exported DuckDB-style type descriptors such as `INTEGER`,
+#'   `DOUBLE`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
+#'   `MAP(VARCHAR, INTEGER)`.
 #' @param returns Return type specification.
 #' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
 #'   calls the R function once per DuckDB row. `"vectorized"` calls the R
 #'   function once per DuckDB chunk with one R vector/list-column per declared
-#'   argument.
+#'   or dynamically bound argument.
 #' @param null_handling Either `"default"` for NULL-in/NULL-out without calling
 #'   the R function, or `"special"` to call the R function with the declared
 #'   type's missing-value shape for NULL inputs (for example typed `NA` for

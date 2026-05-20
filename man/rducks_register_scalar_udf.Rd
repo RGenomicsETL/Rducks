@@ -24,20 +24,21 @@ rducks_register_scalar_udf(
 \item{fun}{R function.}
 
 \item{args}{Optional argument type specification. If omitted, Rducks registers
-a dynamic-varargs DuckDB scalar function for the \code{arrow_r+serial} scalar
-path. Dynamic inputs are materialized with nanoarrow's default conversion
-and are intended for duckplyr-style simple scalar calls; use explicit \code{args}
-for Rducks' declared composite, exotic, and special-NULL input semantics.
-Use explicit \code{NULL} for a zero-argument scalar UDF. Otherwise use exported
-DuckDB-style type descriptors such as \code{INTEGER}, \code{DOUBLE}, \code{INTEGER[]},
-\code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}.}
+a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
+argument logical types at bind time, and Rducks materializes those inputs
+with the same typed semantics used for an explicit \code{args = ...} signature
+across scalar/vectorized evaluation and supported \code{arrow_r}, \code{arrow_c}, and
+\code{arrow_ipc} execution plans. Use explicit \code{NULL} for a zero-argument scalar
+UDF. Otherwise use exported DuckDB-style type descriptors such as \code{INTEGER},
+\code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or
+\code{MAP(VARCHAR, INTEGER)}.}
 
 \item{returns}{Return type specification.}
 
 \item{mode}{Rducks evaluation mode for this DuckDB scalar UDF. \code{"scalar"}
 calls the R function once per DuckDB row. \code{"vectorized"} calls the R
 function once per DuckDB chunk with one R vector/list-column per declared
-argument.}
+or dynamically bound argument.}
 
 \item{null_handling}{Either \code{"default"} for NULL-in/NULL-out without calling
 the R function, or \code{"special"} to call the R function with the declared

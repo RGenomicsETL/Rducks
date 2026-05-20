@@ -45,12 +45,12 @@ local({
   reg_dyn_sum <- rducks_register_scalar_udf(
     con,
     "rducks_dyn_sum",
-    function(...) sum(as.numeric(unlist(list(...))), na.rm = TRUE),
+    function(...) sum(vapply(list(...), function(x) as.numeric(x)[[1L]], numeric(1)), na.rm = TRUE),
     returns = DOUBLE
   )
   expect_true(isTRUE(reg_dyn_sum$spec$dynamic_args))
   expect_equal(reg_dyn_sum$spec$args, "*")
-  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_dyn_sum(1, 2.5, 3::INTEGER) AS x")$x, 6.5)
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_dyn_sum(1, 2.5::DOUBLE, 3::INTEGER) AS x")$x, 6.5)
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_dyn_sum(10::INTEGER) AS x")$x, 10)
 
   invisible(rducks_register_scalar_udf(

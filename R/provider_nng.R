@@ -263,7 +263,8 @@ rducks_nng_worker_loop <- function(endpoint) {
           return_type = rec$return_type,
           null_handling = rec$null_handling,
           exception_handling = rec$exception_handling,
-          mode = rec$mode
+          mode = rec$mode,
+          dynamic_arg_tokens = req$dynamic_arg_tokens
         )
         rducks_nng_wire_encode_response("ok", output)
       } else {

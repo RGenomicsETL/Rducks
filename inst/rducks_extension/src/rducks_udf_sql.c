@@ -34,10 +34,6 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         return false;
     }
     dynamic_args = args_spec && (strcmp(args_spec, "*") == 0 || strcmp(args_spec, "...") == 0);
-    if (dynamic_args && eval_mode != RDUCKS_EVAL_R) {
-        snprintf(err, err_cap, "dynamic Rducks scalar arguments currently require Arrow/R scalar evaluation");
-        return false;
-    }
     if (!dynamic_args && !rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
         return false;
     }

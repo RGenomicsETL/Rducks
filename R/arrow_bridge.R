@@ -48,16 +48,18 @@ rducks_make_vectorized_engine <- function(fun, spec, null_handling, exception_ha
   )
 }
 
-rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n) {
+rducks_scalar_evaluate_arrow_chunk <- function(engine, input_array, input_schema, output_schema, n,
+                                               dynamic_arg_tokens = NULL) {
   tryCatch({
     n <- as.integer(n)
     if (!nanoarrow::nanoarrow_pointer_is_valid(output_schema)) {
       stop("output nanoarrow schema pointer is not valid", call. = FALSE)
     }
-    prepared <- engine$prepare_inputs(engine$arg_types, input_array, input_schema, n)
+    arg_types <- rducks_resolve_dynamic_arg_types(engine$arg_types, dynamic_arg_tokens)
+    prepared <- engine$prepare_inputs(arg_types, input_array, input_schema, n)
     results <- engine$eval_rows(
       engine$fun,
-      engine$arg_types,
+      arg_types,
       engine$return_type,
       prepared,
       engine$null_handling,
@@ -133,15 +135,15 @@ rducks_make_rc_vectorized_bundle <- function(fun, spec,
 rducks_make_arrow_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
                                              plan = rducks_execution_plan()) {
   engine <- rducks_make_scalar_engine(fun, spec, null_handling, exception_handling, plan = plan)
-  function(input_array, input_schema, output_schema, n) {
-    rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+  function(input_array, input_schema, output_schema, n, dynamic_arg_tokens = NULL) {
+    rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n, dynamic_arg_tokens)
   }
 }
 
 rducks_make_arrow_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                  plan = rducks_execution_plan()) {
   engine <- rducks_make_vectorized_engine(fun, spec, null_handling, exception_handling, plan = plan)
-  function(input_array, input_schema, output_schema, n) {
-    rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n)
+  function(input_array, input_schema, output_schema, n, dynamic_arg_tokens = NULL) {
+    rducks_scalar_evaluate_arrow_chunk(engine, input_array, input_schema, output_schema, n, dynamic_arg_tokens)
   }
 }

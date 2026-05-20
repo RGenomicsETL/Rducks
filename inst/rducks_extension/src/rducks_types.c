@@ -116,6 +116,49 @@ static char *rducks_strdup_trimmed_len(const char *x, size_t len) {
     return rducks_strdup_len(x, len);
 }
 
+static int rducks_hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+static char *rducks_strdup_token_name_len(const char *x, size_t len) {
+    char *out;
+    size_t out_len = 0;
+    while (len > 0 && (*x == ' ' || *x == '\t' || *x == '\n' || *x == '\r')) {
+        x++;
+        len--;
+    }
+    while (len > 0 && (x[len - 1U] == ' ' || x[len - 1U] == '\t' || x[len - 1U] == '\n' || x[len - 1U] == '\r')) {
+        len--;
+    }
+    out = (char *)malloc(len + 1U);
+    if (!out) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        if (x[i] == '%') {
+            int hi;
+            int lo;
+            if (i + 2U >= len) {
+                free(out);
+                return NULL;
+            }
+            hi = rducks_hex_value(x[i + 1U]);
+            lo = rducks_hex_value(x[i + 2U]);
+            if (hi < 0 || lo < 0) {
+                free(out);
+                return NULL;
+            }
+            out[out_len++] = (char)((hi << 4) | lo);
+            i += 2U;
+        } else {
+            out[out_len++] = x[i];
+        }
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
 static int rducks_is_wrapped_by_angle(const char *x, const char *prefix, const char **inner, size_t *inner_len) {
     size_t prefix_len = strlen(prefix);
     size_t len;
@@ -182,6 +225,73 @@ static rducks_type_desc_t *rducks_type_desc_new(rducks_type_kind_t kind) {
     rducks_type_desc_t *desc = (rducks_type_desc_t *)rducks_calloc_array(1, sizeof(*desc));
     if (desc) desc->kind = kind;
     return desc;
+}
+
+static void rducks_type_desc_array_destroy(rducks_type_desc_t **items, size_t count) {
+    if (!items) return;
+    for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
+    free(items);
+}
+
+static rducks_type_desc_t *rducks_type_desc_clone(const rducks_type_desc_t *src) {
+    rducks_type_desc_t *dst;
+    if (!src) return NULL;
+    dst = rducks_type_desc_new(src->kind);
+    if (!dst) return NULL;
+    dst->scalar = src->scalar;
+    dst->array_size = src->array_size;
+    dst->decimal_width = src->decimal_width;
+    dst->decimal_scale = src->decimal_scale;
+    dst->enum_internal_type = src->enum_internal_type;
+    dst->field_count = src->field_count;
+    if (src->child) {
+        dst->child = rducks_type_desc_clone(src->child);
+        if (!dst->child) goto fail;
+    }
+    if (src->key) {
+        dst->key = rducks_type_desc_clone(src->key);
+        if (!dst->key) goto fail;
+    }
+    if (src->value) {
+        dst->value = rducks_type_desc_clone(src->value);
+        if (!dst->value) goto fail;
+    }
+    if (src->field_count) {
+        dst->field_names = (char **)rducks_calloc_array(src->field_count, sizeof(*dst->field_names));
+        if (!dst->field_names) goto fail;
+        if (src->field_types) {
+            dst->field_types = (rducks_type_desc_t **)rducks_calloc_array(src->field_count, sizeof(*dst->field_types));
+            if (!dst->field_types) goto fail;
+        }
+        for (size_t i = 0; i < src->field_count; i++) {
+            dst->field_names[i] = rducks_strdup(src->field_names[i] ? src->field_names[i] : "");
+            if (!dst->field_names[i]) goto fail;
+            if (src->field_types) {
+                dst->field_types[i] = rducks_type_desc_clone(src->field_types[i]);
+                if (!dst->field_types[i]) goto fail;
+            }
+        }
+    }
+    return dst;
+fail:
+    rducks_type_desc_destroy(dst);
+    return NULL;
+}
+
+static rducks_type_desc_t **rducks_type_desc_array_clone(rducks_type_desc_t **src, size_t count) {
+    rducks_type_desc_t **dst;
+    if (!count) return NULL;
+    if (!src || count > SIZE_MAX / sizeof(*dst)) return NULL;
+    dst = (rducks_type_desc_t **)rducks_calloc_array(count, sizeof(*dst));
+    if (!dst) return NULL;
+    for (size_t i = 0; i < count; i++) {
+        dst[i] = rducks_type_desc_clone(src[i]);
+        if (!dst[i]) {
+            rducks_type_desc_array_destroy(dst, count);
+            return NULL;
+        }
+    }
+    return dst;
 }
 
 static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **out, char *err, size_t err_cap);
@@ -272,7 +382,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 for (size_t j = cap; j < new_cap; j++) desc->field_names[j] = NULL;
                 cap = new_cap;
             }
-            level = rducks_strdup_trimmed_len(cursor, part_len);
+            level = rducks_strdup_token_name_len(cursor, part_len);
             if (!level) goto oom;
             if (!level[0]) {
                 free(level);
@@ -323,7 +433,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 }
                 cap = new_cap;
             }
-            desc->field_names[count] = rducks_strdup_trimmed_len(cursor, (size_t)(colon - cursor));
+            desc->field_names[count] = rducks_strdup_token_name_len(cursor, (size_t)(colon - cursor));
             if (!desc->field_names[count]) goto oom;
             if (!rducks_parse_type_desc_len(colon + 1, part_len - (size_t)(colon - cursor) - 1U,
                                             &desc->field_types[count], err, err_cap)) goto fail;
@@ -391,7 +501,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
                 }
                 cap = new_cap;
             }
-            desc->field_names[count] = rducks_strdup_trimmed_len(cursor, (size_t)(colon - cursor));
+            desc->field_names[count] = rducks_strdup_token_name_len(cursor, (size_t)(colon - cursor));
             if (!desc->field_names[count]) goto oom;
             if (!rducks_parse_type_desc_len(colon + 1, part_len - (size_t)(colon - cursor) - 1U, &desc->field_types[count], err, err_cap)) goto fail;
             count++;
@@ -524,6 +634,316 @@ cleanup_union:
         return out;
     }
     return NULL;
+}
+
+typedef struct rducks_strbuf {
+    char *data;
+    size_t len;
+    size_t cap;
+} rducks_strbuf_t;
+
+static int rducks_strbuf_reserve(rducks_strbuf_t *buf, size_t extra) {
+    size_t need;
+    size_t new_cap;
+    char *new_data;
+    if (!buf || extra > SIZE_MAX - buf->len - 1U) return 0;
+    need = buf->len + extra + 1U;
+    if (need <= buf->cap) return 1;
+    new_cap = buf->cap ? buf->cap : 64U;
+    while (new_cap < need) {
+        if (new_cap > SIZE_MAX / 2U) return 0;
+        new_cap *= 2U;
+    }
+    new_data = (char *)realloc(buf->data, new_cap);
+    if (!new_data) return 0;
+    buf->data = new_data;
+    buf->cap = new_cap;
+    return 1;
+}
+
+static int rducks_strbuf_append_len(rducks_strbuf_t *buf, const char *text, size_t n) {
+    if (!rducks_strbuf_reserve(buf, n)) return 0;
+    if (n) memcpy(buf->data + buf->len, text, n);
+    buf->len += n;
+    buf->data[buf->len] = '\0';
+    return 1;
+}
+
+static int rducks_strbuf_append(rducks_strbuf_t *buf, const char *text) {
+    return rducks_strbuf_append_len(buf, text ? text : "", text ? strlen(text) : 0U);
+}
+
+static int rducks_strbuf_append_char(rducks_strbuf_t *buf, char ch) {
+    return rducks_strbuf_append_len(buf, &ch, 1U);
+}
+
+static int rducks_token_name_safe(unsigned char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+           (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
+}
+
+static int rducks_strbuf_append_token_name(rducks_strbuf_t *buf, const char *text) {
+    static const char hex[] = "0123456789ABCDEF";
+    const unsigned char *p = (const unsigned char *)(text ? text : "");
+    while (*p) {
+        if (rducks_token_name_safe(*p)) {
+            if (!rducks_strbuf_append_char(buf, (char)*p)) return 0;
+        } else {
+            char encoded[3];
+            encoded[0] = '%';
+            encoded[1] = hex[(*p >> 4) & 0x0fU];
+            encoded[2] = hex[*p & 0x0fU];
+            if (!rducks_strbuf_append_len(buf, encoded, sizeof(encoded))) return 0;
+        }
+        p++;
+    }
+    return 1;
+}
+
+static const char *rducks_type_id_token(rducks_type_id_t scalar) {
+    switch (scalar) {
+    case RDUCKS_TYPE_BOOL: return "bool";
+    case RDUCKS_TYPE_I8: return "i8";
+    case RDUCKS_TYPE_U8: return "u8";
+    case RDUCKS_TYPE_I16: return "i16";
+    case RDUCKS_TYPE_U16: return "u16";
+    case RDUCKS_TYPE_I32: return "i32";
+    case RDUCKS_TYPE_U32: return "u32";
+    case RDUCKS_TYPE_I64: return "i64";
+    case RDUCKS_TYPE_U64: return "u64";
+    case RDUCKS_TYPE_F32: return "f32";
+    case RDUCKS_TYPE_F64: return "f64";
+    case RDUCKS_TYPE_VARCHAR: return "varchar";
+    case RDUCKS_TYPE_BLOB: return "blob";
+    case RDUCKS_TYPE_DATE: return "date";
+    case RDUCKS_TYPE_TIME: return "time";
+    case RDUCKS_TYPE_TIMESTAMP: return "timestamp";
+    case RDUCKS_TYPE_HUGEINT: return "hugeint";
+    case RDUCKS_TYPE_UHUGEINT: return "uhugeint";
+    case RDUCKS_TYPE_UUID: return "uuid";
+    case RDUCKS_TYPE_INTERVAL: return "interval";
+    case RDUCKS_TYPE_BIT: return "bit";
+    default: return NULL;
+    }
+}
+
+static int rducks_type_desc_append_token(rducks_strbuf_t *buf, const rducks_type_desc_t *desc) {
+    char tmp[64];
+    if (!buf || !desc) return 0;
+    if (desc->kind == RDUCKS_KIND_SCALAR) {
+        const char *token = rducks_type_id_token(desc->scalar);
+        return token && rducks_strbuf_append(buf, token);
+    }
+    if (desc->kind == RDUCKS_KIND_DECIMAL) {
+        snprintf(tmp, sizeof(tmp), "decimal<%u;%u>", (unsigned)desc->decimal_width, (unsigned)desc->decimal_scale);
+        return rducks_strbuf_append(buf, tmp);
+    }
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        if (!rducks_strbuf_append(buf, "enum<")) return 0;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (i && !rducks_strbuf_append_char(buf, '|')) return 0;
+            if (!rducks_strbuf_append_token_name(buf, desc->field_names[i])) return 0;
+        }
+        return rducks_strbuf_append_char(buf, '>');
+    }
+    if (desc->kind == RDUCKS_KIND_LIST) {
+        return rducks_strbuf_append(buf, "list<") &&
+               rducks_type_desc_append_token(buf, desc->child) &&
+               rducks_strbuf_append_char(buf, '>');
+    }
+    if (desc->kind == RDUCKS_KIND_ARRAY) {
+        if (!rducks_type_desc_append_token(buf, desc->child)) return 0;
+        snprintf(tmp, sizeof(tmp), "[%llu]", (unsigned long long)desc->array_size);
+        return rducks_strbuf_append(buf, tmp);
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        return rducks_strbuf_append(buf, "map<") &&
+               rducks_type_desc_append_token(buf, desc->key) &&
+               rducks_strbuf_append_char(buf, ';') &&
+               rducks_type_desc_append_token(buf, desc->value) &&
+               rducks_strbuf_append_char(buf, '>');
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_UNION) {
+        if (!rducks_strbuf_append(buf, desc->kind == RDUCKS_KIND_STRUCT ? "struct<" : "union<")) return 0;
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (i && !rducks_strbuf_append_char(buf, ';')) return 0;
+            if (!rducks_strbuf_append_token_name(buf, desc->field_names[i]) ||
+                !rducks_strbuf_append_char(buf, ':') ||
+                !rducks_type_desc_append_token(buf, desc->field_types[i])) return 0;
+        }
+        return rducks_strbuf_append_char(buf, '>');
+    }
+    return 0;
+}
+
+static char *rducks_type_desc_token(const rducks_type_desc_t *desc) {
+    rducks_strbuf_t buf;
+    memset(&buf, 0, sizeof(buf));
+    if (!rducks_type_desc_append_token(&buf, desc)) {
+        free(buf.data);
+        return NULL;
+    }
+    return buf.data;
+}
+
+static rducks_type_id_t rducks_type_id_from_duckdb_type(duckdb_type type_id) {
+    switch (type_id) {
+    case DUCKDB_TYPE_BOOLEAN: return RDUCKS_TYPE_BOOL;
+    case DUCKDB_TYPE_TINYINT: return RDUCKS_TYPE_I8;
+    case DUCKDB_TYPE_UTINYINT: return RDUCKS_TYPE_U8;
+    case DUCKDB_TYPE_SMALLINT: return RDUCKS_TYPE_I16;
+    case DUCKDB_TYPE_USMALLINT: return RDUCKS_TYPE_U16;
+    case DUCKDB_TYPE_INTEGER: return RDUCKS_TYPE_I32;
+    case DUCKDB_TYPE_UINTEGER: return RDUCKS_TYPE_U32;
+    case DUCKDB_TYPE_BIGINT: return RDUCKS_TYPE_I64;
+    case DUCKDB_TYPE_UBIGINT: return RDUCKS_TYPE_U64;
+    case DUCKDB_TYPE_FLOAT: return RDUCKS_TYPE_F32;
+    case DUCKDB_TYPE_DOUBLE: return RDUCKS_TYPE_F64;
+    case DUCKDB_TYPE_VARCHAR: return RDUCKS_TYPE_VARCHAR;
+    case DUCKDB_TYPE_BLOB: return RDUCKS_TYPE_BLOB;
+    case DUCKDB_TYPE_DATE: return RDUCKS_TYPE_DATE;
+    case DUCKDB_TYPE_TIME: return RDUCKS_TYPE_TIME;
+    case DUCKDB_TYPE_TIMESTAMP: return RDUCKS_TYPE_TIMESTAMP;
+    case DUCKDB_TYPE_HUGEINT: return RDUCKS_TYPE_HUGEINT;
+    case DUCKDB_TYPE_UHUGEINT: return RDUCKS_TYPE_UHUGEINT;
+    case DUCKDB_TYPE_UUID: return RDUCKS_TYPE_UUID;
+    case DUCKDB_TYPE_INTERVAL: return RDUCKS_TYPE_INTERVAL;
+    case DUCKDB_TYPE_BIT: return RDUCKS_TYPE_BIT;
+    default: return RDUCKS_TYPE_INVALID;
+    }
+}
+
+static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
+                                              rducks_type_desc_t **out,
+                                              char *err, size_t err_cap) {
+    duckdb_type type_id;
+    rducks_type_desc_t *desc = NULL;
+    if (!logical_type || !out) {
+        snprintf(err, err_cap, "invalid DuckDB logical type for dynamic Rducks argument");
+        return 0;
+    }
+    *out = NULL;
+    type_id = duckdb_get_type_id(logical_type);
+    if (type_id == DUCKDB_TYPE_DECIMAL) {
+        desc = rducks_type_desc_new(RDUCKS_KIND_DECIMAL);
+        if (!desc) goto oom;
+        desc->decimal_width = duckdb_decimal_width(logical_type);
+        desc->decimal_scale = duckdb_decimal_scale(logical_type);
+        *out = desc;
+        return 1;
+    }
+    if (type_id == DUCKDB_TYPE_ENUM) {
+        uint32_t n = duckdb_enum_dictionary_size(logical_type);
+        desc = rducks_type_desc_new(RDUCKS_KIND_ENUM);
+        if (!desc) goto oom;
+        desc->enum_internal_type = duckdb_enum_internal_type(logical_type);
+        desc->field_count = (size_t)n;
+        if (n > 0) {
+            desc->field_names = (char **)rducks_calloc_array((size_t)n, sizeof(*desc->field_names));
+            if (!desc->field_names) goto oom;
+            for (uint32_t i = 0; i < n; i++) {
+                char *value = duckdb_enum_dictionary_value(logical_type, (idx_t)i);
+                if (!value) goto oom;
+                desc->field_names[i] = rducks_strdup(value);
+                duckdb_free(value);
+                if (!desc->field_names[i]) goto oom;
+            }
+        }
+        *out = desc;
+        return 1;
+    }
+    if (type_id == DUCKDB_TYPE_LIST) {
+        duckdb_logical_type child = duckdb_list_type_child_type(logical_type);
+        desc = rducks_type_desc_new(RDUCKS_KIND_LIST);
+        if (!desc || !child) goto oom;
+        if (!rducks_type_desc_from_logical_type(child, &desc->child, err, err_cap)) {
+            duckdb_destroy_logical_type(&child);
+            goto fail;
+        }
+        duckdb_destroy_logical_type(&child);
+        *out = desc;
+        return 1;
+    }
+    if (type_id == DUCKDB_TYPE_ARRAY) {
+        duckdb_logical_type child = duckdb_array_type_child_type(logical_type);
+        desc = rducks_type_desc_new(RDUCKS_KIND_ARRAY);
+        if (!desc || !child) goto oom;
+        desc->array_size = duckdb_array_type_array_size(logical_type);
+        if (!rducks_type_desc_from_logical_type(child, &desc->child, err, err_cap)) {
+            duckdb_destroy_logical_type(&child);
+            goto fail;
+        }
+        duckdb_destroy_logical_type(&child);
+        *out = desc;
+        return 1;
+    }
+    if (type_id == DUCKDB_TYPE_MAP) {
+        duckdb_logical_type key = duckdb_map_type_key_type(logical_type);
+        duckdb_logical_type value = duckdb_map_type_value_type(logical_type);
+        desc = rducks_type_desc_new(RDUCKS_KIND_MAP);
+        if (!desc || !key || !value) goto oom;
+        if (!rducks_type_desc_from_logical_type(key, &desc->key, err, err_cap) ||
+            !rducks_type_desc_from_logical_type(value, &desc->value, err, err_cap)) {
+            duckdb_destroy_logical_type(&key);
+            duckdb_destroy_logical_type(&value);
+            goto fail;
+        }
+        duckdb_destroy_logical_type(&key);
+        duckdb_destroy_logical_type(&value);
+        *out = desc;
+        return 1;
+    }
+    if (type_id == DUCKDB_TYPE_STRUCT || type_id == DUCKDB_TYPE_UNION) {
+        idx_t n = type_id == DUCKDB_TYPE_STRUCT ? duckdb_struct_type_child_count(logical_type) : duckdb_union_type_member_count(logical_type);
+        desc = rducks_type_desc_new(type_id == DUCKDB_TYPE_STRUCT ? RDUCKS_KIND_STRUCT : RDUCKS_KIND_UNION);
+        if (!desc || n > (idx_t)(SIZE_MAX / sizeof(*desc->field_names)) || n > (idx_t)(SIZE_MAX / sizeof(*desc->field_types))) goto oom;
+        desc->field_count = (size_t)n;
+        if (n > 0) {
+            desc->field_names = (char **)rducks_calloc_array((size_t)n, sizeof(*desc->field_names));
+            desc->field_types = (rducks_type_desc_t **)rducks_calloc_array((size_t)n, sizeof(*desc->field_types));
+            if (!desc->field_names || !desc->field_types) goto oom;
+            for (idx_t i = 0; i < n; i++) {
+                char *name = type_id == DUCKDB_TYPE_STRUCT ? duckdb_struct_type_child_name(logical_type, i) : duckdb_union_type_member_name(logical_type, i);
+                duckdb_logical_type child = type_id == DUCKDB_TYPE_STRUCT ? duckdb_struct_type_child_type(logical_type, i) : duckdb_union_type_member_type(logical_type, i);
+                if (!name || !child) {
+                    if (name) duckdb_free(name);
+                    if (child) duckdb_destroy_logical_type(&child);
+                    goto oom;
+                }
+                desc->field_names[i] = rducks_strdup(name);
+                duckdb_free(name);
+                if (!desc->field_names[i]) {
+                    duckdb_destroy_logical_type(&child);
+                    goto oom;
+                }
+                if (!rducks_type_desc_from_logical_type(child, &desc->field_types[i], err, err_cap)) {
+                    duckdb_destroy_logical_type(&child);
+                    goto fail;
+                }
+                duckdb_destroy_logical_type(&child);
+            }
+        }
+        *out = desc;
+        return 1;
+    }
+    {
+        rducks_type_id_t scalar = rducks_type_id_from_duckdb_type(type_id);
+        if (scalar == RDUCKS_TYPE_INVALID) {
+            snprintf(err, err_cap, "unsupported dynamic Rducks argument type id %d", (int)type_id);
+            return 0;
+        }
+        desc = rducks_type_desc_new(RDUCKS_KIND_SCALAR);
+        if (!desc) goto oom;
+        desc->scalar = scalar;
+        *out = desc;
+        return 1;
+    }
+
+oom:
+    snprintf(err, err_cap, "out of memory resolving dynamic Rducks argument type");
+fail:
+    rducks_type_desc_destroy(desc);
+    return 0;
 }
 
 static int rducks_parse_null_handling(const char *text, rducks_null_handling_t *out, char *err, size_t err_cap) {

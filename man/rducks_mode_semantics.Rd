@@ -22,7 +22,7 @@ modes used by DuckDB scalar UDFs registered with
 is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 Rducks execution plans. \code{mode = "scalar"} calls the R function once for each
 DuckDB row. \code{mode = "vectorized"} calls the R function once per DuckDB chunk
-with one R vector/list-column per declared argument. Vectorized mode is
+with one R vector/list-column per declared or dynamically bound argument. Vectorized mode is
 exposed for \code{arrow_r}, direct \code{arrow_c}, and worker-provider \code{arrow_ipc}
 plans.
 }

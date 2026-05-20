@@ -97,11 +97,13 @@ reg_plus_one <- rducks_register_scalar_udf(
 dbGetQuery(con, "SELECT r_plus_one(41::DOUBLE) AS x")
 ```
 
-Omitting `args` registers a dynamic-varargs DuckDB scalar UDF and is convenient
-for simple row-wise scalar calls. DuckDB still needs an explicit `returns` type
-while planning. Use `args = NULL` for a true zero-argument scalar UDF; otherwise
-DuckDB treats omitted arguments as variadic. `null_handling` only affects SQL
-NULL inputs, so the default is appropriate for `r_hello()`.
+Omitting `args` registers a dynamic-varargs DuckDB scalar UDF. DuckDB still
+needs an explicit `returns` type while planning, but the concrete input types are
+resolved at bind time and then materialized with the same Rducks typed semantics
+used by explicit `args = ...` signatures. Use `args = NULL` for a true
+zero-argument scalar UDF; otherwise DuckDB treats omitted arguments as variadic.
+`null_handling` only affects SQL NULL inputs, so the default is appropriate for
+`r_hello()`.
 
 `rducks_register_scalar_udf()` returns an `rducks_scalar_udf_registration` object that records the
 connection, normalized signature, and registration options. You do not need to
@@ -162,9 +164,8 @@ Supported input/output descriptors are `BOOLEAN`, `TINYINT`, `UTINYINT`,
 Composite inputs and outputs are accepted as constructed type descriptors such
 as `TYPE[]`, `TYPE[N]`, `STRUCT(...)`, and `MAP(...)`, recursively over
 supported child types. Omitted scalar-UDF arguments are dynamic DuckDB `ANY`
-inputs; they are intended for simple scalar convenience and do not replace
-explicit descriptors when exact Rducks composite, exotic, or special-NULL
-semantics matter.
+inputs at registration; at bind time DuckDB supplies the concrete logical types,
+which Rducks maps back to these descriptors for typed materialization.
 
 Declared `ENUM(...)` descriptors are supported by all implemented execution
 plans. On the native `arrow_ipc` NNG path, Rducks does not depend on Arrow IPC
@@ -200,12 +201,12 @@ rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))
 
 DuckDB scalar UDFs return one SQL value per logical input row. Rducks can
 evaluate the backing R function row-wise (`mode = "scalar"`) or chunk-wise
-(`mode = "vectorized"`). Omitting `args` is allowed for row-wise scalar UDFs on
-the default `arrow_r + serial` plan and registers a dynamic DuckDB varargs
-function. Declare `args` when using vectorized mode, non-default execution
-plans, composite/exotic inputs, or `null_handling = "special"` input semantics.
-Vectorized mode calls the R function once per DuckDB chunk with one R
-vector/list-column per declared argument.
+(`mode = "vectorized"`). Omitting `args` registers a dynamic DuckDB varargs
+function; each call site is resolved by DuckDB at bind time and then behaves like
+an explicitly typed signature for the bound argument types across the supported
+`arrow_r`, `arrow_c`, and `arrow_ipc` execution plans. Vectorized mode calls the
+R function once per DuckDB chunk with one R vector/list-column per bound or
+declared argument.
 
 ```{r vectorized-mode}
 reg_vec_plus_one <- rducks_register_scalar_udf(
@@ -225,7 +226,7 @@ In vectorized evaluation mode, `null_handling = "default"` evaluates only rows
 with no top-level SQL NULL inputs and scatters SQL NULLs back into the result.
 `null_handling = "special"` passes all rows using the same NA/NULL shapes as
 row-wise scalar evaluation. The return length must match the number of evaluated rows.
-Vectorized mode currently requires at least one declared argument.
+Vectorized mode currently requires at least one declared or dynamically bound argument.
 
 ### Scalar-UDF evaluation-mode benchmark
 
@@ -790,8 +791,8 @@ rducks_set_execution_plan(con, serial_plan, threads = 1, external_threads = 1)
 
 This example keeps a stingy duckplyr pipeline in DuckDB without writing
 `dd$...` calls. Rducks registers `local_score()` as a dynamic-argument scalar
-UDF, so only the return type is declared here; argument types are intentionally
-omitted for this simple scalar path.
+UDF, so only the return type is declared here; DuckDB binds the concrete
+argument types from the query before Rducks materializes the inputs.
 
 ```{r no-fallback}
 local({

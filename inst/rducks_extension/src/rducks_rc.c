@@ -2004,6 +2004,7 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
     SEXP nulls;
     SEXP top_level_null;
     SEXP n_sexp;
+    SEXP dynamic_arg_tokens;
     SEXP names;
 
     if (n > (idx_t)R_XLEN_T_MAX) {
@@ -2011,7 +2012,7 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
         return R_NilValue;
     }
 
-    prepared = PROTECT(Rf_allocVector(VECSXP, 4));
+    prepared = PROTECT(Rf_allocVector(VECSXP, 5));
     (*protect_count)++;
     columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
     (*protect_count)++;
@@ -2021,7 +2022,9 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
     (*protect_count)++;
     n_sexp = PROTECT(Rf_ScalarReal((double)n));
     (*protect_count)++;
-    names = PROTECT(Rf_allocVector(STRSXP, 4));
+    dynamic_arg_tokens = PROTECT(rducks_dynamic_arg_tokens_sexp(meta));
+    (*protect_count)++;
+    names = PROTECT(Rf_allocVector(STRSXP, 5));
     (*protect_count)++;
 
     for (idx_t row = 0; row < n; row++) LOGICAL(top_level_null)[(R_xlen_t)row] = FALSE;
@@ -2048,10 +2051,12 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
     SET_VECTOR_ELT(prepared, 1, nulls);
     SET_VECTOR_ELT(prepared, 2, top_level_null);
     SET_VECTOR_ELT(prepared, 3, n_sexp);
+    SET_VECTOR_ELT(prepared, 4, dynamic_arg_tokens);
     SET_STRING_ELT(names, 0, Rf_mkChar("columns"));
     SET_STRING_ELT(names, 1, Rf_mkChar("nulls"));
     SET_STRING_ELT(names, 2, Rf_mkChar("top_level_null"));
     SET_STRING_ELT(names, 3, Rf_mkChar("n"));
+    SET_STRING_ELT(names, 4, Rf_mkChar("dynamic_arg_tokens"));
     Rf_setAttrib(prepared, R_NamesSymbol, names);
     return prepared;
 }

@@ -163,6 +163,163 @@ rducks_type_object <- function(token) {
   )
 }
 
+rducks_token_chars <- function(x) strsplit(x, "", fixed = TRUE)[[1L]]
+
+rducks_find_top_level_char <- function(x, target) {
+  chars <- rducks_token_chars(x)
+  angle <- 0L
+  square <- 0L
+  for (i in seq_along(chars)) {
+    ch <- chars[[i]]
+    if (identical(ch, "<")) angle <- angle + 1L
+    else if (identical(ch, ">")) angle <- max(0L, angle - 1L)
+    else if (identical(ch, "[")) square <- square + 1L
+    else if (identical(ch, "]")) square <- max(0L, square - 1L)
+    else if (identical(ch, target) && angle == 0L && square == 0L) return(i)
+  }
+  NA_integer_
+}
+
+rducks_split_top_level <- function(x, sep) {
+  out <- character()
+  start <- 1L
+  repeat {
+    pos <- rducks_find_top_level_char(substr(x, start, nchar(x)), sep)
+    if (is.na(pos)) {
+      out <- c(out, substr(x, start, nchar(x)))
+      break
+    }
+    end <- start + pos - 2L
+    out <- c(out, substr(x, start, end))
+    start <- start + pos
+  }
+  trimws(out)
+}
+
+rducks_token_inner <- function(token, prefix) {
+  prefix <- paste0(prefix, "<")
+  if (!startsWith(token, prefix) || !endsWith(token, ">")) return(NULL)
+  substr(token, nchar(prefix) + 1L, nchar(token) - 1L)
+}
+
+rducks_token_percent_decode <- function(x) {
+  bytes <- charToRaw(enc2utf8(x))
+  out <- raw()
+  i <- 1L
+  while (i <= length(bytes)) {
+    if (identical(bytes[[i]], charToRaw("%")[[1L]])) {
+      if (i + 2L > length(bytes)) stop("invalid percent-encoded Rducks type token", call. = FALSE)
+      hex <- rawToChar(bytes[i + 1:2])
+      value <- suppressWarnings(strtoi(hex, base = 16L))
+      if (is.na(value)) stop("invalid percent-encoded Rducks type token", call. = FALSE)
+      out <- c(out, as.raw(value))
+      i <- i + 3L
+    } else {
+      out <- c(out, bytes[[i]])
+      i <- i + 1L
+    }
+  }
+  value <- rawToChar(out)
+  Encoding(value) <- "UTF-8"
+  value
+}
+
+rducks_token_percent_encode <- function(x) {
+  bytes <- charToRaw(enc2utf8(x))
+  safe <- as.raw(c(
+    charToRaw("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.")
+  ))
+  paste(vapply(bytes, function(byte) {
+    if (byte %in% safe) rawToChar(byte) else sprintf("%%%02X", as.integer(byte))
+  }, character(1)), collapse = "")
+}
+
+rducks_token_array_suffix <- function(token) {
+  chars <- rducks_token_chars(token)
+  if (!length(chars) || !identical(chars[[length(chars)]], "]")) return(NULL)
+  angle <- 0L
+  for (i in rev(seq_along(chars))) {
+    ch <- chars[[i]]
+    if (identical(ch, ">")) angle <- angle + 1L
+    else if (identical(ch, "<")) angle <- max(0L, angle - 1L)
+    else if (identical(ch, "[") && angle == 0L) {
+      return(list(prefix = substr(token, 1L, i - 1L), size = substr(token, i + 1L, nchar(token) - 1L)))
+    }
+  }
+  NULL
+}
+
+rducks_type_from_wire_token <- function(token) {
+  token <- trimws(token)
+  array <- rducks_token_array_suffix(token)
+  if (!is.null(array)) {
+    size <- suppressWarnings(as.integer(array$size))
+    if (is.na(size) || size <= 0L) stop("invalid Rducks array token: ", token, call. = FALSE)
+    return(ARRAY(rducks_type_from_wire_token(array$prefix), size))
+  }
+  inner <- rducks_token_inner(token, "decimal")
+  if (!is.null(inner)) {
+    parts <- rducks_split_top_level(inner, ";")
+    if (length(parts) != 2L) parts <- rducks_split_top_level(inner, ",")
+    if (length(parts) != 2L) stop("invalid Rducks decimal token: ", token, call. = FALSE)
+    return(DECIMAL(as.integer(parts[[1L]]), as.integer(parts[[2L]])))
+  }
+  inner <- rducks_token_inner(token, "enum")
+  if (!is.null(inner)) {
+    levels <- strsplit(inner, "|", fixed = TRUE)[[1L]]
+    return(ENUM(vapply(levels, rducks_token_percent_decode, character(1))))
+  }
+  inner <- rducks_token_inner(token, "list")
+  if (!is.null(inner)) return(LIST(rducks_type_from_wire_token(inner)))
+  inner <- rducks_token_inner(token, "map")
+  if (!is.null(inner)) {
+    parts <- rducks_split_top_level(inner, ";")
+    if (length(parts) != 2L) parts <- rducks_split_top_level(inner, ",")
+    if (length(parts) != 2L) stop("invalid Rducks map token: ", token, call. = FALSE)
+    return(MAP(rducks_type_from_wire_token(parts[[1L]]), rducks_type_from_wire_token(parts[[2L]])))
+  }
+  inner <- rducks_token_inner(token, "struct")
+  if (!is.null(inner)) {
+    fields <- rducks_split_top_level(inner, ";")
+    values <- lapply(fields, function(field) {
+      pos <- rducks_find_top_level_char(field, ":")
+      if (is.na(pos)) stop("invalid Rducks struct token: ", token, call. = FALSE)
+      rducks_type_from_wire_token(substr(field, pos + 1L, nchar(field)))
+    })
+    names(values) <- vapply(fields, function(field) {
+      pos <- rducks_find_top_level_char(field, ":")
+      rducks_token_percent_decode(trimws(substr(field, 1L, pos - 1L)))
+    }, character(1))
+    return(do.call(STRUCT, values))
+  }
+  inner <- rducks_token_inner(token, "union")
+  if (!is.null(inner)) {
+    fields <- rducks_split_top_level(inner, ";")
+    values <- lapply(fields, function(field) {
+      pos <- rducks_find_top_level_char(field, ":")
+      if (is.na(pos)) stop("invalid Rducks union token: ", token, call. = FALSE)
+      rducks_type_from_wire_token(substr(field, pos + 1L, nchar(field)))
+    })
+    names(values) <- vapply(fields, function(field) {
+      pos <- rducks_find_top_level_char(field, ":")
+      rducks_token_percent_decode(trimws(substr(field, 1L, pos - 1L)))
+    }, character(1))
+    return(do.call(UNION, values))
+  }
+  rducks_type_object(token)
+}
+
+rducks_dynamic_arg_types <- function(tokens) {
+  if (is.null(tokens)) return(NULL)
+  if (!is.character(tokens) || anyNA(tokens)) stop("dynamic Rducks argument type tokens must be character", call. = FALSE)
+  lapply(tokens, rducks_type_from_wire_token)
+}
+
+rducks_resolve_dynamic_arg_types <- function(arg_types, dynamic_arg_tokens = NULL) {
+  if (!is.null(arg_types)) return(arg_types)
+  rducks_dynamic_arg_types(dynamic_arg_tokens)
+}
+
 rducks_type_name_ok <- function(x, what = "name") {
   if (!is.character(x) || !length(x) || anyNA(x) || any(!nzchar(x))) {
     stop(what, " must contain non-empty character values", call. = FALSE)
@@ -174,7 +331,7 @@ rducks_type_name_ok <- function(x, what = "name") {
 }
 
 rducks_enum_level_token <- function(levels) {
-  paste(levels, collapse = "|")
+  paste(vapply(levels, rducks_token_percent_encode, character(1)), collapse = "|")
 }
 
 #' Rducks DuckDB type descriptors and constructors
@@ -363,7 +520,7 @@ UNION <- function(...) {
   rducks_type_construct_s7(
     token = sprintf(
       "union<%s>",
-      paste(sprintf("%s:%s", member_names, vapply(members, rducks_type_token, character(1))), collapse = ";")
+      paste(sprintf("%s:%s", vapply(member_names, rducks_token_percent_encode, character(1)), vapply(members, rducks_type_token, character(1))), collapse = ";")
     ),
     duckdb_sql = sprintf(
       "UNION(%s)",
@@ -435,7 +592,7 @@ STRUCT <- function(...) {
   rducks_type_construct_s7(
     token = sprintf(
       "struct<%s>",
-      paste(sprintf("%s:%s", field_names, vapply(fields, rducks_type_token, character(1))), collapse = ";")
+      paste(sprintf("%s:%s", vapply(field_names, rducks_token_percent_encode, character(1)), vapply(fields, rducks_type_token, character(1))), collapse = ";")
     ),
     duckdb_sql = sprintf(
       "STRUCT(%s)",

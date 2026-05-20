@@ -18,9 +18,11 @@ rducks_ipc_worker_eval_arrow_ipc_chunk <- function(input_payload,
                                                    return_type,
                                                    null_handling,
                                                    exception_handling,
-                                                   mode) {
+                                                   mode,
+                                                   dynamic_arg_tokens = NULL) {
   n <- rducks_ipc_worker_check_n(n)
   mode <- rducks_match_mode(mode)
+  arg_types <- rducks_resolve_dynamic_arg_types(arg_types, dynamic_arg_tokens)
   decoded <- rducks_arrow_ipc_decode_array(input_payload)
   output_schema <- rducks_arrow_schema_from_spec(output_schema_spec)
   prepared <- rducks_scalar_prepare_inputs(arg_types, decoded$array, decoded$schema, n)

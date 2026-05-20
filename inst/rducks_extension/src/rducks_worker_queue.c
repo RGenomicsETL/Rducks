@@ -21,6 +21,7 @@ struct rducks_udf_request {
     rducks_queue_execute_request_fn execute;
     void *data;
     rducks_r_scalar_meta_t *meta;
+    rducks_r_scalar_local_state_t *local_state;
     duckdb_data_chunk input;
     duckdb_vector output;
     rducks_rc_owned_result_payload_t *rc_result_payload;
@@ -145,23 +146,27 @@ static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *run
 }
 
 static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {
+    rducks_r_scalar_meta_t effective_meta_storage;
+    rducks_r_scalar_meta_t *exec_meta = NULL;
     if (!request || !request->runtime || !request->meta) {
         snprintf(err_msg, err_cap, "Rducks queued scalar request is missing execution state");
         return 0;
     }
-    if (request->meta->eval_mode == RDUCKS_EVAL_RC) {
-        return rducks_rc_scalar_execute(request->runtime, request->meta, request->input,
+    memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
+    rducks_effective_meta_for_state(request->meta, request->local_state, &effective_meta_storage, &exec_meta);
+    if (exec_meta->eval_mode == RDUCKS_EVAL_RC) {
+        return rducks_rc_scalar_execute(request->runtime, exec_meta, request->input,
                                        request->output, err_msg, err_cap);
     }
-    if (request->meta->eval_mode == RDUCKS_EVAL_RCV) {
-        return rducks_rc_vectorized_execute(request->runtime, request->meta, request->input,
+    if (exec_meta->eval_mode == RDUCKS_EVAL_RCV) {
+        return rducks_rc_vectorized_execute(request->runtime, exec_meta, request->input,
                                            request->output, err_msg, err_cap);
     }
-    if (request->meta->eval_mode == RDUCKS_EVAL_RIPC) {
-        return rducks_ripc_execute(request->runtime, request->meta, request->input,
+    if (exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        return rducks_ripc_execute(request->runtime, exec_meta, request->input,
                                   request->output, err_msg, err_cap);
     }
-    return rducks_r_scalar_execute(request->runtime, request->meta, request->input,
+    return rducks_r_scalar_execute(request->runtime, exec_meta, request->input,
                                   request->output, err_msg, err_cap);
 }
 
@@ -183,12 +188,20 @@ static int rducks_queue_execute_arrow_scalar_to_chunk_on_main(rducks_udf_request
         duckdb_destroy_data_chunk(&request->rc_result_chunk);
         request->rc_result_chunk = NULL;
     }
-    return rducks_r_scalar_execute_to_owned_chunk(request->runtime, request->meta, request->input, request->output,
-                                                 &request->rc_result_chunk, err_msg, err_cap);
+    {
+        rducks_r_scalar_meta_t effective_meta_storage;
+        rducks_r_scalar_meta_t *exec_meta = NULL;
+        memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
+        rducks_effective_meta_for_state(request->meta, request->local_state, &effective_meta_storage, &exec_meta);
+        return rducks_r_scalar_execute_to_owned_chunk(request->runtime, exec_meta, request->input, request->output,
+                                                     &request->rc_result_chunk, err_msg, err_cap);
+    }
 }
 
 static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_t *request,
                                                              char *err_msg, size_t err_cap) {
+    rducks_r_scalar_meta_t effective_meta_storage;
+    rducks_r_scalar_meta_t *exec_meta = NULL;
     if (!request || !request->runtime || !request->meta) {
         snprintf(err_msg, err_cap, "Rducks queued RC owned-result request is missing execution state");
         return 0;
@@ -197,6 +210,8 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
         snprintf(err_msg, err_cap, "Rducks queued RC owned-result request reached a non-main thread");
         return 0;
     }
+    memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
+    rducks_effective_meta_for_state(request->meta, request->local_state, &effective_meta_storage, &exec_meta);
     if (request->rc_result_payload) {
         rducks_rc_owned_result_payload_free(request->rc_result_payload);
         request->rc_result_payload = NULL;
@@ -205,11 +220,11 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
         duckdb_destroy_data_chunk(&request->rc_result_chunk);
         request->rc_result_chunk = NULL;
     }
-    if (rducks_rc_owned_result_supported(request->meta)) {
-        return rducks_rc_scalar_execute_to_owned_payload(request->runtime, request->meta, request->input, request->output,
+    if (rducks_rc_owned_result_supported(exec_meta)) {
+        return rducks_rc_scalar_execute_to_owned_payload(request->runtime, exec_meta, request->input, request->output,
                                                          &request->rc_result_payload, err_msg, err_cap);
     }
-    return rducks_rc_scalar_execute_to_owned_chunk(request->runtime, request->meta, request->input, request->output,
+    return rducks_rc_scalar_execute_to_owned_chunk(request->runtime, exec_meta, request->input, request->output,
                                                   &request->rc_result_chunk, err_msg, err_cap);
 }
 
@@ -302,9 +317,12 @@ static void rducks_queue_finish_request(rducks_runtime_entry_t *runtime, rducks_
 }
 
 static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                      rducks_r_scalar_local_state_t *local_state,
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap) {
     rducks_udf_request_t request;
+    rducks_r_scalar_meta_t effective_meta_storage;
+    rducks_r_scalar_meta_t *exec_meta = meta;
     duckdb_data_chunk owned_input = NULL;
     int ok;
     if (!meta) {
@@ -312,20 +330,23 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
         return 0;
     }
 
+    memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
+    rducks_effective_meta_for_state(meta, local_state, &effective_meta_storage, &exec_meta);
     memset(&request, 0, sizeof(request));
-    if (meta->eval_mode == RDUCKS_EVAL_R) {
+    if (exec_meta->eval_mode == RDUCKS_EVAL_R) {
         request.execute = rducks_queue_execute_arrow_scalar_to_chunk_on_main;
-    } else if (rducks_rc_owned_result_queue_supported(meta)) {
+    } else if (rducks_rc_owned_result_queue_supported(exec_meta)) {
         request.execute = rducks_queue_execute_rc_scalar_to_payload_on_main;
     } else {
         request.execute = rducks_queue_execute_scalar_on_main;
     }
     request.meta = meta;
+    request.local_state = local_state;
     request.input = input;
     request.output = output;
 
-    if (rducks_rc_direct_input_snapshot_supported(meta)) {
-        if (!rducks_rc_direct_input_snapshot_chunk(meta, input, &owned_input, err_msg, err_cap)) {
+    if (rducks_rc_direct_input_snapshot_supported(exec_meta)) {
+        if (!rducks_rc_direct_input_snapshot_chunk(exec_meta, input, &owned_input, err_msg, err_cap)) {
             return 0;
         }
         if (owned_input) {

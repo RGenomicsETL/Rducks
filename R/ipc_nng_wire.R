@@ -1,4 +1,5 @@
 rducks_nng_wire_magic <- charToRaw("RDK1")
+rducks_nng_dynamic_payload_magic <- charToRaw("RDT1")
 rducks_nng_wire_version <- 1L
 rducks_nng_wire_type_execute <- 1L
 rducks_nng_wire_type_register <- 2L
@@ -67,6 +68,31 @@ rducks_nng_wire_check_magic <- function(buf) {
   length(buf) >= 4L && identical(as.raw(buf[1:4]), rducks_nng_wire_magic)
 }
 
+rducks_nng_wire_decode_dynamic_payload <- function(payload) {
+  if (!is.raw(payload) || length(payload) < 16L || !identical(as.raw(payload[1:4]), rducks_nng_dynamic_payload_magic)) {
+    stop("invalid Rducks dynamic NNG payload", call. = FALSE)
+  }
+  pos <- 5L
+  count <- rducks_nng_wire_read_u32(payload, pos); pos <- count$pos
+  arrow_len <- rducks_nng_wire_read_u64(payload, pos); pos <- arrow_len$pos
+  if (count$value > .Machine$integer.max) {
+    stop("Rducks dynamic NNG payload has too many argument types", call. = FALSE)
+  }
+  tokens <- character(as.integer(count$value))
+  for (i in seq_along(tokens)) {
+    len <- rducks_nng_wire_read_u32(payload, pos); pos <- len$pos
+    token_raw <- rducks_nng_wire_slice(payload, pos, len$value, "Rducks dynamic NNG payload")
+    tokens[[i]] <- rawToChar(token_raw)
+    pos <- pos + len$value
+  }
+  arrow_payload <- rducks_nng_wire_slice(payload, pos, arrow_len$value, "Rducks dynamic NNG payload")
+  pos <- pos + arrow_len$value
+  if (pos != length(payload) + 1L) {
+    stop("truncated Rducks dynamic NNG payload", call. = FALSE)
+  }
+  list(payload = arrow_payload, dynamic_arg_tokens = tokens)
+}
+
 rducks_nng_wire_encode_request <- function(type, udf_id = "", row_count = 0, payload = raw()) {
   if (!is.raw(payload)) stop("NNG wire payload must be raw", call. = FALSE)
   type <- as.integer(rducks_nng_wire_check_uint(type, 2^32, "request type"))
@@ -121,7 +147,8 @@ rducks_nng_wire_decode_request <- function(buf) {
   ))) {
     stop("unsupported Rducks NNG request type", call. = FALSE)
   }
-  if (!identical(as.integer(reserved$value), 0L)) {
+  reserved_value <- as.integer(reserved$value)
+  if (!reserved_value %in% c(0L, 1L)) {
     stop("invalid Rducks NNG request reserved field", call. = FALSE)
   }
   if (row_count$value > .Machine$integer.max) {
@@ -139,11 +166,18 @@ rducks_nng_wire_decode_request <- function(buf) {
   udf_id <- rawToChar(rducks_nng_wire_slice(buf, pos, udf_len$value, "Rducks NNG request frame"))
   pos <- pos + udf_len$value
   payload <- rducks_nng_wire_slice(buf, pos, payload_len$value, "Rducks NNG request frame")
+  dynamic_arg_tokens <- NULL
+  if (identical(reserved_value, 1L)) {
+    dynamic <- rducks_nng_wire_decode_dynamic_payload(payload)
+    payload <- dynamic$payload
+    dynamic_arg_tokens <- dynamic$dynamic_arg_tokens
+  }
   list(
     type = as.integer(type$value),
     udf_id = udf_id,
     row_count = as.integer(row_count$value),
-    payload = payload
+    payload = payload,
+    dynamic_arg_tokens = dynamic_arg_tokens
   )
 }
 
