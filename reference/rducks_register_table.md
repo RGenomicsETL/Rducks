@@ -72,11 +72,8 @@ execution; worker-thread calls into R are rejected.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
 #> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
 DBI::dbGetQuery(db, "SELECT * FROM my_table()")

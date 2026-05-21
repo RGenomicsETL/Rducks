@@ -39,22 +39,15 @@ counters.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER)
 #> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
 rducks_explain_udf(db, "my_fn")
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name rducks_udf_stat does not exist!
-#> Did you mean "product"?
-#> 
-#> LINE 1: SELECT field, rducks_udf_stat('my_fn', field) AS value FROM (VALUES (...
-#>                       ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: Invalid Input Error: unknown Rducks UDF: my_fn
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

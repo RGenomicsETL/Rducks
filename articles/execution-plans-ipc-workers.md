@@ -164,7 +164,7 @@ if (isTRUE(ipc_available)) {
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:30375
+#>  tcp://127.0.0.1:24680
 ```
 
 The result is an R-side provider view: runtime token, provider key,

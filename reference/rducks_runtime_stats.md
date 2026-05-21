@@ -36,19 +36,15 @@ A one-row data frame with runtime registry and connection counters.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 rducks_runtime_stats(db)
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name rducks_runtime_registry_entries does not exist!
-#> Did you mean "__internal_decompress_string"?
-#> 
-#> LINE 1: SELECT rducks_runtime_registry_entries() AS registry_entries, rduc...
-#>                ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#>   registry_entries active_entries stale_entries entries_created stale_aliases
+#> 1               18             18             0              18             0
+#>   connections_opened connections_closed connections_current
+#> 1                 36                  0                  36
+#>   connection_open_failed queue_init_failed native_release_supported
+#> 1                      0                 0                     TRUE
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

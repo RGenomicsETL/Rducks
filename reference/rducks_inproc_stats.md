@@ -39,19 +39,15 @@ A one-row data frame with queue diagnostic columns.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 rducks_inproc_stats(db)
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name rducks_queue_submitted does not exist!
-#> Did you mean "ucase"?
-#> 
-#> LINE 1: SELECT rducks_queue_submitted() AS submitted, rducks_queue_executed...
-#>                ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#>   submitted executed timeouts pending_current pending_max running_current
+#> 1         0        0        0               0           0               0
+#>   running_max main_drains main_drain_batches main_drain_max_batch
+#> 1           0           0                  0                    0
+#>   pending_timeout_ms running_timeout_supported
+#> 1              30000                     FALSE
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

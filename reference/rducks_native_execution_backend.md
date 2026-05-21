@@ -28,19 +28,10 @@ Character scalar backend name: `"single"`, `"concurrent_inproc"`, or
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 rducks_native_execution_backend(db)
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name rducks_execution_backend does not exist!
-#> Did you mean "ucase"?
-#> 
-#> LINE 1: SELECT rducks_execution_backend() AS backend
-#>                ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#> [1] "single"
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }
