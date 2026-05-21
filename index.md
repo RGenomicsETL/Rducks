@@ -137,9 +137,16 @@ replace a scalar UDF, register the same SQL name/signature again.
 Rducks descriptors are used for scalar-UDF returns, declared scalar-UDF
 inputs, and aggregate inputs/returns. They include DuckDB scalar types,
 exact value classes such as `UUID`, `HUGEINT`, `DECIMAL(width, scale)`,
-`INTERVAL`, `BIT`, `ENUM(levels)`, and composite descriptors such as
-`LIST(TYPE)`, `ARRAY(TYPE, n)`, `STRUCT(...)`, `MAP(key, value)`, and
-`UNION(...)`.
+`INTERVAL`, `BIT`, `GEOMETRY`, `VARIANT`, `ENUM(levels)`, and composite
+descriptors such as `LIST(TYPE)`, `ARRAY(TYPE, n)`, `STRUCT(...)`,
+`MAP(key, value)`, and `UNION(...)`. `GEOMETRY` values cross as WKB
+`raw` bytes; `VARIANT` values cross as DuckDB’s typed storage struct
+wrapped by `rducks_variant`. VARIANT scalar-UDF signatures require a
+DuckDB runtime whose C API exposes VARIANT logical types and are not
+supported by direct `arrow_c` marshalling yet. Direct `arrow_c` UNION
+support follows DuckDB’s native UNION vector tag/child layout; it is
+tested for supported DuckDB builds but is intentionally treated as a
+version-coupled native adapter rather than a stable interchange format.
 
 ``` r
 
@@ -539,9 +546,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       9.959
-#> 2   arrow_c serial 65961344       9.838
-#> 3 arrow_ipc + mori 65961344       5.766
+#> 1   arrow_r serial 65961344      21.469
+#> 2   arrow_c serial 65961344      21.240
+#> 3 arrow_ipc + mori 65961344      12.200
 ```
 
 ## duckplyr integration
@@ -604,11 +611,11 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 sets `arrow_lossless_conversion=true` on the user connection, and the
 extension sets the same option on its internal DuckDB connections. That
 is required for Rducks’ typed boundary: DuckDB-specific logical types
-such as `UUID`, `HUGEINT`, `UHUGEINT`, `INTERVAL`, `BIT`, and enums must
-keep their type metadata when chunks cross DuckDB Arrow C Data. Without
-that setting, Arrow conversion can erase type identity and dynamic
-omitted-`args` calls would no longer be equivalent to explicit
-descriptors.
+such as `UUID`, `HUGEINT`, `UHUGEINT`, `INTERVAL`, `BIT`, `GEOMETRY`,
+`VARIANT`, and enums must keep their type metadata when chunks cross
+DuckDB Arrow C Data. Without that setting, Arrow conversion can erase
+type identity and dynamic omitted-`args` calls would no longer be
+equivalent to explicit descriptors.
 
 ## Build notes
 

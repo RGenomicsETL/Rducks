@@ -97,6 +97,8 @@
   [`DOUBLE`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`VARCHAR`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`BLOB`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
+  [`GEOMETRY`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
+  [`VARIANT`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`DATE`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`TIME`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
   [`TIMESTAMP`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_objects.md)
@@ -134,6 +136,8 @@
 - [`rducks_value_type()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   [`rducks_duckdb_literal()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_value_type.md)
   : Generic helpers for Rducks value classes
+- [`rducks_variant()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_variant.md)
+  : Construct a DuckDB VARIANT storage object
 - [`rducks_with_duckplyr()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
   [`with(`*`<duckdb_connection>`*`)`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
   : Evaluate a duckplyr pipeline with dynamic Rducks scalar UDFs

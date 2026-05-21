@@ -110,6 +110,7 @@ primitive, exact, and composite values.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">primitive</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span>, <span class="va">DOUBLE</span>, <span class="va">BOOLEAN</span>, <span class="va">VARCHAR</span><span class="op">)</span></span>
 <span><span class="va">exact</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">UUID</span>, <span class="va">HUGEINT</span>, <span class="fu"><a href="../reference/rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">18</span>, <span class="fl">4</span><span class="op">)</span>, <span class="va">INTERVAL</span>, <span class="va">BIT</span><span class="op">)</span></span>
+<span><span class="va">semi_structured</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">GEOMETRY</span>, <span class="va">VARIANT</span><span class="op">)</span></span>
 <span><span class="va">composite</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  <span class="va">INTEGER</span><span class="op">[</span><span class="op">]</span>,</span>
 <span>  <span class="fu"><a href="../reference/rducks_type_objects.html">ARRAY</a></span><span class="op">(</span><span class="va">DOUBLE</span>, <span class="fl">3</span><span class="op">)</span>,</span>
@@ -215,12 +216,14 @@ documentation can stay aligned with the implemented semantics.</p>
 <span><span class="co">#&gt; 2     one R vector/list-column per declared or dynamically bound argument</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_value_semantics.html">rducks_value_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">[</span></span>
-<span>  <span class="fu"><a href="../reference/rducks_value_semantics.html">rducks_value_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">$</span><span class="va">duckdb_type</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"INTEGER"</span>, <span class="st">"VARCHAR"</span>, <span class="st">"STRUCT"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="../reference/rducks_value_semantics.html">rducks_value_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">$</span><span class="va">duckdb_type</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"INTEGER"</span>, <span class="st">"VARCHAR"</span>, <span class="st">"GEOMETRY"</span>, <span class="st">"VARIANT"</span>, <span class="st">"STRUCT"</span><span class="op">)</span>,</span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"duckdb_type"</span>, <span class="st">"r_value_class"</span>, <span class="st">"special_null_argument"</span><span class="op">)</span></span>
 <span><span class="op">]</span></span>
-<span><span class="co">#&gt;    duckdb_type r_value_class special_null_argument</span></span>
-<span><span class="co">#&gt; 6      INTEGER       integer           NA_integer_</span></span>
-<span><span class="co">#&gt; 12     VARCHAR     character         NA_character_</span></span>
+<span><span class="co">#&gt;    duckdb_type  r_value_class special_null_argument</span></span>
+<span><span class="co">#&gt; 6      INTEGER        integer           NA_integer_</span></span>
+<span><span class="co">#&gt; 12     VARCHAR      character         NA_character_</span></span>
+<span><span class="co">#&gt; 14    GEOMETRY            raw                  NULL</span></span>
+<span><span class="co">#&gt; 15     VARIANT rducks_variant                  NULL</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_argument_type_mapping.html">rducks_argument_type_mapping</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  <span class="va">INTEGER</span>,</span>

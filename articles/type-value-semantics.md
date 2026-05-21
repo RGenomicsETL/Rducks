@@ -39,6 +39,7 @@ exact, and composite values.
 
 primitive <- list(INTEGER, DOUBLE, BOOLEAN, VARCHAR)
 exact <- list(UUID, HUGEINT, DECIMAL(18, 4), INTERVAL, BIT)
+semi_structured <- list(GEOMETRY, VARIANT)
 composite <- list(
   INTEGER[],
   ARRAY(DOUBLE, 3),
@@ -158,12 +159,14 @@ rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
 #> 2     one R vector/list-column per declared or dynamically bound argument
 
 rducks_value_semantics()[
-  rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "STRUCT"),
+  rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "GEOMETRY", "VARIANT", "STRUCT"),
   c("duckdb_type", "r_value_class", "special_null_argument")
 ]
-#>    duckdb_type r_value_class special_null_argument
-#> 6      INTEGER       integer           NA_integer_
-#> 12     VARCHAR     character         NA_character_
+#>    duckdb_type  r_value_class special_null_argument
+#> 6      INTEGER        integer           NA_integer_
+#> 12     VARCHAR      character         NA_character_
+#> 14    GEOMETRY            raw                  NULL
+#> 15     VARIANT rducks_variant                  NULL
 
 rducks_argument_type_mapping(list(
   INTEGER,

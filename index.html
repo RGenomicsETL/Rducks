@@ -118,7 +118,7 @@
 <div class="section level2">
 <h2 id="type-descriptors">Type descriptors<a class="anchor" aria-label="anchor" href="#type-descriptors"></a>
 </h2>
-<p>Rducks descriptors are used for scalar-UDF returns, declared scalar-UDF inputs, and aggregate inputs/returns. They include DuckDB scalar types, exact value classes such as <code>UUID</code>, <code>HUGEINT</code>, <code>DECIMAL(width, scale)</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>ENUM(levels)</code>, and composite descriptors such as <code>LIST(TYPE)</code>, <code>ARRAY(TYPE, n)</code>, <code>STRUCT(...)</code>, <code>MAP(key, value)</code>, and <code>UNION(...)</code>.</p>
+<p>Rducks descriptors are used for scalar-UDF returns, declared scalar-UDF inputs, and aggregate inputs/returns. They include DuckDB scalar types, exact value classes such as <code>UUID</code>, <code>HUGEINT</code>, <code>DECIMAL(width, scale)</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>GEOMETRY</code>, <code>VARIANT</code>, <code>ENUM(levels)</code>, and composite descriptors such as <code>LIST(TYPE)</code>, <code>ARRAY(TYPE, n)</code>, <code>STRUCT(...)</code>, <code>MAP(key, value)</code>, and <code>UNION(...)</code>. <code>GEOMETRY</code> values cross as WKB <code>raw</code> bytes; <code>VARIANT</code> values cross as DuckDB’s typed storage struct wrapped by <code>rducks_variant</code>. VARIANT scalar-UDF signatures require a DuckDB runtime whose C API exposes VARIANT logical types and are not supported by direct <code>arrow_c</code> marshalling yet. Direct <code>arrow_c</code> UNION support follows DuckDB’s native UNION vector tag/child layout; it is tested for supported DuckDB builds but is intentionally treated as a version-coupled native adapter rather than a stable interchange format.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nested_type</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_type_objects.html">STRUCT</a></span><span class="op">(</span></span>
 <span>  id <span class="op">=</span> <span class="va">INTEGER</span>,</span>
@@ -497,9 +497,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344       9.959</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344       9.838</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344       5.766</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344      21.469</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344      21.240</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344      12.200</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
@@ -547,7 +547,7 @@
 <div class="section level2">
 <h2 id="arrow-conversion-options">Arrow conversion options<a class="anchor" aria-label="anchor" href="#arrow-conversion-options"></a>
 </h2>
-<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> sets <code>arrow_lossless_conversion=true</code> on the user connection, and the extension sets the same option on its internal DuckDB connections. That is required for Rducks’ typed boundary: DuckDB-specific logical types such as <code>UUID</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>INTERVAL</code>, <code>BIT</code>, and enums must keep their type metadata when chunks cross DuckDB Arrow C Data. Without that setting, Arrow conversion can erase type identity and dynamic omitted-<code>args</code> calls would no longer be equivalent to explicit descriptors.</p>
+<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> sets <code>arrow_lossless_conversion=true</code> on the user connection, and the extension sets the same option on its internal DuckDB connections. That is required for Rducks’ typed boundary: DuckDB-specific logical types such as <code>UUID</code>, <code>HUGEINT</code>, <code>UHUGEINT</code>, <code>INTERVAL</code>, <code>BIT</code>, <code>GEOMETRY</code>, <code>VARIANT</code>, and enums must keep their type metadata when chunks cross DuckDB Arrow C Data. Without that setting, Arrow conversion can erase type identity and dynamic omitted-<code>args</code> calls would no longer be equivalent to explicit descriptors.</p>
 </div>
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>

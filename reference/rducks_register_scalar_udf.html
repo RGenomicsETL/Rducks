@@ -99,8 +99,10 @@ with the same typed semantics used for an explicit <code>args = ...</code> signa
 across scalar/vectorized evaluation and supported <code>arrow_r</code>, <code>arrow_c</code>, and
 <code>arrow_ipc</code> execution plans. Use explicit <code>NULL</code> for a zero-argument scalar
 UDF. Otherwise use exported DuckDB-style type descriptors such as <code>INTEGER</code>,
-<code>DOUBLE</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>, <code>STRUCT(a = INTEGER)</code>, or
-<code>MAP(VARCHAR, INTEGER)</code>.</p></dd>
+<code>DOUBLE</code>, <code>GEOMETRY</code>, <code>VARIANT</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>,
+<code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>. <code>VARIANT</code> signatures
+require a DuckDB runtime whose C API exposes VARIANT logical types, and are
+not supported by the direct <code>arrow_c</code> marshalling path yet.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>

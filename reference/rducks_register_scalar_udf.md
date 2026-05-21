@@ -47,8 +47,11 @@ rducks_register_scalar_udf(
   signature across scalar/vectorized evaluation and supported `arrow_r`,
   `arrow_c`, and `arrow_ipc` execution plans. Use explicit `NULL` for a
   zero-argument scalar UDF. Otherwise use exported DuckDB-style type
-  descriptors such as `INTEGER`, `DOUBLE`, `INTEGER[]`, `INTEGER[3]`,
-  `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`.
+  descriptors such as `INTEGER`, `DOUBLE`, `GEOMETRY`, `VARIANT`,
+  `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
+  `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures require a DuckDB runtime
+  whose C API exposes VARIANT logical types, and are not supported by
+  the direct `arrow_c` marshalling path yet.
 
 - returns:
 
