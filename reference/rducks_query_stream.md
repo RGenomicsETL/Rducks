@@ -82,13 +82,10 @@ state.
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: Invalid Input Error: Rducks R execution reached a non-calling DuckDB execution thread
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
 stream$next_batch()
-#> Error: object 'stream' not found
+#>   n
+#> 1 1
 stream$close()
-#> Error: object 'stream' not found
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }
