@@ -113,7 +113,7 @@
 <div class="section level2">
 <h2 id="lifecycle">Lifecycle<a class="anchor" aria-label="anchor" href="#lifecycle"></a>
 </h2>
-<p><code>rducks_release(con)</code> detaches connection-local Rducks state and stops Rducks-launched local IPC workers when the last attachment for the DuckDB runtime is released. It does not drop DuckDB catalog functions or release closures still owned by native catalog metadata. For deterministic cleanup, call it before <code>DBI::dbDisconnect(con)</code>; to replace a scalar UDF, register the same SQL name/signature again.</p>
+<p><code>rducks_release(con)</code> detaches connection-local Rducks state and stops Rducks-launched local IPC workers when the last attachment for the DuckDB runtime is released. For file-backed databases, it also closes Rducks’ extension-owned DuckDB connections so the file can be fully closed on strict file-locking platforms. It does not drop DuckDB catalog functions or release closures still owned by native catalog metadata. For deterministic cleanup, call it before <code>DBI::dbDisconnect(con)</code>; to replace a scalar UDF, register the same SQL name/signature again.</p>
 </div>
 <div class="section level2">
 <h2 id="type-descriptors">Type descriptors<a class="anchor" aria-label="anchor" href="#type-descriptors"></a>
@@ -497,9 +497,9 @@
 <span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;              label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1   arrow_r serial 65961344      21.469</span></span>
-<span><span class="co">#&gt; 2   arrow_c serial 65961344      21.240</span></span>
-<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344      12.200</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   arrow_r serial 65961344      30.171</span></span>
+<span><span class="co">#&gt; 2   arrow_c serial 65961344      29.883</span></span>
+<span><span class="co">#&gt; 3 arrow_ipc + mori 65961344      17.747</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="duckplyr-integration">duckplyr integration<a class="anchor" aria-label="anchor" href="#duckplyr-integration"></a>
