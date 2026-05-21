@@ -17,6 +17,7 @@
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$
 ^docs$
+^docs/.*$
 ^pkgdown$
 ^pkgdown-site$
 ^bench-results$
