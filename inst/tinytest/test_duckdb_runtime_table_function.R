@@ -282,6 +282,28 @@ local({
 
   invisible(rducks_register_table(
     con,
+    "rducks_table_interval_args",
+    function(interval) {
+      data.frame(
+        months = interval$months,
+        days = interval$days,
+        micros = as.character(interval$micros),
+        micros_class = inherits(interval$micros, "rducks_bigint")
+      )
+    },
+    chunk_size = 1L
+  ))
+  interval_args <- DBI::dbGetQuery(
+    con,
+    "SELECT * FROM rducks_table_interval_args(INTERVAL '9999999999999999 microseconds')"
+  )
+  expect_equal(interval_args$months[[1L]], 0L)
+  expect_equal(interval_args$days[[1L]], 0L)
+  expect_equal(interval_args$micros[[1L]], "9999999999999999")
+  expect_true(isTRUE(interval_args$micros_class[[1L]]))
+
+  invisible(rducks_register_table(
+    con,
     "rducks_table_dynamic_args",
     function(kind) {
       if (identical(kind, "numbers")) data.frame(i = 1:2) else data.frame(label = c("a", "b"))
@@ -336,6 +358,18 @@ local({
   expect_error(
     DBI::dbGetQuery(con, "SELECT * FROM rducks_table_error()"),
     "table boom"
+  )
+
+  long_error <- paste(rep.int("x", 5000L), collapse = "")
+  invisible(rducks_register_table(
+    con,
+    "rducks_table_long_error",
+    function() stop(long_error, call. = FALSE),
+    chunk_size = 2L
+  ))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM rducks_table_long_error()"),
+    "\\[truncated\\]"
   )
 
   invisible(rducks_register_table(

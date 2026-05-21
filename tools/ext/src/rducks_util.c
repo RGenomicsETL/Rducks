@@ -29,24 +29,44 @@ static void rducks_ascii_lower_inplace(char *x) {
     }
 }
 
+static void rducks_mark_error_truncated(char *out, size_t out_cap) {
+    static const char suffix[] = " ... [truncated]";
+    size_t suffix_len = sizeof(suffix) - 1U;
+    if (!out || out_cap == 0U || out_cap <= suffix_len + 1U) return;
+    memcpy(out + out_cap - suffix_len - 1U, suffix, suffix_len);
+    out[out_cap - 1U] = '\0';
+}
+
 static void rducks_copy_error_message(char *out, size_t out_cap,
                                       const char *message, const char *fallback) {
     const char *text = (message && message[0]) ? message : (fallback ? fallback : "Rducks error");
     size_t len;
-    static const char suffix[] = " ... [truncated]";
-    size_t suffix_len = sizeof(suffix) - 1U;
     if (!out || out_cap == 0U) return;
     len = strlen(text);
     if (len < out_cap) {
         memcpy(out, text, len + 1U);
         return;
     }
-    if (out_cap <= suffix_len + 1U) {
-        snprintf(out, out_cap, "%s", text);
-        return;
+    snprintf(out, out_cap, "%s", text);
+    rducks_mark_error_truncated(out, out_cap);
+}
+
+static int rducks_format_error_message(char *out, size_t out_cap, const char *fmt, ...) {
+    va_list args;
+    int needed;
+    if (!out || out_cap == 0U) return -1;
+    if (!fmt) {
+        rducks_copy_error_message(out, out_cap, NULL, "Rducks error");
+        return -1;
     }
-    memcpy(out, text, out_cap - suffix_len - 1U);
-    memcpy(out + out_cap - suffix_len - 1U, suffix, suffix_len);
-    out[out_cap - 1U] = '\0';
+    va_start(args, fmt);
+    needed = vsnprintf(out, out_cap, fmt, args);
+    va_end(args);
+    if (needed < 0) {
+        rducks_copy_error_message(out, out_cap, NULL, "Rducks error");
+        return needed;
+    }
+    if ((size_t)needed >= out_cap) rducks_mark_error_truncated(out, out_cap);
+    return needed;
 }
 

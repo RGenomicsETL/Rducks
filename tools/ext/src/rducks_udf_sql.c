@@ -21,7 +21,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     }
     rducks_preserved_release_drain_on_main(runtime);
     if (!runtime || !runtime->connection || !name || !name[0]) {
-        snprintf(err, err_cap, "invalid Rducks scalar registration request");
+        rducks_format_error_message(err, err_cap, "invalid Rducks scalar registration request");
         return false;
     }
     if (!rducks_parse_eval_mode(eval_mode_spec, &eval_mode, err, err_cap)) {
@@ -30,7 +30,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     if ((eval_mode == RDUCKS_EVAL_R && !Rf_isFunction(eval_ref)) ||
         (eval_mode == RDUCKS_EVAL_RIPC && !rducks_ripc_bundle_valid(eval_ref)) ||
         ((eval_mode == RDUCKS_EVAL_RC || eval_mode == RDUCKS_EVAL_RCV) && !rducks_rc_bundle_valid(eval_ref))) {
-        snprintf(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
+        rducks_format_error_message(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
     }
     dynamic_args = args_spec && (strcmp(args_spec, "*") == 0 || strcmp(args_spec, "...") == 0);
@@ -59,10 +59,10 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     return_logical_type = rducks_create_logical_type_for_desc(return_desc);
     if (!fn || !return_logical_type) {
         if (!return_logical_type && rducks_type_desc_contains_scalar(return_desc, RDUCKS_TYPE_VARIANT)) {
-            snprintf(err, err_cap,
+            rducks_format_error_message(err, err_cap,
                      "DuckDB runtime C API does not expose VARIANT logical types required for Rducks VARIANT scalar-UDF registration");
         } else {
-            snprintf(err, err_cap, "failed to allocate DuckDB scalar function for Rducks UDF");
+            rducks_format_error_message(err, err_cap, "failed to allocate DuckDB scalar function for Rducks UDF");
         }
         if (fn) {
             duckdb_destroy_scalar_function(&fn);
@@ -80,7 +80,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     if (dynamic_args) {
         any_arg_type = duckdb_create_logical_type(DUCKDB_TYPE_ANY);
         if (!any_arg_type) {
-            snprintf(err, err_cap, "failed to allocate DuckDB ANY type for dynamic Rducks arguments");
+            rducks_format_error_message(err, err_cap, "failed to allocate DuckDB ANY type for dynamic Rducks arguments");
             duckdb_destroy_scalar_function(&fn);
             duckdb_destroy_logical_type(&return_logical_type);
             rducks_type_desc_destroy(return_desc);
@@ -93,11 +93,11 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
             duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
             if (!arg_logical_type) {
                 if (rducks_type_desc_contains_scalar(arg_descs[i], RDUCKS_TYPE_VARIANT)) {
-                    snprintf(err, err_cap,
+                    rducks_format_error_message(err, err_cap,
                              "DuckDB runtime C API does not expose VARIANT logical types required for Rducks VARIANT scalar-UDF argument %zu",
                              i + 1);
                 } else {
-                    snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
+                    rducks_format_error_message(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
                 }
                 duckdb_destroy_scalar_function(&fn);
                 duckdb_destroy_logical_type(&return_logical_type);
@@ -113,7 +113,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
 
     meta = (rducks_r_scalar_meta_t *)rducks_calloc_array(1, sizeof(*meta));
     if (!meta) {
-        snprintf(err, err_cap, "out of memory");
+        rducks_format_error_message(err, err_cap, "out of memory");
         duckdb_destroy_scalar_function(&fn);
         duckdb_destroy_logical_type(&return_logical_type);
         for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
@@ -125,7 +125,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     meta->fun = R_NilValue;
     meta->name = rducks_strdup(name);
     if (!meta->name) {
-        snprintf(err, err_cap, "out of memory copying Rducks UDF name");
+        rducks_format_error_message(err, err_cap, "out of memory copying Rducks UDF name");
         free(meta);
         duckdb_destroy_scalar_function(&fn);
         duckdb_destroy_logical_type(&return_logical_type);
@@ -173,7 +173,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     duckdb_destroy_scalar_function(&fn);
     duckdb_destroy_logical_type(&return_logical_type);
     if (rc != DuckDBSuccess) {
-        snprintf(err, err_cap, "DuckDB failed to register Rducks scalar UDF %s", name);
+        rducks_format_error_message(err, err_cap, "DuckDB failed to register Rducks scalar UDF %s", name);
         return false;
     }
     rducks_runtime_register_udf(runtime, meta);
@@ -191,7 +191,7 @@ static int rducks_lookup_evaluator_ref(const char *id, const char *token, SEXP *
     SEXP fun = PROTECT(Rf_findFun(Rf_install("rducks_evaluator_ref_get"), ns));
     protect_count++;
     if (!Rf_isFunction(fun)) {
-        snprintf(err, err_cap, "Rducks evaluator registry lookup function is unavailable");
+        rducks_format_error_message(err, err_cap, "Rducks evaluator registry lookup function is unavailable");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -204,7 +204,7 @@ static int rducks_lookup_evaluator_ref(const char *id, const char *token, SEXP *
     SEXP value = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
     protect_count++;
     if (r_err || value == R_NilValue) {
-        snprintf(err, err_cap, "invalid Rducks evaluator handle");
+        rducks_format_error_message(err, err_cap, "invalid Rducks evaluator handle");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -242,7 +242,7 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
         char *null_handling_spec = rducks_copy_duckdb_string(&null_handling_specs[i]);
         char *exception_handling_spec = rducks_copy_duckdb_string(&exception_handling_specs[i]);
         char *eval_mode_spec = rducks_copy_duckdb_string(&eval_mode_specs[i]);
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         SEXP eval_ref = R_NilValue;
         err[0] = '\0';
         if (!name || !evaluator_id || !evaluator_token || !args_spec || !return_spec ||
@@ -329,7 +329,7 @@ static void rducks_udf_stat_scalar(duckdb_function_info info, duckdb_data_chunk 
         char *name = rducks_copy_duckdb_string(&names[i]);
         char *field = rducks_copy_duckdb_string(&fields[i]);
         char value[128];
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         value[0] = '\0';
         if (!name || !field) {
@@ -375,7 +375,7 @@ static void rducks_reset_udf_stats_scalar(duckdb_function_info info, duckdb_data
 
     for (idx_t i = 0; i < n; i++) {
         char *name;
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (validity && !duckdb_validity_row_is_valid(validity, i)) {
             duckdb_scalar_function_set_error(info, "Rducks UDF stat reset name must not be NULL");
@@ -409,7 +409,7 @@ static void rducks_set_execution_backend_scalar(duckdb_function_info info, duckd
     for (idx_t i = 0; i < n; i++) {
         char *payload = rducks_copy_duckdb_string(&backends[i]);
         const char *backend = NULL;
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (!payload) {
             duckdb_scalar_function_set_error(info, "out of memory setting Rducks execution backend");

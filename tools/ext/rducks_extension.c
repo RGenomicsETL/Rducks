@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,6 +54,7 @@
 
 DUCKDB_EXTENSION_EXTERN
 
+#define RDUCKS_ERROR_BUFFER_SIZE 1024U
 
 typedef enum rducks_type_id {
     RDUCKS_TYPE_INVALID = 0,

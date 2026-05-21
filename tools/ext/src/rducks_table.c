@@ -22,6 +22,7 @@ typedef struct rducks_r_table_bind {
     int cardinality_known;
     int cardinality_exact;
     idx_t cardinality;
+    atomic_uint refcount;
 } rducks_r_table_bind_t;
 
 typedef struct rducks_r_table_state {
@@ -63,8 +64,12 @@ static void rducks_r_table_close_stream_if_main(rducks_r_table_bind_t *bind) {
     rducks_close_table_stream_on_main(bind->result);
 }
 
-static void rducks_r_table_bind_destroy(void *ptr) {
-    rducks_r_table_bind_t *bind = (rducks_r_table_bind_t *)ptr;
+static void rducks_r_table_bind_retain(rducks_r_table_bind_t *bind) {
+    if (!bind) return;
+    atomic_fetch_add_explicit(&bind->refcount, 1U, memory_order_relaxed);
+}
+
+static void rducks_r_table_bind_free(rducks_r_table_bind_t *bind) {
     rducks_runtime_entry_t *runtime;
     int close_stream_on_release;
     if (!bind) return;
@@ -89,34 +94,47 @@ static void rducks_r_table_bind_destroy(void *ptr) {
     free(bind);
 }
 
+static void rducks_r_table_bind_release(rducks_r_table_bind_t *bind) {
+    if (!bind) return;
+    if (atomic_fetch_sub_explicit(&bind->refcount, 1U, memory_order_acq_rel) == 1U) {
+        rducks_r_table_bind_free(bind);
+    }
+}
+
+static void rducks_r_table_bind_destroy(void *ptr) {
+    rducks_r_table_bind_release((rducks_r_table_bind_t *)ptr);
+}
+
 static void rducks_r_table_state_destroy(void *ptr) {
     rducks_r_table_state_t *state = (rducks_r_table_state_t *)ptr;
     if (!state) return;
     if (state->current_chunk) duckdb_destroy_data_chunk(&state->current_chunk);
     if (state->sel) duckdb_destroy_selection_vector(state->sel);
     free(state->projected_columns);
+    rducks_r_table_bind_release(state->bind);
+    state->bind = NULL;
     free(state);
 }
 
 static void rducks_r_table_set_r_error(SEXP err_obj, const char *fallback, char *err, size_t err_cap) {
     int r_err = 0;
     if (!err || err_cap == 0) return;
-    snprintf(err, err_cap, "%s", fallback ? fallback : "Rducks table R function or marshal error");
+    rducks_format_error_message(err, err_cap, "%s", fallback ? fallback : "Rducks table R function or marshal error");
     const char *cur_error = R_curErrorBuf();
     if (cur_error && cur_error[0]) {
-        snprintf(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error", cur_error);
+        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error", cur_error);
         return;
     }
     if (!err_obj || err_obj == R_NilValue) return;
     if (TYPEOF(err_obj) == STRSXP && XLENGTH(err_obj) > 0 && STRING_ELT(err_obj, 0) != NA_STRING) {
-        snprintf(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
+        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
                  CHAR(STRING_ELT(err_obj, 0)));
         return;
     }
     SEXP call = PROTECT(Rf_lang2(Rf_install("conditionMessage"), err_obj));
     SEXP msg = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
     if (!r_err && TYPEOF(msg) == STRSXP && XLENGTH(msg) > 0 && STRING_ELT(msg, 0) != NA_STRING) {
-        snprintf(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
+        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
                  CHAR(STRING_ELT(msg, 0)));
     }
     UNPROTECT(2);
@@ -140,11 +158,6 @@ static SEXP rducks_r_table_date(double days) {
     Rf_setAttrib(out, R_ClassSymbol, cls);
     UNPROTECT(2);
     return out;
-}
-
-static SEXP rducks_r_table_int64_scalar(int64_t value) {
-    if (value >= (int64_t)INT32_MIN && value <= (int64_t)INT32_MAX) return Rf_ScalarInteger((int)value);
-    return Rf_ScalarReal((double)value);
 }
 
 static SEXP rducks_r_table_uint64_scalar(uint64_t value) {
@@ -171,7 +184,7 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
 static int rducks_r_table_duckdb_value_string_to_r(duckdb_value value, SEXP *out, char *err, size_t err_cap) {
     char *text = duckdb_get_varchar(value);
     if (!text) {
-        snprintf(err, err_cap, "failed to convert DuckDB table argument to character");
+        rducks_format_error_message(err, err_cap, "failed to convert DuckDB table argument to character");
         return 0;
     }
     *out = Rf_mkString(text);
@@ -184,7 +197,7 @@ static int rducks_r_table_duckdb_value_blob_to_r(duckdb_value value, SEXP *out, 
     SEXP raw;
     if (blob.size > (idx_t)R_XLEN_T_MAX) {
         if (blob.data) duckdb_free(blob.data);
-        snprintf(err, err_cap, "DuckDB table BLOB argument is too large for R");
+        rducks_format_error_message(err, err_cap, "DuckDB table BLOB argument is too large for R");
         return 0;
     }
     raw = PROTECT(Rf_allocVector(RAWSXP, (R_xlen_t)blob.size));
@@ -199,7 +212,7 @@ static int rducks_r_table_duckdb_value_list_to_r(duckdb_value value, SEXP *out, 
     idx_t n = duckdb_get_list_size(value);
     SEXP list;
     if (n > (idx_t)R_XLEN_T_MAX) {
-        snprintf(err, err_cap, "DuckDB table LIST argument is too large for R");
+        rducks_format_error_message(err, err_cap, "DuckDB table LIST argument is too large for R");
         return 0;
     }
     list = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
@@ -208,7 +221,7 @@ static int rducks_r_table_duckdb_value_list_to_r(duckdb_value value, SEXP *out, 
         SEXP child_r = R_NilValue;
         if (!child) {
             UNPROTECT(1);
-            snprintf(err, err_cap, "failed to read DuckDB table LIST argument child");
+            rducks_format_error_message(err, err_cap, "failed to read DuckDB table LIST argument child");
             return 0;
         }
         if (!rducks_r_table_duckdb_value_to_r(child, &child_r, err, err_cap)) {
@@ -230,7 +243,7 @@ static int rducks_r_table_duckdb_value_struct_to_r(duckdb_value value, duckdb_lo
     SEXP list;
     SEXP names;
     if (n > (idx_t)R_XLEN_T_MAX) {
-        snprintf(err, err_cap, "DuckDB table STRUCT argument is too large for R");
+        rducks_format_error_message(err, err_cap, "DuckDB table STRUCT argument is too large for R");
         return 0;
     }
     list = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
@@ -243,7 +256,7 @@ static int rducks_r_table_duckdb_value_struct_to_r(duckdb_value value, duckdb_lo
         if (name) duckdb_free(name);
         if (!child) {
             UNPROTECT(2);
-            snprintf(err, err_cap, "failed to read DuckDB table STRUCT argument child");
+            rducks_format_error_message(err, err_cap, "failed to read DuckDB table STRUCT argument child");
             return 0;
         }
         if (!rducks_r_table_duckdb_value_to_r(child, &child_r, err, err_cap)) {
@@ -267,7 +280,7 @@ static int rducks_r_table_duckdb_value_map_to_r(duckdb_value value, SEXP *out, c
     SEXP list;
     SEXP names;
     if (n > (idx_t)R_XLEN_T_MAX) {
-        snprintf(err, err_cap, "DuckDB table MAP argument is too large for R");
+        rducks_format_error_message(err, err_cap, "DuckDB table MAP argument is too large for R");
         return 0;
     }
     keys = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
@@ -281,7 +294,7 @@ static int rducks_r_table_duckdb_value_map_to_r(duckdb_value value, SEXP *out, c
             if (key) duckdb_destroy_value(&key);
             if (val) duckdb_destroy_value(&val);
             UNPROTECT(2);
-            snprintf(err, err_cap, "failed to read DuckDB table MAP argument entry");
+            rducks_format_error_message(err, err_cap, "failed to read DuckDB table MAP argument entry");
             return 0;
         }
         if (!rducks_r_table_duckdb_value_to_r(key, &key_r, err, err_cap)) {
@@ -318,7 +331,7 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
     duckdb_type type_id;
     int ok = 1;
     if (!value || !out) {
-        snprintf(err, err_cap, "invalid DuckDB table argument value");
+        rducks_format_error_message(err, err_cap, "invalid DuckDB table argument value");
         return 0;
     }
     if (duckdb_is_null_value(value)) {
@@ -327,7 +340,7 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
     }
     type = duckdb_get_value_type(value);
     if (!type) {
-        snprintf(err, err_cap, "failed to inspect DuckDB table argument type");
+        rducks_format_error_message(err, err_cap, "failed to inspect DuckDB table argument type");
         return 0;
     }
     type_id = duckdb_get_type_id(type);
@@ -442,7 +455,7 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
         SEXP names = PROTECT(Rf_allocVector(STRSXP, 3));
         SET_VECTOR_ELT(list, 0, Rf_ScalarInteger(interval.months));
         SET_VECTOR_ELT(list, 1, Rf_ScalarInteger(interval.days));
-        SET_VECTOR_ELT(list, 2, rducks_r_table_int64_scalar(interval.micros));
+        SET_VECTOR_ELT(list, 2, rducks_r_table_bigint_scalar(interval.micros));
         SET_STRING_ELT(names, 0, Rf_mkChar("months"));
         SET_STRING_ELT(names, 1, Rf_mkChar("days"));
         SET_STRING_ELT(names, 2, Rf_mkChar("micros"));
@@ -461,7 +474,7 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
             *out = Rf_mkString(text);
             duckdb_free(text);
         } else {
-            snprintf(err, err_cap, "unsupported DuckDB table argument type id %d", (int)type_id);
+            rducks_format_error_message(err, err_cap, "unsupported DuckDB table argument type id %d", (int)type_id);
             ok = 0;
         }
         break;
@@ -498,22 +511,22 @@ static rducks_type_desc_t *rducks_r_table_enum_desc(SEXP column, const char *nam
     R_xlen_t nlevels;
     rducks_type_desc_t *desc;
     if (TYPEOF(levels) != STRSXP || XLENGTH(levels) <= 0) {
-        snprintf(err, err_cap, "Rducks table factor column %s must have non-empty character levels", name);
+        rducks_format_error_message(err, err_cap, "Rducks table factor column %s must have non-empty character levels", name);
         return NULL;
     }
     nlevels = XLENGTH(levels);
     if ((uint64_t)nlevels > (uint64_t)SIZE_MAX) {
-        snprintf(err, err_cap, "Rducks table factor column %s has too many levels", name);
+        rducks_format_error_message(err, err_cap, "Rducks table factor column %s has too many levels", name);
         return NULL;
     }
     desc = rducks_type_desc_new(RDUCKS_KIND_ENUM);
     if (!desc) {
-        snprintf(err, err_cap, "out of memory inferring Rducks table factor column");
+        rducks_format_error_message(err, err_cap, "out of memory inferring Rducks table factor column");
         return NULL;
     }
     desc->field_names = (char **)rducks_calloc_array((size_t)nlevels, sizeof(*desc->field_names));
     if (!desc->field_names) {
-        snprintf(err, err_cap, "out of memory inferring Rducks table factor column");
+        rducks_format_error_message(err, err_cap, "out of memory inferring Rducks table factor column");
         rducks_type_desc_destroy(desc);
         return NULL;
     }
@@ -521,26 +534,26 @@ static rducks_type_desc_t *rducks_r_table_enum_desc(SEXP column, const char *nam
         SEXP level = STRING_ELT(levels, i);
         const char *text;
         if (level == NA_STRING) {
-            snprintf(err, err_cap, "Rducks table factor column %s has an NA level", name);
+            rducks_format_error_message(err, err_cap, "Rducks table factor column %s has an NA level", name);
             rducks_type_desc_destroy(desc);
             return NULL;
         }
         text = CHAR(level);
         if (!text[0]) {
-            snprintf(err, err_cap, "Rducks table factor column %s has an empty level", name);
+            rducks_format_error_message(err, err_cap, "Rducks table factor column %s has an empty level", name);
             rducks_type_desc_destroy(desc);
             return NULL;
         }
         desc->field_names[(size_t)i] = rducks_strdup(text);
         if (!desc->field_names[(size_t)i]) {
-            snprintf(err, err_cap, "out of memory inferring Rducks table factor column");
+            rducks_format_error_message(err, err_cap, "out of memory inferring Rducks table factor column");
             rducks_type_desc_destroy(desc);
             return NULL;
         }
         desc->field_count = (size_t)i + 1U;
     }
     if (!rducks_type_desc_build_field_hash(desc)) {
-        snprintf(err, err_cap, "out of memory indexing Rducks table factor column levels");
+        rducks_format_error_message(err, err_cap, "out of memory indexing Rducks table factor column levels");
         rducks_type_desc_destroy(desc);
         return NULL;
     }
@@ -567,7 +580,7 @@ static rducks_type_desc_t *rducks_r_table_infer_column_desc(SEXP column, const c
     default:
         break;
     }
-    snprintf(err, err_cap,
+    rducks_format_error_message(err, err_cap,
              "unsupported Rducks table column type for %s; supported inferred columns are logical, integer, numeric, character, factor, Date, POSIXct, and list-of-raw BLOB",
              name ? name : "<unnamed>");
     return NULL;
@@ -583,7 +596,7 @@ static int rducks_r_table_arrow_array_from_result(SEXP result, SEXP *array_xptr_
     SEXP fun = PROTECT(Rf_findFun(Rf_install("rducks_table_as_arrow_array"), ns));
     protect_count++;
     if (!Rf_isFunction(fun)) {
-        snprintf(err, err_cap, "Rducks table nanoarrow helper is unavailable");
+        rducks_format_error_message(err, err_cap, "Rducks table nanoarrow helper is unavailable");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -597,7 +610,7 @@ static int rducks_r_table_arrow_array_from_result(SEXP result, SEXP *array_xptr_
         return 0;
     }
     if (!Rf_inherits(array_xptr, "nanoarrow_array")) {
-        snprintf(err, err_cap, "Rducks table nanoarrow helper did not return a nanoarrow_array");
+        rducks_format_error_message(err, err_cap, "Rducks table nanoarrow helper did not return a nanoarrow_array");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -652,7 +665,7 @@ static int rducks_r_table_stream_cardinality(SEXP stream, int *known_out, idx_t 
         return 0;
     }
     if (TYPEOF(info) != VECSXP) {
-        snprintf(err, err_cap, "Rducks table stream cardinality helper returned invalid metadata");
+        rducks_format_error_message(err, err_cap, "Rducks table stream cardinality helper returned invalid metadata");
         R_ReleaseObject(info);
         return 0;
     }
@@ -665,7 +678,7 @@ static int rducks_r_table_stream_cardinality(SEXP stream, int *known_out, idx_t 
     }
     rows_d = Rf_asReal(rows);
     if (!isfinite(rows_d) || rows_d < 0 || rows_d != floor(rows_d) || rows_d > (double)((idx_t)-1)) {
-        snprintf(err, err_cap, "Rducks table stream cardinality is invalid or too large");
+        rducks_format_error_message(err, err_cap, "Rducks table stream cardinality is invalid or too large");
         R_ReleaseObject(info);
         return 0;
     }
@@ -681,7 +694,7 @@ static int rducks_r_table_import_arrow_result(rducks_r_table_bind_t *bind, SEXP 
     SEXP array_xptr = R_NilValue;
     rducks_arrow_import_result_t imported;
     if (!bind || !bind->meta || !bind->meta->runtime) {
-        snprintf(err, err_cap, "Rducks table runtime is unavailable for Arrow import");
+        rducks_format_error_message(err, err_cap, "Rducks table runtime is unavailable for Arrow import");
         return 0;
     }
     if (!rducks_r_table_arrow_array_from_result(result, &array_xptr, err, err_cap)) return 0;
@@ -725,7 +738,7 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
     }
 
     if (TYPEOF(schema_result) != VECSXP) {
-        snprintf(err, err_cap, is_streaming ?
+        rducks_format_error_message(err, err_cap, is_streaming ?
                  "Rducks table stream prototype must be a data frame or named list of columns" :
                  "Rducks table function must return a data frame or named list of columns");
         if (release_schema_result) R_ReleaseObject(schema_result);
@@ -734,27 +747,28 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
     names = Rf_getAttrib(schema_result, R_NamesSymbol);
     ncols_x = XLENGTH(schema_result);
     if (ncols_x <= 0) {
-        snprintf(err, err_cap, "Rducks table function must return at least one column");
+        rducks_format_error_message(err, err_cap, "Rducks table function must return at least one column");
         if (release_schema_result) R_ReleaseObject(schema_result);
         return 0;
     }
     if (TYPEOF(names) != STRSXP || XLENGTH(names) != ncols_x) {
-        snprintf(err, err_cap, "Rducks table function result columns must be named");
+        rducks_format_error_message(err, err_cap, "Rducks table function result columns must be named");
         if (release_schema_result) R_ReleaseObject(schema_result);
         return 0;
     }
     if ((uint64_t)ncols_x > (uint64_t)SIZE_MAX) {
-        snprintf(err, err_cap, "Rducks table function returned too many columns");
+        rducks_format_error_message(err, err_cap, "Rducks table function returned too many columns");
         if (release_schema_result) R_ReleaseObject(schema_result);
         return 0;
     }
 
     bind = (rducks_r_table_bind_t *)rducks_calloc_array(1, sizeof(*bind));
     if (!bind) {
-        snprintf(err, err_cap, "out of memory allocating Rducks table bind data");
+        rducks_format_error_message(err, err_cap, "out of memory allocating Rducks table bind data");
         if (release_schema_result) R_ReleaseObject(schema_result);
         return 0;
     }
+    atomic_init(&bind->refcount, 1U);
     bind->meta = meta;
     bind->result = R_NilValue;
     bind->column_count = (size_t)ncols_x;
@@ -766,7 +780,7 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
     bind->column_names = (char **)rducks_calloc_array(bind->column_count, sizeof(*bind->column_names));
     bind->column_descs = (rducks_type_desc_t **)rducks_calloc_array(bind->column_count, sizeof(*bind->column_descs));
     if (!bind->column_names || !bind->column_descs) {
-        snprintf(err, err_cap, "out of memory allocating Rducks table column metadata");
+        rducks_format_error_message(err, err_cap, "out of memory allocating Rducks table column metadata");
         rducks_r_table_bind_destroy(bind);
         if (release_schema_result) R_ReleaseObject(schema_result);
         return 0;
@@ -779,21 +793,21 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
         duckdb_logical_type type;
         const char *name_text;
         if (name_sexp == NA_STRING || !CHAR(name_sexp)[0]) {
-            snprintf(err, err_cap, "Rducks table function result columns must have non-empty names");
+            rducks_format_error_message(err, err_cap, "Rducks table function result columns must have non-empty names");
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
         }
         name_text = CHAR(name_sexp);
         if (rducks_r_table_name_seen(bind->column_names, col, name_text)) {
-            snprintf(err, err_cap, "Rducks table function result column names must be unique");
+            rducks_format_error_message(err, err_cap, "Rducks table function result column names must be unique");
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
         }
         bind->column_names[col] = rducks_strdup(name_text);
         if (!bind->column_names[col]) {
-            snprintf(err, err_cap, "out of memory copying Rducks table column name");
+            rducks_format_error_message(err, err_cap, "out of memory copying Rducks table column name");
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
@@ -801,7 +815,7 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
         column = VECTOR_ELT(schema_result, (R_xlen_t)col);
         len = XLENGTH(column);
         if (len < 0 || (uint64_t)len > (uint64_t)((idx_t)-1)) {
-            snprintf(err, err_cap, "Rducks table column %s has invalid length", bind->column_names[col]);
+            rducks_format_error_message(err, err_cap, "Rducks table column %s has invalid length", bind->column_names[col]);
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
@@ -810,21 +824,21 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
             rows = (idx_t)len;
             have_rows = 1;
         } else if (rows != (idx_t)len) {
-            snprintf(err, err_cap, "Rducks table result columns must have equal lengths");
+            rducks_format_error_message(err, err_cap, "Rducks table result columns must have equal lengths");
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
         }
         bind->column_descs[col] = rducks_r_table_infer_column_desc(column, bind->column_names[col], err, err_cap);
         if (!bind->column_descs[col]) {
-            if (!err[0]) snprintf(err, err_cap, "failed to infer Rducks table column type");
+            if (!err[0]) rducks_format_error_message(err, err_cap, "failed to infer Rducks table column type");
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
         }
         type = rducks_create_logical_type_for_desc(bind->column_descs[col]);
         if (!type) {
-            snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks table column %s", bind->column_names[col]);
+            rducks_format_error_message(err, err_cap, "failed to allocate DuckDB logical type for Rducks table column %s", bind->column_names[col]);
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
@@ -854,7 +868,7 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
 static void rducks_r_table_bind(duckdb_bind_info info) {
     rducks_r_table_meta_t *meta;
     int r_err = 0;
-    char err[512];
+    char err[RDUCKS_ERROR_BUFFER_SIZE];
     SEXP args;
     SEXP result;
     if (!info) return;
@@ -921,7 +935,7 @@ static int rducks_r_table_state_init_projection(rducks_r_table_state_t *state,
     idx_t sel_capacity;
 
     if (!state || !state->bind || !info) {
-        snprintf(err, err_cap, "invalid Rducks table projection state");
+        rducks_format_error_message(err, err_cap, "invalid Rducks table projection state");
         return 0;
     }
 
@@ -929,18 +943,18 @@ static int rducks_r_table_state_init_projection(rducks_r_table_state_t *state,
     state->projected_count = projected_count;
     if (projected_count > 0) {
         if ((uint64_t)projected_count > (uint64_t)(SIZE_MAX / sizeof(*state->projected_columns))) {
-            snprintf(err, err_cap, "Rducks table projection is too large");
+            rducks_format_error_message(err, err_cap, "Rducks table projection is too large");
             return 0;
         }
         state->projected_columns = (idx_t *)rducks_calloc_array((size_t)projected_count, sizeof(*state->projected_columns));
         if (!state->projected_columns) {
-            snprintf(err, err_cap, "out of memory allocating Rducks table projection state");
+            rducks_format_error_message(err, err_cap, "out of memory allocating Rducks table projection state");
             return 0;
         }
         for (idx_t i = 0; i < projected_count; i++) {
             idx_t col = duckdb_init_get_column_index(info, i);
             if (col >= (idx_t)state->bind->column_count) {
-                snprintf(err, err_cap, "Rducks table projection column is outside the table schema");
+                rducks_format_error_message(err, err_cap, "Rducks table projection column is outside the table schema");
                 return 0;
             }
             state->projected_columns[i] = col;
@@ -952,7 +966,7 @@ static int rducks_r_table_state_init_projection(rducks_r_table_state_t *state,
         if (sel_capacity < 1) sel_capacity = 1;
         state->sel = duckdb_create_selection_vector(sel_capacity);
         if (!state->sel) {
-            snprintf(err, err_cap, "failed to allocate DuckDB selection vector for Rducks table scan");
+            rducks_format_error_message(err, err_cap, "failed to allocate DuckDB selection vector for Rducks table scan");
             return 0;
         }
         state->sel_capacity = sel_capacity;
@@ -975,7 +989,7 @@ static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
     SEXP result;
     if (array_xptr_out) *array_xptr_out = R_NilValue;
     if (!state || !bind || !meta || bind->result == R_NilValue) {
-        snprintf(err, err_cap, "Rducks table stream state is missing");
+        rducks_format_error_message(err, err_cap, "Rducks table stream state is missing");
         return 0;
     }
     pkg = PROTECT(Rf_mkString("Rducks"));
@@ -1001,7 +1015,7 @@ static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
         return 1;
     }
     if (!Rf_inherits(result, "nanoarrow_array")) {
-        snprintf(err, err_cap, "Rducks table stream next_batch did not return a nanoarrow_array");
+        rducks_format_error_message(err, err_cap, "Rducks table stream next_batch did not return a nanoarrow_array");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -1017,7 +1031,7 @@ static int rducks_r_table_stream_load_next_chunk(rducks_r_table_state_t *state,
     rducks_arrow_import_result_t imported;
     rducks_r_table_bind_t *bind = state ? state->bind : NULL;
     if (!state || !bind || !bind->meta) {
-        snprintf(err, err_cap, "Rducks table stream state is missing");
+        rducks_format_error_message(err, err_cap, "Rducks table stream state is missing");
         return 0;
     }
     if (state->current_chunk) {
@@ -1043,7 +1057,7 @@ static int rducks_r_table_stream_load_next_chunk(rducks_r_table_state_t *state,
     R_ReleaseObject(array_xptr);
     if (imported.rows == 0) {
         duckdb_destroy_data_chunk(&imported.chunk);
-        snprintf(err, err_cap, "Rducks table stream next_batch returned an empty batch; return NULL to signal end-of-stream");
+        rducks_format_error_message(err, err_cap, "Rducks table stream next_batch returned an empty batch; return NULL to signal end-of-stream");
         return 0;
     }
     state->current_chunk = imported.chunk;
@@ -1095,7 +1109,7 @@ static int rducks_r_table_copy_projected_rows(duckdb_function_info info,
 
 static void rducks_r_table_init(duckdb_init_info info) {
     rducks_r_table_state_t *state;
-    char err[512];
+    char err[RDUCKS_ERROR_BUFFER_SIZE];
     if (!info) return;
     err[0] = '\0';
     state = (rducks_r_table_state_t *)rducks_calloc_array(1, sizeof(*state));
@@ -1110,6 +1124,7 @@ static void rducks_r_table_init(duckdb_init_info info) {
         duckdb_init_set_error(info, "Rducks table bind data is missing");
         return;
     }
+    rducks_r_table_bind_retain(state->bind);
     if (!rducks_r_table_state_init_projection(state, info, err, sizeof(err))) {
         rducks_r_table_state_destroy(state);
         duckdb_init_set_error(info, err[0] ? err : "failed to initialize Rducks table projection state");
@@ -1125,7 +1140,7 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
     rducks_r_table_meta_t *meta;
     idx_t remaining;
     idx_t count;
-    char err[512];
+    char err[RDUCKS_ERROR_BUFFER_SIZE];
     if (!info || !output) return;
     err[0] = '\0';
     state = (rducks_r_table_state_t *)duckdb_function_get_init_data(info);
@@ -1207,15 +1222,15 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) return false;
     rducks_preserved_release_drain_on_main(runtime);
     if (!runtime || !runtime->connection || !name || !name[0] || !Rf_isFunction(eval_ref)) {
-        snprintf(err, err_cap, "invalid Rducks table registration request");
+        rducks_format_error_message(err, err_cap, "invalid Rducks table registration request");
         return false;
     }
     if (parameter_count > 64U) {
-        snprintf(err, err_cap, "Rducks table parameter count must be at most 64");
+        rducks_format_error_message(err, err_cap, "Rducks table parameter count must be at most 64");
         return false;
     }
     if (chunk_size < 1U || chunk_size > RDUCKS_TABLE_DEFAULT_CHUNK_SIZE) {
-        snprintf(err, err_cap, "Rducks table chunk_size must be between 1 and %llu",
+        rducks_format_error_message(err, err_cap, "Rducks table chunk_size must be between 1 and %llu",
                  (unsigned long long)RDUCKS_TABLE_DEFAULT_CHUNK_SIZE);
         return false;
     }
@@ -1223,7 +1238,7 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     meta = (rducks_r_table_meta_t *)rducks_calloc_array(1, sizeof(*meta));
     fn = duckdb_create_table_function();
     if (!meta || !fn) {
-        snprintf(err, err_cap, "failed to allocate DuckDB table function for Rducks table UDF");
+        rducks_format_error_message(err, err_cap, "failed to allocate DuckDB table function for Rducks table UDF");
         if (fn) duckdb_destroy_table_function(&fn);
         free(meta);
         return false;
@@ -1231,7 +1246,7 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     meta->fun = R_NilValue;
     meta->name = rducks_strdup(name);
     if (!meta->name) {
-        snprintf(err, err_cap, "out of memory copying Rducks table function name");
+        rducks_format_error_message(err, err_cap, "out of memory copying Rducks table function name");
         duckdb_destroy_table_function(&fn);
         free(meta);
         return false;
@@ -1246,7 +1261,7 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     if (meta->parameter_count > 0) {
         duckdb_logical_type any_type = duckdb_create_logical_type(DUCKDB_TYPE_ANY);
         if (!any_type) {
-            snprintf(err, err_cap, "failed to allocate DuckDB ANY argument type for Rducks table function %s", name);
+            rducks_format_error_message(err, err_cap, "failed to allocate DuckDB ANY argument type for Rducks table function %s", name);
             duckdb_destroy_table_function(&fn);
             rducks_r_table_meta_destroy(meta);
             return false;
@@ -1262,7 +1277,7 @@ static bool rducks_register_r_table(rducks_runtime_entry_t *runtime, const char 
     rc = duckdb_register_table_function(runtime->connection, fn);
     duckdb_destroy_table_function(&fn);
     if (rc != DuckDBSuccess) {
-        snprintf(err, err_cap, "DuckDB failed to register Rducks table function %s", name);
+        rducks_format_error_message(err, err_cap, "DuckDB failed to register Rducks table function %s", name);
         rducks_r_table_meta_destroy(meta);
         return false;
     }
@@ -1287,7 +1302,7 @@ static void rducks_register_table_scalar(duckdb_function_info info, duckdb_data_
         char *name = rducks_copy_duckdb_string(&names[i]);
         char *evaluator_id = rducks_copy_duckdb_string(&evaluator_ids[i]);
         char *evaluator_token = rducks_copy_duckdb_string(&evaluator_tokens[i]);
-        char err[512];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         SEXP eval_ref = R_NilValue;
         err[0] = '\0';
         if (!name || !evaluator_id || !evaluator_token) {

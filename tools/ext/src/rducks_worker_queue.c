@@ -149,7 +149,7 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
     rducks_r_scalar_meta_t effective_meta_storage;
     rducks_r_scalar_meta_t *exec_meta = NULL;
     if (!request || !request->runtime || !request->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued scalar request is missing execution state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued scalar request is missing execution state");
         return 0;
     }
     memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
@@ -173,11 +173,11 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
 static int rducks_queue_execute_arrow_scalar_to_chunk_on_main(rducks_udf_request_t *request,
                                                               char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued Arrow/R owned-result request is missing execution state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued Arrow/R owned-result request is missing execution state");
         return 0;
     }
     if (!rducks_is_main_thread(request->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued Arrow/R owned-result request reached a non-main thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued Arrow/R owned-result request reached a non-main thread");
         return 0;
     }
     if (request->rc_result_payload) {
@@ -203,11 +203,11 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
     rducks_r_scalar_meta_t effective_meta_storage;
     rducks_r_scalar_meta_t *exec_meta = NULL;
     if (!request || !request->runtime || !request->meta) {
-        snprintf(err_msg, err_cap, "Rducks queued RC owned-result request is missing execution state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued RC owned-result request is missing execution state");
         return 0;
     }
     if (!rducks_is_main_thread(request->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued RC owned-result request reached a non-main thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued RC owned-result request reached a non-main thread");
         return 0;
     }
     memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
@@ -230,11 +230,11 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
 
 static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->execute) {
-        snprintf(err_msg, err_cap, "Rducks queued request is missing execution state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued request is missing execution state");
         return 0;
     }
     if (!rducks_is_main_thread(request->runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queued request reached a non-main thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued request reached a non-main thread");
         return 0;
     }
     return request->execute(request, err_msg, err_cap);
@@ -252,11 +252,11 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                                        const char *timeout_msg, char *err_msg, size_t err_cap) {
     unsigned int ticks = 0;
     if (!runtime || !runtime->queue_initialized) {
-        snprintf(err_msg, err_cap, "Rducks concurrent runtime queue is not initialized");
+        rducks_format_error_message(err_msg, err_cap, "Rducks concurrent runtime queue is not initialized");
         return 0;
     }
     if (!request || !request->execute) {
-        snprintf(err_msg, err_cap, "Rducks queued request is invalid");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued request is invalid");
         return 0;
     }
 
@@ -284,7 +284,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                 rducks_queue_signal_all(runtime);
                 rducks_queue_unlock(runtime);
                 rducks_udf_record_queue_pending_done(request->meta);
-                snprintf(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
+                rducks_format_error_message(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
                          "Rducks timed out waiting for the recorded main R thread to drain a queued request");
                 return 0;
             }
@@ -331,7 +331,7 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
     if (payload_out) *payload_out = NULL;
     if (chunk_out) *chunk_out = NULL;
     if (!meta) {
-        snprintf(err_msg, err_cap, "Rducks queued scalar metadata is missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued scalar metadata is missing");
         return 0;
     }
 
@@ -452,11 +452,11 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     rducks_queue_scalar_worker_state_t state;
     unsigned int spins = 0;
     if (!runtime || !rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks forced queue path must start on the recorded main R thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks forced queue path must start on the recorded main R thread");
         return 0;
     }
     if (!meta) {
-        snprintf(err_msg, err_cap, "Rducks forced queue path is missing scalar metadata");
+        rducks_format_error_message(err_msg, err_cap, "Rducks forced queue path is missing scalar metadata");
         return 0;
     }
     memset(&state, 0, sizeof(state));
@@ -469,13 +469,13 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
 #ifdef _WIN32
     HANDLE worker = CreateThread(NULL, 0, rducks_queue_scalar_worker, &state, 0, NULL);
     if (!worker) {
-        snprintf(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
+        rducks_format_error_message(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
         return 0;
     }
 #else
     pthread_t worker;
     if (pthread_create(&worker, NULL, rducks_queue_scalar_worker, &state) != 0) {
-        snprintf(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
+        rducks_format_error_message(err_msg, err_cap, "failed to create Rducks scalar queue worker thread");
         return 0;
     }
 #endif
@@ -491,7 +491,7 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     pthread_join(worker, NULL);
 #endif
     if (!atomic_load_explicit(&state.done, memory_order_acquire)) {
-        snprintf(err_msg, err_cap, "Rducks scalar queue worker did not finish");
+        rducks_format_error_message(err_msg, err_cap, "Rducks scalar queue worker did not finish");
         return 0;
     }
     if (!state.ok) {
@@ -586,11 +586,11 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
                                   uint64_t *out_value, char *err_msg, size_t err_cap) {
     uint64_t i;
     if (!runtime || !out_value) {
-        snprintf(err_msg, err_cap, "Rducks queue self-test runtime is not initialized");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test runtime is not initialized");
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "Rducks queue self-test must run on the recorded main R thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test must run on the recorded main R thread");
         return 0;
     }
     *out_value = 0;
@@ -605,13 +605,13 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #ifdef _WIN32
         HANDLE worker = CreateThread(NULL, 0, rducks_queue_self_test_worker, &state, 0, NULL);
         if (!worker) {
-            snprintf(err_msg, err_cap, "failed to create Rducks queue self-test worker thread");
+            rducks_format_error_message(err_msg, err_cap, "failed to create Rducks queue self-test worker thread");
             return 0;
         }
 #else
         pthread_t worker;
         if (pthread_create(&worker, NULL, rducks_queue_self_test_worker, &state) != 0) {
-            snprintf(err_msg, err_cap, "failed to create Rducks queue self-test worker thread");
+            rducks_format_error_message(err_msg, err_cap, "failed to create Rducks queue self-test worker thread");
             return 0;
         }
 #endif
@@ -627,7 +627,7 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         pthread_join(worker, NULL);
 #endif
         if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
-            snprintf(err_msg, err_cap, "Rducks queue self-test worker did not finish");
+            rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test worker did not finish");
             return 0;
         }
         if (!atomic_load_explicit(&state.worker_ok, memory_order_acquire)) {

@@ -334,41 +334,41 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
 
     if (snapshot_out) *snapshot_out = NULL;
     if (!meta || !input || !snapshot_out) {
-        snprintf(err_msg, err_cap, "Rducks RC input snapshot is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC input snapshot is missing state");
         return 0;
     }
     if (!rducks_rc_direct_input_snapshot_supported(meta)) {
-        snprintf(err_msg, err_cap, "Rducks RC input snapshot is not supported for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC input snapshot is not supported for this UDF signature");
         return 0;
     }
     if (meta->arity == 0U) return 1;
     if (meta->arity > (SIZE_MAX / sizeof(*types))) {
-        snprintf(err_msg, err_cap, "Rducks RC input snapshot arity is too large");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC input snapshot arity is too large");
         return 0;
     }
 
     n = duckdb_data_chunk_get_size(input);
     if (n > (idx_t)UINT32_MAX) {
-        snprintf(err_msg, err_cap, "Rducks RC input snapshot chunk is too large");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC input snapshot chunk is too large");
         return 0;
     }
 
     types = (duckdb_logical_type *)rducks_calloc_array(meta->arity, sizeof(*types));
     if (!types) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot types");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC input snapshot types");
         return 0;
     }
     for (size_t col = 0; col < meta->arity; col++) {
         types[col] = rducks_create_logical_type_for_desc(meta->args[col]);
         if (!types[col]) {
-            snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot logical type");
+            rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC input snapshot logical type");
             goto cleanup;
         }
     }
 
     snapshot = duckdb_create_data_chunk(types, (idx_t)meta->arity);
     if (!snapshot) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot data chunk");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC input snapshot data chunk");
         goto cleanup;
     }
     duckdb_data_chunk_set_size(snapshot, n);
@@ -377,12 +377,12 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
         sel_t *sel_data;
         sel = duckdb_create_selection_vector(n);
         if (!sel) {
-            snprintf(err_msg, err_cap, "failed to allocate Rducks RC input snapshot selection vector");
+            rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC input snapshot selection vector");
             goto cleanup;
         }
         sel_data = duckdb_selection_vector_get_data_ptr(sel);
         if (!sel_data) {
-            snprintf(err_msg, err_cap, "failed to access Rducks RC input snapshot selection vector");
+            rducks_format_error_message(err_msg, err_cap, "failed to access Rducks RC input snapshot selection vector");
             goto cleanup;
         }
         for (idx_t row = 0; row < n; row++) sel_data[row] = (sel_t)row;
@@ -391,7 +391,7 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
             duckdb_vector src = duckdb_data_chunk_get_vector(input, (idx_t)col);
             duckdb_vector dst = duckdb_data_chunk_get_vector(snapshot, (idx_t)col);
             if (!src || !dst) {
-                snprintf(err_msg, err_cap, "failed to access Rducks RC input snapshot vector");
+                rducks_format_error_message(err_msg, err_cap, "failed to access Rducks RC input snapshot vector");
                 goto cleanup;
             }
             duckdb_vector_copy_sel(src, dst, sel, n, 0, 0);
@@ -425,7 +425,7 @@ static int rducks_rc_direct_scalar_snapshot_input_views(rducks_r_scalar_meta_t *
                                                         rducks_rc_direct_scalar_frame_t *frame,
                                                         char *err_msg, size_t err_cap) {
     if (!meta || !frame) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar snapshot is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC scalar snapshot is missing state");
         return 0;
     }
     rducks_rc_direct_scalar_frame_init(frame);
@@ -434,7 +434,7 @@ static int rducks_rc_direct_scalar_snapshot_input_views(rducks_r_scalar_meta_t *
     if (meta->arity > 0U) {
         frame->inputs = (rducks_rc_direct_vector_view_t *)rducks_calloc_array(meta->arity, sizeof(*frame->inputs));
         if (!frame->inputs) {
-            snprintf(err_msg, err_cap, "failed to allocate Rducks RC scalar input views");
+            rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC scalar input views");
             return 0;
         }
         for (size_t col = 0; col < meta->arity; col++) {
@@ -613,7 +613,7 @@ static int rducks_rc_decimal_abs_to_unsigned_bytes(const char *digits, size_t le
     unsigned char *work = (unsigned char *)R_alloc(len, sizeof(unsigned char));
     for (size_t i = 0; i < len; i++) {
         if (digits[i] < '0' || digits[i] > '9') {
-            snprintf(err_msg, err_cap, "expected a decimal integer string");
+            rducks_format_error_message(err_msg, err_cap, "expected a decimal integer string");
             return 0;
         }
         work[i] = (unsigned char)(digits[i] - '0');
@@ -622,7 +622,7 @@ static int rducks_rc_decimal_abs_to_unsigned_bytes(const char *digits, size_t le
     int byte_pos = 0;
     while (ndigits > 0) {
         if (byte_pos >= width) {
-            snprintf(err_msg, err_cap, "integer value does not fit in DuckDB storage");
+            rducks_format_error_message(err_msg, err_cap, "integer value does not fit in DuckDB storage");
             return 0;
         }
         int carry = 0;
@@ -655,14 +655,14 @@ static int rducks_rc_decimal_string_to_le_bytes(const char *s, size_t len, int w
         len--;
     }
     if (neg && !signed_value) {
-        snprintf(err_msg, err_cap, "unsigned integer value is negative");
+        rducks_format_error_message(err_msg, err_cap, "unsigned integer value is negative");
         return 0;
     }
     if (!rducks_rc_decimal_abs_to_unsigned_bytes(s, len, width, out, err_msg, err_cap)) return 0;
     if (signed_value && width > 0) {
         if (!neg) {
             if (out[width - 1] >= 128U) {
-                snprintf(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
+                rducks_format_error_message(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
                 return 0;
             }
         } else {
@@ -676,7 +676,7 @@ static int rducks_rc_decimal_string_to_le_bytes(const char *s, size_t len, int w
                 }
             }
             if (overflow) {
-                snprintf(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
+                rducks_format_error_message(err_msg, err_cap, "signed integer value does not fit in DuckDB storage");
                 return 0;
             }
         }
@@ -697,7 +697,7 @@ static int rducks_rc_decimal_string_to_le_bytes(const char *s, size_t len, int w
 static int rducks_rc_decimal_string_sexp_to_le_bytes(SEXP value, int width, int signed_value, uint8_t *out,
                                                      char *err_msg, size_t err_cap) {
     if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1 || STRING_ELT(value, 0) == NA_STRING) {
-        snprintf(err_msg, err_cap, "expected a non-missing decimal integer string");
+        rducks_format_error_message(err_msg, err_cap, "expected a non-missing decimal integer string");
         return 0;
     }
     size_t len = 0;
@@ -726,12 +726,12 @@ static SEXP rducks_rc_make_integer_object_from_le_bytes(const uint8_t *bytes, si
 static int rducks_rc_decimal_storage_string_to_le_bytes(SEXP value, int width, int scale, uint8_t *out,
                                                         char *err_msg, size_t err_cap) {
     if (TYPEOF(value) != VECSXP || XLENGTH(value) < 1) {
-        snprintf(err_msg, err_cap, "Rducks RC DECIMAL output is not a rducks_decimal object");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC DECIMAL output is not a rducks_decimal object");
         return 0;
     }
     SEXP values = VECTOR_ELT(value, 0);
     if (TYPEOF(values) != STRSXP || XLENGTH(values) < 1 || STRING_ELT(values, 0) == NA_STRING) {
-        snprintf(err_msg, err_cap, "Rducks RC DECIMAL output is missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC DECIMAL output is missing");
         return 0;
     }
     size_t len = 0;
@@ -751,7 +751,7 @@ static int rducks_rc_decimal_storage_string_to_le_bytes(SEXP value, int width, i
     for (size_t i = 0; i < len; i++) {
         if (s[i] == '.') continue;
         if (s[i] < '0' || s[i] > '9') {
-            snprintf(err_msg, err_cap, "DECIMAL values must be fixed-point decimal strings");
+            rducks_format_error_message(err_msg, err_cap, "DECIMAL values must be fixed-point decimal strings");
             return 0;
         }
         digits[pos++] = s[i];
@@ -854,7 +854,7 @@ static SEXP rducks_rc_make_uuid_from_hugeint(duckdb_hugeint value) {
 
 static int rducks_rc_parse_uuid_string(SEXP value, duckdb_hugeint *out, char *err_msg, size_t err_cap) {
     if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1 || STRING_ELT(value, 0) == NA_STRING) {
-        snprintf(err_msg, err_cap, "Rducks RC UUID output is not a non-missing UUID string");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC UUID output is not a non-missing UUID string");
         return 0;
     }
     const char *s = CHAR(STRING_ELT(value, 0));
@@ -868,11 +868,11 @@ static int rducks_rc_parse_uuid_string(SEXP value, duckdb_hugeint *out, char *er
         else if (ch >= 'a' && ch <= 'f') v = 10 + ch - 'a';
         else if (ch >= 'A' && ch <= 'F') v = 10 + ch - 'A';
         else {
-            snprintf(err_msg, err_cap, "invalid UUID value");
+            rducks_format_error_message(err_msg, err_cap, "invalid UUID value");
             return 0;
         }
         if (count >= 32) {
-            snprintf(err_msg, err_cap, "invalid UUID value");
+            rducks_format_error_message(err_msg, err_cap, "invalid UUID value");
             return 0;
         }
         if (count < 16) upper = (upper << 4) | (uint64_t)v;
@@ -880,7 +880,7 @@ static int rducks_rc_parse_uuid_string(SEXP value, duckdb_hugeint *out, char *er
         count++;
     }
     if (count != 32) {
-        snprintf(err_msg, err_cap, "invalid UUID value");
+        rducks_format_error_message(err_msg, err_cap, "invalid UUID value");
         return 0;
     }
     upper ^= (UINT64_C(1) << 63);
@@ -911,7 +911,7 @@ static SEXP rducks_rc_make_interval_object(duckdb_interval value) {
 
 static int rducks_rc_interval_from_object(SEXP value, duckdb_interval *out, char *err_msg, size_t err_cap) {
     if (TYPEOF(value) != VECSXP || XLENGTH(value) < 3) {
-        snprintf(err_msg, err_cap, "Rducks RC INTERVAL output is not a rducks_interval object");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC INTERVAL output is not a rducks_interval object");
         return 0;
     }
     SEXP months = VECTOR_ELT(value, 0);
@@ -920,7 +920,7 @@ static int rducks_rc_interval_from_object(SEXP value, duckdb_interval *out, char
     out->months = (int32_t)Rf_asInteger(months);
     out->days = (int32_t)Rf_asInteger(days);
     if (out->months == NA_INTEGER || out->days == NA_INTEGER) {
-        snprintf(err_msg, err_cap, "Rducks RC INTERVAL output is missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC INTERVAL output is missing");
         return 0;
     }
     uint8_t bytes[8];
@@ -965,13 +965,13 @@ static SEXP rducks_rc_make_bits_from_payload(const char *payload, uint32_t len) 
 
 static int rducks_rc_payload_from_bits(SEXP value, char **payload_out, idx_t *len_out, char *err_msg, size_t err_cap) {
     if (TYPEOF(value) != VECSXP || XLENGTH(value) < 2) {
-        snprintf(err_msg, err_cap, "Rducks RC BIT output is not a rducks_bits object");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC BIT output is not a rducks_bits object");
         return 0;
     }
     SEXP data = VECTOR_ELT(value, 0);
     int bit_length = Rf_asInteger(VECTOR_ELT(value, 1));
     if (TYPEOF(data) != RAWSXP || bit_length <= 0 || (R_xlen_t)bit_length > XLENGTH(data) * 8) {
-        snprintf(err_msg, err_cap, "Rducks RC BIT output has invalid storage");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC BIT output has invalid storage");
         return 0;
     }
     int padding = (8 - (bit_length % 8)) % 8;
@@ -1066,7 +1066,7 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
     SEXP ch = R_NilValue;
     const char *value_text;
     if (!desc || desc->kind != RDUCKS_KIND_ENUM || !index_out) {
-        snprintf(err_msg, err_cap, "Rducks enum metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks enum metadata missing");
         return 0;
     }
     if (TYPEOF(value) == STRSXP && XLENGTH(value) > 0) {
@@ -1075,7 +1075,7 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
         int idx = INTEGER(value)[0];
         SEXP levels = Rf_getAttrib(value, R_LevelsSymbol);
         if (idx == NA_INTEGER || TYPEOF(levels) != STRSXP || idx < 1 || idx > XLENGTH(levels)) {
-            snprintf(err_msg, err_cap, "Rducks enum return value is invalid");
+            rducks_format_error_message(err_msg, err_cap, "Rducks enum return value is invalid");
             return 0;
         }
         if (XLENGTH(levels) == (R_xlen_t)desc->field_count) {
@@ -1095,11 +1095,11 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
         }
         ch = STRING_ELT(levels, idx - 1);
     } else {
-        snprintf(err_msg, err_cap, "Rducks enum return value must be character or factor");
+        rducks_format_error_message(err_msg, err_cap, "Rducks enum return value must be character or factor");
         return 0;
     }
     if (ch == NA_STRING) {
-        snprintf(err_msg, err_cap, "Rducks enum return value is NA");
+        rducks_format_error_message(err_msg, err_cap, "Rducks enum return value is NA");
         return 0;
     }
     value_text = CHAR(ch);
@@ -1110,7 +1110,7 @@ static int rducks_rc_enum_value_index(const rducks_type_desc_t *desc, SEXP value
             return 1;
         }
     }
-    snprintf(err_msg, err_cap, "Rducks enum return value is outside declared levels");
+    rducks_format_error_message(err_msg, err_cap, "Rducks enum return value is outside declared levels");
     return 0;
 }
 
@@ -1890,7 +1890,7 @@ static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckd
                     uint32_t len = duckdb_string_t_length(data[row]);
                     const char *ptr = duckdb_string_t_data(&data[row]);
                     if (len > (uint32_t)INT_MAX) {
-                        snprintf(err_msg, err_cap, "Rducks VARCHAR value is too large to materialize in R");
+                        rducks_format_error_message(err_msg, err_cap, "Rducks VARCHAR value is too large to materialize in R");
                         UNPROTECT(1);
                         return R_NilValue;
                     }
@@ -2026,7 +2026,7 @@ static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckd
         UNPROTECT(1);
     }
     if (!rducks_rc_direct_type_supported(desc)) {
-        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
     }
     UNPROTECT(1);
     return out;
@@ -2044,7 +2044,7 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
     SEXP names;
 
     if (n > (idx_t)R_XLEN_T_MAX) {
-        snprintf(err_msg, err_cap, "Rducks chunk is too large to materialize in R");
+        rducks_format_error_message(err_msg, err_cap, "Rducks chunk is too large to materialize in R");
         return R_NilValue;
     }
 
@@ -2104,7 +2104,7 @@ static int rducks_rc_write_direct_results(rducks_r_scalar_meta_t *meta, SEXP res
                                           duckdb_vector output, idx_t n,
                                           char *err_msg, size_t err_cap) {
     if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
         return 0;
     }
     rducks_rc_direct_vector_view_t output_view;
@@ -2176,7 +2176,7 @@ static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
         idx_t base = 0;
         if (!child) return 1;
         if (!rducks_rc_idx_mul(row, desc->array_size, &base)) {
-            snprintf(err_msg, err_cap, "Rducks ARRAY null child index overflow");
+            rducks_format_error_message(err_msg, err_cap, "Rducks ARRAY null child index overflow");
             return 0;
         }
         rducks_rc_direct_view_init(&child_view, child);
@@ -2184,7 +2184,7 @@ static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
             idx_t child_row = 0;
             if (!rducks_rc_idx_add(base, j, &child_row) ||
                 !rducks_rc_write_null_direct_output(desc->child, &child_view, child_row, err_msg, err_cap)) {
-                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB ARRAY null child value");
+                if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB ARRAY null child value");
                 return 0;
             }
         }
@@ -2197,7 +2197,7 @@ static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
             if (!child) continue;
             rducks_rc_direct_view_init(&child_view, child);
             if (!rducks_rc_write_null_direct_output(desc->field_types[i], &child_view, row, err_msg, err_cap)) {
-                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB STRUCT null child value");
+                if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB STRUCT null child value");
                 return 0;
             }
         }
@@ -2219,7 +2219,7 @@ static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
             if (!member_vector) continue;
             rducks_rc_direct_view_init(&member_view, member_vector);
             if (!rducks_rc_write_null_direct_output(desc->field_types[i], &member_view, row, err_msg, err_cap)) {
-                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION null member value");
+                if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB UNION null member value");
                 return 0;
             }
         }
@@ -2242,11 +2242,11 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         duckdb_vector child;
         rducks_rc_direct_vector_view_t child_view;
         if (len < 0 || !rducks_rc_idx_add(offset, (idx_t)len, &required)) {
-            snprintf(err_msg, err_cap, "Rducks LIST return length is invalid");
+            rducks_format_error_message(err_msg, err_cap, "Rducks LIST return length is invalid");
             return 0;
         }
         if (duckdb_list_vector_reserve(output->vector, required) == DuckDBError) {
-            snprintf(err_msg, err_cap, "failed to reserve DuckDB LIST child storage");
+            rducks_format_error_message(err_msg, err_cap, "failed to reserve DuckDB LIST child storage");
             return 0;
         }
         child = duckdb_list_vector_get_child(output->vector);
@@ -2256,13 +2256,13 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             SEXP element = PROTECT(rducks_rc_vector_value_at(value, (idx_t)j, &ok));
             if (!ok || !rducks_rc_write_direct_output(desc->child, &child_view, offset + (idx_t)j, element, err_msg, err_cap)) {
                 UNPROTECT(1);
-                if (ok && !err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB LIST child value");
+                if (ok && !err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB LIST child value");
                 return 0;
             }
             UNPROTECT(1);
         }
         if (duckdb_list_vector_set_size(output->vector, required) == DuckDBError) {
-            snprintf(err_msg, err_cap, "failed to commit DuckDB LIST child storage");
+            rducks_format_error_message(err_msg, err_cap, "failed to commit DuckDB LIST child storage");
             return 0;
         }
         entries[row].offset = offset;
@@ -2275,11 +2275,11 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         rducks_rc_direct_vector_view_t child_view;
         idx_t base = 0;
         if (len != (R_xlen_t)desc->array_size) {
-            snprintf(err_msg, err_cap, "Rducks ARRAY return value must have length %llu", (unsigned long long)desc->array_size);
+            rducks_format_error_message(err_msg, err_cap, "Rducks ARRAY return value must have length %llu", (unsigned long long)desc->array_size);
             return 0;
         }
         if (!rducks_rc_idx_mul(row, desc->array_size, &base)) {
-            snprintf(err_msg, err_cap, "Rducks ARRAY child index overflow");
+            rducks_format_error_message(err_msg, err_cap, "Rducks ARRAY child index overflow");
             return 0;
         }
         child = duckdb_array_vector_get_child(output->vector);
@@ -2291,7 +2291,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             if (!rducks_rc_idx_add(base, (idx_t)j, &child_row) ||
                 !ok || !rducks_rc_write_direct_output(desc->child, &child_view, child_row, element, err_msg, err_cap)) {
                 UNPROTECT(1);
-                if (ok && !err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB ARRAY child value");
+                if (ok && !err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB ARRAY child value");
                 return 0;
             }
             UNPROTECT(1);
@@ -2300,7 +2300,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     }
     if (desc->kind == RDUCKS_KIND_STRUCT) {
         if (TYPEOF(value) != VECSXP) {
-            snprintf(err_msg, err_cap, "Rducks STRUCT return value must be a list");
+            rducks_format_error_message(err_msg, err_cap, "Rducks STRUCT return value must be a list");
             return 0;
         }
         for (size_t i = 0; i < desc->field_count; i++) {
@@ -2312,10 +2312,10 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             if (!ok || !rducks_rc_write_direct_output(desc->field_types[i], &child_view, row, field, err_msg, err_cap)) {
                 UNPROTECT(1);
                 if (!ok) {
-                    snprintf(err_msg, err_cap, "Rducks STRUCT return value is missing field %s",
+                    rducks_format_error_message(err_msg, err_cap, "Rducks STRUCT return value is missing field %s",
                              desc->field_names[i] ? desc->field_names[i] : "<unnamed>");
                 } else if (!err_msg[0]) {
-                    snprintf(err_msg, err_cap, "failed to write DuckDB STRUCT field %s",
+                    rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB STRUCT field %s",
                              desc->field_names[i] ? desc->field_names[i] : "<unnamed>");
                 }
                 return 0;
@@ -2341,28 +2341,28 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         rducks_rc_direct_vector_view_t value_view;
         if (!keys_ok || !values_ok) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "Rducks MAP return value must have keys and values fields");
+            rducks_format_error_message(err_msg, err_cap, "Rducks MAP return value must have keys and values fields");
             return 0;
         }
         len = XLENGTH(keys);
         if (len < 0 || XLENGTH(values) != len || !rducks_rc_idx_add(offset, (idx_t)len, &required)) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "Rducks MAP keys and values must have equal valid length");
+            rducks_format_error_message(err_msg, err_cap, "Rducks MAP keys and values must have equal valid length");
             return 0;
         }
         if (!rducks_rc_any_duplicated(keys, &duplicated)) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "failed to validate Rducks MAP keys");
+            rducks_format_error_message(err_msg, err_cap, "failed to validate Rducks MAP keys");
             return 0;
         }
         if (duplicated) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "Rducks MAP keys must be unique");
+            rducks_format_error_message(err_msg, err_cap, "Rducks MAP keys must be unique");
             return 0;
         }
         if (duckdb_list_vector_reserve(output->vector, required) == DuckDBError) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "failed to reserve DuckDB MAP child storage");
+            rducks_format_error_message(err_msg, err_cap, "failed to reserve DuckDB MAP child storage");
             return 0;
         }
         entry_vector = duckdb_list_vector_get_child(output->vector);
@@ -2378,21 +2378,21 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             idx_t child_row = 0;
             if (key_ok && rducks_rc_value_is_null_for_output(desc->key, key)) {
                 UNPROTECT(4);
-                snprintf(err_msg, err_cap, "Rducks MAP keys must not be NULL");
+                rducks_format_error_message(err_msg, err_cap, "Rducks MAP keys must not be NULL");
                 return 0;
             }
             if (!rducks_rc_idx_add(offset, (idx_t)j, &child_row) || !key_ok || !value_ok ||
                 !rducks_rc_write_direct_output(desc->key, &key_view, child_row, key, err_msg, err_cap) ||
                 !rducks_rc_write_direct_output(desc->value, &value_view, child_row, item, err_msg, err_cap)) {
                 UNPROTECT(4);
-                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB MAP entry");
+                if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB MAP entry");
                 return 0;
             }
             UNPROTECT(2);
         }
         if (duckdb_list_vector_set_size(output->vector, required) == DuckDBError) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "failed to commit DuckDB MAP child storage");
+            rducks_format_error_message(err_msg, err_cap, "failed to commit DuckDB MAP child storage");
             return 0;
         }
         entries[row].offset = offset;
@@ -2407,7 +2407,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         SEXP payload = PROTECT(rducks_rc_named_field(value, "value", &value_ok));
         if (!tag_ok || !value_ok || TYPEOF(tag_value) != STRSXP || XLENGTH(tag_value) < 1 || STRING_ELT(tag_value, 0) == NA_STRING) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "Rducks UNION return value must have tag and value fields");
+            rducks_format_error_message(err_msg, err_cap, "Rducks UNION return value must have tag and value fields");
             return 0;
         }
         const char *tag_text = CHAR(STRING_ELT(tag_value, 0));
@@ -2415,7 +2415,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         (void)rducks_type_desc_find_field_index(desc, tag_text, &tag_index);
         if (tag_index >= desc->field_count || tag_index > 255U) {
             UNPROTECT(2);
-            snprintf(err_msg, err_cap, "Rducks UNION tag is outside declared members");
+            rducks_format_error_message(err_msg, err_cap, "Rducks UNION tag is outside declared members");
             return 0;
         }
         /* See the UNION input path: DuckDB stores UNION vectors as STRUCT
@@ -2429,7 +2429,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         rducks_rc_direct_view_init(&selected_view, selected_vector);
         if (!rducks_rc_write_direct_output(desc->field_types[tag_index], &selected_view, row, payload, err_msg, err_cap)) {
             UNPROTECT(2);
-            if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION member");
+            if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB UNION member");
             return 0;
         }
         for (size_t i = 0; i < desc->field_count; i++) {
@@ -2439,7 +2439,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             rducks_rc_direct_view_init(&member_view, member_vector);
             if (!rducks_rc_write_null_direct_output(desc->field_types[i], &member_view, row, err_msg, err_cap)) {
                 UNPROTECT(2);
-                if (!err_msg[0]) snprintf(err_msg, err_cap, "failed to write DuckDB UNION inactive member");
+                if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "failed to write DuckDB UNION inactive member");
                 return 0;
             }
         }
@@ -2454,7 +2454,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
             return 0;
         }
         if (!rducks_rc_enum_index_to_data(desc, output->data, row, index)) {
-            snprintf(err_msg, err_cap, "Rducks enum storage type is unsupported");
+            rducks_format_error_message(err_msg, err_cap, "Rducks enum storage type is unsupported");
             return 0;
         }
         return 1;
@@ -2531,7 +2531,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     case RDUCKS_TYPE_VARCHAR: {
         if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1) {
-            snprintf(err_msg, err_cap, "Rducks RC VARCHAR output is not a character scalar");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC VARCHAR output is not a character scalar");
             return 0;
         }
         SEXP ch = STRING_ELT(value, 0);
@@ -2542,7 +2542,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
     case RDUCKS_TYPE_BLOB:
     case RDUCKS_TYPE_GEOMETRY:
         if (TYPEOF(value) != RAWSXP) {
-            snprintf(err_msg, err_cap, "Rducks RC binary output is not a raw vector");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC binary output is not a raw vector");
             return 0;
         }
         duckdb_vector_assign_string_element_len(output->vector, row, (const char *)RAW(value), (idx_t)XLENGTH(value));
@@ -2588,7 +2588,7 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     }
     default:
-        snprintf(err_msg, err_cap, "Rducks RC direct output unsupported type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC direct output unsupported type");
         return 0;
     }
 }
@@ -2719,12 +2719,12 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     size_t offset_bytes;
     int variable;
     if (!runtime || !meta || !rducks_rc_owned_result_type_supported(meta->return_desc)) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return NULL;
     }
     payload = (rducks_rc_owned_result_payload_t *)rducks_calloc_array(1, sizeof(*payload));
     if (!payload) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result payload");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result payload");
         return NULL;
     }
     payload->desc = meta->return_desc;
@@ -2749,7 +2749,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     if (!payload->array.buffers || !payload->array.children || !child) {
         free(child);
         rducks_rc_owned_result_payload_free(payload);
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result array");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result array");
         return NULL;
     }
     payload->array.buffers[0] = NULL;
@@ -2766,21 +2766,21 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     child->buffers = (const void **)rducks_calloc_array((size_t)child->n_buffers, sizeof(*child->buffers));
     if (!child->buffers) {
         rducks_rc_owned_result_payload_free(payload);
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result buffers");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result buffers");
         return NULL;
     }
 
     validity_bytes = rducks_rc_owned_result_bit_bytes(n);
     if (n > 0 && payload->element_size > 0U && (uint64_t)n > SIZE_MAX / payload->element_size) {
         rducks_rc_owned_result_payload_free(payload);
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload is too large");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload is too large");
         return NULL;
     }
     if (validity_bytes > 0U) child->buffers[0] = rducks_calloc_array(validity_bytes, 1U);
     if (variable) {
         if ((uint64_t)n > (uint64_t)INT32_MAX - 1U || (uint64_t)n + 1U > SIZE_MAX / sizeof(int32_t)) {
             rducks_rc_owned_result_payload_free(payload);
-            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
             return NULL;
         }
         offset_bytes = ((size_t)n + 1U) * sizeof(int32_t);
@@ -2788,7 +2788,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         child->buffers[2] = NULL;
         if (offset_bytes > 0U && !child->buffers[1]) {
             rducks_rc_owned_result_payload_free(payload);
-            snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result offsets");
+            rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result offsets");
             return NULL;
         }
     } else {
@@ -2798,13 +2798,13 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
         if (value_bytes > 0U) child->buffers[1] = rducks_calloc_array(value_bytes, 1U);
         if (value_bytes > 0U && !child->buffers[1]) {
             rducks_rc_owned_result_payload_free(payload);
-            snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
+            rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result data buffers");
             return NULL;
         }
     }
     if (validity_bytes > 0U && !child->buffers[0]) {
         rducks_rc_owned_result_payload_free(payload);
-        snprintf(err_msg, err_cap, "failed to allocate Rducks owned Arrow result validity buffer");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks owned Arrow result validity buffer");
         return NULL;
     }
     return payload;
@@ -2818,20 +2818,20 @@ static int rducks_rc_owned_result_payload_append_bytes(rducks_rc_owned_result_pa
     size_t new_size;
     size_t new_capacity;
     if (!payload || !payload->array.children || !payload->array.children[0]) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing state");
         return 0;
     }
     if (len == 0U) return 1;
     if (!bytes) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload has missing bytes");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload has missing bytes");
         return 0;
     }
     if (payload->variable_size > (size_t)INT32_MAX || len > (size_t)INT32_MAX - payload->variable_size) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload exceeds 32-bit Arrow offsets");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload exceeds 32-bit Arrow offsets");
         return 0;
     }
     if (payload->variable_size > SIZE_MAX - len) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload is too large");
         return 0;
     }
     new_size = payload->variable_size + len;
@@ -2847,7 +2847,7 @@ static int rducks_rc_owned_result_payload_append_bytes(rducks_rc_owned_result_pa
         child = payload->array.children[0];
         new_data = rducks_realloc_array((void *)child->buffers[2], new_capacity, 1U);
         if (!new_data) {
-            snprintf(err_msg, err_cap, "failed to grow Rducks owned Arrow variable result buffer");
+            rducks_format_error_message(err_msg, err_cap, "failed to grow Rducks owned Arrow variable result buffer");
             return 0;
         }
         child->buffers[2] = new_data;
@@ -2865,17 +2865,17 @@ static int rducks_rc_owned_result_payload_set_variable(rducks_rc_owned_result_pa
     struct ArrowArray *child;
     int32_t *offsets;
     if (!payload || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload write is out of range");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload write is out of range");
         return 0;
     }
     child = payload->array.children[0];
     if (child->n_buffers != 3 || !child->buffers || !child->buffers[1]) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
         return 0;
     }
     offsets = (int32_t *)child->buffers[1];
     if (offsets[row] != (int32_t)payload->variable_size) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow variable result rows were filled out of order");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result rows were filled out of order");
         return 0;
     }
     if (!rducks_rc_owned_result_payload_append_bytes(payload, bytes, len, err_msg, err_cap)) return 0;
@@ -2888,13 +2888,13 @@ static int rducks_rc_owned_result_payload_set_null(rducks_rc_owned_result_payloa
     struct ArrowArray *child;
     int32_t *offsets;
     if (!payload || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
         return 0;
     }
     child = payload->array.children[0];
     if (child->n_buffers == 3) {
         if (!child->buffers || !child->buffers[1]) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result payload is missing offsets");
             return 0;
         }
         offsets = (int32_t *)child->buffers[1];
@@ -2911,7 +2911,7 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
     uint8_t *validity;
     uint8_t *data;
     if (!payload || !payload->desc || !payload->array.children || !payload->array.children[0] || row >= payload->n) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload write is out of range");
         return 0;
     }
     desc = payload->desc;
@@ -2926,7 +2926,7 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         uint32_t index = 0;
         if (!rducks_rc_enum_value_index(desc, value, &index, err_msg, err_cap)) return 0;
         if (!rducks_rc_enum_index_to_data(desc, data, row, index)) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow enum result storage type is unsupported");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow enum result storage type is unsupported");
             return 0;
         }
         return 1;
@@ -2960,13 +2960,13 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         return 1;
     }
     if (desc->kind != RDUCKS_KIND_SCALAR) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return 0;
     }
     switch (desc->scalar) {
     case RDUCKS_TYPE_VARCHAR: {
         if (TYPEOF(value) != STRSXP || XLENGTH(value) < 1) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow VARCHAR result is not a character scalar");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow VARCHAR result is not a character scalar");
             return 0;
         }
         SEXP ch = STRING_ELT(value, 0);
@@ -2976,7 +2976,7 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
     case RDUCKS_TYPE_BLOB:
     case RDUCKS_TYPE_GEOMETRY:
         if (TYPEOF(value) != RAWSXP) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow binary result is not a raw vector");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow binary result is not a raw vector");
             return 0;
         }
         return rducks_rc_owned_result_payload_set_variable(payload, row, RAW(value), (size_t)XLENGTH(value),
@@ -3065,7 +3065,7 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         return 1;
     }
     default:
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result payload does not support this return type");
         return 0;
     }
 }
@@ -3079,12 +3079,12 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
     const uint8_t *data;
     if (!payload || !payload->desc || !output || !payload->array.release ||
         !payload->array.children || !payload->array.children[0]) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result writeback is missing state");
         return 0;
     }
     child = payload->array.children[0];
     if (!child->buffers || payload->n != (idx_t)child->length) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
         return 0;
     }
     validity = (const uint8_t *)child->buffers[0];
@@ -3093,7 +3093,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
         const uint8_t *var_data = (const uint8_t *)child->buffers[2];
         const char empty[] = "";
         if (!offsets) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow variable result writeback is missing offsets");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result writeback is missing offsets");
             return 0;
         }
         rducks_rc_direct_view_init(&output_view, output);
@@ -3105,7 +3105,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
             int32_t start = offsets[row];
             int32_t end = offsets[row + 1U];
             if (start < 0 || end < start || (size_t)end > payload->variable_size) {
-                snprintf(err_msg, err_cap, "Rducks owned Arrow variable result writeback has invalid offsets");
+                rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow variable result writeback has invalid offsets");
                 return 0;
             }
             rducks_rc_output_set_valid_if_needed(&output_view, row);
@@ -3116,7 +3116,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
     }
     data = (const uint8_t *)child->buffers[1];
     if (payload->n > 0 && !data) {
-        snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result writeback has invalid buffers");
         return 0;
     }
 
@@ -3139,7 +3139,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
                 ((uint32_t *)output_view.data)[row] = ((const uint32_t *)data)[row];
                 break;
             default:
-                snprintf(err_msg, err_cap, "Rducks owned Arrow enum result writeback has unsupported storage");
+                rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow enum result writeback has unsupported storage");
                 return 0;
             }
             continue;
@@ -3159,13 +3159,13 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
                 ((duckdb_hugeint *)output_view.data)[row] = ((const duckdb_hugeint *)data)[row];
                 break;
             default:
-                snprintf(err_msg, err_cap, "Rducks owned Arrow decimal result writeback has unsupported storage");
+                rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow decimal result writeback has unsupported storage");
                 return 0;
             }
             continue;
         }
         if (payload->desc->kind != RDUCKS_KIND_SCALAR) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
             return 0;
         }
         switch (payload->desc->scalar) {
@@ -3224,7 +3224,7 @@ static int rducks_rc_owned_result_payload_writeback(rducks_rc_owned_result_paylo
             ((duckdb_interval *)output_view.data)[row] = ((const duckdb_interval *)data)[row];
             break;
         default:
-            snprintf(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
+            rducks_format_error_message(err_msg, err_cap, "Rducks owned Arrow result writeback does not support this return type");
             return 0;
         }
     }
@@ -3236,7 +3236,7 @@ static int rducks_rc_owned_result_payload_set_results(rducks_rc_owned_result_pay
                                                       SEXP results, idx_t n,
                                                       char *err_msg, size_t err_cap) {
     if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
-        snprintf(err_msg, err_cap, "Rducks RC owned-result vectorized result is not a row list");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned-result vectorized result is not a row list");
         return 0;
     }
     for (idx_t row = 0; row < n; row++) {
@@ -3261,7 +3261,7 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_runt
     rducks_rc_owned_result_payload_t *payload;
 
     if (!payload_out) {
-        snprintf(err_msg, err_cap, "Rducks owned result payload output is missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks owned result payload output is missing");
         return 0;
     }
     *payload_out = NULL;
@@ -3309,7 +3309,7 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_runt
             }
             rducks_rc_owned_result_payload_free(payload);
             *payload_out = NULL;
-            snprintf(err_msg, err_cap, "Rducks RC R function error");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC R function error");
             return 0;
         }
 
@@ -3319,7 +3319,7 @@ static int rducks_rc_direct_scalar_eval_to_owned_payload_on_r_thread(rducks_runt
             UNPROTECT(3);
             rducks_rc_owned_result_payload_free(payload);
             *payload_out = NULL;
-            snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC return validation or marshal error");
             return 0;
         }
         if (!rducks_rc_owned_result_payload_set_value(payload, row, checked, err_msg, err_cap)) {
@@ -3428,7 +3428,7 @@ static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta
                 if (!rducks_rc_write_null_direct_output(meta->return_desc, output_view, row, err_msg, err_cap)) return 0;
                 continue;
             }
-            snprintf(err_msg, err_cap, "Rducks RC R function error");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC R function error");
             return 0;
         }
 
@@ -3436,7 +3436,7 @@ static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta
         SEXP checked = PROTECT(rducks_rc_check_return(check_return_fun, return_type, value, &r_err));
         if (r_err) {
             UNPROTECT(3); /* checked, value, args */
-            snprintf(err_msg, err_cap, "Rducks RC return validation or marshal error");
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC return validation or marshal error");
             return 0;
         }
         if (!rducks_rc_write_direct_output(meta->return_desc, output_view, row, checked, err_msg, err_cap)) {
@@ -3516,16 +3516,16 @@ static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rd
     SEXP results;
 
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized metadata missing");
         return 0;
     }
     if (!rducks_rc_direct_supported(meta)) {
-        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     bundle = meta->fun;
     if (!rducks_rc_bundle_valid(bundle)) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
         return 0;
     }
 
@@ -3547,11 +3547,11 @@ static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rd
                                                     null_handling_sexp, exception_handling_sexp,
                                                     &protect_count, &r_err);
     if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
         goto fail_vectorized;
     }
     if (!rducks_rc_vectorized_writeback_from_sexp_on_r_thread(meta, results, output, n, err_msg, err_cap)) {
-        if (!err_msg[0]) snprintf(err_msg, err_cap, "Rducks RC vectorized result writeback failed");
+        if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized result writeback failed");
         goto fail_vectorized;
     }
 
@@ -3574,12 +3574,12 @@ static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks
                                          duckdb_data_chunk input, duckdb_vector output,
                                          char *err_msg, size_t err_cap) {
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC scalar metadata missing");
         return 0;
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     if (!rducks_rc_direct_supported(meta)) {
-        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
@@ -3607,25 +3607,25 @@ static int rducks_rc_vectorized_execute_to_owned_payload(rducks_runtime_entry_t 
     rducks_rc_owned_result_payload_t *payload;
 
     if (!payload_out) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized owned-result payload output is missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized owned-result payload output is missing");
         return 0;
     }
     *payload_out = NULL;
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized owned-result metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized owned-result metadata missing");
         return 0;
     }
     if (!rducks_rc_direct_supported(meta)) {
-        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     if (!rducks_rc_owned_result_type_supported(meta->return_desc)) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
         return 0;
     }
     bundle = meta->fun;
     if (!rducks_rc_bundle_valid(bundle)) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
         return 0;
     }
 
@@ -3646,7 +3646,7 @@ static int rducks_rc_vectorized_execute_to_owned_payload(rducks_runtime_entry_t 
                                                     null_handling_sexp, exception_handling_sexp,
                                                     &protect_count, &r_err);
     if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
         goto fail_vectorized_payload;
     }
 
@@ -3674,16 +3674,16 @@ static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t
                                                           char *err_msg, size_t err_cap) {
     if (payload_out) *payload_out = NULL;
     if (!meta || !meta->fun || meta->fun == R_NilValue || !payload_out) {
-        snprintf(err_msg, err_cap, "Rducks RC scalar owned-result metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC scalar owned-result metadata missing");
         return 0;
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     if (!rducks_rc_direct_supported(meta)) {
-        snprintf(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     if (!rducks_rc_owned_result_supported(meta)) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result payload is not implemented for this return type");
         return 0;
     }
     if (meta->eval_mode == RDUCKS_EVAL_RCV) {
@@ -3712,7 +3712,7 @@ typedef struct rducks_rc_execute_context {
 
 static void rducks_rc_set_default_error(rducks_rc_execute_context_t *ctx) {
     if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->default_error) {
-        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
+        rducks_format_error_message(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
     }
 }
 
@@ -3817,7 +3817,7 @@ static void rducks_rc_payload_execute_unwind_cleanup(void *data, Rboolean jump) 
         ctx->ok = 0;
         rducks_rc_payload_execute_cleanup(ctx);
         if (ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0]) {
-            snprintf(ctx->err_msg, ctx->err_cap, "Rducks RC scalar owned-result R function or marshal error");
+            rducks_format_error_message(ctx->err_msg, ctx->err_cap, "Rducks RC scalar owned-result R function or marshal error");
         }
     }
 }
@@ -3835,7 +3835,7 @@ static SEXP rducks_rc_payload_execute_error_handler(SEXP condition, void *data) 
     ctx->ok = 0;
     rducks_rc_payload_execute_cleanup(ctx);
     if (ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0]) {
-        snprintf(ctx->err_msg, ctx->err_cap, "Rducks RC scalar owned-result R function or marshal error");
+        rducks_format_error_message(ctx->err_msg, ctx->err_cap, "Rducks RC scalar owned-result R function or marshal error");
     }
     return R_NilValue;
 }
@@ -3891,18 +3891,18 @@ static duckdb_data_chunk rducks_rc_owned_result_chunk_new(rducks_r_scalar_meta_t
     duckdb_logical_type type;
     duckdb_data_chunk chunk;
     if (!meta || !meta->return_desc) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk metadata missing");
         return NULL;
     }
     type = rducks_create_logical_type_for_desc(meta->return_desc);
     if (!type) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result logical type");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC owned result logical type");
         return NULL;
     }
     chunk = duckdb_create_data_chunk(&type, 1);
     duckdb_destroy_logical_type(&type);
     if (!chunk) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result data chunk");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC owned result data chunk");
         return NULL;
     }
     duckdb_data_chunk_set_size(chunk, n);
@@ -3917,29 +3917,29 @@ static int rducks_rc_owned_result_chunk_writeback(duckdb_data_chunk chunk,
     sel_t *sel_data;
     idx_t n;
     if (!chunk || !output) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk writeback is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk writeback is missing state");
         return 0;
     }
     n = duckdb_data_chunk_get_size(chunk);
     if (n == 0) return 1;
     if (n > (idx_t)UINT32_MAX) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk is too large to write back");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk is too large to write back");
         return 0;
     }
     src = duckdb_data_chunk_get_vector(chunk, 0);
     if (!src) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk has no result vector");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk has no result vector");
         return 0;
     }
     sel = duckdb_create_selection_vector(n);
     if (!sel) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks RC owned result writeback selection vector");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC owned result writeback selection vector");
         return 0;
     }
     sel_data = duckdb_selection_vector_get_data_ptr(sel);
     if (!sel_data) {
         duckdb_destroy_selection_vector(sel);
-        snprintf(err_msg, err_cap, "failed to access Rducks RC owned result writeback selection vector");
+        rducks_format_error_message(err_msg, err_cap, "failed to access Rducks RC owned result writeback selection vector");
         return 0;
     }
     for (idx_t row = 0; row < n; row++) sel_data[row] = (sel_t)row;
@@ -3960,7 +3960,7 @@ static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runti
     (void)output;
     if (chunk_out) *chunk_out = NULL;
     if (!chunk_out || !rducks_rc_owned_result_chunk_supported(meta)) {
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk is not implemented for this return type");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk is not implemented for this return type");
         return 0;
     }
     chunk = rducks_rc_owned_result_chunk_new(meta, duckdb_data_chunk_get_size(input), err_msg, err_cap);
@@ -3968,7 +3968,7 @@ static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runti
     chunk_output = duckdb_data_chunk_get_vector(chunk, 0);
     if (!chunk_output) {
         duckdb_destroy_data_chunk(&chunk);
-        snprintf(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
         return 0;
     }
     if (meta->eval_mode == RDUCKS_EVAL_RCV) {

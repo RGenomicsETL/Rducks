@@ -470,7 +470,7 @@ static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data
     uint64_t *iterations = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
     uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
     for (idx_t i = 0; i < n; i++) {
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         uint64_t value = 0;
         err[0] = '\0';
         if (!rducks_queue_self_test(runtime, iterations[i], &value, err, sizeof(err))) {
@@ -663,7 +663,7 @@ static void rducks_query_stream_open_scalar(duckdb_function_info info, duckdb_da
     for (idx_t i = 0; i < n; i++) {
         char *sql;
         const char *token = NULL;
-        char err[512];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (!rducks_query_stream_copy_nonnull_arg(info, sql_values, validity, i,
                                                   "Rducks query stream SQL must not be NULL",
@@ -691,7 +691,7 @@ static void rducks_query_stream_schema_scalar(duckdb_function_info info, duckdb_
     if (!rducks_query_stream_require_runtime(info, runtime)) return;
     for (idx_t i = 0; i < n; i++) {
         char *token;
-        char err[512];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (!rducks_query_stream_copy_nonnull_arg(info, tokens, validity, i,
                                                   "Rducks query stream token must not be NULL",
@@ -720,7 +720,7 @@ static void rducks_query_stream_next_scalar(duckdb_function_info info, duckdb_da
     for (idx_t i = 0; i < n; i++) {
         char *token;
         int has_batch = 0;
-        char err[512];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (!rducks_query_stream_copy_nonnull_arg(info, tokens, validity, i,
                                                   "Rducks query stream token must not be NULL",
@@ -747,7 +747,7 @@ static void rducks_query_stream_close_scalar(duckdb_function_info info, duckdb_d
     bool *out = (bool *)duckdb_vector_get_data(output);
     if (!rducks_query_stream_require_runtime(info, runtime)) return;
     {
-        char err[256];
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
         err[0] = '\0';
         if (!rducks_allow_calling_thread_r_execution(runtime, err, sizeof(err))) {
             duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks query stream close reached a non-calling DuckDB execution thread");
@@ -841,7 +841,7 @@ static int rducks_runtime_release_internal_connections(rducks_runtime_entry_t *r
     duckdb_connection old_stream_connection = NULL;
     rducks_query_stream_entry_t *detached_streams = NULL;
     if (!runtime) {
-        snprintf(err, err_cap, "Rducks runtime release is missing runtime state");
+        rducks_format_error_message(err, err_cap, "Rducks runtime release is missing runtime state");
         return 0;
     }
     if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) {
@@ -881,7 +881,7 @@ static int rducks_runtime_reopen_internal_connections(rducks_runtime_entry_t *ru
     duckdb_connection new_stream_connection = NULL;
     int need_reopen = 0;
     if (!runtime || !database) {
-        snprintf(err, err_cap, "Rducks runtime reopen is missing database state");
+        rducks_format_error_message(err, err_cap, "Rducks runtime reopen is missing database state");
         return 0;
     }
     rducks_runtime_lock();
@@ -893,7 +893,7 @@ static int rducks_runtime_reopen_internal_connections(rducks_runtime_entry_t *ru
         rducks_runtime_lock();
         g_runtime_connection_open_failed++;
         rducks_runtime_unlock();
-        snprintf(err, err_cap, "failed to reopen Rducks extension connection");
+        rducks_format_error_message(err, err_cap, "failed to reopen Rducks extension connection");
         return 0;
     }
     rducks_runtime_lock();
@@ -913,7 +913,7 @@ static int rducks_runtime_reopen_internal_connections(rducks_runtime_entry_t *ru
         g_runtime_connection_open_failed++;
         g_runtime_connections_closed++;
         rducks_runtime_unlock();
-        snprintf(err, err_cap, "failed to reopen Rducks query stream connection");
+        rducks_format_error_message(err, err_cap, "failed to reopen Rducks query stream connection");
         return 0;
     }
     rducks_runtime_lock();
@@ -961,7 +961,7 @@ static void rducks_runtime_release_connections_scalar(duckdb_function_info info,
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
     bool *out = (bool *)duckdb_vector_get_data(output);
-    char err[256];
+    char err[RDUCKS_ERROR_BUFFER_SIZE];
     err[0] = '\0';
     if (!rducks_runtime_release_internal_connections(runtime, err, sizeof(err))) {
         duckdb_scalar_function_set_error(info, err[0] ? err : "failed to release Rducks runtime connections");
@@ -984,14 +984,14 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
     rducks_query_stream_entry_t *detached_streams = NULL;
     rducks_r_scalar_meta_t *detached_udfs = NULL;
     if (!runtime || !database) {
-        snprintf(err, err_cap, "Rducks runtime refresh is missing database state");
+        rducks_format_error_message(err, err_cap, "Rducks runtime refresh is missing database state");
         return 0;
     }
     if (duckdb_connect(database, &new_connection) == DuckDBError || !new_connection) {
         rducks_runtime_lock();
         g_runtime_connection_open_failed++;
         rducks_runtime_unlock();
-        snprintf(err, err_cap, "failed to reopen Rducks extension connection");
+        rducks_format_error_message(err, err_cap, "failed to reopen Rducks extension connection");
         return 0;
     }
     rducks_runtime_lock();
@@ -1010,7 +1010,7 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
         g_runtime_connection_open_failed++;
         g_runtime_connections_closed++;
         rducks_runtime_unlock();
-        snprintf(err, err_cap, "failed to reopen Rducks query stream connection");
+        rducks_format_error_message(err, err_cap, "failed to reopen Rducks query stream connection");
         return 0;
     }
     rducks_runtime_lock();
@@ -1060,7 +1060,7 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
                             struct duckdb_extension_access *access) {
     duckdb_database database = NULL;
     rducks_runtime_entry_t *runtime = NULL;
-    char err[256];
+    char err[RDUCKS_ERROR_BUFFER_SIZE];
     err[0] = '\0';
 
     if (access && info) {

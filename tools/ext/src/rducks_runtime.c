@@ -6,7 +6,7 @@ static int rducks_is_main_thread(rducks_runtime_entry_t *runtime) {
 
 static int rducks_allow_calling_thread_r_execution(rducks_runtime_entry_t *runtime, char *err, size_t err_cap) {
     if (!runtime || !rducks_is_main_thread(runtime)) {
-        snprintf(err, err_cap, "Rducks R execution reached a non-calling DuckDB execution thread");
+        rducks_format_error_message(err, err_cap, "Rducks R execution reached a non-calling DuckDB execution thread");
         return 0;
     }
     return 1;
@@ -15,7 +15,7 @@ static int rducks_allow_calling_thread_r_execution(rducks_runtime_entry_t *runti
 static int rducks_set_execution_backend(rducks_runtime_entry_t *runtime, const char *backend,
                                         char *err, size_t err_cap) {
     if (!runtime) {
-        snprintf(err, err_cap, "Rducks runtime is not initialized for this DuckDB connection");
+        rducks_format_error_message(err, err_cap, "Rducks runtime is not initialized for this DuckDB connection");
         return 0;
     }
     if (!backend || !backend[0] || strcmp(backend, "single") == 0) {
@@ -36,7 +36,7 @@ static int rducks_set_execution_backend(rducks_runtime_entry_t *runtime, const c
         rducks_runtime_unlock();
         return 1;
     }
-    snprintf(err, err_cap, "unsupported Rducks execution backend: %s", backend);
+    rducks_format_error_message(err, err_cap, "unsupported Rducks execution backend: %s", backend);
     return 0;
 }
 
@@ -201,6 +201,7 @@ static rducks_preserved_release_node_t *g_preserved_release_tail = NULL;
 static uint64_t g_preserved_release_queued = 0;
 static uint64_t g_preserved_release_released = 0;
 static uint64_t g_preserved_release_failed = 0;
+static uint64_t g_preserved_release_pending = 0;
 
 static void rducks_preserved_release_record_released(uint64_t count) {
     if (count == 0U) return;
@@ -256,6 +257,7 @@ static void rducks_preserved_release_enqueue_ex(SEXP object, int close_table_str
     }
     g_preserved_release_tail = node;
     g_preserved_release_queued++;
+    g_preserved_release_pending++;
     rducks_runtime_unlock();
 }
 
@@ -275,6 +277,7 @@ static uint64_t rducks_preserved_release_drain_on_main(rducks_runtime_entry_t *r
     node = g_preserved_release_head;
     g_preserved_release_head = NULL;
     g_preserved_release_tail = NULL;
+    g_preserved_release_pending = 0;
     rducks_runtime_unlock();
     while (node) {
         rducks_preserved_release_node_t *next = node->next;
@@ -292,16 +295,11 @@ static uint64_t rducks_preserved_release_drain_on_main(rducks_runtime_entry_t *r
 
 static void rducks_preserved_release_snapshot(uint64_t *queued, uint64_t *released,
                                               uint64_t *failed, uint64_t *pending) {
-    uint64_t pending_count = 0;
-    rducks_preserved_release_node_t *node;
     rducks_runtime_lock();
-    for (node = g_preserved_release_head; node; node = node->next) {
-        pending_count++;
-    }
     if (queued) *queued = g_preserved_release_queued;
     if (released) *released = g_preserved_release_released;
     if (failed) *failed = g_preserved_release_failed;
-    if (pending) *pending = pending_count;
+    if (pending) *pending = g_preserved_release_pending;
     rducks_runtime_unlock();
 }
 
@@ -573,7 +571,7 @@ static int rducks_runtime_reset_udf_stats(rducks_runtime_entry_t *runtime, const
     rducks_r_scalar_meta_t *meta;
     int reset_any = 0;
     if (!runtime || !name) {
-        snprintf(err, err_cap, "invalid Rducks UDF stat reset request");
+        rducks_format_error_message(err, err_cap, "invalid Rducks UDF stat reset request");
         return 0;
     }
     rducks_runtime_lock();
@@ -591,7 +589,7 @@ static int rducks_runtime_reset_udf_stats(rducks_runtime_entry_t *runtime, const
     }
     rducks_runtime_unlock();
     if (!reset_any && name[0]) {
-        snprintf(err, err_cap, "unknown Rducks UDF: %s", name);
+        rducks_format_error_message(err, err_cap, "unknown Rducks UDF: %s", name);
         return 0;
     }
     return 1;
@@ -605,7 +603,7 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     out[0] = '\0';
     rducks_preserved_release_drain_on_main(runtime);
     if (!runtime || !name || !name[0] || !field || !field[0]) {
-        snprintf(err, err_cap, "invalid Rducks UDF stat request");
+        rducks_format_error_message(err, err_cap, "invalid Rducks UDF stat request");
         return 0;
     }
 
@@ -613,7 +611,7 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     meta = rducks_runtime_find_udf_locked(runtime, name);
     if (!meta) {
         rducks_runtime_unlock();
-        snprintf(err, err_cap, "unknown Rducks UDF: %s", name);
+        rducks_format_error_message(err, err_cap, "unknown Rducks UDF: %s", name);
         return 0;
     }
 
@@ -632,7 +630,7 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
     rducks_runtime_unlock();
 
     if (!ok) {
-        snprintf(err, err_cap, "unknown Rducks UDF stat field: %s", field);
+        rducks_format_error_message(err, err_cap, "unknown Rducks UDF stat field: %s", field);
     }
     return ok;
 }
@@ -680,19 +678,19 @@ static int rducks_r_scalar_resolve_dynamic_bind_args(duckdb_bind_info info,
                                                      char *err, size_t err_cap) {
     idx_t count;
     if (!info || !state) {
-        snprintf(err, err_cap, "invalid dynamic Rducks bind state");
+        rducks_format_error_message(err, err_cap, "invalid dynamic Rducks bind state");
         return 0;
     }
     count = duckdb_scalar_function_bind_get_argument_count(info);
     state->arity = (size_t)count;
     if (!count) return 1;
     if ((size_t)count > SIZE_MAX / sizeof(*state->args)) {
-        snprintf(err, err_cap, "dynamic Rducks scalar UDF has too many arguments");
+        rducks_format_error_message(err, err_cap, "dynamic Rducks scalar UDF has too many arguments");
         return 0;
     }
     state->args = (rducks_type_desc_t **)rducks_calloc_array((size_t)count, sizeof(*state->args));
     if (!state->args) {
-        snprintf(err, err_cap, "out of memory resolving dynamic Rducks arguments");
+        rducks_format_error_message(err, err_cap, "out of memory resolving dynamic Rducks arguments");
         return 0;
     }
     for (idx_t i = 0; i < count; i++) {
@@ -701,7 +699,7 @@ static int rducks_r_scalar_resolve_dynamic_bind_args(duckdb_bind_info info,
         int ok;
         if (expr) duckdb_destroy_expression(&expr);
         if (!logical_type) {
-            snprintf(err, err_cap, "failed to inspect dynamic Rducks argument %llu", (unsigned long long)(i + 1));
+            rducks_format_error_message(err, err_cap, "failed to inspect dynamic Rducks argument %llu", (unsigned long long)(i + 1));
             return 0;
         }
         ok = rducks_type_desc_from_logical_type(logical_type, &state->args[i], err, err_cap);
@@ -750,7 +748,7 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
     }
 
     if (meta->dynamic_args) {
-        char err_msg[256];
+        char err_msg[RDUCKS_ERROR_BUFFER_SIZE];
         err_msg[0] = '\0';
         if (!rducks_r_scalar_resolve_dynamic_bind_args(info, state, err_msg, sizeof(err_msg))) {
             rducks_r_scalar_bind_state_destroy(state);

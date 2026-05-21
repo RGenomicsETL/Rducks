@@ -405,7 +405,7 @@ static int rducks_parse_type_desc_len(const char *text, size_t len, rducks_type_
     char *copy = rducks_strdup_trimmed_len(text, len);
     int ok;
     if (!copy) {
-        snprintf(err, err_cap, "out of memory");
+        rducks_format_error_message(err, err_cap, "out of memory");
         return 0;
     }
     ok = rducks_parse_type_desc_text(copy, out, err, err_cap);
@@ -430,7 +430,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
         long scale;
         if (!sep) sep = rducks_find_top_level_char_len(inner, inner_len, ',');
         if (!sep) {
-            snprintf(err, err_cap, "decimal type must be decimal<width;scale>");
+            rducks_format_error_message(err, err_cap, "decimal type must be decimal<width;scale>");
             return 0;
         }
         width_text = rducks_strdup_trimmed_len(inner, (size_t)(sep - inner));
@@ -444,20 +444,20 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
         if (!endp || *endp != '\0') {
             free(width_text);
             free(scale_text);
-            snprintf(err, err_cap, "invalid decimal width");
+            rducks_format_error_message(err, err_cap, "invalid decimal width");
             return 0;
         }
         scale = strtol(scale_text, &endp, 10);
         if (!endp || *endp != '\0') {
             free(width_text);
             free(scale_text);
-            snprintf(err, err_cap, "invalid decimal scale");
+            rducks_format_error_message(err, err_cap, "invalid decimal scale");
             return 0;
         }
         free(width_text);
         free(scale_text);
         if (width < 1 || width > 38 || scale < 0 || scale > width) {
-            snprintf(err, err_cap, "invalid decimal width or scale");
+            rducks_format_error_message(err, err_cap, "invalid decimal width or scale");
             return 0;
         }
         desc = rducks_type_desc_new(RDUCKS_KIND_DECIMAL);
@@ -491,7 +491,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             if (!level) goto oom;
             if (!level[0]) {
                 free(level);
-                snprintf(err, err_cap, "enum levels must be non-empty");
+                rducks_format_error_message(err, err_cap, "enum levels must be non-empty");
                 goto fail;
             }
             desc->field_names[count++] = level;
@@ -501,7 +501,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             remain = inner_len - (size_t)(cursor - inner);
         }
         if (desc->field_count == 0) {
-            snprintf(err, err_cap, "enum type must contain at least one level");
+            rducks_format_error_message(err, err_cap, "enum type must contain at least one level");
             goto fail;
         }
         if (!rducks_type_desc_build_field_hash(desc)) goto oom;
@@ -519,7 +519,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             size_t part_len = sep ? (size_t)(sep - cursor) : remain;
             const char *colon = rducks_find_top_level_char_len(cursor, part_len, ':');
             if (!colon) {
-                snprintf(err, err_cap, "union members must be name:type");
+                rducks_format_error_message(err, err_cap, "union members must be name:type");
                 goto fail;
             }
             if (count == cap) {
@@ -550,7 +550,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             remain = inner_len - (size_t)(cursor - inner);
         }
         if (desc->field_count == 0 || desc->field_count > 255U) {
-            snprintf(err, err_cap, "union type must contain 1 to 255 members");
+            rducks_format_error_message(err, err_cap, "union type must contain 1 to 255 members");
             goto fail;
         }
         if (!rducks_type_desc_build_field_hash(desc)) goto oom;
@@ -568,7 +568,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
         const char *sep = rducks_find_top_level_char_len(inner, inner_len, ';');
         if (!sep) sep = rducks_find_top_level_char_len(inner, inner_len, ',');
         if (!sep) {
-            snprintf(err, err_cap, "map type must be map<key;value>");
+            rducks_format_error_message(err, err_cap, "map type must be map<key;value>");
             return 0;
         }
         desc = rducks_type_desc_new(RDUCKS_KIND_MAP);
@@ -588,7 +588,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             size_t part_len = sep ? (size_t)(sep - cursor) : remain;
             const char *colon = rducks_find_top_level_char_len(cursor, part_len, ':');
             if (!colon) {
-                snprintf(err, err_cap, "struct fields must be name:type");
+                rducks_format_error_message(err, err_cap, "struct fields must be name:type");
                 goto fail;
             }
             if (count == cap) {
@@ -618,7 +618,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             remain = inner_len - (size_t)(cursor - inner);
         }
         if (desc->field_count == 0) {
-            snprintf(err, err_cap, "struct type must contain at least one field");
+            rducks_format_error_message(err, err_cap, "struct type must contain at least one field");
             goto fail;
         }
         *out = desc;
@@ -639,7 +639,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
             nval = strtoull(ntext, &endp, 10);
             if (!endp || *endp != '\0' || nval == 0 || nval > (unsigned long long)UINT64_MAX) {
                 free(ntext);
-                snprintf(err, err_cap, "invalid array size");
+                rducks_format_error_message(err, err_cap, "invalid array size");
                 goto fail;
             }
             desc->array_size = (idx_t)nval;
@@ -651,7 +651,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
     {
         rducks_type_id_t scalar = rducks_scalar_type_id_from_token(text);
         if (scalar == RDUCKS_TYPE_INVALID) {
-            snprintf(err, err_cap, "unsupported Rducks type: %s", text);
+            rducks_format_error_message(err, err_cap, "unsupported Rducks type: %s", text);
             return 0;
         }
         desc = rducks_type_desc_new(RDUCKS_KIND_SCALAR);
@@ -662,7 +662,7 @@ static int rducks_parse_type_desc_text(const char *text, rducks_type_desc_t **ou
     }
 
 oom:
-    snprintf(err, err_cap, "out of memory");
+    rducks_format_error_message(err, err_cap, "out of memory");
 fail:
     rducks_type_desc_destroy(desc);
     return 0;
@@ -930,7 +930,7 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
     duckdb_type type_id;
     rducks_type_desc_t *desc = NULL;
     if (!logical_type || !out) {
-        snprintf(err, err_cap, "invalid DuckDB logical type for dynamic Rducks argument");
+        rducks_format_error_message(err, err_cap, "invalid DuckDB logical type for dynamic Rducks argument");
         return 0;
     }
     *out = NULL;
@@ -1049,7 +1049,7 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
                     "dynamic Rducks arguments must bind to concrete DuckDB types; cast NULL/parameter markers or declare args explicitly"
                 );
             } else {
-                snprintf(err, err_cap, "unsupported dynamic Rducks argument type id %d", (int)type_id);
+                rducks_format_error_message(err, err_cap, "unsupported dynamic Rducks argument type id %d", (int)type_id);
             }
             return 0;
         }
@@ -1061,7 +1061,7 @@ static int rducks_type_desc_from_logical_type(duckdb_logical_type logical_type,
     }
 
 oom:
-    snprintf(err, err_cap, "out of memory resolving dynamic Rducks argument type");
+    rducks_format_error_message(err, err_cap, "out of memory resolving dynamic Rducks argument type");
 fail:
     rducks_type_desc_destroy(desc);
     return 0;
@@ -1071,7 +1071,7 @@ static int rducks_parse_null_handling(const char *text, rducks_null_handling_t *
     char token[32];
     size_t len;
     if (!text || !out) {
-        snprintf(err, err_cap, "invalid null_handling value");
+        rducks_format_error_message(err, err_cap, "invalid null_handling value");
         return 0;
     }
     while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
@@ -1083,7 +1083,7 @@ static int rducks_parse_null_handling(const char *text, rducks_null_handling_t *
         len--;
     }
     if (len == 0 || len >= sizeof(token)) {
-        snprintf(err, err_cap, "invalid null_handling value");
+        rducks_format_error_message(err, err_cap, "invalid null_handling value");
         return 0;
     }
     memcpy(token, text, len);
@@ -1097,7 +1097,7 @@ static int rducks_parse_null_handling(const char *text, rducks_null_handling_t *
         *out = RDUCKS_NULL_SPECIAL;
         return 1;
     }
-    snprintf(err, err_cap, "unsupported null_handling value: %s", token);
+    rducks_format_error_message(err, err_cap, "unsupported null_handling value: %s", token);
     return 0;
 }
 
@@ -1106,7 +1106,7 @@ static int rducks_parse_exception_handling(const char *text, rducks_exception_ha
     char token[32];
     size_t len;
     if (!text || !out) {
-        snprintf(err, err_cap, "invalid exception_handling value");
+        rducks_format_error_message(err, err_cap, "invalid exception_handling value");
         return 0;
     }
     while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
@@ -1118,7 +1118,7 @@ static int rducks_parse_exception_handling(const char *text, rducks_exception_ha
         len--;
     }
     if (len == 0 || len >= sizeof(token)) {
-        snprintf(err, err_cap, "invalid exception_handling value");
+        rducks_format_error_message(err, err_cap, "invalid exception_handling value");
         return 0;
     }
     memcpy(token, text, len);
@@ -1132,7 +1132,7 @@ static int rducks_parse_exception_handling(const char *text, rducks_exception_ha
         *out = RDUCKS_EXCEPTION_RETURN_NULL;
         return 1;
     }
-    snprintf(err, err_cap, "unsupported exception_handling value: %s", token);
+    rducks_format_error_message(err, err_cap, "unsupported exception_handling value: %s", token);
     return 0;
 }
 
@@ -1140,7 +1140,7 @@ static int rducks_parse_eval_mode(const char *text, rducks_eval_mode_t *out, cha
     char token[16];
     size_t len;
     if (!text || !out) {
-        snprintf(err, err_cap, "invalid eval_mode value");
+        rducks_format_error_message(err, err_cap, "invalid eval_mode value");
         return 0;
     }
     while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
@@ -1152,7 +1152,7 @@ static int rducks_parse_eval_mode(const char *text, rducks_eval_mode_t *out, cha
         len--;
     }
     if (len == 0 || len >= sizeof(token)) {
-        snprintf(err, err_cap, "invalid eval_mode value");
+        rducks_format_error_message(err, err_cap, "invalid eval_mode value");
         return 0;
     }
     memcpy(token, text, len);
@@ -1174,7 +1174,7 @@ static int rducks_parse_eval_mode(const char *text, rducks_eval_mode_t *out, cha
         *out = RDUCKS_EVAL_RIPC;
         return 1;
     }
-    snprintf(err, err_cap, "unsupported eval_mode value: %s", token);
+    rducks_format_error_message(err, err_cap, "unsupported eval_mode value: %s", token);
     return 0;
 }
 
@@ -1185,7 +1185,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
     size_t count = 0;
     size_t capacity = 0;
     if (!text || !out || !out_count) {
-        snprintf(err, err_cap, "invalid type list");
+        rducks_format_error_message(err, err_cap, "invalid type list");
         return 0;
     }
     *out = NULL;
@@ -1193,7 +1193,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
     if (text[0] == '\0') return 1;
     copy = rducks_strdup(text);
     if (!copy) {
-        snprintf(err, err_cap, "out of memory");
+        rducks_format_error_message(err, err_cap, "out of memory");
         return 0;
     }
     cursor = copy;
@@ -1217,7 +1217,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
             size_t new_capacity = capacity == 0U ? 4U : capacity * 2U;
             rducks_type_desc_t **new_items;
             if (new_capacity <= capacity || new_capacity > (SIZE_MAX / sizeof(rducks_type_desc_t *))) {
-                snprintf(err, err_cap, "UDF argument list is too large to allocate");
+                rducks_format_error_message(err, err_cap, "UDF argument list is too large to allocate");
                 rducks_type_desc_destroy(desc);
                 for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
                 free(items);
@@ -1226,7 +1226,7 @@ static int rducks_parse_type_list(const char *text, rducks_type_desc_t ***out, s
             }
             new_items = (rducks_type_desc_t **)rducks_realloc_array(items, new_capacity, sizeof(*new_items));
             if (!new_items) {
-                snprintf(err, err_cap, "out of memory");
+                rducks_format_error_message(err, err_cap, "out of memory");
                 rducks_type_desc_destroy(desc);
                 for (size_t i = 0; i < count; i++) rducks_type_desc_destroy(items[i]);
                 free(items);

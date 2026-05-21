@@ -10,7 +10,7 @@ static void rducks_arrow_error_to_buffer(duckdb_error_data error_data, const cha
     if (error_data && duckdb_error_data_has_error(error_data)) {
         msg = duckdb_error_data_message(error_data);
     }
-    snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : default_msg);
+    rducks_format_error_message(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : default_msg);
 }
 
 static int rducks_allocate_arrow_options_for_connection(duckdb_connection connection,
@@ -18,7 +18,7 @@ static int rducks_allocate_arrow_options_for_connection(duckdb_connection connec
                                                         char *err_msg, size_t err_cap) {
     duckdb_arrow_options options = NULL;
     if (!connection) {
-        snprintf(err_msg, err_cap, "Rducks has no DuckDB connection for Arrow C Data conversion");
+        rducks_format_error_message(err_msg, err_cap, "Rducks has no DuckDB connection for Arrow C Data conversion");
         return 0;
     }
     if (!out_options || !borrowed) return 0;
@@ -31,7 +31,7 @@ static int rducks_allocate_arrow_options_for_connection(duckdb_connection connec
         return 1;
     }
 
-    snprintf(err_msg, err_cap, "failed to get DuckDB Arrow C Data options");
+    rducks_format_error_message(err_msg, err_cap, "failed to get DuckDB Arrow C Data options");
     return 0;
 }
 
@@ -39,7 +39,7 @@ static int rducks_allocate_arrow_options(rducks_runtime_entry_t *runtime,
                                          duckdb_arrow_options *out_options, int *borrowed,
                                          char *err_msg, size_t err_cap) {
     if (!runtime || !runtime->connection) {
-        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+        rducks_format_error_message(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
         return 0;
     }
     return rducks_allocate_arrow_options_for_connection(runtime->connection, out_options, borrowed, err_msg, err_cap);
@@ -89,34 +89,34 @@ static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *r
 
     if (out) memset(out, 0, sizeof(*out));
     if (!runtime || !runtime->connection) {
-        snprintf(err_msg, err_cap, "%s runtime is unavailable for Arrow import", label);
+        rducks_format_error_message(err_msg, err_cap, "%s runtime is unavailable for Arrow import", label);
         return 0;
     }
     if (!out || array_xptr == R_NilValue || !Rf_inherits(array_xptr, "nanoarrow_array")) {
-        snprintf(err_msg, err_cap, "%s import requires a nanoarrow_array", label);
+        rducks_format_error_message(err_msg, err_cap, "%s import requires a nanoarrow_array", label);
         return 0;
     }
     schema_xptr = R_ExternalPtrTag(array_xptr);
     if (schema_xptr == R_NilValue || !Rf_inherits(schema_xptr, "nanoarrow_schema")) {
-        snprintf(err_msg, err_cap, "%s nanoarrow array does not carry a nanoarrow schema", label);
+        rducks_format_error_message(err_msg, err_cap, "%s nanoarrow array does not carry a nanoarrow schema", label);
         return 0;
     }
     array = nanoarrow_array_from_xptr(array_xptr);
     schema = nanoarrow_schema_from_xptr(schema_xptr);
     if (!array || !schema || array->release == NULL || schema->release == NULL) {
-        snprintf(err_msg, err_cap, "%s nanoarrow array or schema is invalid", label);
+        rducks_format_error_message(err_msg, err_cap, "%s nanoarrow array or schema is invalid", label);
         return 0;
     }
     if (array->length < 0) {
-        snprintf(err_msg, err_cap, "%s nanoarrow array has a negative row count", label);
+        rducks_format_error_message(err_msg, err_cap, "%s nanoarrow array has a negative row count", label);
         return 0;
     }
     if ((uint64_t)array->length > (uint64_t)((idx_t)-1)) {
-        snprintf(err_msg, err_cap, "%s nanoarrow array row count is too large", label);
+        rducks_format_error_message(err_msg, err_cap, "%s nanoarrow array row count is too large", label);
         return 0;
     }
     if (check_rows && (idx_t)array->length != expected_rows) {
-        snprintf(err_msg, err_cap, "%s nanoarrow array returned %lld rows, expected %llu",
+        rducks_format_error_message(err_msg, err_cap, "%s nanoarrow array returned %lld rows, expected %llu",
                  label, (long long)array->length, (unsigned long long)expected_rows);
         return 0;
     }
@@ -132,7 +132,7 @@ static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *r
         duckdb_destroy_error_data(&error_data);
     }
     if (!converted_schema) {
-        snprintf(err_msg, err_cap, "DuckDB returned no converted schema for %s Arrow data", label);
+        rducks_format_error_message(err_msg, err_cap, "DuckDB returned no converted schema for %s Arrow data", label);
         return 0;
     }
     error_data = duckdb_data_chunk_from_arrow(runtime->connection, array, converted_schema, &imported_chunk);
@@ -148,7 +148,7 @@ static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *r
     }
     duckdb_destroy_arrow_converted_schema(&converted_schema);
     if (!imported_chunk) {
-        snprintf(err_msg, err_cap, "DuckDB returned no data chunk for %s Arrow data", label);
+        rducks_format_error_message(err_msg, err_cap, "DuckDB returned no data chunk for %s Arrow data", label);
         return 0;
     }
 
@@ -156,13 +156,13 @@ static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *r
     imported_size = duckdb_data_chunk_get_size(imported_chunk);
     imported_columns = duckdb_data_chunk_get_column_count(imported_chunk);
     if (check_rows && imported_size != expected_rows) {
-        snprintf(err_msg, err_cap, "DuckDB imported %llu %s rows, expected %llu",
+        rducks_format_error_message(err_msg, err_cap, "DuckDB imported %llu %s rows, expected %llu",
                  (unsigned long long)imported_size, label, (unsigned long long)expected_rows);
         duckdb_destroy_data_chunk(&imported_chunk);
         return 0;
     }
     if (check_columns && imported_columns != expected_columns) {
-        snprintf(err_msg, err_cap, "DuckDB imported %llu %s columns, expected %llu",
+        rducks_format_error_message(err_msg, err_cap, "DuckDB imported %llu %s columns, expected %llu",
                  (unsigned long long)imported_columns, label, (unsigned long long)expected_columns);
         duckdb_destroy_data_chunk(&imported_chunk);
         return 0;
@@ -184,7 +184,7 @@ static int rducks_arrow_ipc_input_stream_init_borrowed(const uint8_t *payload, s
                                                        struct ArrowIpcInputStream *input_stream,
                                                        char *err_msg, size_t err_cap) {
     if (payload_size > (size_t)INT64_MAX) {
-        snprintf(err_msg, err_cap, "RIPC Arrow IPC result payload is too large");
+        rducks_format_error_message(err_msg, err_cap, "RIPC Arrow IPC result payload is too large");
         return 0;
     }
 
@@ -195,7 +195,7 @@ static int rducks_arrow_ipc_input_stream_init_borrowed(const uint8_t *payload, s
     buffer->allocator = ArrowBufferDeallocator(&rducks_arrow_buffer_noop_free, NULL);
 
     if (ArrowIpcInputStreamInitBuffer(input_stream, buffer) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "ArrowIpcInputStreamInitBuffer() failed for RIPC result");
+        rducks_format_error_message(err_msg, err_cap, "ArrowIpcInputStreamInitBuffer() failed for RIPC result");
         return 0;
     }
     return 1;
@@ -210,20 +210,20 @@ static int rducks_fill_arrow_schema_native(rducks_runtime_entry_t *runtime, stru
     duckdb_error_data error_data = NULL;
 
     if (!schema) {
-        snprintf(err_msg, err_cap, "invalid Arrow schema output pointer");
+        rducks_format_error_message(err_msg, err_cap, "invalid Arrow schema output pointer");
         return 0;
     }
 
     if (count > 0) {
         types = (duckdb_logical_type *)rducks_calloc_array(count, sizeof(*types));
         if (!types) {
-            snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema type list");
+            rducks_format_error_message(err_msg, err_cap, "out of memory allocating nanoarrow schema type list");
             return 0;
         }
         for (size_t i = 0; i < count; i++) {
             types[i] = rducks_create_logical_type_for_desc(descs[i]);
             if (!types[i]) {
-                snprintf(err_msg, err_cap, "failed to allocate DuckDB logical type for nanoarrow schema");
+                rducks_format_error_message(err_msg, err_cap, "failed to allocate DuckDB logical type for nanoarrow schema");
                 for (size_t j = 0; j < count; j++) {
                     if (types[j]) duckdb_destroy_logical_type(&types[j]);
                 }
@@ -274,7 +274,7 @@ static int rducks_fill_dynamic_input_arrow_schema_native(rducks_runtime_entry_t 
     int ok = 0;
 
     if (!schema || !input) {
-        snprintf(err_msg, err_cap, "invalid dynamic Arrow schema request");
+        rducks_format_error_message(err_msg, err_cap, "invalid dynamic Arrow schema request");
         return 0;
     }
 
@@ -283,34 +283,34 @@ static int rducks_fill_dynamic_input_arrow_schema_native(rducks_runtime_entry_t 
         if ((size_t)arity > SIZE_MAX / sizeof(*types) ||
             (size_t)arity > SIZE_MAX / sizeof(*names) ||
             (size_t)arity > SIZE_MAX / sizeof(*owned_names)) {
-            snprintf(err_msg, err_cap, "dynamic Rducks scalar UDF has too many arguments");
+            rducks_format_error_message(err_msg, err_cap, "dynamic Rducks scalar UDF has too many arguments");
             return 0;
         }
         types = (duckdb_logical_type *)rducks_calloc_array((size_t)arity, sizeof(*types));
         names = (const char **)rducks_calloc_array((size_t)arity, sizeof(*names));
         owned_names = (char **)rducks_calloc_array((size_t)arity, sizeof(*owned_names));
         if (!types || !names || !owned_names) {
-            snprintf(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema");
+            rducks_format_error_message(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema");
             goto cleanup;
         }
         for (idx_t i = 0; i < arity; i++) {
             char buf[32];
             duckdb_vector vector = duckdb_data_chunk_get_vector(input, i);
             if (!vector) {
-                snprintf(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument %llu",
+                rducks_format_error_message(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument %llu",
                          (unsigned long long)(i + 1));
                 goto cleanup;
             }
             types[i] = duckdb_vector_get_column_type(vector);
             if (!types[i]) {
-                snprintf(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument type %llu",
+                rducks_format_error_message(err_msg, err_cap, "failed to inspect dynamic Rducks scalar argument type %llu",
                          (unsigned long long)(i + 1));
                 goto cleanup;
             }
             snprintf(buf, sizeof(buf), "arg%llu", (unsigned long long)(i + 1));
             owned_names[i] = rducks_strdup_len(buf, strlen(buf));
             if (!owned_names[i]) {
-                snprintf(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema name");
+                rducks_format_error_message(err_msg, err_cap, "out of memory allocating dynamic nanoarrow schema name");
                 goto cleanup;
             }
             names[i] = owned_names[i];
@@ -359,7 +359,7 @@ static int rducks_fill_input_arrow_schema_native(rducks_runtime_entry_t *runtime
         if (!names || !owned_names) {
             free(names);
             free(owned_names);
-            snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema names");
+            rducks_format_error_message(err_msg, err_cap, "out of memory allocating nanoarrow schema names");
             return 0;
         }
         for (size_t i = 0; i < meta->arity; i++) {
@@ -370,7 +370,7 @@ static int rducks_fill_input_arrow_schema_native(rducks_runtime_entry_t *runtime
                 for (size_t j = 0; j < i; j++) free(owned_names[j]);
                 free(owned_names);
                 free(names);
-                snprintf(err_msg, err_cap, "out of memory allocating nanoarrow schema name");
+                rducks_format_error_message(err_msg, err_cap, "out of memory allocating nanoarrow schema name");
                 return 0;
             }
             names[i] = owned_names[i];
@@ -417,7 +417,7 @@ static int rducks_fill_input_arrow_array_native_for_connection(duckdb_connection
     duckdb_error_data error_data = NULL;
 
     if (!array) {
-        snprintf(err_msg, err_cap, "invalid Arrow array output pointer");
+        rducks_format_error_message(err_msg, err_cap, "invalid Arrow array output pointer");
         return 0;
     }
 
@@ -444,7 +444,7 @@ static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime,
                                                 duckdb_data_chunk input,
                                                 char *err_msg, size_t err_cap) {
     if (!runtime || !runtime->connection) {
-        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
+        rducks_format_error_message(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data conversion");
         return 0;
     }
     return rducks_fill_input_arrow_array_native_for_connection(runtime->connection, array, input, err_msg, err_cap);
@@ -500,12 +500,12 @@ static int rducks_arrow_detach_dictionary(rducks_arrow_dict_detach_list_t *list,
     if (list->count == list->capacity) {
         capacity = list->capacity ? list->capacity * 2U : 8U;
         if (capacity <= list->capacity || capacity > SIZE_MAX / sizeof(*items)) {
-            snprintf(err_msg, err_cap, "too many Arrow dictionary fields in RIPC enum input");
+            rducks_format_error_message(err_msg, err_cap, "too many Arrow dictionary fields in RIPC enum input");
             return 0;
         }
         items = (rducks_arrow_dict_detach_t *)rducks_realloc_array(list->items, capacity, sizeof(*items));
         if (!items) {
-            snprintf(err_msg, err_cap, "out of memory recording RIPC enum dictionary fields");
+            rducks_format_error_message(err_msg, err_cap, "out of memory recording RIPC enum dictionary fields");
             return 0;
         }
         list->items = items;
@@ -530,7 +530,7 @@ static int rducks_arrow_schema_array_child(struct ArrowSchema *schema, struct Ar
                                            char *err_msg, size_t err_cap) {
     if (!schema || !array || index < 0 || index >= schema->n_children || index >= array->n_children ||
         !schema->children || !array->children || !schema->children[index] || !array->children[index]) {
-        snprintf(err_msg, err_cap, "Arrow C Data for %s is missing an expected child", what);
+        rducks_format_error_message(err_msg, err_cap, "Arrow C Data for %s is missing an expected child", what);
         return 0;
     }
     *schema_child = schema->children[index];
@@ -622,12 +622,12 @@ static int rducks_copy_imported_result_vector(rducks_type_desc_t *return_desc, d
     (void)return_desc;
     if (count == 0) return 1;
     if (count > (idx_t)UINT32_MAX) {
-        snprintf(err_msg, err_cap, "Arrow result chunk is too large to copy into DuckDB output");
+        rducks_format_error_message(err_msg, err_cap, "Arrow result chunk is too large to copy into DuckDB output");
         return 0;
     }
     duckdb_selection_vector sel = duckdb_create_selection_vector(count);
     if (!sel) {
-        snprintf(err_msg, err_cap, "failed to allocate DuckDB selection vector for Arrow result copy");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate DuckDB selection vector for Arrow result copy");
         return 0;
     }
     /* Copy the imported Arrow result into DuckDB's callback-owned output vector
@@ -652,15 +652,15 @@ static int rducks_import_arrow_result_native(rducks_runtime_entry_t *runtime,
     idx_t result_size;
 
     if (!runtime || !runtime->connection) {
-        snprintf(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data import");
+        rducks_format_error_message(err_msg, err_cap, "Rducks runtime has no DuckDB connection for Arrow C Data import");
         return 0;
     }
     if (!result_array || !result_schema || result_array->release == NULL || result_schema->release == NULL) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper returned invalid Arrow C Data");
+        rducks_format_error_message(err_msg, err_cap, "Rducks nanoarrow scalar wrapper returned invalid Arrow C Data");
         return 0;
     }
     if (result_array->length != (int64_t)expected_size) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar adapter returned %lld rows, expected %llu",
+        rducks_format_error_message(err_msg, err_cap, "Rducks nanoarrow scalar adapter returned %lld rows, expected %llu",
                  (long long)result_array->length, (unsigned long long)expected_size);
         return 0;
     }
@@ -689,7 +689,7 @@ static int rducks_import_arrow_result_native(rducks_runtime_entry_t *runtime,
     }
 
     if (!result_chunk) {
-        snprintf(err_msg, err_cap, "DuckDB returned no result chunk for nanoarrow scalar result");
+        rducks_format_error_message(err_msg, err_cap, "DuckDB returned no result chunk for nanoarrow scalar result");
         duckdb_destroy_arrow_converted_schema(&converted_schema);
         return 0;
     }
@@ -700,7 +700,7 @@ static int rducks_import_arrow_result_native(rducks_runtime_entry_t *runtime,
     result_array->release = NULL;
     result_size = duckdb_data_chunk_get_size(result_chunk);
     if (result_size != expected_size) {
-        snprintf(err_msg, err_cap, "DuckDB imported %llu Arrow C Data result rows, expected %llu",
+        rducks_format_error_message(err_msg, err_cap, "DuckDB imported %llu Arrow C Data result rows, expected %llu",
                  (unsigned long long)result_size, (unsigned long long)expected_size);
         duckdb_destroy_data_chunk(&result_chunk);
         duckdb_destroy_arrow_converted_schema(&converted_schema);
@@ -726,7 +726,7 @@ static int rducks_import_arrow_result(rducks_runtime_entry_t *runtime, SEXP resu
     SEXP result_schema_xptr;
 
     if (!Rf_inherits(result_array_xptr, "nanoarrow_array")) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow scalar wrapper must return a nanoarrow_array");
+        rducks_format_error_message(err_msg, err_cap, "Rducks nanoarrow scalar wrapper must return a nanoarrow_array");
         return 0;
     }
 
@@ -810,9 +810,9 @@ static SEXP rducks_r_scalar_eval_arrow_on_r_thread(rducks_r_scalar_meta_t *meta,
 static int rducks_r_scalar_result_is_error(SEXP result, char *err_msg, size_t err_cap) {
     if (!Rf_inherits(result, "rducks_arrow_error")) return 0;
     if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
-        snprintf(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
+        rducks_format_error_message(err_msg, err_cap, "%s", CHAR(STRING_ELT(result, 0)));
     } else {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
+        rducks_format_error_message(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
     }
     return 1;
 }
@@ -857,12 +857,12 @@ static int rducks_ripc_bundle_valid(SEXP bundle) {
 static int rducks_ripc_read_string_scalar(SEXP x, const char *field, char **out,
                                           char *err_msg, size_t err_cap) {
     if (!Rf_isString(x) || XLENGTH(x) != 1 || STRING_ELT(x, 0) == NA_STRING || !CHAR(STRING_ELT(x, 0))[0]) {
-        snprintf(err_msg, err_cap, "RIPC configure() must return a non-empty character scalar field '%s'", field);
+        rducks_format_error_message(err_msg, err_cap, "RIPC configure() must return a non-empty character scalar field '%s'", field);
         return 0;
     }
     *out = rducks_strdup_len(CHAR(STRING_ELT(x, 0)), strlen(CHAR(STRING_ELT(x, 0))));
     if (!*out) {
-        snprintf(err_msg, err_cap, "out of memory copying RIPC configure() field '%s'", field);
+        rducks_format_error_message(err_msg, err_cap, "out of memory copying RIPC configure() field '%s'", field);
         return 0;
     }
     return 1;
@@ -890,11 +890,11 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     R_xlen_t endpoint_count = 0;
 
     if (!runtime || !meta || !rducks_ripc_bundle_valid(bundle)) {
-        snprintf(err_msg, err_cap, "RIPC metadata is invalid");
+        rducks_format_error_message(err_msg, err_cap, "RIPC metadata is invalid");
         return 0;
     }
     if (!rducks_is_main_thread(runtime)) {
-        snprintf(err_msg, err_cap, "RIPC configure() must run on the recorded main R thread");
+        rducks_format_error_message(err_msg, err_cap, "RIPC configure() must run on the recorded main R thread");
         return 0;
     }
 
@@ -912,13 +912,13 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
         if (TYPEOF(result) == STRSXP && XLENGTH(result) > 0 && STRING_ELT(result, 0) != NA_STRING) {
             detail = CHAR(STRING_ELT(result, 0));
         }
-        snprintf(err_msg, err_cap, "RIPC configure() failed%s%s",
+        rducks_format_error_message(err_msg, err_cap, "RIPC configure() failed%s%s",
                  (detail && detail[0]) ? ": " : "",
                  (detail && detail[0]) ? detail : "");
         goto fail;
     }
     if (TYPEOF(result) != VECSXP) {
-        snprintf(err_msg, err_cap, "RIPC configure() must return a named list");
+        rducks_format_error_message(err_msg, err_cap, "RIPC configure() must return a named list");
         goto fail;
     }
 
@@ -928,26 +928,26 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     max_pending_sexp = rducks_named_list_get(result, "max_pending");
     external_endpoints_sexp = rducks_named_list_get(result, "external_endpoints");
     if (!Rf_isString(endpoints_sexp) || XLENGTH(endpoints_sexp) < 1) {
-        snprintf(err_msg, err_cap, "RIPC configure() must return character vector field 'endpoints'");
+        rducks_format_error_message(err_msg, err_cap, "RIPC configure() must return character vector field 'endpoints'");
         goto fail;
     }
     endpoint_count = XLENGTH(endpoints_sexp);
     endpoints = (char **)rducks_calloc_array((size_t)endpoint_count, sizeof(*endpoints));
     if (!endpoints) {
-        snprintf(err_msg, err_cap, "out of memory copying RIPC endpoints");
+        rducks_format_error_message(err_msg, err_cap, "out of memory copying RIPC endpoints");
         goto fail;
     }
     for (R_xlen_t i = 0; i < endpoint_count; i++) {
         SEXP endpoint = STRING_ELT(endpoints_sexp, i);
         const char *value;
         if (endpoint == NA_STRING || !CHAR(endpoint)[0]) {
-            snprintf(err_msg, err_cap, "RIPC endpoint %lld is empty", (long long)i + 1LL);
+            rducks_format_error_message(err_msg, err_cap, "RIPC endpoint %lld is empty", (long long)i + 1LL);
             goto fail;
         }
         value = CHAR(endpoint);
         endpoints[i] = rducks_strdup_len(value, strlen(value));
         if (!endpoints[i]) {
-            snprintf(err_msg, err_cap, "out of memory copying RIPC endpoint");
+            rducks_format_error_message(err_msg, err_cap, "out of memory copying RIPC endpoint");
             goto fail;
         }
     }
@@ -955,7 +955,7 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     if (!Rf_isNull(timeout_sexp)) {
         double timeout_value = Rf_asReal(timeout_sexp);
         if (!R_finite(timeout_value) || timeout_value < 0 || timeout_value > (double)INT_MAX) {
-            snprintf(err_msg, err_cap, "RIPC timeout_ms must be a non-negative integer-compatible value");
+            rducks_format_error_message(err_msg, err_cap, "RIPC timeout_ms must be a non-negative integer-compatible value");
             goto fail;
         }
         timeout_ms = (int)timeout_value;
@@ -964,7 +964,7 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
         double max_pending_value = Rf_asReal(max_pending_sexp);
         if (R_finite(max_pending_value)) {
             if (max_pending_value < 1 || max_pending_value > (double)UINT64_MAX) {
-                snprintf(err_msg, err_cap, "RIPC max_pending must be a positive integer-compatible value or Inf");
+                rducks_format_error_message(err_msg, err_cap, "RIPC max_pending must be a positive integer-compatible value or Inf");
                 goto fail;
             }
             max_pending = (uint64_t)max_pending_value;
@@ -1037,40 +1037,40 @@ static int rducks_ripc_wrap_dynamic_payload(rducks_r_scalar_meta_t *meta,
     uint8_t *p;
     char **tokens = NULL;
     if (!meta || !wrapped || payload_size > (size_t)UINT64_MAX) {
-        snprintf(err_msg, err_cap, "RIPC dynamic payload metadata is missing");
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload metadata is missing");
         return 0;
     }
     if (meta->arity > UINT32_MAX || meta->arity > SIZE_MAX / sizeof(*tokens)) {
-        snprintf(err_msg, err_cap, "RIPC dynamic payload has too many argument types");
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload has too many argument types");
         return 0;
     }
     tokens = (char **)rducks_calloc_array(meta->arity ? meta->arity : 1U, sizeof(*tokens));
     if (!tokens) {
-        snprintf(err_msg, err_cap, "out of memory allocating RIPC dynamic type tokens");
+        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic type tokens");
         return 0;
     }
     for (size_t i = 0; i < meta->arity; i++) {
         size_t len;
         tokens[i] = rducks_type_desc_token(meta->args[i]);
         if (!tokens[i]) {
-            snprintf(err_msg, err_cap, "failed to format RIPC dynamic argument type");
+            rducks_format_error_message(err_msg, err_cap, "failed to format RIPC dynamic argument type");
             goto fail;
         }
         len = strlen(tokens[i]);
         if (len > UINT32_MAX || token_bytes > SIZE_MAX - 4U - len) {
-            snprintf(err_msg, err_cap, "RIPC dynamic argument type token is too large");
+            rducks_format_error_message(err_msg, err_cap, "RIPC dynamic argument type token is too large");
             goto fail;
         }
         token_bytes += 4U + len;
     }
     if (payload_size > SIZE_MAX - 16U || token_bytes > SIZE_MAX - 16U - payload_size) {
-        snprintf(err_msg, err_cap, "RIPC dynamic payload is too large");
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload is too large");
         goto fail;
     }
     total = 16U + token_bytes + payload_size;
     wrapped->data = (uint8_t *)malloc(total ? total : 1U);
     if (!wrapped->data) {
-        snprintf(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
+        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
         goto fail;
     }
     wrapped->size = total;
@@ -1105,7 +1105,7 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     uint32_t reserved = 0U;
     rducks_owned_bytes_t wrapped_payload = {0};
     if (!meta || !meta->ripc_udf_id || !payload || !request) {
-        snprintf(err_msg, err_cap, "RIPC request metadata is missing");
+        rducks_format_error_message(err_msg, err_cap, "RIPC request metadata is missing");
         return 0;
     }
     if (meta->dynamic_args) {
@@ -1120,14 +1120,14 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     if (udf_len > UINT32_MAX || row_count > (idx_t)UINT64_MAX || wire_payload_size > (size_t)UINT64_MAX ||
         wire_payload_size > SIZE_MAX - 36U - udf_len) {
         rducks_owned_bytes_reset(&wrapped_payload);
-        snprintf(err_msg, err_cap, "RIPC request is too large");
+        rducks_format_error_message(err_msg, err_cap, "RIPC request is too large");
         return 0;
     }
     total = 36U + udf_len + wire_payload_size;
     request->data = (uint8_t *)malloc(total ? total : 1U);
     if (!request->data) {
         rducks_owned_bytes_reset(&wrapped_payload);
-        snprintf(err_msg, err_cap, "out of memory allocating RIPC request");
+        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC request");
         return 0;
     }
     request->size = total;
@@ -1155,7 +1155,7 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
     if (payload_out) *payload_out = NULL;
     if (payload_size_out) *payload_size_out = 0;
     if (!response || response_size < 32U || memcmp(response, "RDK1", 4) != 0) {
-        snprintf(err_msg, err_cap, "invalid RIPC response frame");
+        rducks_format_error_message(err_msg, err_cap, "invalid RIPC response frame");
         return 0;
     }
     p = response + 4;
@@ -1167,16 +1167,16 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
     payload_len = rducks_wire_get_u64(p); p += 8;
     (void)reserved;
     if (version != 1U || type != 100U) {
-        snprintf(err_msg, err_cap, "unsupported RIPC response frame");
+        rducks_format_error_message(err_msg, err_cap, "unsupported RIPC response frame");
         return 0;
     }
     if (payload_len > (uint64_t)SIZE_MAX || (size_t)payload_len > SIZE_MAX - 32U - (size_t)error_len) {
-        snprintf(err_msg, err_cap, "RIPC response is too large");
+        rducks_format_error_message(err_msg, err_cap, "RIPC response is too large");
         return 0;
     }
     total = 32U + (size_t)error_len + (size_t)payload_len;
     if (total != response_size) {
-        snprintf(err_msg, err_cap, "truncated RIPC response frame");
+        rducks_format_error_message(err_msg, err_cap, "truncated RIPC response frame");
         return 0;
     }
     if (status != 0U) {
@@ -1186,7 +1186,7 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
             if (n > 0U) memcpy(err_msg, p, n);
             err_msg[n] = '\0';
         }
-        if (err_cap > 0U && err_msg[0] == '\0') snprintf(err_msg, err_cap, "RIPC worker returned an error");
+        if (err_cap > 0U && err_msg[0] == '\0') rducks_format_error_message(err_msg, err_cap, "RIPC worker returned an error");
         return 0;
     }
     p += error_len;
@@ -1242,7 +1242,7 @@ static int rducks_import_arrow_ipc_result_bytes(rducks_runtime_entry_t *runtime,
     memset(&error, 0, sizeof(error));
 
     if (!payload || payload_size == 0U) {
-        snprintf(err_msg, err_cap, "RIPC worker returned an empty Arrow IPC payload");
+        rducks_format_error_message(err_msg, err_cap, "RIPC worker returned an empty Arrow IPC payload");
         goto cleanup;
     }
     if (!rducks_arrow_ipc_input_stream_init_borrowed(payload, payload_size, &buffer, &input_stream,
@@ -1251,30 +1251,30 @@ static int rducks_import_arrow_ipc_result_bytes(rducks_runtime_entry_t *runtime,
     }
     input_initialized = 1;
     if (ArrowIpcArrayStreamReaderInit(&array_stream, &input_stream, NULL) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "ArrowIpcArrayStreamReaderInit() failed for RIPC result");
+        rducks_format_error_message(err_msg, err_cap, "ArrowIpcArrayStreamReaderInit() failed for RIPC result");
         goto cleanup;
     }
     input_initialized = 0;
     stream_initialized = 1;
     if (ArrowArrayStreamGetSchema(&array_stream, &schema, &error) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "RIPC result schema decode failed: %s", error.message[0] ? error.message : "unknown error");
+        rducks_format_error_message(err_msg, err_cap, "RIPC result schema decode failed: %s", error.message[0] ? error.message : "unknown error");
         goto cleanup;
     }
     if (ArrowArrayStreamGetNext(&array_stream, &array, &error) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "RIPC result batch decode failed: %s", error.message[0] ? error.message : "unknown error");
+        rducks_format_error_message(err_msg, err_cap, "RIPC result batch decode failed: %s", error.message[0] ? error.message : "unknown error");
         goto cleanup;
     }
     if (array.release == NULL) {
-        snprintf(err_msg, err_cap, "RIPC result payload did not contain a record batch");
+        rducks_format_error_message(err_msg, err_cap, "RIPC result payload did not contain a record batch");
         goto cleanup;
     }
     if (!rducks_import_arrow_result_native(runtime, &array, &schema, return_desc, expected_size, output, err_msg, err_cap)) goto cleanup;
     if (ArrowArrayStreamGetNext(&array_stream, &extra_array, &error) != NANOARROW_OK) {
-        snprintf(err_msg, err_cap, "RIPC result trailing-batch decode failed: %s", error.message[0] ? error.message : "unknown error");
+        rducks_format_error_message(err_msg, err_cap, "RIPC result trailing-batch decode failed: %s", error.message[0] ? error.message : "unknown error");
         goto cleanup;
     }
     if (extra_array.release != NULL) {
-        snprintf(err_msg, err_cap, "RIPC result payload contained more than one record batch");
+        rducks_format_error_message(err_msg, err_cap, "RIPC result payload contained more than one record batch");
         goto cleanup;
     }
     ok = 1;
@@ -1294,7 +1294,7 @@ rducks_ripc_acquire_pool(rducks_r_scalar_meta_t *meta, char *err_msg, size_t err
     rducks_nng_client_pool_t *pool = NULL;
 
     if (!meta) {
-        if (err_msg && err_cap) snprintf(err_msg, err_cap, "RIPC execution metadata is missing");
+        if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "RIPC execution metadata is missing");
         return NULL;
     }
 
@@ -1323,11 +1323,11 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     int ok = 0;
 
     if (!runtime || !meta) {
-        snprintf(err_msg, err_cap, "RIPC execution metadata is missing");
+        rducks_format_error_message(err_msg, err_cap, "RIPC execution metadata is missing");
         return 0;
     }
     if (!meta->ripc_endpoints || meta->ripc_endpoint_count == 0U || !meta->ripc_udf_id) {
-        snprintf(err_msg, err_cap, "RIPC provider is not configured for this UDF");
+        rducks_format_error_message(err_msg, err_cap, "RIPC provider is not configured for this UDF");
         return 0;
     }
     n = duckdb_data_chunk_get_size(input);
@@ -1376,7 +1376,7 @@ static int rducks_r_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks_
     SEXP result = R_NilValue;
 
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
-        snprintf(err_msg, err_cap, "Rducks scalar metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks scalar metadata missing");
         return 0;
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
@@ -1389,7 +1389,7 @@ static int rducks_r_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks_
     result = rducks_r_scalar_eval_arrow_on_r_thread(meta, input_array_xptr, input_schema_xptr,
                                                     output_schema_xptr, n, &protect_count, &r_err);
     if (r_err) {
-        snprintf(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
+        rducks_format_error_message(err_msg, err_cap, "Rducks nanoarrow R function or marshal error");
         goto fail;
     }
 
@@ -1416,7 +1416,7 @@ typedef struct rducks_arrow_execute_context {
 
 static void rducks_arrow_set_default_error(rducks_arrow_execute_context_t *ctx) {
     if (ctx && ctx->err_msg && ctx->err_cap > 0U && !ctx->err_msg[0] && ctx->default_error) {
-        snprintf(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
+        rducks_format_error_message(ctx->err_msg, ctx->err_cap, "%s", ctx->default_error);
     }
 }
 
@@ -1473,18 +1473,18 @@ static duckdb_data_chunk rducks_arrow_owned_result_chunk_new(rducks_r_scalar_met
     duckdb_logical_type type;
     duckdb_data_chunk chunk;
     if (!meta || !meta->return_desc) {
-        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk metadata missing");
+        rducks_format_error_message(err_msg, err_cap, "Rducks Arrow/R owned result chunk metadata missing");
         return NULL;
     }
     type = rducks_create_logical_type_for_desc(meta->return_desc);
     if (!type) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result logical type");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result logical type");
         return NULL;
     }
     chunk = duckdb_create_data_chunk(&type, 1);
     duckdb_destroy_logical_type(&type);
     if (!chunk) {
-        snprintf(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result data chunk");
+        rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks Arrow/R owned result data chunk");
         return NULL;
     }
     duckdb_data_chunk_set_size(chunk, n);
@@ -1502,7 +1502,7 @@ static int rducks_r_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtim
     (void)output;
     if (chunk_out) *chunk_out = NULL;
     if (!runtime || !meta || meta->eval_mode != RDUCKS_EVAL_R || !input || !chunk_out) {
-        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk request is missing state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks Arrow/R owned result chunk request is missing state");
         return 0;
     }
     chunk = rducks_arrow_owned_result_chunk_new(meta, duckdb_data_chunk_get_size(input), err_msg, err_cap);
@@ -1510,7 +1510,7 @@ static int rducks_r_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtim
     chunk_output = duckdb_data_chunk_get_vector(chunk, 0);
     if (!chunk_output) {
         duckdb_destroy_data_chunk(&chunk);
-        snprintf(err_msg, err_cap, "Rducks Arrow/R owned result chunk has no output vector");
+        rducks_format_error_message(err_msg, err_cap, "Rducks Arrow/R owned result chunk has no output vector");
         return 0;
     }
     if (!rducks_r_scalar_execute(runtime, meta, input, chunk_output, err_msg, err_cap)) {
@@ -1527,7 +1527,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     rducks_r_scalar_meta_t effective_meta_storage;
     rducks_r_scalar_meta_t *exec_meta = meta;
     rducks_runtime_entry_t *runtime = rducks_runtime_from_function_info(info, meta);
-    char err_msg[256];
+    char err_msg[RDUCKS_ERROR_BUFFER_SIZE];
     err_msg[0] = '\0';
     memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
     rducks_effective_meta_for_state(meta, local_state, &effective_meta_storage, &exec_meta);
