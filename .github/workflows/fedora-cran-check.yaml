@@ -1,0 +1,78 @@
+name: Fedora CRAN check
+
+# Mirrors the CRAN r-devel-linux-x86_64-fedora-gcc flavour by running
+# `R CMD build && R CMD check --as-cran` inside the rhub gcc16 container
+# (Fedora 44 + GCC 16 + the same R-devel snapshot CRAN uses). Use pak's
+# Fedora/R-devel binary resolver for CRAN dependencies so heavyweight packages
+# such as duckdb are downloaded as binaries instead of compiled from source.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fedora-cran-check:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/r-hub/containers/gcc16:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OS dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            cmake libuv-devel libzstd-devel pandoc qpdf texlive-scheme-medium
+
+      - name: Compute R cache key
+        id: r-cache-key
+        run: |
+          key=$(Rscript -e 'cat(paste(getRversion(), R.version$platform, .Internal(internalsID()), sep = "-"))')
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache R library and pak downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/R-libs
+            /root/.cache/R/pkgcache
+          key: r-libs-fedora-gcc16-${{ steps.r-cache-key.outputs.key }}-${{ hashFiles('DESCRIPTION') }}
+          restore-keys: |
+            r-libs-fedora-gcc16-${{ steps.r-cache-key.outputs.key }}-
+
+      - name: Install R package dependencies
+        run: |
+          mkdir -p /root/R-libs
+          echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
+          R -q -e '
+            pkgs <- c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7",
+                      "bench", "dplyr", "duckplyr", "globals", "knitr",
+                      "rmarkdown", "tinytest")
+            pak::pkg_install(pkgs, lib = "/root/R-libs", ask = FALSE)
+          '
+
+      - name: R CMD build
+        run: |
+          echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
+          USE_UNSTABLE_C_API=1 RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE R CMD build .
+
+      - name: R CMD check --as-cran
+        run: |
+          echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
+          PKG=$(ls -t Rducks_*.tar.gz | head -n1)
+          USE_UNSTABLE_C_API=1 RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE RDUCKS_DEV_SURFACES=true R CMD check --as-cran --no-manual "$PKG"
+
+      - name: Upload check artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-cran-check-results
+          path: |
+            Rducks.Rcheck/
+            config.log
+          if-no-files-found: ignore
