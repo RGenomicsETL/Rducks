@@ -13,7 +13,7 @@ local({
     if (is.na(old_dev)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old_dev)
   }, add = TRUE)
 
-  rducks_enable(con, threads = "single")
+  rducks_enable(con)
 
   setTimeLimit(elapsed = 0.3, transient = FALSE)
   interrupted <- tryCatch(
