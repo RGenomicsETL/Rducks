@@ -27,6 +27,10 @@ struct rducks_udf_request {
     rducks_rc_owned_result_payload_t *rc_result_payload;
     duckdb_data_chunk rc_result_chunk;
     rducks_udf_request_state_t state;
+    /* Only non-R diagnostic requests may opt into off-main draining. R-backed
+     * scalar requests must keep R object creation on the recorded R thread.
+     */
+    int allow_non_main_drain;
     int ok;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 };
@@ -124,7 +128,7 @@ static int rducks_queue_remove_pending_locked(rducks_runtime_entry_t *runtime, r
     return 0;
 }
 
-static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *runtime) {
+static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *runtime, int allow_non_main_drain) {
     rducks_udf_request_t *request = runtime->queue_head;
     while (request && request->state == RDUCKS_REQUEST_CANCELLED) {
         runtime->queue_head = request->next;
@@ -133,6 +137,7 @@ static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *run
         request = runtime->queue_head;
     }
     if (!request) return NULL;
+    if (allow_non_main_drain && !request->allow_non_main_drain) return NULL;
     runtime->queue_head = request->next;
     if (!runtime->queue_head) runtime->queue_tail = NULL;
     request->next = NULL;
@@ -233,17 +238,17 @@ static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err
         rducks_format_error_message(err_msg, err_cap, "Rducks queued request is missing execution state");
         return 0;
     }
-    if (!rducks_is_main_thread(request->runtime)) {
+    if (!rducks_is_main_thread(request->runtime) && !request->allow_non_main_drain) {
         rducks_format_error_message(err_msg, err_cap, "Rducks queued request reached a non-main thread");
         return 0;
     }
     return request->execute(request, err_msg, err_cap);
 }
 
-static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *runtime) {
+static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *runtime, int allow_non_main_drain) {
     rducks_udf_request_t *request;
     rducks_queue_lock(runtime);
-    request = rducks_queue_pop_locked(runtime);
+    request = rducks_queue_pop_locked(runtime, allow_non_main_drain);
     rducks_queue_unlock(runtime);
     return request;
 }
@@ -512,17 +517,20 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     return state.ok;
 }
 
-static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {
+static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requests,
+                                   int allow_non_main_diagnostic) {
     int count = 0;
+    int is_main;
     if (!runtime || !runtime->queue_initialized) return 0;
-    if (!rducks_is_main_thread(runtime)) return 0;
+    is_main = rducks_is_main_thread(runtime);
+    if (!is_main && !allow_non_main_diagnostic) return 0;
     if (max_requests <= 0) max_requests = 1000000;
 
     while (count < max_requests) {
         rducks_udf_request_t *request;
         char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
         int ok;
-        request = rducks_queue_pop_request(runtime);
+        request = rducks_queue_pop_request(runtime, !is_main && allow_non_main_diagnostic);
         if (!request) break;
         err_msg[0] = '\0';
         ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
@@ -530,16 +538,26 @@ static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_r
         count++;
     }
 
-    rducks_queue_lock(runtime);
-    runtime->queue_main_drains++;
-    if (count > 0) {
-        runtime->queue_main_drain_batches++;
-        if ((uint64_t)count > runtime->queue_main_drain_max_batch) {
-            runtime->queue_main_drain_max_batch = (uint64_t)count;
+    if (is_main) {
+        rducks_queue_lock(runtime);
+        runtime->queue_main_drains++;
+        if (count > 0) {
+            runtime->queue_main_drain_batches++;
+            if ((uint64_t)count > runtime->queue_main_drain_max_batch) {
+                runtime->queue_main_drain_max_batch = (uint64_t)count;
+            }
         }
+        rducks_queue_unlock(runtime);
     }
-    rducks_queue_unlock(runtime);
     return count;
+}
+
+static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {
+    return rducks_queue_drain_impl(runtime, max_requests, 0);
+}
+
+static int rducks_queue_drain_self_test(rducks_runtime_entry_t *runtime, int max_requests) {
+    return rducks_queue_drain_impl(runtime, max_requests, 1);
 }
 
 typedef struct rducks_queue_self_test_state {
@@ -569,9 +587,10 @@ static void *rducks_queue_self_test_worker(void *arg) {
     memset(&request, 0, sizeof(request));
     request.execute = rducks_queue_self_test_execute;
     request.data = state;
+    request.allow_non_main_drain = 1;
     atomic_store_explicit(&state->worker_ok,
                           rducks_queue_submit_request(state->runtime, &request,
-                            "Rducks queue self-test timed out waiting for the recorded main R thread",
+                            "Rducks queue self-test timed out waiting for a diagnostic drain",
                             state->error, sizeof(state->error)),
                           memory_order_release);
     atomic_store_explicit(&state->worker_done, 1, memory_order_release);
@@ -587,10 +606,6 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
     uint64_t i;
     if (!runtime || !out_value) {
         rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test runtime is not initialized");
-        return 0;
-    }
-    if (!rducks_is_main_thread(runtime)) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test must run on the recorded main R thread");
         return 0;
     }
     *out_value = 0;
@@ -616,7 +631,7 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         }
 #endif
         while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < 5000U) {
-            (void)rducks_queue_drain_on_main(runtime, 1000);
+            (void)rducks_queue_drain_self_test(runtime, 1000);
             if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) rducks_queue_sleep_ms(1);
             spins++;
         }
