@@ -75,7 +75,7 @@ stream
 #> <0 rows> (or 0-length row.names)
 #> 
 #> $state
-#> <environment: 0x56083ab5d8e8>
+#> <environment: 0x55b45e349068>
 #> 
 #> attr(,"class")
 #> [1] "rducks_table_stream"
