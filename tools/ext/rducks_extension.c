@@ -27,6 +27,7 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Arith.h>
+#include <R_ext/Utils.h>
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -168,6 +169,9 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_main_drains;
     uint64_t queue_main_drain_batches;
     uint64_t queue_main_drain_max_batch;
+    atomic_uint_fast64_t queue_cancel_generation;
+    atomic_uint_fast64_t queue_interrupt_checks;
+    atomic_uint_fast64_t queue_interrupts;
     rducks_r_scalar_meta_t *udf_registry_head;
     rducks_r_scalar_meta_t **udf_registry_buckets;
     size_t udf_registry_bucket_count;
@@ -358,6 +362,9 @@ static int rducks_runtime_reserve_locked(idx_t wanted) {
 
 static int rducks_runtime_queue_init_entry(rducks_runtime_entry_t *entry) {
     if (!entry) return 0;
+    atomic_init(&entry->queue_cancel_generation, 0U);
+    atomic_init(&entry->queue_interrupt_checks, 0U);
+    atomic_init(&entry->queue_interrupts, 0U);
 #ifdef _WIN32
     InitializeCriticalSection(&entry->queue_lock);
     InitializeConditionVariable(&entry->queue_cond);

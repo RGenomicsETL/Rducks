@@ -3,6 +3,7 @@
 #define RDUCKS_QUEUE_ERROR_SIZE 512
 #define RDUCKS_QUEUE_WAIT_MS 100U
 #define RDUCKS_QUEUE_POLL_WAIT_US 100U
+#define RDUCKS_QUEUE_INTERRUPT_CHECK_US 250000U
 #define RDUCKS_QUEUE_DRAIN_MAX_REQUESTS 1000
 #ifdef _WIN32
 #define RDUCKS_QUEUE_POLL_MAX_SPINS 5000U
@@ -37,6 +38,8 @@ struct rducks_udf_request {
      * scalar requests must keep R object creation on the recorded R thread.
      */
     int allow_non_main_drain;
+    int cancel_generation_set;
+    uint64_t cancel_generation;
     int ok;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 };
@@ -67,6 +70,75 @@ static void rducks_queue_signal_all(rducks_runtime_entry_t *runtime) {
 #else
     pthread_cond_broadcast(&runtime->queue_cond);
 #endif
+}
+
+static void rducks_queue_signal_all_locked(rducks_runtime_entry_t *runtime) {
+    if (!runtime || !runtime->queue_initialized) return;
+    rducks_queue_lock(runtime);
+    rducks_queue_signal_all(runtime);
+    rducks_queue_unlock(runtime);
+}
+
+static uint64_t rducks_queue_cancel_generation(rducks_runtime_entry_t *runtime) {
+    if (!runtime) return 0U;
+    return atomic_load_explicit(&runtime->queue_cancel_generation, memory_order_acquire);
+}
+
+static int rducks_queue_cancel_requested(rducks_runtime_entry_t *runtime, uint64_t generation) {
+    return runtime && rducks_queue_cancel_generation(runtime) != generation;
+}
+
+static void rducks_queue_cancel_request(rducks_runtime_entry_t *runtime) {
+    if (!runtime) return;
+    atomic_fetch_add_explicit(&runtime->queue_cancel_generation, 1U, memory_order_acq_rel);
+    rducks_queue_signal_all_locked(runtime);
+}
+
+static int rducks_queue_interrupted_error(char *err_msg, size_t err_cap) {
+    rducks_format_error_message(err_msg, err_cap, "Rducks queued scalar UDF interrupted by user");
+    return 0;
+}
+
+static void rducks_queue_check_user_interrupt_body(void *data) {
+    (void)data;
+    R_CheckUserInterrupt();
+}
+
+static int rducks_interrupt_check_on_main(rducks_runtime_entry_t *runtime, char *err_msg, size_t err_cap) {
+    Rboolean ok;
+    if (!runtime || !rducks_is_main_thread(runtime)) return 1;
+    atomic_fetch_add_explicit(&runtime->queue_interrupt_checks, 1U, memory_order_relaxed);
+    ok = R_ToplevelExec(rducks_queue_check_user_interrupt_body, NULL);
+    if (!ok) {
+        atomic_fetch_add_explicit(&runtime->queue_interrupts, 1U, memory_order_relaxed);
+        rducks_queue_cancel_request(runtime);
+        return rducks_queue_interrupted_error(err_msg, err_cap);
+    }
+    return 1;
+}
+
+static uint64_t rducks_queue_now_us(void) {
+#ifdef _WIN32
+    return (uint64_t)GetTickCount64() * 1000U;
+#else
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0U;
+    return (uint64_t)ts.tv_sec * 1000000U + (uint64_t)ts.tv_nsec / 1000U;
+#endif
+}
+
+static int rducks_queue_maybe_check_interrupt_on_main(rducks_runtime_entry_t *runtime,
+                                                      uint64_t *last_check_us,
+                                                      char *err_msg, size_t err_cap) {
+    uint64_t now;
+    if (!runtime || !rducks_is_main_thread(runtime)) return 1;
+    now = rducks_queue_now_us();
+    if (now == 0U || !last_check_us || *last_check_us == 0U ||
+        now - *last_check_us >= RDUCKS_QUEUE_INTERRUPT_CHECK_US) {
+        if (last_check_us) *last_check_us = now;
+        return rducks_interrupt_check_on_main(runtime, err_msg, err_cap);
+    }
+    return 1;
 }
 
 static int rducks_queue_wait_timed_us(rducks_runtime_entry_t *runtime, uint64_t us) {
@@ -282,6 +354,10 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
         rducks_format_error_message(err_msg, err_cap, "Rducks queued request is invalid");
         return 0;
     }
+    if (!request->cancel_generation_set) {
+        request->cancel_generation = rducks_queue_cancel_generation(runtime);
+        request->cancel_generation_set = 1;
+    }
 
     request->runtime = runtime;
     request->next = NULL;
@@ -300,7 +376,25 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     rducks_queue_signal_all(runtime);
 
     while (request->state != RDUCKS_REQUEST_DONE) {
+        if (rducks_queue_cancel_requested(runtime, request->cancel_generation) &&
+            request->state == RDUCKS_REQUEST_PENDING) {
+            if (rducks_queue_remove_pending_locked(runtime, request)) {
+                rducks_queue_signal_all(runtime);
+                rducks_queue_unlock(runtime);
+                rducks_udf_record_queue_pending_done(request->meta);
+                return rducks_queue_interrupted_error(err_msg, err_cap);
+            }
+        }
         rducks_queue_wait_timed(runtime, RDUCKS_QUEUE_WAIT_MS);
+        if (rducks_queue_cancel_requested(runtime, request->cancel_generation) &&
+            request->state == RDUCKS_REQUEST_PENDING) {
+            if (rducks_queue_remove_pending_locked(runtime, request)) {
+                rducks_queue_signal_all(runtime);
+                rducks_queue_unlock(runtime);
+                rducks_udf_record_queue_pending_done(request->meta);
+                return rducks_queue_interrupted_error(err_msg, err_cap);
+            }
+        }
         if (request->state == RDUCKS_REQUEST_PENDING && ++ticks >= RDUCKS_QUEUE_TIMEOUT_TICKS) {
             if (rducks_queue_remove_pending_locked(runtime, request)) {
                 runtime->queue_timeouts++;
@@ -345,6 +439,7 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
                                               int snapshot_input, int writeback_on_submitter,
                                               rducks_rc_owned_result_payload_t **payload_out,
                                               duckdb_data_chunk *chunk_out,
+                                              int cancel_generation_set, uint64_t cancel_generation,
                                               char *err_msg, size_t err_cap) {
     rducks_udf_request_t request;
     rducks_r_scalar_meta_t effective_meta_storage;
@@ -367,6 +462,10 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
         request.execute = rducks_queue_execute_rc_scalar_to_payload_on_main;
     } else {
         request.execute = rducks_queue_execute_scalar_on_main;
+    }
+    if (cancel_generation_set) {
+        request.cancel_generation_set = 1;
+        request.cancel_generation = cancel_generation;
     }
     request.meta = meta;
     request.local_state = local_state;
@@ -420,7 +519,7 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap) {
     return rducks_queue_submit_scalar_collect(runtime, meta, local_state, input, output,
-                                             1, 1, NULL, NULL, err_msg, err_cap);
+                                             1, 1, NULL, NULL, 0, 0U, err_msg, err_cap);
 }
 
 typedef struct rducks_queue_scalar_worker_state {
@@ -433,6 +532,7 @@ typedef struct rducks_queue_scalar_worker_state {
     int ok;
     rducks_rc_owned_result_payload_t *rc_result_payload;
     duckdb_data_chunk rc_result_chunk;
+    uint64_t cancel_generation;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 } rducks_queue_scalar_worker_state_t;
 
@@ -446,6 +546,7 @@ static void *rducks_queue_scalar_worker(void *arg) {
                                                    state->input, state->output,
                                                    0, 0, &state->rc_result_payload,
                                                    &state->rc_result_chunk,
+                                                   1, state->cancel_generation,
                                                    state->error, sizeof(state->error));
     atomic_store_explicit(&state->done, 1, memory_order_release);
 #ifdef _WIN32
@@ -461,7 +562,9 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
                                                          duckdb_data_chunk input, duckdb_vector output,
                                                          char *err_msg, size_t err_cap) {
     rducks_queue_scalar_worker_state_t state;
+    uint64_t last_interrupt_check_us = 0U;
     unsigned int spins = 0;
+    int interrupted = 0;
     if (!runtime || !rducks_is_main_thread(runtime)) {
         rducks_format_error_message(err_msg, err_cap, "Rducks forced queue path must start on the recorded main R thread");
         return 0;
@@ -473,6 +576,7 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     memset(&state, 0, sizeof(state));
     atomic_init(&state.done, 0);
     state.runtime = runtime;
+    state.cancel_generation = rducks_queue_cancel_generation(runtime);
     state.meta = meta;
     state.local_state = local_state;
     state.input = input;
@@ -491,6 +595,10 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     }
 #endif
     while (!atomic_load_explicit(&state.done, memory_order_acquire) && spins < RDUCKS_QUEUE_POLL_MAX_SPINS) {
+        if (!rducks_queue_maybe_check_interrupt_on_main(runtime, &last_interrupt_check_us, err_msg, err_cap)) {
+            interrupted = 1;
+            break;
+        }
         (void)rducks_queue_drain_on_main(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
         if (!atomic_load_explicit(&state.done, memory_order_acquire)) {
             rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_POLL_WAIT_US);
@@ -507,7 +615,10 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
         rducks_format_error_message(err_msg, err_cap, "Rducks scalar queue worker did not finish");
         return 0;
     }
-    if (!state.ok) {
+    if (interrupted) {
+        state.ok = 0;
+        if (!err_msg[0]) rducks_queue_interrupted_error(err_msg, err_cap);
+    } else if (!state.ok) {
         rducks_queue_error_copy(err_msg, err_cap, state.error, "Rducks scalar queue worker failed");
     } else if (state.rc_result_payload) {
         state.ok = rducks_rc_owned_result_payload_writeback(state.rc_result_payload, output, err_msg, err_cap);
@@ -573,6 +684,7 @@ typedef struct rducks_queue_self_test_state {
     atomic_int worker_done;
     atomic_int worker_ok;
     uint64_t value;
+    uint64_t cancel_generation;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
 } rducks_queue_self_test_state_t;
 
@@ -595,6 +707,8 @@ static void *rducks_queue_self_test_worker(void *arg) {
     memset(&request, 0, sizeof(request));
     request.execute = rducks_queue_self_test_execute;
     request.data = state;
+    request.cancel_generation_set = 1;
+    request.cancel_generation = state->cancel_generation;
     request.allow_non_main_drain = 1;
     atomic_store_explicit(&state->worker_ok,
                           rducks_queue_submit_request(state->runtime, &request,
@@ -621,10 +735,13 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 
     for (i = 0; i < iterations; i++) {
         rducks_queue_self_test_state_t state;
+        uint64_t last_interrupt_check_us = 0U;
         unsigned int spins = 0;
+        int interrupted = 0;
         memset(&state, 0, sizeof(state));
         atomic_init(&state.worker_done, 0);
         state.runtime = runtime;
+        state.cancel_generation = rducks_queue_cancel_generation(runtime);
 #ifdef _WIN32
         HANDLE worker = CreateThread(NULL, 0, rducks_queue_self_test_worker, &state, 0, NULL);
         if (!worker) {
@@ -639,6 +756,10 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         }
 #endif
         while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < RDUCKS_QUEUE_POLL_MAX_SPINS) {
+            if (!rducks_queue_maybe_check_interrupt_on_main(runtime, &last_interrupt_check_us, err_msg, err_cap)) {
+                interrupted = 1;
+                break;
+            }
             (void)rducks_queue_drain_self_test(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
             if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
                 rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_POLL_WAIT_US);
@@ -653,6 +774,10 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
 #endif
         if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
             rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test worker did not finish");
+            return 0;
+        }
+        if (interrupted) {
+            if (!err_msg[0]) rducks_queue_interrupted_error(err_msg, err_cap);
             return 0;
         }
         if (!atomic_load_explicit(&state.worker_ok, memory_order_acquire)) {
