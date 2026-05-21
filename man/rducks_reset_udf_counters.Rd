@@ -24,7 +24,7 @@ counts are preserved; their max fields are reset to the current values.
 \examples{
 \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db)
+rducks_enable(db, threads = "single")
 rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER)
 rducks_reset_udf_counters(db, "my_fn")

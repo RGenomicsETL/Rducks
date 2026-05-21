@@ -163,7 +163,7 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
 #'   args = list(INTEGER), returns = INTEGER)
 #' DBI::dbGetQuery(db, "SELECT my_double(3)")
@@ -557,7 +557,7 @@ rducks_table_as_arrow_array <- function(result) {
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
 #' DBI::dbGetQuery(db, "SELECT * FROM my_table()")
 #' rducks_release(db)
@@ -720,7 +720,7 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_aggregate(
 #'   db, "my_sum",
 #'   update = function(state, x) if (is.null(state)) x else state + x,

@@ -216,7 +216,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)
 #' rducks_explain_udf(db, "my_fn")
@@ -245,7 +245,7 @@ rducks_explain_udf <- function(con, name) {
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)
 #' rducks_reset_udf_counters(db, "my_fn")
@@ -285,7 +285,7 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db)
+#' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)
 #' rducks_list_udfs(db)
