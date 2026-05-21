@@ -92,6 +92,123 @@ descriptors can be requested explicitly to inspect their recursive R function
 shapes.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">rducks_argument_type_mapping</span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    duckdb_type descriptor_kind   r_value_class              r_argument_shape</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1      BOOLEAN          scalar         logical                logical scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2      TINYINT          scalar         integer                integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3     UTINYINT          scalar         integer                integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4     SMALLINT          scalar         integer                integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5    USMALLINT          scalar         integer                integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6      INTEGER          scalar         integer                integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7     UINTEGER          scalar         numeric                numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8       BIGINT          scalar   rducks_bigint          rducks_bigint scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9      UBIGINT          scalar  rducks_ubigint         rducks_ubigint scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10       FLOAT          scalar         numeric                numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11      DOUBLE          scalar         numeric                numeric scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12     VARCHAR          scalar       character              character scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13        BLOB          scalar             raw                    raw vector</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14    GEOMETRY          scalar             raw       raw WKB geometry vector</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15     VARIANT          scalar  rducks_variant rducks_variant storage object</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16        DATE          scalar            Date                   Date scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17        TIME          scalar         numeric        numeric seconds scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18   TIMESTAMP          scalar         POSIXct                POSIXct scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19     HUGEINT          scalar  rducks_hugeint         rducks_hugeint scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20    UHUGEINT          scalar rducks_uhugeint        rducks_uhugeint scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21        UUID          scalar     rducks_uuid            rducks_uuid scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22    INTERVAL          scalar rducks_interval        rducks_interval scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23         BIT          scalar     rducks_bits            rducks_bits scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    special_null_argument                                    copy_semantics</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                     NA                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2            NA_integer_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3            NA_integer_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4            NA_integer_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5            NA_integer_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6            NA_integer_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7               NA_real_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                   NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                   NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10              NA_real_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11              NA_real_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12         NA_character_                              string copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                  NULL                               bytes copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  NULL                           WKB bytes copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                  NULL recursive R allocation for DuckDB VARIANT storage</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16               Date NA                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17              NA_real_                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18            POSIXct NA                                      boxed scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                  NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                  NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                  NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                  NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                  NULL                          boxed exact Rducks value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    integer_uses_r_double float32_widens_to_r_double precision_may_be_lost</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                   TRUE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                  FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                 FALSE                       TRUE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                              notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7          uses R numeric because UINTEGER exceeds R integer range</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                exact signed 64-bit integer value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                              exact unsigned 64-bit integer value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                            DuckDB FLOAT is widened to R numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                            string copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                             bytes copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                GEOMETRY crosses the R boundary as WKB raw bytes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15 VARIANT crosses the R boundary as DuckDB's typed storage object</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                           days since 1970-01-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                               microseconds converted to seconds</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                               microseconds converted to seconds</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                        exact Rducks value class</span>
+<span class="r-in"><span><span class="fu">rducks_argument_type_mapping</span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   duckdb_type descriptor_kind r_value_class r_argument_shape</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1     INTEGER          scalar       integer   integer scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   special_null_argument copy_semantics integer_uses_r_double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1           NA_integer_   boxed scalar                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   float32_widens_to_r_double precision_may_be_lost notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                      FALSE                 FALSE      </span>
+<span class="r-in"><span><span class="fu">rducks_argument_type_mapping</span><span class="op">(</span><span class="fu"><a href="rducks_type_objects.html">STRUCT</a></span><span class="op">(</span>a <span class="op">=</span> <span class="va">INTEGER</span>, b <span class="op">=</span> <span class="va">VARCHAR</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                    duckdb_type descriptor_kind r_value_class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 STRUCT(a INTEGER, b VARCHAR)          struct          list</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>       r_argument_shape special_null_argument         copy_semantics</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 named list of fields                  NULL recursive R allocation</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   integer_uses_r_double float32_widens_to_r_double precision_may_be_lost</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                 FALSE                      FALSE                 FALSE</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                     notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 recursive field mapping</span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

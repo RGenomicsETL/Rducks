@@ -111,3 +111,28 @@ file-backed database must be enabled and registered again after it is
 fully closed and reopened. For `arrow_ipc` plans, the UDF closure and
 discovered globals are copied once to each NNG worker in the shared
 provider pool and retained for that pool's lifetime.
+
+## Examples
+
+``` r
+# \donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
+rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
+  args = list(INTEGER), returns = INTEGER)
+#> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
+DBI::dbGetQuery(db, "SELECT my_double(3)")
+#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name my_double does not exist!
+#> Did you mean "md5_number"?
+#> 
+#> LINE 1: SELECT my_double(3)
+#>                ^
+#> ℹ Context: rapi_prepare
+#> ℹ Error type: CATALOG
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```

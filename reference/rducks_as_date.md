@@ -59,3 +59,27 @@ rducks_interval_between(start, end, tz = "UTC")
 numeric seconds since midnight; `rducks_as_timestamp()` returns
 `POSIXct`; `rducks_as_interval()` and `rducks_interval_between()` return
 `rducks_interval`.
+
+## Examples
+
+``` r
+rducks_as_date(as.Date("2024-01-15"))
+#> [1] "2024-01-15"
+rducks_as_date("2024-01-15")
+#> [1] "2024-01-15"
+rducks_as_timestamp(as.POSIXct("2024-01-15 12:00:00", tz = "UTC"))
+#> [1] "2024-01-15 12:00:00 UTC"
+rducks_as_time("08:30:00")
+#> [1] 30600
+rducks_as_interval(3600, units = "secs")
+#> <rducks_interval[1]>
+#>  months days     micros
+#>       0    0 3600000000
+rducks_interval_between(
+  as.POSIXct("2024-01-01", tz = "UTC"),
+  as.POSIXct("2024-01-02", tz = "UTC")
+)
+#> <rducks_interval[1]>
+#>  months days      micros
+#>       0    0 86400000000
+```

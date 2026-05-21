@@ -21,3 +21,14 @@ rducks_type_normalize(x)
 
 Canonical scalar token for character input, or the descriptor's wire
 token for a `rducks_type`.
+
+## Examples
+
+``` r
+rducks_type_normalize("i32")
+#> [1] "i32"
+rducks_type_normalize(INTEGER)
+#> [1] "i32"
+rducks_type_normalize(LIST(VARCHAR))
+#> [1] "list<varchar>"
+```

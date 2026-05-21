@@ -21,3 +21,11 @@ rducks_variant(x)
 ## Value
 
 `x` with class `rducks_variant` after validation.
+
+## Examples
+
+``` r
+# VARIANT storage objects are normally produced by DuckDB at the R boundary.
+# rducks_variant() validates the storage shape; constructing one by hand
+# requires the full internal DuckDB VARIANT storage layout.
+```

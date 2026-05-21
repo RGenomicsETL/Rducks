@@ -91,6 +91,257 @@ for <code>FLOAT</code> and <code>DOUBLE</code>; integer, date, time, timestamp, 
 value classes reject non-finite values.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">rducks_value_semantics</span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    duckdb_type descriptor_kind   r_value_class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1      BOOLEAN          scalar         logical</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2      TINYINT          scalar         integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3     UTINYINT          scalar         integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4     SMALLINT          scalar         integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5    USMALLINT          scalar         integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6      INTEGER          scalar         integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7     UINTEGER          scalar         numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8       BIGINT          scalar   rducks_bigint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9      UBIGINT          scalar  rducks_ubigint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10       FLOAT          scalar         numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11      DOUBLE          scalar         numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12     VARCHAR          scalar       character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13        BLOB          scalar             raw</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14    GEOMETRY          scalar             raw</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15     VARIANT          scalar  rducks_variant</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16        DATE          scalar            Date</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17        TIME          scalar         numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18   TIMESTAMP          scalar         POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19     HUGEINT          scalar  rducks_hugeint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20    UHUGEINT          scalar rducks_uhugeint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21        UUID          scalar     rducks_uuid</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22    INTERVAL          scalar rducks_interval</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23         BIT          scalar     rducks_bits</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                            default_null_input</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9  short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    special_null_argument                               sql_nan_inf_input</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                     NA          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2            NA_integer_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3            NA_integer_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4            NA_integer_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5            NA_integer_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6            NA_integer_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7               NA_real_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                   NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                   NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10              NA_real_ DuckDB NaN/Inf pass through as R numeric values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11              NA_real_ DuckDB NaN/Inf pass through as R numeric values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12         NA_character_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16               Date NA          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17              NA_real_          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18            POSIXct NA          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                  NULL          not representable for this DuckDB type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    r_null_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9       SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                             r_na_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                               NA_logical_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                               NA_integer_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                               NA_integer_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                               NA_integer_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                               NA_integer_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                               NA_integer_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                                                  NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                                         rducks_bigint(NA) -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                                        rducks_ubigint(NA) -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                                 NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                 NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                                            NA_character_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                              raw vectors have no NA payload; use R NULL for SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                          raw WKB vectors have no NA payload; use R NULL for SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15 use R NULL for SQL NULL; nested missingness is encoded in the VARIANT storage object</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                       Date NA / NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                                 NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                    POSIXct NA / NA_real_ -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                       rducks_hugeint(NA) -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                                      rducks_uhugeint(NA) -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                                          rducks_uuid(NA) -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                    any NA component in rducks_interval() -&gt; SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                           no NA bit payload; use R NULL for SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>               r_nan_return               r_inf_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1           not applicable             not applicable</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                    error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10 preserved as DuckDB NaN preserved as DuckDB +/-Inf</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11 preserved as DuckDB NaN preserved as DuckDB +/-Inf</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12          not applicable             not applicable</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13          not applicable             not applicable</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14          not applicable             not applicable</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15          not applicable             not applicable</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                   error                      error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                         binary_ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                                                    no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                       rducks_bigint +, -, comparisons; NA propagates; range errors remain errors</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9   rducks_ubigint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                                  ordinary R numeric semantics in the R function</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                  ordinary R numeric semantics in the R function</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15       no Rducks-specific VARIANT binary ops; use DuckDB SQL functions such as variant_extract()</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                     rducks_hugeint +, -, comparisons; NA propagates; range errors remain errors</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20 rducks_uhugeint +, -, comparisons; NA propagates; unsigned underflow/range errors remain errors</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                                                   no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22           rducks_interval + and -; NA components propagate; component overflow remains an error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                    rducks_bits &amp;, |, !, rducks_bits_xor(); NA bits are rejected</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                      error_semantics</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                   non-logical values are incompatible with BOOLEAN</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                         NaN, Inf, fractional, and out-of-range return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                non-integer strings, numeric NaN/Inf, and out-of-range values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                non-integer strings, numeric NaN/Inf, and out-of-range values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                    NA is NULL; NaN and Inf are valid FLOAT values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                   NA is NULL; NaN and Inf are valid DOUBLE values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12 values that cannot be converted to character error during checking or marshalling</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                       non-raw return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                                   non-raw WKB return values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15            malformed VARIANT storage objects error during checking or marshalling</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                            NaN, Inf, fractional days, and out-of-range days error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17        NaN, Inf, values outside [0, 86400), and values rounding to 24:00:00 error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                NaN, Inf, and out-of-range timestamp seconds error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19               non-integer strings, numeric NaN/Inf, and out-of-range values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20               non-integer strings, numeric NaN/Inf, and out-of-range values error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                               NA UUID values are NULL; malformed UUID text errors</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22             NaN/Inf components and months/days/micros outside DuckDB ranges error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                     BIT inputs must contain only 0/1 or TRUE/FALSE; NA bits error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                              notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                                                 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7          uses R numeric because UINTEGER exceeds R integer range</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                exact signed 64-bit integer value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                              exact unsigned 64-bit integer value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                            DuckDB FLOAT is widened to R numeric</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                            string copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                             bytes copied into R</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                GEOMETRY crosses the R boundary as WKB raw bytes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15 VARIANT crosses the R boundary as DuckDB's typed storage object</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                           days since 1970-01-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                               microseconds converted to seconds</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                               microseconds converted to seconds</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                        exact Rducks value class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                        exact Rducks value class</span>
+<span class="r-in"><span><span class="fu">rducks_value_semantics</span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   duckdb_type descriptor_kind r_value_class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1     INTEGER          scalar       integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                           default_null_input</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   special_null_argument                      sql_nan_inf_input r_null_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1           NA_integer_ not representable for this DuckDB type      SQL NULL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>               r_na_return r_nan_return r_inf_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 NA_integer_ -&gt; SQL NULL        error        error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                      binary_ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 no Rducks-specific binary ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                              error_semantics notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 NaN, Inf, fractional, and out-of-range return values error      </span>
+<span class="r-in"><span><span class="fu">rducks_value_semantics</span><span class="op">(</span><span class="fu"><a href="rducks_type_objects.html">DECIMAL</a></span><span class="op">(</span><span class="fl">10L</span>, <span class="fl">2L</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>      duckdb_type descriptor_kind  r_value_class</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 DECIMAL(10, 2)         decimal rducks_decimal</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                           default_null_input</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 short-circuit to SQL NULL result; R function is not called</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   special_null_argument                    sql_nan_inf_input</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                  NULL not representable for DuckDB DECIMAL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                    r_null_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 SQL NULL for the top-level value; nested NULLs map recursively</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                    r_na_return r_nan_return r_inf_return</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 rducks_decimal(NA, width, scale) -&gt; SQL NULL        error        error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                      binary_ops</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 rducks_decimal +, -, comparisons; NA propagates; matching scales are required</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                       error_semantics</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 NaN/Inf numeric inputs, scale/width mismatch, and DECIMAL arithmetic overflow error</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                           notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 exact fixed-point value class</span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

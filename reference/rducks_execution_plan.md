@@ -129,3 +129,26 @@ reference; Rducks does not silently switch from one plan to another.
 vendored nanoarrow C/IPC encoding. Each valid pair maps to a concrete
 internal `engine_id` such as `"arrow_c_direct_serial"` or
 `"ipc_nng_pool"`.
+
+## Examples
+
+``` r
+rducks_execution_plan("arrow_r", "serial")
+#> <rducks_execution_plan>
+#>   plan_id:     arrow_r+serial
+#>   engine_id:   arrow_r_serial
+#>   marshalling: arrow_r
+#>   concurrency: serial
+#>   reference:   yes
+#>   implemented: yes
+#>   call shapes: scalar, vectorized
+rducks_execution_plan("arrow_c", "inproc_concurrent")
+#> <rducks_execution_plan>
+#>   plan_id:     arrow_c+inproc_concurrent
+#>   engine_id:   arrow_c_direct_main_queue
+#>   marshalling: arrow_c
+#>   concurrency: inproc_concurrent
+#>   reference:   no
+#>   implemented: yes
+#>   call shapes: scalar, vectorized
+```

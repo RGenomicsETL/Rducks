@@ -17,3 +17,14 @@ rducks_uhugeint(x = character())
 ## Value
 
 Character vector with class `rducks_uhugeint`.
+
+## Examples
+
+``` r
+rducks_uhugeint(0:2)
+#> <rducks_uhugeint[3]>
+#> [1] 0 1 2
+rducks_uhugeint("340282366920938463463374607431768211455")
+#> <rducks_uhugeint[1]>
+#> [1] 340282366920938463463374607431768211455
+```

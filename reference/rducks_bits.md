@@ -26,3 +26,13 @@ rducks_bits_raw(x)
 ## Value
 
 Object of class `rducks_bits`.
+
+## Examples
+
+``` r
+b <- rducks_bits("10110")
+as.character(b)
+#> [1] "10110"
+rducks_bits_raw(b)
+#> [1] b0
+```

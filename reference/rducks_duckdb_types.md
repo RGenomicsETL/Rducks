@@ -18,3 +18,14 @@ rducks_duckdb_types(x)
 ## Value
 
 Character vector of DuckDB SQL type names.
+
+## Examples
+
+``` r
+rducks_duckdb_types(INTEGER)
+#> [1] "INTEGER"
+rducks_duckdb_types(c(INTEGER, DOUBLE, VARCHAR))
+#> [1] "INTEGER" "DOUBLE"  "VARCHAR"
+rducks_duckdb_types(STRUCT(a = INTEGER, b = VARCHAR))
+#> [1] "STRUCT(a INTEGER, b VARCHAR)"
+```

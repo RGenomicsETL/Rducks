@@ -66,6 +66,28 @@ has been recorded yet, this returns the reference plan <code>arrow_r + serial</c
     <p>An object of class <code>rducks_execution_plan</code>.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow):</span> Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Context: rapi_execute</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Error type: INVALID</span>
+<span class="r-in"><span><span class="fu">rducks_current_execution_plan</span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_execution_plan&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   plan_id:     arrow_r+serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   engine_id:   arrow_r_serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   marshalling: arrow_r</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   concurrency: serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   reference:   yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   implemented: yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   call shapes: scalar, vectorized</span>
+<span class="r-in"><span><span class="fu"><a href="rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

@@ -28,3 +28,18 @@ rducks_interval(months = 0L, days = 0L, micros = 0L)
 ## Value
 
 Object of class `rducks_interval`.
+
+## Examples
+
+``` r
+rducks_interval(months = 1L, days = 15L, micros = 0L)
+#> <rducks_interval[1]>
+#>  months days micros
+#>       1   15      0
+rducks_interval(days = c(1L, 2L, NA_integer_))
+#> <rducks_interval[3]>
+#>  months days micros
+#>       0    1      0
+#>       0    2      0
+#>       0   NA      0
+```

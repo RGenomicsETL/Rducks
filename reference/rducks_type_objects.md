@@ -210,3 +210,48 @@ An object of class `Rducks::rducks_bit_type` (inherits from
 
 A formal S7 `rducks_type` descriptor, or a `rducks_type_list` from
 [`c()`](https://rdrr.io/r/base/c.html).
+
+## Examples
+
+``` r
+INTEGER
+#> <rducks_type:scalar> INTEGER
+rducks_is_type(INTEGER)
+#> [1] TRUE
+rducks_is_type("not a type")
+#> [1] FALSE
+LIST(VARCHAR)
+#> <rducks_type:list> VARCHAR[]
+#>   children:
+#>     child: VARCHAR
+ARRAY(INTEGER, 3L)
+#> <rducks_type:array> INTEGER[3]
+#>   children:
+#>     child: INTEGER
+STRUCT(a = INTEGER, b = VARCHAR)
+#> <rducks_type:struct> STRUCT(a INTEGER, b VARCHAR)
+#>   children:
+#>     a: INTEGER
+#>     b: VARCHAR
+MAP(VARCHAR, DOUBLE)
+#> <rducks_type:map> MAP(VARCHAR, DOUBLE)
+#>   children:
+#>     key: VARCHAR
+#>     value: DOUBLE
+DECIMAL(10L, 2L)
+#> <rducks_type:decimal> DECIMAL(10, 2)
+#>   parameters: width=10, scale=2
+ENUM(c("small", "medium", "large"))
+#> <rducks_type:enum> ENUM('small', 'medium', 'large')
+#>   parameters: levels=small,medium,large
+UNION(i = INTEGER, s = VARCHAR)
+#> <rducks_type:union> UNION(i INTEGER, s VARCHAR)
+#>   children:
+#>     i: INTEGER
+#>     s: VARCHAR
+c(INTEGER, DOUBLE, VARCHAR)
+#> <rducks_type_list[3]>
+#>   1: INTEGER
+#>   2: DOUBLE
+#>   3: VARCHAR
+```

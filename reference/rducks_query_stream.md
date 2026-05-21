@@ -74,3 +74,23 @@ the native streaming result; it is safe to call more than once. A
 finalizer also closes unclosed streams, and `rducks_release(con)` closes
 streams registered on that connection before detaching connection-local
 state.
+
+## Examples
+
+``` r
+# \donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
+stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
+#> Error: Rducks is not enabled on this DuckDB connection
+stream$next_batch()
+#> Error: object 'stream' not found
+stream$close()
+#> Error: object 'stream' not found
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```

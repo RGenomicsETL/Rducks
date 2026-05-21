@@ -87,6 +87,40 @@ runtime share this view.</p>
     <p>A data frame with one row per Rducks scalar UDF registered on <code>con</code>.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow):</span> Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Context: rapi_execute</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Error type: INVALID</span>
+<span class="r-in"><span><span class="fu"><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span><span class="va">db</span>, <span class="st">"my_fn"</span>, <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span></span>
+<span class="r-in"><span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span>, returns <span class="op">=</span> <span class="va">INTEGER</span><span class="op">)</span></span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions</span>
+<span class="r-in"><span><span class="fu">rducks_list_udfs</span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [1] name                              mode                             </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [3] plan_id                           engine_id                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [5] marshalling                       concurrency                      </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [7] native_marshalling                evaluator                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [9] args                              returns                          </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [11] r_side_record                     null_handling                    </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [13] exception_handling                side_effects                     </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [15] dispatch_chunks                   dispatch_rows                    </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [17] direct_chunks                     queued_chunks                    </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [19] queue_pending_current             queue_pending_max                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [21] arrow_r_chunks                    arrow_c_chunks                   </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [23] arrow_c_input_snapshot_chunks     arrow_c_owned_result_chunk_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [25] arrow_ipc_chunks                  ripc_collect_batches             </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [27] ripc_collect_requests             ripc_collect_max_batch           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [29] ripc_submit_wave_max              ripc_collect_ready_max           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [31] ripc_inflight_current             ripc_inflight_max                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;0 rows&gt; (or 0-length row.names)</span>
+<span class="r-in"><span><span class="fu"><a href="rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

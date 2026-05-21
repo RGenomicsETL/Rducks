@@ -27,3 +27,20 @@ rducks_inproc_self_test(con, n = 1000L)
 ## Value
 
 Integer-like numeric scalar: number of requests completed.
+
+## Examples
+
+``` r
+# \donttest{
+# Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
+rducks_inproc_self_test(db, n = 10L)
+#> Error: rducks_inproc_self_test() requires RDUCKS_DEV_SURFACES=true before rducks_enable()
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```

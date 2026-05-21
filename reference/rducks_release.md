@@ -49,3 +49,17 @@ Call
 [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
 again before using `con` for further Rducks registrations or
 connection-local plan changes.
+
+## Examples
+
+``` r
+# \donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```

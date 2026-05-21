@@ -18,3 +18,14 @@ rducks_hugeint(x = character())
 ## Value
 
 Character vector with class `rducks_hugeint`.
+
+## Examples
+
+``` r
+rducks_hugeint(1:3)
+#> <rducks_hugeint[3]>
+#> [1] 1 2 3
+rducks_hugeint("170141183460469231731687303715884105727")
+#> <rducks_hugeint[1]>
+#> [1] 170141183460469231731687303715884105727
+```

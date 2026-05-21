@@ -23,3 +23,12 @@ rducks_enum(x, levels = NULL)
 ## Value
 
 Factor with class `rducks_enum`.
+
+## Examples
+
+``` r
+rducks_enum(c("a", "b", NA), levels = c("a", "b", "c"))
+#> <rducks_enum[3] levels=a,b,c>
+#> [1] a    b    <NA>
+#> Levels: a b c
+```

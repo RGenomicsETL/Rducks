@@ -32,3 +32,19 @@ rducks_ipc_workers(con = NULL, ping = FALSE, timeout = 1)
 ## Value
 
 A data frame with one row per configured worker endpoint.
+
+## Examples
+
+``` r
+# \donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: IO Error: Extension "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/rducks.duckdb_extension" could not be loaded because its signature is either missing or invalid and unsigned extensions are disabled by configuration (allow_unsigned_extensions)
+#> ℹ Context: rapi_execute
+#> ℹ Error type: INVALID
+rducks_ipc_workers(db)
+#> <rducks_ipc_workers> no workers
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```

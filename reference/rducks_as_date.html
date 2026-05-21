@@ -108,6 +108,29 @@ numeric seconds since midnight; <code>rducks_as_timestamp()</code> returns <code
 <code>rducks_interval</code>.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">rducks_as_date</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2024-01-15"</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] "2024-01-15"</span>
+<span class="r-in"><span><span class="fu">rducks_as_date</span><span class="op">(</span><span class="st">"2024-01-15"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] "2024-01-15"</span>
+<span class="r-in"><span><span class="fu">rducks_as_timestamp</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/as.POSIXlt.html" class="external-link">as.POSIXct</a></span><span class="op">(</span><span class="st">"2024-01-15 12:00:00"</span>, tz <span class="op">=</span> <span class="st">"UTC"</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] "2024-01-15 12:00:00 UTC"</span>
+<span class="r-in"><span><span class="fu">rducks_as_time</span><span class="op">(</span><span class="st">"08:30:00"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 30600</span>
+<span class="r-in"><span><span class="fu">rducks_as_interval</span><span class="op">(</span><span class="fl">3600</span>, units <span class="op">=</span> <span class="st">"secs"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_interval[1]&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  months days     micros</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>       0    0 3600000000</span>
+<span class="r-in"><span><span class="fu">rducks_interval_between</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/as.POSIXlt.html" class="external-link">as.POSIXct</a></span><span class="op">(</span><span class="st">"2024-01-01"</span>, tz <span class="op">=</span> <span class="st">"UTC"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/as.POSIXlt.html" class="external-link">as.POSIXct</a></span><span class="op">(</span><span class="st">"2024-01-02"</span>, tz <span class="op">=</span> <span class="st">"UTC"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_interval[1]&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  months days      micros</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>       0    0 86400000000</span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 

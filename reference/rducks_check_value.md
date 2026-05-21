@@ -41,3 +41,12 @@ rducks_check_return(type, x)
 ## Value
 
 `x`, invisibly, on success.
+
+## Examples
+
+``` r
+rducks_check_value(INTEGER, 42L)
+rducks_check_value(VARCHAR, "hello")
+rducks_check_argument(DOUBLE, 3.14, name = "x")
+rducks_check_return(BOOLEAN, TRUE)
+```

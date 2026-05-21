@@ -27,3 +27,11 @@ rducks_decimal(x = character(), width, scale = 0L)
 ## Value
 
 Object of class `rducks_decimal`.
+
+## Examples
+
+``` r
+rducks_decimal(c(1.5, 2.25, NA), width = 10, scale = 2)
+#> <rducks_decimal[3] DECIMAL(10, 2)>
+#> [1] 1.50 2.25 <NA>
+```

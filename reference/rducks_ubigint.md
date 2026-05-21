@@ -17,3 +17,14 @@ rducks_ubigint(x = character())
 ## Value
 
 Character vector with class `rducks_ubigint`.
+
+## Examples
+
+``` r
+rducks_ubigint(0:2)
+#> <rducks_ubigint[3]>
+#> [1] 0 1 2
+rducks_ubigint("18446744073709551615")
+#> <rducks_ubigint[1]>
+#> [1] 18446744073709551615
+```
