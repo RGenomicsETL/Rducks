@@ -2,7 +2,7 @@ rducks_vectorized_column_values <- function(type, values, nulls, rows) {
   if (!length(rows)) {
     return(values[integer()])
   }
-  if (any(nulls[rows]) && (rducks_arrow_uses_r_null_for_null(type) || !inherits(type, "rducks_scalar_type"))) {
+  if (any(nulls[rows]) && (rducks_arrow_uses_r_null_for_null(type) || !rducks_type_inherits(type, "rducks_scalar_type"))) {
     return(lapply(rows, function(i) rducks_arrow_value_at(type, values, nulls, i)))
   }
   values[rows]
@@ -19,21 +19,21 @@ rducks_vectorized_args <- function(arg_types, prepared, rows) {
 }
 
 rducks_vectorized_return_length <- function(type, value) {
-  if (inherits(type, "rducks_struct_type") && is.data.frame(value)) {
+  if (rducks_type_inherits(type, "rducks_struct_type") && is.data.frame(value)) {
     return(nrow(value))
   }
   length(value)
 }
 
 rducks_vectorized_return_value_at <- function(type, value, i) {
-  if (inherits(type, "rducks_struct_type") && is.data.frame(value)) {
+  if (rducks_type_inherits(type, "rducks_struct_type") && is.data.frame(value)) {
     row <- as.list(value[i, , drop = FALSE])
     children <- rducks_type_children(type)
     child_names <- rducks_type_child_names(type)
     for (field_index in seq_along(child_names)) {
       field <- child_names[[field_index]]
       child <- children[[field_index]]
-      if ((!inherits(child, "rducks_scalar_type") || inherits(child, c("rducks_blob_type", "rducks_bit_type"))) &&
+      if ((!rducks_type_inherits(child, "rducks_scalar_type") || rducks_type_inherits(child, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) &&
           is.list(row[[field]]) && length(row[[field]]) == 1L) {
         row[[field]] <- row[[field]][[1L]]
       }
@@ -43,10 +43,10 @@ rducks_vectorized_return_value_at <- function(type, value, i) {
   if (is.list(value) && !is.data.frame(value) && !inherits(value, c("rducks_decimal", "rducks_interval", "rducks_bits"))) {
     return(value[[i]])
   }
-  if (inherits(type, "rducks_scalar_type") && !inherits(type, c("rducks_blob_type", "rducks_bit_type"))) {
+  if (rducks_type_inherits(type, "rducks_scalar_type") && !rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) {
     return(value[i])
   }
-  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
+  if (rducks_type_inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
     return(value[i])
   }
   value[[i]]

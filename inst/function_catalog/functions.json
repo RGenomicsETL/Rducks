@@ -294,8 +294,8 @@
     "name": "rducks_type_objects",
     "kind": "R type descriptors / constructors",
     "category": "types",
-    "signature": "BOOLEAN; INTEGER; DOUBLE; DECIMAL(width, scale); ENUM(levels); LIST(type); ARRAY(type, size); MAP(key, value); STRUCT(...); UNION(...)",
-    "returns": "rducks_type descriptor",
+    "signature": "BOOLEAN; INTEGER; DOUBLE; GEOMETRY; VARIANT; DECIMAL(width, scale); ENUM(levels); LIST(type); ARRAY(type, size); MAP(key, value); STRUCT(...); UNION(...); rducks_variant(x)",
+    "returns": "rducks_type descriptor or rducks_variant storage object",
     "aliases": [
       "rducks_is_type",
       "BOOLEAN",
@@ -311,6 +311,8 @@
       "DOUBLE",
       "VARCHAR",
       "BLOB",
+      "GEOMETRY",
+      "VARIANT",
       "DATE",
       "TIME",
       "TIMESTAMP",
@@ -325,9 +327,10 @@
       "ARRAY",
       "MAP",
       "STRUCT",
-      "UNION"
+      "UNION",
+      "rducks_variant"
     ],
-    "description": "Provide formal Rducks descriptors for DuckDB scalar, exact, temporal, and composite SQL types used in registrations and value checks.",
+    "description": "Provide formal Rducks descriptors for DuckDB scalar, GEOMETRY, VARIANT, exact, temporal, and composite SQL types used in registrations and value checks.",
     "lifecycle": "experimental",
     "since": "0.1.0"
   },

@@ -1,5 +1,5 @@
 rducks_duckplyr_normalize_returns <- function(returns) {
-  if (inherits(returns, "rducks_type") || (is.character(returns) && length(returns) == 1L && is.null(names(returns)))) {
+  if (rducks_type_inherits(returns, "rducks_type") || (is.character(returns) && length(returns) == 1L && is.null(names(returns)))) {
     returns <- list(returns)
   } else if (is.character(returns)) {
     returns <- as.list(returns)

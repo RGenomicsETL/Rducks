@@ -252,6 +252,7 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_F64:
     case RDUCKS_TYPE_VARCHAR:
     case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_GEOMETRY:
     case RDUCKS_TYPE_DATE:
     case RDUCKS_TYPE_TIME:
     case RDUCKS_TYPE_TIMESTAMP:
@@ -1155,6 +1156,7 @@ static SEXP rducks_rc_missing_arg(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_TIMESTAMP:
         return rducks_rc_make_timestamp(NA_REAL);
     case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_GEOMETRY:
     default:
         return R_NilValue;
     }
@@ -1583,7 +1585,8 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         UNPROTECT(1);
         return out;
     }
-    case RDUCKS_TYPE_BLOB: {
+    case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_GEOMETRY: {
         duckdb_string_t *data = (duckdb_string_t *)input->data;
         uint32_t len = duckdb_string_t_length(data[row]);
         const char *ptr = duckdb_string_t_data(&data[row]);
@@ -1897,6 +1900,7 @@ static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckd
             UNPROTECT(1);
             return out;
         case RDUCKS_TYPE_BLOB:
+        case RDUCKS_TYPE_GEOMETRY:
             out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n));
             for (idx_t row = 0; row < n; row++) {
                 if (!rducks_rc_direct_view_valid_at(&view, row)) {
@@ -2146,7 +2150,7 @@ static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SE
         if (TYPEOF(days) == INTSXP && XLENGTH(days) > 0 && INTEGER(days)[0] == NA_INTEGER) return 1;
         if (TYPEOF(micros) == STRSXP && XLENGTH(micros) > 0 && STRING_ELT(micros, 0) == NA_STRING) return 1;
     }
-    if (desc->scalar == RDUCKS_TYPE_BLOB || desc->scalar == RDUCKS_TYPE_BIT) return 0;
+    if (desc->scalar == RDUCKS_TYPE_BLOB || desc->scalar == RDUCKS_TYPE_GEOMETRY || desc->scalar == RDUCKS_TYPE_BIT) return 0;
     if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0) return INTEGER(value)[0] == NA_INTEGER;
     if (TYPEOF(value) == LGLSXP && XLENGTH(value) > 0) return LOGICAL(value)[0] == NA_LOGICAL;
     if (TYPEOF(value) == REALSXP && XLENGTH(value) > 0) return ISNA(REAL(value)[0]);
@@ -2536,8 +2540,9 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return 1;
     }
     case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_GEOMETRY:
         if (TYPEOF(value) != RAWSXP) {
-            snprintf(err_msg, err_cap, "Rducks RC BLOB output is not a raw vector");
+            snprintf(err_msg, err_cap, "Rducks RC binary output is not a raw vector");
             return 0;
         }
         duckdb_vector_assign_string_element_len(output->vector, row, (const char *)RAW(value), (idx_t)XLENGTH(value));
@@ -2621,7 +2626,7 @@ static int rducks_rc_arrow_bitmap_get(const uint8_t *bitmap, idx_t row) {
 static int rducks_rc_owned_result_is_variable(const rducks_type_desc_t *desc) {
     return desc && desc->kind == RDUCKS_KIND_SCALAR &&
            (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_BLOB ||
-            desc->scalar == RDUCKS_TYPE_BIT);
+            desc->scalar == RDUCKS_TYPE_GEOMETRY || desc->scalar == RDUCKS_TYPE_BIT);
 }
 
 static size_t rducks_rc_owned_result_element_size(const rducks_type_desc_t *desc) {
@@ -2969,8 +2974,9 @@ static int rducks_rc_owned_result_payload_set_value(rducks_rc_owned_result_paylo
         return rducks_rc_owned_result_payload_set_variable(payload, row, ptr, strlen(ptr), err_msg, err_cap);
     }
     case RDUCKS_TYPE_BLOB:
+    case RDUCKS_TYPE_GEOMETRY:
         if (TYPEOF(value) != RAWSXP) {
-            snprintf(err_msg, err_cap, "Rducks owned Arrow BLOB result is not a raw vector");
+            snprintf(err_msg, err_cap, "Rducks owned Arrow binary result is not a raw vector");
             return 0;
         }
         return rducks_rc_owned_result_payload_set_variable(payload, row, RAW(value), (size_t)XLENGTH(value),

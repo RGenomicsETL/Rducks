@@ -84,6 +84,11 @@ expect_error(rducks_as_time(86400), "86400")
 expect_error(rducks_as_time(86399.9999996), "rounding")
 expect_error(rducks_interval(0L, 0L, "9223372036854775808"), "range")
 
+variant <- rducks_variant(list(keys = character(), children = list(), values = list(), data = raw()))
+expect_inherits(variant, "rducks_variant")
+expect_equal(names(unclass(variant)), c("keys", "children", "values", "data"))
+expect_error(rducks_variant(list(keys = character(), children = list(), values = list())), "missing STRUCT field data")
+
 bits <- rducks_bits("10110001")
 expect_inherits(bits, "rducks_bits")
 expect_equal(as.character(bits), "10110001")

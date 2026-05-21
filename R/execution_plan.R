@@ -540,7 +540,7 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 }
 
 rducks_arrow_ipc_unsupported_types <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(rducks_type_normalize(type))
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(rducks_type_normalize(type))
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
     return(if (rducks_type_token(type) %in% rducks_all_scalar_type_names()) character() else rducks_type_duckdb_sql(type))

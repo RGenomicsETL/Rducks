@@ -50,6 +50,7 @@ composite values.
 ```{r descriptors}
 primitive <- list(INTEGER, DOUBLE, BOOLEAN, VARCHAR)
 exact <- list(UUID, HUGEINT, DECIMAL(18, 4), INTERVAL, BIT)
+semi_structured <- list(GEOMETRY, VARIANT)
 composite <- list(
   INTEGER[],
   ARRAY(DOUBLE, 3),
@@ -135,7 +136,7 @@ aligned with the implemented semantics.
 rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
 
 rducks_value_semantics()[
-  rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "STRUCT"),
+  rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "GEOMETRY", "VARIANT", "STRUCT"),
   c("duckdb_type", "r_value_class", "special_null_argument")
 ]
 

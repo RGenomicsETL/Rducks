@@ -8,8 +8,8 @@ expect_equal(rducks_type_normalize(INTEGER[3]), "i32[3]")
 expect_equal(rducks_type_normalize(STRUCT(a = INTEGER, b = VARCHAR)), "struct<a:i32;b:varchar>")
 expect_equal(rducks_type_normalize(MAP(VARCHAR, INTEGER)), "map<varchar;i32>")
 expect_equal(
-  rducks_duckdb_types(c("i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp")),
-  c("TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP")
+  rducks_duckdb_types(c("i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "geometry", "variant", "date", "time", "timestamp")),
+  c("TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "GEOMETRY", "VARIANT", "DATE", "TIME", "TIMESTAMP")
 )
 expect_equal(rducks_duckdb_signature("f", c("i32", "f64"), "bool"), "f(INTEGER, DOUBLE) -> BOOLEAN")
 expect_true("rducks_argument_type_mapping" %in% getNamespaceExports("Rducks"))
@@ -17,14 +17,17 @@ expect_true(rducks_is_type(INTEGER))
 expect_true(rducks_is_type(INTEGER[]))
 expect_true(rducks_is_type(INTEGER[3]))
 expect_true(rducks_is_type(STRUCT(a = INTEGER[], b = MAP(VARCHAR, INTEGER))))
-expect_inherits(INTEGER, "rducks_scalar_type")
-expect_inherits(INTEGER[], "rducks_list_type")
-expect_inherits(INTEGER[3], "rducks_array_type")
-expect_inherits(STRUCT(a = INTEGER), "rducks_struct_type")
-expect_inherits(MAP(VARCHAR, INTEGER), "rducks_map_type")
-expect_inherits(DECIMAL(10, 2), "rducks_decimal_type")
-expect_inherits(ENUM(c("red", "blue")), "rducks_enum_type")
-expect_inherits(UNION(i = INTEGER, s = VARCHAR), "rducks_union_type")
+expect_true(S7::S7_inherits(INTEGER, Rducks:::rducks_scalar_type_class))
+expect_true(S7::S7_inherits(INTEGER[], Rducks:::rducks_list_type_class))
+expect_true(S7::S7_inherits(INTEGER[3], Rducks:::rducks_array_type_class))
+expect_true(S7::S7_inherits(STRUCT(a = INTEGER), Rducks:::rducks_struct_type_class))
+expect_true(S7::S7_inherits(MAP(VARCHAR, INTEGER), Rducks:::rducks_map_type_class))
+expect_true(S7::S7_inherits(DECIMAL(10, 2), Rducks:::rducks_decimal_type_class))
+expect_true(S7::S7_inherits(ENUM(c("red", "blue")), Rducks:::rducks_enum_type_class))
+expect_true(S7::S7_inherits(UNION(i = INTEGER, s = VARCHAR), Rducks:::rducks_union_type_class))
+expect_true(S7::S7_inherits(INTEGER, Rducks:::rducks_type_class))
+expect_true(any(startsWith(class(INTEGER), "Rducks::")))
+expect_false(any(class(INTEGER) == "rducks_type"))
 expect_true(rducks_is_type(STRUCT(x = LIST(UNION(i = INTEGER, e = ENUM(c("red", "blue")))), y = MAP(VARCHAR, DECIMAL(10, 2)))))
 expect_identical(rducks_check_return(ENUM(c("red", "blue")), rducks_enum("red", c("red", "blue"))), rducks_enum("red", c("red", "blue")))
 expect_identical(rducks_check_return(UNION(i = INTEGER, s = VARCHAR), rducks_union("i", 1L)), rducks_union("i", 1L))
@@ -60,7 +63,7 @@ expect_false(rducks_is_type(bad_type))
 scalar_mapping <- rducks_argument_type_mapping()
 expect_equal(
   scalar_mapping$duckdb_type,
-  c("BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP", "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT")
+  c("BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER", "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "GEOMETRY", "VARIANT", "DATE", "TIME", "TIMESTAMP", "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT")
 )
 expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "BIGINT"], "rducks_bigint")
 expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "UBIGINT"], "rducks_ubigint")
@@ -108,8 +111,19 @@ expect_equal(composite_mapping$r_argument_shape[[1L]], "integer vector")
 expect_equal(composite_mapping$r_argument_shape[[3L]], "rducks_bigint vector of length 3")
 expect_false(composite_mapping$precision_may_be_lost[[3L]])
 
-for (type in c(as.list(c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid", "interval", "bit")), composite_types)) {
-  duckdb_type <- rducks_type_sql(if (inherits(type, "rducks_type")) type else Rducks:::rducks_type_object(type))
+expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "GEOMETRY"], "raw")
+expect_equal(scalar_mapping$r_value_class[scalar_mapping$duckdb_type == "VARIANT"], "rducks_variant")
+expect_true(S7::S7_inherits(GEOMETRY, Rducks:::rducks_geometry_type_class))
+expect_true(S7::S7_inherits(VARIANT, Rducks:::rducks_variant_type_class))
+expect_true(inherits(rducks_variant(list(
+  keys = character(),
+  children = list(),
+  values = list(),
+  data = raw()
+)), "rducks_variant"))
+
+for (type in c(as.list(c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "varchar", "blob", "geometry", "variant", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid", "interval", "bit")), composite_types)) {
+  duckdb_type <- rducks_type_sql(if (rducks_is_type(type)) type else Rducks:::rducks_type_object(type))
   mapping <- rducks_argument_type_mapping(type)
   expect_equal(mapping$duckdb_type, duckdb_type)
 }

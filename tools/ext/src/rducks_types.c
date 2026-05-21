@@ -37,6 +37,8 @@ static rducks_type_id_t rducks_scalar_type_id_from_token(const char *raw_token) 
     if (strcmp(token, "f64") == 0) return RDUCKS_TYPE_F64;
     if (strcmp(token, "varchar") == 0) return RDUCKS_TYPE_VARCHAR;
     if (strcmp(token, "blob") == 0) return RDUCKS_TYPE_BLOB;
+    if (strcmp(token, "geometry") == 0) return RDUCKS_TYPE_GEOMETRY;
+    if (strcmp(token, "variant") == 0) return RDUCKS_TYPE_VARIANT;
     if (strcmp(token, "date") == 0) return RDUCKS_TYPE_DATE;
     if (strcmp(token, "time") == 0) return RDUCKS_TYPE_TIME;
     if (strcmp(token, "timestamp") == 0) return RDUCKS_TYPE_TIMESTAMP;
@@ -76,6 +78,10 @@ static duckdb_type rducks_duckdb_type_id(rducks_type_id_t type) {
         return DUCKDB_TYPE_VARCHAR;
     case RDUCKS_TYPE_BLOB:
         return DUCKDB_TYPE_BLOB;
+    case RDUCKS_TYPE_GEOMETRY:
+        return DUCKDB_TYPE_GEOMETRY;
+    case RDUCKS_TYPE_VARIANT:
+        return RDUCKS_DUCKDB_TYPE_VARIANT;
     case RDUCKS_TYPE_DATE:
         return DUCKDB_TYPE_DATE;
     case RDUCKS_TYPE_TIME:
@@ -99,10 +105,17 @@ static duckdb_type rducks_duckdb_type_id(rducks_type_id_t type) {
 
 static duckdb_logical_type rducks_create_logical_type_for_id(rducks_type_id_t type) {
     duckdb_type duckdb_type_id = rducks_duckdb_type_id(type);
+    duckdb_logical_type out;
     if (duckdb_type_id == DUCKDB_TYPE_INVALID) {
         return NULL;
     }
-    return duckdb_create_logical_type(duckdb_type_id);
+    out = duckdb_create_logical_type(duckdb_type_id);
+    if (!out) return NULL;
+    if (duckdb_get_type_id(out) != duckdb_type_id) {
+        duckdb_destroy_logical_type(&out);
+        return NULL;
+    }
+    return out;
 }
 
 static char *rducks_strdup_trimmed_len(const char *x, size_t len) {
@@ -221,6 +234,22 @@ static void rducks_type_desc_destroy(rducks_type_desc_t *desc) {
     free(desc->field_hash_heads);
     free(desc->field_hash_next);
     free(desc);
+}
+
+static int rducks_type_desc_contains_scalar(const rducks_type_desc_t *desc, rducks_type_id_t scalar) {
+    if (!desc) return 0;
+    if (desc->kind == RDUCKS_KIND_SCALAR) return desc->scalar == scalar;
+    if (rducks_type_desc_contains_scalar(desc->child, scalar) ||
+        rducks_type_desc_contains_scalar(desc->key, scalar) ||
+        rducks_type_desc_contains_scalar(desc->value, scalar)) {
+        return 1;
+    }
+    if (desc->field_types) {
+        for (size_t i = 0; i < desc->field_count; i++) {
+            if (rducks_type_desc_contains_scalar(desc->field_types[i], scalar)) return 1;
+        }
+    }
+    return 0;
 }
 
 static rducks_type_desc_t *rducks_type_desc_new(rducks_type_kind_t kind) {
@@ -793,6 +822,8 @@ static const char *rducks_type_id_token(rducks_type_id_t scalar) {
     case RDUCKS_TYPE_F64: return "f64";
     case RDUCKS_TYPE_VARCHAR: return "varchar";
     case RDUCKS_TYPE_BLOB: return "blob";
+    case RDUCKS_TYPE_GEOMETRY: return "geometry";
+    case RDUCKS_TYPE_VARIANT: return "variant";
     case RDUCKS_TYPE_DATE: return "date";
     case RDUCKS_TYPE_TIME: return "time";
     case RDUCKS_TYPE_TIMESTAMP: return "timestamp";
@@ -879,6 +910,8 @@ static rducks_type_id_t rducks_type_id_from_duckdb_type(duckdb_type type_id) {
     case DUCKDB_TYPE_DOUBLE: return RDUCKS_TYPE_F64;
     case DUCKDB_TYPE_VARCHAR: return RDUCKS_TYPE_VARCHAR;
     case DUCKDB_TYPE_BLOB: return RDUCKS_TYPE_BLOB;
+    case DUCKDB_TYPE_GEOMETRY: return RDUCKS_TYPE_GEOMETRY;
+    case RDUCKS_DUCKDB_TYPE_VARIANT: return RDUCKS_TYPE_VARIANT;
     case DUCKDB_TYPE_DATE: return RDUCKS_TYPE_DATE;
     case DUCKDB_TYPE_TIME: return RDUCKS_TYPE_TIME;
     case DUCKDB_TYPE_TIMESTAMP: return RDUCKS_TYPE_TIMESTAMP;

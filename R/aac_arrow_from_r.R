@@ -24,14 +24,14 @@ rducks_arrow_results_as_character <- function(results) {
 }
 
 rducks_scalar_udf_return_needs_length_one <- function(type) {
-  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type"))) {
+  if (rducks_type_inherits(type, c("rducks_decimal_type", "rducks_enum_type"))) {
     return(TRUE)
   }
-  inherits(type, "rducks_scalar_type") && !inherits(type, c("rducks_blob_type", "rducks_bit_type"))
+  rducks_type_inherits(type, "rducks_scalar_type") && !rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))
 }
 
 rducks_normalize_scalar_udf_return <- function(type, value) {
-  if (inherits(type, "rducks_decimal_type") && inherits(value, "rducks_decimal")) {
+  if (rducks_type_inherits(type, "rducks_decimal_type") && inherits(value, "rducks_decimal")) {
     params <- rducks_type_parameters(type)
     return(rducks_decimal(as.character(value), params$width, params$scale))
   }
@@ -51,11 +51,11 @@ rducks_check_scalar_udf_return <- function(type, value) {
 }
 
 rducks_arrow_sequence_value_at <- function(type, value, j) {
-  if (inherits(type, "rducks_scalar_type")) {
-    if (inherits(type, c("rducks_blob_type", "rducks_bit_type"))) return(value[[j]])
+  if (rducks_type_inherits(type, "rducks_scalar_type")) {
+    if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) return(value[[j]])
     return(value[j])
   }
-  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
+  if (rducks_type_inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
     if (is.list(value) && !inherits(value, c("rducks_decimal", "rducks_enum", "rducks_interval"))) {
       return(value[[j]])
     }
@@ -169,6 +169,15 @@ S7::method(rducks_arrow_scalar_values_to_array, rducks_blob_type_class) <- funct
   rducks_arrow_binary_payload_array(results, schema)
 }
 
+S7::method(rducks_arrow_scalar_values_to_array, rducks_geometry_type_class) <- function(type, results, schema) {
+  rducks_arrow_binary_payload_array(results, schema)
+}
+
+S7::method(rducks_arrow_scalar_values_to_array, rducks_variant_type_class) <- function(type, results, schema) {
+  storage_results <- lapply(results, function(value) if (is.null(value)) NULL else unclass(value))
+  rducks_arrow_values_to_array(rducks_variant_storage_type(), storage_results, schema)
+}
+
 S7::method(rducks_arrow_scalar_values_to_array, rducks_scalar_type_class) <- function(type, results, schema) {
   stop("unsupported scalar type for Rducks scalar-UDF nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)
 }
@@ -222,11 +231,11 @@ rducks_arrow_map_array <- function(type, results, schema) {
 
 rducks_arrow_values_to_array <- function(type, results, schema) {
   n <- length(results)
-  if (inherits(type, "rducks_scalar_type")) {
+  if (rducks_type_inherits(type, "rducks_scalar_type")) {
     return(rducks_arrow_scalar_values_to_array(type, results, schema))
   }
 
-  if (inherits(type, "rducks_decimal_type")) {
+  if (rducks_type_inherits(type, "rducks_decimal_type")) {
     params <- rducks_type_parameters(type)
     chars <- vapply(results, function(x) {
       if (is.null(x)) NA_character_ else as.character(x)[[1L]]
@@ -235,13 +244,13 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     return(rducks_arrow_fixed_width_array(storage, schema, 16L, signed = TRUE))
   }
 
-  if (inherits(type, "rducks_enum_type")) {
+  if (rducks_type_inherits(type, "rducks_enum_type")) {
     levels <- rducks_type_parameters(type)$levels
     chars <- vapply(results, function(x) if (is.null(x)) NA_character_ else as.character(x)[[1L]], character(1))
     return(rducks_arrow_enum_storage_array(chars, levels, schema))
   }
 
-  if (inherits(type, "rducks_list_type")) {
+  if (rducks_type_inherits(type, "rducks_list_type")) {
     child_type <- rducks_type_children(type)[[1L]]
     valid <- !vapply(results, is.null, logical(1))
     lengths <- vapply(results, function(x) if (is.null(x)) 0L else length(x), integer(1))
@@ -265,7 +274,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     )))
   }
 
-  if (inherits(type, "rducks_array_type")) {
+  if (rducks_type_inherits(type, "rducks_array_type")) {
     child_type <- rducks_type_children(type)[[1L]]
     size <- rducks_type_size(type)
     valid <- !vapply(results, is.null, logical(1))
@@ -291,7 +300,7 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     )))
   }
 
-  if (inherits(type, "rducks_struct_type")) {
+  if (rducks_type_inherits(type, "rducks_struct_type")) {
     children <- rducks_type_children(type)
     child_names <- rducks_type_child_names(type)
     child_arrays <- vector("list", length(children))
@@ -311,11 +320,11 @@ rducks_arrow_values_to_array <- function(type, results, schema) {
     )))
   }
 
-  if (inherits(type, "rducks_union_type")) {
+  if (rducks_type_inherits(type, "rducks_union_type")) {
     return(rducks_arrow_union_array(type, results, schema))
   }
 
-  if (inherits(type, "rducks_map_type")) {
+  if (rducks_type_inherits(type, "rducks_map_type")) {
     return(rducks_arrow_map_array(type, results, schema))
   }
   stop("unsupported Rducks type for scalar-UDF nanoarrow output: ", rducks_type_duckdb_sql(type), call. = FALSE)

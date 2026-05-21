@@ -70,6 +70,15 @@ rducks_value_semantics_scalar <- function(type) {
       r_na_return = "raw vectors have no NA payload; use R NULL for SQL NULL",
       error_semantics = "non-raw return values error"
     ),
+    geometry = list(
+      r_na_return = "raw WKB vectors have no NA payload; use R NULL for SQL NULL",
+      error_semantics = "non-raw WKB return values error"
+    ),
+    variant = list(
+      r_na_return = "use R NULL for SQL NULL; nested missingness is encoded in the VARIANT storage object",
+      binary_ops = "no Rducks-specific VARIANT binary ops; use DuckDB SQL functions such as variant_extract()",
+      error_semantics = "malformed VARIANT storage objects error during checking or marshalling"
+    ),
     date = list(
       r_na_return = "Date NA / NA_real_ -> SQL NULL",
       r_nan_return = "error",
@@ -195,7 +204,7 @@ rducks_value_semantics_constructed <- function(type) {
 }
 
 rducks_value_semantics_row <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   if (identical(rducks_type_kind(type), "scalar")) {
     rducks_value_semantics_scalar(type)
   } else {
@@ -245,7 +254,7 @@ rducks_value_semantics_empty <- function() {
 rducks_value_semantics <- function(x = NULL) {
   items <- if (is.null(x)) {
     as.list(rducks_all_scalar_type_names())
-  } else if (inherits(x, "rducks_type")) {
+  } else if (rducks_type_inherits(x, "rducks_type")) {
     list(x)
   } else {
     rducks_as_type_list(x)

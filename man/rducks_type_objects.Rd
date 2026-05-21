@@ -17,6 +17,8 @@
 \alias{DOUBLE}
 \alias{VARCHAR}
 \alias{BLOB}
+\alias{GEOMETRY}
+\alias{VARIANT}
 \alias{DATE}
 \alias{TIME}
 \alias{TIMESTAMP}
@@ -34,47 +36,51 @@
 \alias{STRUCT}
 \title{Rducks DuckDB type descriptors and constructors}
 \format{
-An object of class \code{rducks_bool_type} (inherits from \code{rducks_logical_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_bool_type} (inherits from \code{Rducks::rducks_logical_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_i8_type} (inherits from \code{rducks_r_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_i8_type} (inherits from \code{Rducks::rducks_r_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_u8_type} (inherits from \code{rducks_r_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_u8_type} (inherits from \code{Rducks::rducks_r_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_i16_type} (inherits from \code{rducks_r_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_i16_type} (inherits from \code{Rducks::rducks_r_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_u16_type} (inherits from \code{rducks_r_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_u16_type} (inherits from \code{Rducks::rducks_r_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_i32_type} (inherits from \code{rducks_r_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_i32_type} (inherits from \code{Rducks::rducks_r_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_u32_type} (inherits from \code{rducks_r_numeric_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_u32_type} (inherits from \code{Rducks::rducks_r_numeric_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_i64_type} (inherits from \code{rducks_exact_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_i64_type} (inherits from \code{Rducks::rducks_exact_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_u64_type} (inherits from \code{rducks_exact_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_u64_type} (inherits from \code{Rducks::rducks_exact_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_f32_type} (inherits from \code{rducks_floating_scalar_type}, \code{rducks_r_numeric_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_f32_type} (inherits from \code{Rducks::rducks_floating_scalar_type}, \code{Rducks::rducks_r_numeric_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_f64_type} (inherits from \code{rducks_floating_scalar_type}, \code{rducks_r_numeric_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_f64_type} (inherits from \code{Rducks::rducks_floating_scalar_type}, \code{Rducks::rducks_r_numeric_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_varchar_type} (inherits from \code{rducks_character_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_varchar_type} (inherits from \code{Rducks::rducks_character_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_blob_type} (inherits from \code{rducks_binary_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_blob_type} (inherits from \code{Rducks::rducks_binary_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_date_type} (inherits from \code{rducks_temporal_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_geometry_type} (inherits from \code{Rducks::rducks_binary_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_time_type} (inherits from \code{rducks_temporal_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_variant_type} (inherits from \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_timestamp_type} (inherits from \code{rducks_temporal_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_date_type} (inherits from \code{Rducks::rducks_temporal_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_hugeint_type} (inherits from \code{rducks_exact_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_time_type} (inherits from \code{Rducks::rducks_temporal_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_uhugeint_type} (inherits from \code{rducks_exact_integer_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_timestamp_type} (inherits from \code{Rducks::rducks_temporal_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_uuid_type} (inherits from \code{rducks_uuid_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_hugeint_type} (inherits from \code{Rducks::rducks_exact_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_interval_type} (inherits from \code{rducks_interval_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_uhugeint_type} (inherits from \code{Rducks::rducks_exact_integer_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 
-An object of class \code{rducks_bit_type} (inherits from \code{rducks_binary_scalar_type}, \code{rducks_scalar_type}, \code{rducks_type}, \code{list}, \code{S7_object}) of length 7.
+An object of class \code{Rducks::rducks_uuid_type} (inherits from \code{Rducks::rducks_uuid_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{Rducks::rducks_interval_type} (inherits from \code{Rducks::rducks_interval_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
+
+An object of class \code{Rducks::rducks_bit_type} (inherits from \code{Rducks::rducks_binary_scalar_type}, \code{Rducks::rducks_scalar_type}, \code{Rducks::rducks_type}, \code{list}, \code{S7_object}) of length 7.
 }
 \usage{
 rducks_is_type(x)
@@ -104,6 +110,10 @@ DOUBLE
 VARCHAR
 
 BLOB
+
+GEOMETRY
+
+VARIANT
 
 DATE
 

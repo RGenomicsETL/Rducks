@@ -46,5 +46,6 @@ rducks_main_thread_token <- function() {
     # forced teardown (e.g. rducks_nng_stop_all_providers() from user code).
     invisible(NULL)
   }, onexit = TRUE)
+  rducks_register_type_s7_methods()
   S7::methods_register()
 }

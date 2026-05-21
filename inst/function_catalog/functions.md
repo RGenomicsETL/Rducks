@@ -330,13 +330,13 @@ Notes:
 
 - Kind: `R type descriptors / constructors`
 - Category: `types`
-- Signature: `BOOLEAN; INTEGER; DOUBLE; DECIMAL(width, scale); ENUM(levels); LIST(type); ARRAY(type, size); MAP(key, value); STRUCT(...); UNION(...)`
-- Returns: `rducks_type descriptor`
-- Aliases: `rducks_is_type`, `BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`, `DECIMAL`, `ENUM`, `LIST`, `ARRAY`, `MAP`, `STRUCT`, `UNION`
+- Signature: `BOOLEAN; INTEGER; DOUBLE; GEOMETRY; VARIANT; DECIMAL(width, scale); ENUM(levels); LIST(type); ARRAY(type, size); MAP(key, value); STRUCT(...); UNION(...); rducks_variant(x)`
+- Returns: `rducks_type descriptor or rducks_variant storage object`
+- Aliases: `rducks_is_type`, `BOOLEAN`, `TINYINT`, `UTINYINT`, `SMALLINT`, `USMALLINT`, `INTEGER`, `UINTEGER`, `BIGINT`, `UBIGINT`, `FLOAT`, `DOUBLE`, `VARCHAR`, `BLOB`, `GEOMETRY`, `VARIANT`, `DATE`, `TIME`, `TIMESTAMP`, `HUGEINT`, `UHUGEINT`, `UUID`, `INTERVAL`, `BIT`, `DECIMAL`, `ENUM`, `LIST`, `ARRAY`, `MAP`, `STRUCT`, `UNION`, `rducks_variant`
 - Lifecycle: `experimental`
 - Since: `0.1.0`
 
-Provide formal Rducks descriptors for DuckDB scalar, exact, temporal, and composite SQL types used in registrations and value checks.
+Provide formal Rducks descriptors for DuckDB scalar, GEOMETRY, VARIANT, exact, temporal, and composite SQL types used in registrations and value checks.
 
 ## `rducks_type_token`
 

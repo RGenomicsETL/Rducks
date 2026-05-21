@@ -21,6 +21,8 @@ rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
     f64 = is.numeric(x),
     varchar = is.character(x),
     blob = is.raw(x),
+    geometry = is.raw(x),
+    variant = is.list(x),
     date = inherits(x, "Date") || is.numeric(x),
     time = is.numeric(x),
     timestamp = inherits(x, "POSIXct") || is.numeric(x),
@@ -33,6 +35,10 @@ rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
   )
   if (!isTRUE(ok)) {
     stop(what, " is not compatible with ", rducks_duckdb_type_one(token), call. = FALSE)
+  }
+  if (identical(token, "variant")) {
+    rducks_check_value(rducks_variant_storage_type(), x, what = what)
+    return(invisible(TRUE))
   }
   integer_ranges <- list(
     i8 = c(-128, 127), u8 = c(0, 255),
@@ -77,7 +83,7 @@ rducks_check_sequence_value <- function(type, x, size = NULL, what = "value") {
   child <- rducks_type_children(type)[[1L]]
   child_kind <- rducks_type_kind(child)
   rducks_check_length(x, size, what)
-  if (identical(child_kind, "scalar") && !identical(rducks_type_token(child), "blob")) {
+  if (identical(child_kind, "scalar") && !rducks_type_token(child) %in% c("blob", "geometry", "variant")) {
     rducks_check_value(child, x, what = what)
     return(invisible(TRUE))
   }
@@ -196,7 +202,7 @@ rducks_check_union_value <- function(type, x, what) {
 #' @return `x`, invisibly, on success.
 #' @export
 rducks_check_value <- function(type, x, size = NULL, what = "value") {
-  if (!inherits(type, "rducks_type")) {
+  if (!rducks_type_inherits(type, "rducks_type")) {
     type <- rducks_type_object(type)
   }
   if (is.null(x)) {

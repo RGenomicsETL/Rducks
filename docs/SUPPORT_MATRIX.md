@@ -49,13 +49,14 @@ does not survive connection release.
 | Type family | Examples | `arrow_r` | `arrow_c` | `arrow_ipc` | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | yes | Values are materialized/copied as R values or vectors. The Arrow C Data bridge accepts both packed Arrow booleans and the `arrow.bool8` extension storage used by some Arrow producers; validity bitmaps remain authoritative for NULLs. |
-| String/binary/bit | `VARCHAR`, `BLOB`, `BIT` | yes | yes | yes | Returned data is copied into DuckDB-owned output storage. |
+| String/binary/geometry/bit | `VARCHAR`, `BLOB`, `GEOMETRY`, `BIT` | yes | yes | yes | Returned binary data is copied into DuckDB-owned output storage. `GEOMETRY` crosses the R boundary as WKB `raw` bytes. |
+| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | no direct `arrow_c` path yet | yes where DuckDB's C API exposes `VARIANT` logical types | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
 | Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
 | Decimal | `DECIMAL(width, scale)` | yes | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. |
 | Enum | `ENUM(c("a", "b"))` | yes | yes | yes | IPC uses declared levels plus underlying enum index storage, not dictionary transport. |
 | Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes | yes where direct predicate accepts child | yes | Child descriptors are validated recursively. |
-| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes where direct predicate accepts children | yes | Direct support depends on native DuckDB-vector handling for the child types. |
+| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes where direct predicate accepts children | yes | Direct support depends on native DuckDB-vector handling for the child types. The direct `arrow_c` UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled; Arrow IPC remains the stable interchange boundary. |
 
 ## NULL and error semantics
 

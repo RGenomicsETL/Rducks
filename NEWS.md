@@ -1,5 +1,11 @@
 # Rducks 0.1.0
 
+- Added first-class `GEOMETRY` and `VARIANT` type descriptors. `GEOMETRY`
+  crosses the R boundary as WKB `raw` bytes; `VARIANT` is exposed as DuckDB's
+  typed storage struct wrapped by `rducks_variant`, with SQL-side DuckDB
+  VARIANT functions remaining the canonical way to construct and inspect
+  semantic values. VARIANT scalar-UDF registration requires a DuckDB runtime C
+  API that exposes VARIANT logical types.
 - Tightened execution-plan and support documentation, documented `arrow.bool8`
   boolean extension handling, clarified aggregate state ownership, and expanded
   tests for IPC, duckplyr, query streams, and table-stream cardinality.

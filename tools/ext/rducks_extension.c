@@ -6,6 +6,12 @@
 #endif
 #include "duckdb_extension.h"
 
+/* DuckDB exposed VARIANT in the C API after early 1.5 headers. Keep the numeric
+ * id isolated here so Rducks can compile against those headers while still
+ * recognizing VARIANT when loaded by a DuckDB runtime whose C API returns it.
+ */
+#define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)41)
+
 #if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
 #error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
 #endif
@@ -59,6 +65,8 @@ typedef enum rducks_type_id {
     RDUCKS_TYPE_F64,
     RDUCKS_TYPE_VARCHAR,
     RDUCKS_TYPE_BLOB,
+    RDUCKS_TYPE_GEOMETRY,
+    RDUCKS_TYPE_VARIANT,
     RDUCKS_TYPE_DATE,
     RDUCKS_TYPE_TIME,
     RDUCKS_TYPE_TIMESTAMP,

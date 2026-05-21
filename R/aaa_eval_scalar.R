@@ -42,7 +42,7 @@ rducks_scalar_prepare_inputs <- function(arg_types, input_array, input_schema, n
   nulls <- vector("list", length(arg_types))
   for (i in seq_along(arg_types)) {
     columns[[i]] <- rducks_arrow_array_to_values(arg_types[[i]], input_children[[i]], input_schema_children[[i]])
-    nulls[[i]] <- if (inherits(arg_types[[i]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(input_children[[i]], n)
+    nulls[[i]] <- if (rducks_type_inherits(arg_types[[i]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(input_children[[i]], n)
   }
 
   top_level_null <- rep(FALSE, n)

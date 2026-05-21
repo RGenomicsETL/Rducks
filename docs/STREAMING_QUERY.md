@@ -19,9 +19,9 @@ Each fetched DuckDB data chunk is exported through DuckDB Arrow C Data with
 `duckdb_data_chunk_to_arrow()`. The R wrapper can either return the owned
 nanoarrow record batch directly or materialize the Arrow C Data using the
 package's existing nanoarrow/Rducks conversion helpers, including the same
-decimal, enum, list, array, struct, map, UUID, huge integer, interval, BLOB, and
-BIT handling used by scalar-UDF marshalling. The heavy `arrow` package is not
-required.
+decimal, enum, list, array, struct, map, UUID, huge integer, interval, BLOB,
+GEOMETRY, BIT, and VARIANT-storage handling used by scalar-UDF marshalling. The
+heavy `arrow` package is not required.
 
 Because execution uses the dedicated extension-owned query-stream connection,
 database-scoped objects are visible, but temporary tables or views that exist

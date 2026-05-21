@@ -1,45 +1,49 @@
 rducks_scalar_type_table <- data.frame(
   type_token = c(
     "bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
-    "f32", "f64", "varchar", "blob", "date", "time", "timestamp",
+    "f32", "f64", "varchar", "blob", "geometry", "variant", "date", "time", "timestamp",
     "hugeint", "uhugeint", "uuid", "interval", "bit"
   ),
   duckdb_type = c(
     "BOOLEAN", "TINYINT", "UTINYINT", "SMALLINT", "USMALLINT", "INTEGER", "UINTEGER",
-    "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "DATE", "TIME", "TIMESTAMP",
+    "BIGINT", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "BLOB", "GEOMETRY", "VARIANT", "DATE", "TIME", "TIMESTAMP",
     "HUGEINT", "UHUGEINT", "UUID", "INTERVAL", "BIT"
   ),
-  descriptor_kind = rep("scalar", 21L),
+  descriptor_kind = rep("scalar", 23L),
   r_value_class = c(
     "logical", "integer", "integer", "integer", "integer", "integer", "numeric",
     "rducks_bigint", "rducks_ubigint", "numeric", "numeric", "character", "raw",
-    "Date", "numeric", "POSIXct", "rducks_hugeint", "rducks_uhugeint",
+    "raw", "rducks_variant", "Date", "numeric", "POSIXct", "rducks_hugeint", "rducks_uhugeint",
     "rducks_uuid", "rducks_interval", "rducks_bits"
   ),
   r_argument_shape = c(
     "logical scalar", "integer scalar", "integer scalar", "integer scalar", "integer scalar", "integer scalar",
     "numeric scalar", "rducks_bigint scalar", "rducks_ubigint scalar", "numeric scalar",
-    "numeric scalar", "character scalar", "raw vector", "Date scalar", "numeric seconds scalar",
+    "numeric scalar", "character scalar", "raw vector", "raw WKB geometry vector",
+    "rducks_variant storage object", "Date scalar", "numeric seconds scalar",
     "POSIXct scalar", "rducks_hugeint scalar", "rducks_uhugeint scalar", "rducks_uuid scalar",
     "rducks_interval scalar", "rducks_bits scalar"
   ),
   special_null_argument = c(
-    "NA", rep("NA_integer_", 5L), "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_",
-    "NA_character_", "NULL", "Date NA", "NA_real_", "POSIXct NA",
-    rep("NULL", 5L)
+    "NA", "NA_integer_", "NA_integer_", "NA_integer_", "NA_integer_", "NA_integer_",
+    "NA_real_", "NULL", "NULL", "NA_real_", "NA_real_", "NA_character_",
+    "NULL", "NULL", "NULL", "Date NA", "NA_real_", "POSIXct NA",
+    "NULL", "NULL", "NULL", "NULL", "NULL"
   ),
   copy_semantics = c(
     rep("boxed scalar", 7L), rep("boxed exact Rducks value", 2L), rep("boxed scalar", 2L),
-    "string copied into R", "bytes copied into R", rep("boxed scalar", 3L),
+    "string copied into R", "bytes copied into R", "WKB bytes copied into R",
+    "recursive R allocation for DuckDB VARIANT storage", rep("boxed scalar", 3L),
     rep("boxed exact Rducks value", 5L)
   ),
-  integer_uses_r_double = c(rep(FALSE, 6L), TRUE, rep(FALSE, 14L)),
-  float32_widens_to_r_double = c(rep(FALSE, 9L), TRUE, rep(FALSE, 11L)),
+  integer_uses_r_double = c(rep(FALSE, 6L), TRUE, rep(FALSE, 16L)),
+  float32_widens_to_r_double = c(rep(FALSE, 9L), TRUE, rep(FALSE, 13L)),
   precision_may_be_lost = FALSE,
   notes = c(
     "", "", "", "", "", "", "uses R numeric because UINTEGER exceeds R integer range", "exact signed 64-bit integer value",
     "exact unsigned 64-bit integer value", "DuckDB FLOAT is widened to R numeric", "", "string copied into R",
-    "bytes copied into R", "days since 1970-01-01", "microseconds converted to seconds",
+    "bytes copied into R", "GEOMETRY crosses the R boundary as WKB raw bytes", "VARIANT crosses the R boundary as DuckDB's typed storage object",
+    "days since 1970-01-01", "microseconds converted to seconds",
     "microseconds converted to seconds", rep("exact Rducks value class", 5L)
   ),
   stringsAsFactors = FALSE,
@@ -89,7 +93,7 @@ rducks_reject_character_composite_type <- function(token) {
 #'   token for a `rducks_type`.
 #' @export
 rducks_type_normalize <- function(x) {
-  if (inherits(x, "rducks_type")) {
+  if (rducks_type_inherits(x, "rducks_type")) {
     return(rducks_type_token(x))
   }
   if (!rducks_is_non_empty_character_scalar(x)) {
@@ -103,7 +107,7 @@ rducks_type_normalize <- function(x) {
 }
 
 rducks_as_type <- function(x) {
-  if (inherits(x, "rducks_type")) {
+  if (rducks_type_inherits(x, "rducks_type")) {
     return(x)
   }
   rducks_type_object(x)
@@ -113,11 +117,11 @@ rducks_as_type_list <- function(x) {
   if (is.null(x)) {
     return(list())
   }
-  if (inherits(x, "rducks_type")) {
+  if (rducks_type_inherits(x, "rducks_type")) {
     return(list(x))
   }
-  if (inherits(x, "rducks_type_list") || is.list(x)) {
-    if (!all(vapply(x, inherits, logical(1), what = "rducks_type"))) {
+  if (rducks_type_inherits(x, "rducks_type_list") || is.list(x)) {
+    if (!all(vapply(x, rducks_type_descriptor_inherits, logical(1), class = rducks_type_class))) {
       stop("type lists must contain only rducks_type descriptors", call. = FALSE)
     }
     return(unclass(x))
@@ -129,7 +133,7 @@ rducks_as_type_list <- function(x) {
 }
 
 rducks_type_scalar_leaves <- function(type) {
-  if (!inherits(type, "rducks_type")) {
+  if (!rducks_type_inherits(type, "rducks_type")) {
     type <- rducks_type_object(type)
   }
   if (identical(rducks_type_kind(type), "scalar")) {
@@ -139,7 +143,7 @@ rducks_type_scalar_leaves <- function(type) {
 }
 
 rducks_duckdb_type_one <- function(type) {
-  if (inherits(type, "rducks_type")) {
+  if (rducks_type_inherits(type, "rducks_type")) {
     return(rducks_type_duckdb_sql(type))
   }
   rducks_scalar_duckdb_sql(type)
@@ -360,7 +364,7 @@ rducks_is_type <- function(x) {
   ok_scalar <- rducks_is_non_empty_character_scalar
   ok_names <- function(value) is.character(value) && length(value) > 0L && !anyNA(value) && all(nzchar(value)) && !anyDuplicated(value)
   rec <- function(x, depth = 0L) {
-    if (depth > 64L || !inherits(x, "rducks_type") || !inherits(x, "S7_object") || !is.list(x)) {
+    if (depth > 64L || !rducks_type_inherits(x, "rducks_type") || !inherits(x, "S7_object") || !is.list(x)) {
       return(FALSE)
     }
     if (is.null(attr(x, "S7_class", exact = TRUE))) {
@@ -452,6 +456,12 @@ VARCHAR <- rducks_type_object("varchar")
 BLOB <- rducks_type_object("blob")
 #' @rdname rducks_type_objects
 #' @export
+GEOMETRY <- rducks_type_object("geometry")
+#' @rdname rducks_type_objects
+#' @export
+VARIANT <- rducks_type_object("variant")
+#' @rdname rducks_type_objects
+#' @export
 DATE <- rducks_type_object("date")
 #' @rdname rducks_type_objects
 #' @export
@@ -516,7 +526,7 @@ UNION <- function(...) {
   if (anyDuplicated(member_names)) {
     stop("UNION member names must be unique", call. = FALSE)
   }
-  members <- lapply(members, function(member) if (inherits(member, "rducks_type")) member else rducks_type_object(member))
+  members <- lapply(members, function(member) if (rducks_type_inherits(member, "rducks_type")) member else rducks_type_object(member))
   rducks_type_construct_s7(
     token = sprintf(
       "union<%s>",
@@ -536,7 +546,7 @@ UNION <- function(...) {
 #' @rdname rducks_type_objects
 #' @export
 LIST <- function(type) {
-  child <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  child <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   rducks_type_construct_s7(
     token = paste0("list<", rducks_type_token(child), ">"),
     duckdb_sql = paste0(rducks_type_duckdb_sql(child), "[]"),
@@ -553,7 +563,7 @@ ARRAY <- function(type, size) {
   if (!is.numeric(size) || length(size) != 1L || is.na(size) || size <= 0 || size != as.integer(size)) {
     stop("size must be a positive integer scalar", call. = FALSE)
   }
-  child <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  child <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   size <- as.integer(size)
   rducks_type_construct_s7(
     token = sprintf("%s[%d]", rducks_type_token(child), size),
@@ -568,8 +578,8 @@ ARRAY <- function(type, size) {
 #' @rdname rducks_type_objects
 #' @export
 MAP <- function(key, value) {
-  key <- if (inherits(key, "rducks_type")) key else rducks_type_object(key)
-  value <- if (inherits(value, "rducks_type")) value else rducks_type_object(value)
+  key <- if (rducks_type_inherits(key, "rducks_type")) key else rducks_type_object(key)
+  value <- if (rducks_type_inherits(value, "rducks_type")) value else rducks_type_object(value)
   rducks_type_construct_s7(
     token = sprintf("map<%s;%s>", rducks_type_token(key), rducks_type_token(value)),
     duckdb_sql = sprintf("MAP(%s, %s)", rducks_type_duckdb_sql(key), rducks_type_duckdb_sql(value)),
@@ -588,7 +598,7 @@ STRUCT <- function(...) {
   if (!length(fields) || is.null(field_names) || any(!nzchar(field_names))) {
     stop("STRUCT fields must be named", call. = FALSE)
   }
-  fields <- lapply(fields, function(field) if (inherits(field, "rducks_type")) field else rducks_type_object(field))
+  fields <- lapply(fields, function(field) if (rducks_type_inherits(field, "rducks_type")) field else rducks_type_object(field))
   rducks_type_construct_s7(
     token = sprintf(
       "struct<%s>",
@@ -605,6 +615,30 @@ STRUCT <- function(...) {
   )
 }
 
+rducks_variant_storage_type <- function() {
+  STRUCT(
+    keys = LIST(VARCHAR),
+    children = LIST(STRUCT(keys_index = UINTEGER, values_index = UINTEGER)),
+    values = LIST(STRUCT(type_id = UTINYINT, byte_offset = UINTEGER)),
+    data = BLOB
+  )
+}
+
+#' Construct a DuckDB VARIANT storage object
+#'
+#' `VARIANT` values cross the Rducks boundary as DuckDB's typed storage object:
+#' a named list with `keys`, `children`, `values`, and `data` fields. Most code
+#' receives this object from a VARIANT argument and returns it unchanged or after
+#' using DuckDB SQL functions such as `variant_extract()` before crossing into R.
+#'
+#' @param x Named list in DuckDB VARIANT storage shape.
+#' @return `x` with class `rducks_variant` after validation.
+#' @export
+rducks_variant <- function(x) {
+  rducks_check_value(rducks_variant_storage_type(), x, what = "variant value")
+  structure(x, class = c("rducks_variant", setdiff(class(x), "rducks_variant")))
+}
+
 rducks_type_parameter_summary <- function(x) {
   params <- rducks_type_parameters(x)
   kind <- rducks_type_kind(x)
@@ -618,57 +652,54 @@ rducks_type_parameter_summary <- function(x) {
   paste(sprintf("%s=%s", names(params), vapply(params, paste, character(1), collapse = ",")), collapse = "; ")
 }
 
-#' @export
-format.rducks_type <- function(x, ...) rducks_type_sql(x)
+rducks_register_type_s7_methods <- function() {
+  S7::method(format, rducks_type_class) <- function(x, ...) rducks_type_sql(x)
 
-#' @export
-as.character.rducks_type <- function(x, ...) rducks_type_sql(x)
+  S7::method(as.character, rducks_type_class) <- function(x, ...) rducks_type_sql(x)
 
-#' @export
-length.rducks_type <- function(x) 1L
+  S7::method(length, rducks_type_class) <- function(x) 1L
 
-#' @export
-print.rducks_type <- function(x, ...) {
-  cat("<rducks_type:", rducks_type_kind(x), "> ", rducks_type_sql(x), "\n", sep = "")
-  params <- rducks_type_parameter_summary(x)
-  if (length(params) && nzchar(params)) {
-    cat("  parameters: ", params, "\n", sep = "")
-  }
-  children <- rducks_type_children(x)
-  if (length(children)) {
-    child_names <- rducks_type_child_names(x)
-    cat("  children:\n")
-    for (i in seq_along(children)) {
-      cat("    ", child_names[[i]], ": ", rducks_type_sql(children[[i]]), "\n", sep = "")
+  S7::method(print, rducks_type_class) <- function(x, ...) {
+    cat("<rducks_type:", rducks_type_kind(x), "> ", rducks_type_sql(x), "\n", sep = "")
+    params <- rducks_type_parameter_summary(x)
+    if (length(params) && nzchar(params)) {
+      cat("  parameters: ", params, "\n", sep = "")
     }
+    children <- rducks_type_children(x)
+    if (length(children)) {
+      child_names <- rducks_type_child_names(x)
+      cat("  children:\n")
+      for (i in seq_along(children)) {
+        cat("    ", child_names[[i]], ": ", rducks_type_sql(children[[i]]), "\n", sep = "")
+      }
+    }
+    invisible(x)
   }
-  invisible(x)
-}
 
-#' @export
-c.rducks_type <- function(..., recursive = FALSE) {
-  out <- list(...)
-  if (!all(vapply(out, inherits, logical(1), what = "rducks_type"))) {
-    stop("all values must be rducks_type descriptors", call. = FALSE)
+  S7::method(c, rducks_type_class) <- function(..., recursive = FALSE) {
+    out <- list(...)
+    if (!all(vapply(out, rducks_type_descriptor_inherits, logical(1), class = rducks_type_class))) {
+      stop("all values must be rducks_type descriptors", call. = FALSE)
+    }
+    rducks_type_list_class(out)
   }
-  rducks_type_list_class(out)
-}
 
-#' @export
-print.rducks_type_list <- function(x, ...) {
-  cat("<rducks_type_list[", length(x), "]>\n", sep = "")
-  for (i in seq_along(x)) {
-    cat("  ", i, ": ", rducks_type_sql(x[[i]]), "\n", sep = "")
+  S7::method(print, rducks_type_list_class) <- function(x, ...) {
+    cat("<rducks_type_list[", length(x), "]>\n", sep = "")
+    for (i in seq_along(x)) {
+      cat("  ", i, ": ", rducks_type_sql(x[[i]]), "\n", sep = "")
+    }
+    invisible(x)
   }
-  invisible(x)
-}
 
-#' @export
-`[.rducks_type` <- function(x, i, ...) {
-  if (missing(i)) {
-    return(LIST(x))
+  S7::method(`[`, rducks_type_class) <- function(x, i, ...) {
+    if (missing(i)) {
+      return(LIST(x))
+    }
+    ARRAY(x, i)
   }
-  ARRAY(x, i)
+
+  invisible(NULL)
 }
 
 rducks_scalar_argument_mapping_row <- function(token) {
@@ -694,6 +725,8 @@ rducks_scalar_vector_description <- function(token, len = NULL) {
     f64 = "numeric vector",
     varchar = "character vector",
     blob = "list of raw vectors",
+    geometry = "list of raw WKB geometry vectors",
+    variant = "list of rducks_variant storage objects",
     date = "Date vector",
     time = "numeric vector seconds",
     timestamp = "POSIXct vector",
@@ -704,16 +737,16 @@ rducks_scalar_vector_description <- function(token, len = NULL) {
     bit = "list of rducks_bits values",
     stop("not a scalar type: ", token, call. = FALSE)
   )
-  if (!is.null(len) && !identical(token, "blob")) {
+  if (!is.null(len) && !token %in% c("blob", "geometry", "variant")) {
     desc <- paste(desc, "of length", len)
-  } else if (!is.null(len) && identical(token, "blob")) {
+  } else if (!is.null(len) && token %in% c("blob", "geometry", "variant")) {
     desc <- paste(desc, "of length", len)
   }
   desc
 }
 
 rducks_sequence_value_description <- function(child, len = NULL) {
-  child_type <- if (inherits(child, "rducks_type")) child else rducks_type_object(child)
+  child_type <- if (rducks_type_inherits(child, "rducks_type")) child else rducks_type_object(child)
   if (identical(rducks_type_kind(child_type), "scalar")) {
     return(rducks_scalar_vector_description(rducks_type_token(child_type), len = len))
   }
@@ -721,7 +754,7 @@ rducks_sequence_value_description <- function(child, len = NULL) {
 }
 
 rducks_scalar_mapping_supported <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
     return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
@@ -736,7 +769,7 @@ rducks_scalar_mapping_supported <- function(type) {
 }
 
 rducks_arrow_c_direct_sequence_child_supported <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (kind %in% c("decimal", "enum")) {
     return(TRUE)
@@ -751,13 +784,13 @@ rducks_arrow_c_direct_sequence_child_supported <- function(type) {
 }
 
 rducks_arrow_c_direct_mapping_supported <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (kind %in% c("decimal", "enum")) {
     return(TRUE)
   }
   if (identical(kind, "scalar")) {
-    return(rducks_type_token(type) %in% rducks_all_scalar_type_names())
+    return(rducks_type_token(type) %in% setdiff(rducks_all_scalar_type_names(), "variant"))
   }
   if (kind %in% c("list", "array")) {
     return(rducks_arrow_c_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
@@ -780,12 +813,12 @@ rducks_arrow_c_direct_mapping_supported <- function(type) {
 }
 
 rducks_arrow_c_direct_unsupported_types <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   if (rducks_arrow_c_direct_mapping_supported(type)) character() else rducks_type_duckdb_sql(type)
 }
 
 rducks_unsupported_duckdb_types <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   if (rducks_scalar_mapping_supported(type)) {
     return(character())
   }
@@ -798,7 +831,7 @@ rducks_unsupported_duckdb_types <- function(type) {
 }
 
 rducks_composite_argument_mapping_row <- function(token) {
-  type <- if (inherits(token, "rducks_type")) token else rducks_type_object(token)
+  type <- if (rducks_type_inherits(token, "rducks_type")) token else rducks_type_object(token)
   token <- rducks_type_token(type)
   kind <- rducks_type_kind(type)
   unsupported <- rducks_unsupported_duckdb_types(type)
@@ -912,13 +945,13 @@ rducks_check_argument_type_mapping <- function(mapping) {
 rducks_argument_type_mapping <- function(x = NULL) {
   items <- if (is.null(x)) {
     as.list(rducks_all_scalar_type_names())
-  } else if (inherits(x, "rducks_type")) {
+  } else if (rducks_type_inherits(x, "rducks_type")) {
     list(x)
   } else {
     rducks_as_type_list(x)
   }
   rows <- lapply(items, function(item) {
-    type <- if (inherits(item, "rducks_type")) item else rducks_type_object(item)
+    type <- if (rducks_type_inherits(item, "rducks_type")) item else rducks_type_object(item)
     if (identical(rducks_type_kind(type), "scalar")) {
       rducks_scalar_argument_mapping_row(rducks_type_token(type))
     } else {

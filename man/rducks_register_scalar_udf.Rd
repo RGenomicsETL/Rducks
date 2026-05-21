@@ -30,8 +30,10 @@ with the same typed semantics used for an explicit \code{args = ...} signature
 across scalar/vectorized evaluation and supported \code{arrow_r}, \code{arrow_c}, and
 \code{arrow_ipc} execution plans. Use explicit \code{NULL} for a zero-argument scalar
 UDF. Otherwise use exported DuckDB-style type descriptors such as \code{INTEGER},
-\code{DOUBLE}, \code{INTEGER[]}, \code{INTEGER[3]}, \code{STRUCT(a = INTEGER)}, or
-\code{MAP(VARCHAR, INTEGER)}.}
+\code{DOUBLE}, \code{GEOMETRY}, \code{VARIANT}, \code{INTEGER[]}, \code{INTEGER[3]},
+\code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}. \code{VARIANT} signatures
+require a DuckDB runtime whose C API exposes VARIANT logical types, and are
+not supported by the direct \code{arrow_c} marshalling path yet.}
 
 \item{returns}{Return type specification.}
 

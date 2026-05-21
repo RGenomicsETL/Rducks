@@ -46,6 +46,13 @@ local({
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+inproc_concurrent")
   expect_equal(rducks_native_execution_backend(con), "concurrent_inproc")
+  invisible(rducks_register_scalar_udf(
+    con, "plan_inproc_error_null", function(x) stop("inproc boom"),
+    INTEGER, INTEGER,
+    exception_handling = "return_null",
+    side_effects = TRUE
+  ))
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT plan_inproc_error_null(1::INTEGER) AS x")$x))
   rducks_disable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
   expect_equal(rducks_native_execution_backend(con), "single")

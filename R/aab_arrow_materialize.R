@@ -3,8 +3,9 @@ rducks_arrow_error <- function(message) {
 }
 
 rducks_arrow_uses_r_null_for_null <- function(type) {
-  inherits(type, c(
+  rducks_type_inherits(type, c(
     "rducks_i64_type", "rducks_u64_type", "rducks_blob_type",
+    "rducks_geometry_type", "rducks_variant_type",
     "rducks_hugeint_type", "rducks_uhugeint_type", "rducks_uuid_type",
     "rducks_interval_type", "rducks_bit_type"
   ))
@@ -529,7 +530,7 @@ rducks_arrow_struct_array_to_values <- function(type, array, schema = NULL) {
   for (j in seq_along(children)) {
     child_schema <- if (is.null(schema)) NULL else schema$children[[j]]
     child_values[[j]] <- rducks_arrow_array_to_values(children[[j]], array$children[[j]], child_schema)
-    child_nulls[[j]] <- if (inherits(children[[j]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(array$children[[j]], n)
+    child_nulls[[j]] <- if (rducks_type_inherits(children[[j]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(array$children[[j]], n)
   }
   out <- vector("list", n)
   for (i in seq_len(n)) {
@@ -545,16 +546,16 @@ rducks_arrow_struct_array_to_values <- function(type, array, schema = NULL) {
 }
 
 rducks_arrow_map_type_tree <- function(type, node, leaf) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   out <- leaf(type, node)
-  if (inherits(type, c("rducks_list_type", "rducks_array_type"))) {
+  if (rducks_type_inherits(type, c("rducks_list_type", "rducks_array_type"))) {
     out$children[[1L]] <- rducks_arrow_map_type_tree(rducks_type_children(type)[[1L]], out$children[[1L]], leaf)
-  } else if (inherits(type, c("rducks_struct_type", "rducks_union_type"))) {
+  } else if (rducks_type_inherits(type, c("rducks_struct_type", "rducks_union_type"))) {
     children <- rducks_type_children(type)
     for (i in seq_along(children)) {
       out$children[[i]] <- rducks_arrow_map_type_tree(children[[i]], out$children[[i]], leaf)
     }
-  } else if (inherits(type, "rducks_map_type")) {
+  } else if (rducks_type_inherits(type, "rducks_map_type")) {
     children <- rducks_type_children(type)
     entries <- out$children[[1L]]
     entries$children[[1L]] <- rducks_arrow_map_type_tree(children[[1L]], entries$children[[1L]], leaf)
@@ -566,7 +567,7 @@ rducks_arrow_map_type_tree <- function(type, node, leaf) {
 
 rducks_arrow_import_child_schema <- function(type, schema) {
   rducks_arrow_map_type_tree(type, nanoarrow::as_nanoarrow_schema(schema), function(type, node) {
-    if (inherits(type, "rducks_enum_type")) rducks_arrow_enum_storage_schema(node) else node
+    if (rducks_type_inherits(type, "rducks_enum_type")) rducks_arrow_enum_storage_schema(node) else node
   })
 }
 
@@ -577,8 +578,8 @@ rducks_arrow_import_schema <- function(type, output_schema) {
 }
 
 rducks_arrow_type_contains_enum <- function(type) {
-  type <- if (inherits(type, "rducks_type")) type else rducks_type_object(type)
-  if (inherits(type, "rducks_enum_type")) {
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
+  if (rducks_type_inherits(type, "rducks_enum_type")) {
     return(TRUE)
   }
   children <- rducks_type_children(type)
@@ -587,7 +588,7 @@ rducks_arrow_type_contains_enum <- function(type) {
 
 rducks_arrow_ipc_storage_array_for_type <- function(type, array) {
   rducks_arrow_map_type_tree(type, nanoarrow::as_nanoarrow_array(array), function(type, node) {
-    if (inherits(type, "rducks_enum_type")) node$dictionary <- NULL
+    if (rducks_type_inherits(type, "rducks_enum_type")) node$dictionary <- NULL
     node
   })
 }
@@ -691,7 +692,7 @@ rducks_arrow_float_array_to_values <- function(array, width) {
 }
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_floating_scalar_type_class) <- function(type, array, schema = NULL) {
-  width <- if (inherits(type, "rducks_f32_type")) 4L else 8L
+  width <- if (rducks_type_inherits(type, "rducks_f32_type")) 4L else 8L
   rducks_arrow_float_array_to_values(array, width)
 }
 
@@ -701,6 +702,15 @@ S7::method(rducks_arrow_scalar_array_to_values, rducks_varchar_type_class) <- fu
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_blob_type_class) <- function(type, array, schema = NULL) {
   rducks_arrow_binary_array_to_values(array)
+}
+
+S7::method(rducks_arrow_scalar_array_to_values, rducks_geometry_type_class) <- function(type, array, schema = NULL) {
+  rducks_arrow_binary_array_to_values(array)
+}
+
+S7::method(rducks_arrow_scalar_array_to_values, rducks_variant_type_class) <- function(type, array, schema = NULL) {
+  values <- rducks_arrow_struct_array_to_values(rducks_variant_storage_type(), array, schema)
+  lapply(values, function(value) if (is.null(value)) NULL else rducks_variant(value))
 }
 
 S7::method(rducks_arrow_scalar_array_to_values, rducks_date_type_class) <- function(type, array, schema = NULL) {
@@ -758,30 +768,30 @@ S7::method(rducks_arrow_scalar_array_to_values, rducks_scalar_type_class) <- fun
 }
 
 rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
-  if (inherits(type, "rducks_scalar_type")) {
+  if (rducks_type_inherits(type, "rducks_scalar_type")) {
     return(rducks_arrow_scalar_array_to_values(type, array, schema))
   }
-  if (inherits(type, "rducks_decimal_type")) {
+  if (rducks_type_inherits(type, "rducks_decimal_type")) {
     params <- rducks_type_parameters(type)
     return(rducks_arrow_decimal_array_to_values(array, params$width, params$scale))
   }
-  if (inherits(type, "rducks_enum_type")) {
+  if (rducks_type_inherits(type, "rducks_enum_type")) {
     levels <- rducks_type_parameters(type)$levels
     return(rducks_arrow_enum_array_to_values(array, schema, levels))
   }
-  if (inherits(type, "rducks_list_type")) {
+  if (rducks_type_inherits(type, "rducks_list_type")) {
     return(rducks_arrow_list_array_to_values(type, array, schema))
   }
-  if (inherits(type, "rducks_array_type")) {
+  if (rducks_type_inherits(type, "rducks_array_type")) {
     return(rducks_arrow_array_array_to_values(type, array, schema))
   }
-  if (inherits(type, "rducks_struct_type")) {
+  if (rducks_type_inherits(type, "rducks_struct_type")) {
     return(rducks_arrow_struct_array_to_values(type, array, schema))
   }
-  if (inherits(type, "rducks_map_type")) {
+  if (rducks_type_inherits(type, "rducks_map_type")) {
     return(rducks_arrow_map_array_to_values(type, array, schema))
   }
-  if (inherits(type, "rducks_union_type")) {
+  if (rducks_type_inherits(type, "rducks_union_type")) {
     return(rducks_arrow_union_array_to_values(type, array, schema))
   }
   stop("unsupported Rducks type for scalar-UDF nanoarrow input: ", rducks_type_duckdb_sql(type), call. = FALSE)
@@ -789,32 +799,32 @@ rducks_arrow_array_to_values <- function(type, array, schema = NULL) {
 
 rducks_arrow_value_at <- function(type, values, nulls, i) {
   if (isTRUE(nulls[[i]])) {
-    if (rducks_arrow_uses_r_null_for_null(type) || !inherits(type, "rducks_scalar_type")) {
+    if (rducks_arrow_uses_r_null_for_null(type) || !rducks_type_inherits(type, "rducks_scalar_type")) {
       return(NULL)
     }
   }
-  if (inherits(type, "rducks_scalar_type")) {
-    if (inherits(type, c("rducks_blob_type", "rducks_bit_type"))) return(values[[i]])
+  if (rducks_type_inherits(type, "rducks_scalar_type")) {
+    if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) return(values[[i]])
     return(values[i])
   }
-  if (inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
+  if (rducks_type_inherits(type, c("rducks_decimal_type", "rducks_enum_type", "rducks_interval_type"))) {
     return(values[i])
   }
-  if (inherits(type, "rducks_struct_type") && is.data.frame(values)) {
+  if (rducks_type_inherits(type, "rducks_struct_type") && is.data.frame(values)) {
     row <- as.list(values[i, , drop = FALSE])
     children <- rducks_type_children(type)
     child_names <- rducks_type_child_names(type)
     for (field_index in seq_along(child_names)) {
       field <- child_names[[field_index]]
       child <- children[[field_index]]
-      if ((!inherits(child, "rducks_scalar_type") || inherits(child, c("rducks_blob_type", "rducks_bit_type"))) &&
+      if ((!rducks_type_inherits(child, "rducks_scalar_type") || rducks_type_inherits(child, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) &&
           is.list(row[[field]]) && length(row[[field]]) == 1L) {
         row[[field]] <- row[[field]][[1L]]
       }
     }
     return(row)
   }
-  if (inherits(type, "rducks_map_type")) {
+  if (rducks_type_inherits(type, "rducks_map_type")) {
     value <- values[[i]]
     if (is.data.frame(value)) {
       nms <- names(value)
@@ -824,7 +834,7 @@ rducks_arrow_value_at <- function(type, values, nulls, i) {
     }
     return(value)
   }
-  if (inherits(type, "rducks_union_type")) {
+  if (rducks_type_inherits(type, "rducks_union_type")) {
     value <- values[[i]]
     if (inherits(value, "rducks_union")) return(value)
     if (is.list(value) && !is.null(value$tag) && !is.null(value$value)) return(rducks_union(value$tag, value$value))

@@ -4,6 +4,17 @@ rducks_test_force_gc <- function(n = 6L) {
   for (i in seq_len(n)) invisible(gc())
 }
 
+rducks_test_disconnect_shutdown <- function(con = NULL, drv = NULL) {
+  if (!is.null(con) && DBI::dbIsValid(con)) {
+    DBI::dbDisconnect(con)
+  }
+  if (!is.null(drv) && DBI::dbIsValid(drv)) {
+    duckdb::duckdb_shutdown(drv)
+  }
+  rducks_test_force_gc()
+  invisible(NULL)
+}
+
 rducks_lifecycle_plus_one_fun <- function(x) x + 1L
 environment(rducks_lifecycle_plus_one_fun) <- baseenv()
 rducks_lifecycle_times_two_fun <- function(x) x * 2L
@@ -136,13 +147,18 @@ rducks_runtime_lifecycle_body <- function() {
     aux_path <- tempfile(fileext = ".duckdb")
     on.exit(unlink(c(main_path, aux_path, paste0(main_path, ".wal"), paste0(aux_path, ".wal")), force = TRUE), add = TRUE)
 
-    aux_con <- DBI::dbConnect(duckdb::duckdb(dbdir = aux_path, config = list(allow_unsigned_extensions = "true")))
+    aux_drv <- duckdb::duckdb(dbdir = aux_path, config = list(allow_unsigned_extensions = "true"))
+    aux_con <- DBI::dbConnect(aux_drv)
+    on.exit(rducks_test_disconnect_shutdown(aux_con, aux_drv), add = TRUE)
     DBI::dbExecute(aux_con, "CREATE TABLE some_table(i INTEGER)")
     DBI::dbExecute(aux_con, "INSERT INTO some_table VALUES (1), (41)")
-    DBI::dbDisconnect(aux_con, shutdown = TRUE)
+    rducks_test_disconnect_shutdown(aux_con, aux_drv)
+    aux_con <- NULL
+    aux_drv <- NULL
 
-    main_con <- DBI::dbConnect(duckdb::duckdb(dbdir = main_path, config = list(allow_unsigned_extensions = "true")))
-    on.exit(DBI::dbDisconnect(main_con, shutdown = TRUE), add = TRUE)
+    main_drv <- duckdb::duckdb(dbdir = main_path, config = list(allow_unsigned_extensions = "true"))
+    main_con <- DBI::dbConnect(main_drv)
+    on.exit(rducks_test_disconnect_shutdown(main_con, main_drv), add = TRUE)
     rducks_enable(main_con, threads = "single")
     invisible(rducks_register_scalar_udf(
       main_con, "rducks_lifecycle_attach_plus", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER
@@ -160,7 +176,9 @@ rducks_runtime_lifecycle_body <- function() {
     db_path <- tempfile(fileext = ".duckdb")
     on.exit(unlink(c(db_path, paste0(db_path, ".wal")), force = TRUE), add = TRUE)
 
-    con <- DBI::dbConnect(duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true")))
+    drv <- duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true"))
+    con <- DBI::dbConnect(drv)
+    on.exit(rducks_test_disconnect_shutdown(con, drv), add = TRUE)
     rducks_enable(con, threads = "single")
     rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
     DBI::dbExecute(con, "CREATE TABLE durable_values(i INTEGER)")
@@ -173,10 +191,13 @@ rducks_runtime_lifecycle_body <- function() {
       44L
     )
     expect_true("rducks_lifecycle_file_plus" %in% rducks_list_udfs(con)$name)
-    DBI::dbDisconnect(con, shutdown = TRUE)
+    rducks_test_disconnect_shutdown(con, drv)
+    con <- NULL
+    drv <- NULL
 
-    reopened <- DBI::dbConnect(duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true")))
-    on.exit(DBI::dbDisconnect(reopened, shutdown = TRUE), add = TRUE)
+    reopened_drv <- duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true"))
+    reopened <- DBI::dbConnect(reopened_drv)
+    on.exit(rducks_test_disconnect_shutdown(reopened, reopened_drv), add = TRUE)
     expect_equal(DBI::dbGetQuery(reopened, "SELECT sum(i)::INTEGER AS x FROM durable_values")$x, 42L)
     expect_error(
       DBI::dbGetQuery(reopened, "SELECT rducks_lifecycle_file_plus(41::INTEGER) AS x"),
@@ -196,10 +217,12 @@ rducks_runtime_lifecycle_body <- function() {
     path_b <- tempfile(fileext = ".duckdb")
     on.exit(unlink(c(path_a, path_b, paste0(path_a, ".wal"), paste0(path_b, ".wal")), force = TRUE), add = TRUE)
 
-    con_a <- DBI::dbConnect(duckdb::duckdb(dbdir = path_a, config = list(allow_unsigned_extensions = "true")))
-    con_b <- DBI::dbConnect(duckdb::duckdb(dbdir = path_b, config = list(allow_unsigned_extensions = "true")))
-    on.exit(DBI::dbDisconnect(con_a, shutdown = TRUE), add = TRUE)
-    on.exit(DBI::dbDisconnect(con_b, shutdown = TRUE), add = TRUE)
+    drv_a <- duckdb::duckdb(dbdir = path_a, config = list(allow_unsigned_extensions = "true"))
+    drv_b <- duckdb::duckdb(dbdir = path_b, config = list(allow_unsigned_extensions = "true"))
+    con_a <- DBI::dbConnect(drv_a)
+    con_b <- DBI::dbConnect(drv_b)
+    on.exit(rducks_test_disconnect_shutdown(con_a, drv_a), add = TRUE)
+    on.exit(rducks_test_disconnect_shutdown(con_b, drv_b), add = TRUE)
 
     rducks_enable(con_a, threads = "single")
     rducks_enable(con_b, threads = "single")

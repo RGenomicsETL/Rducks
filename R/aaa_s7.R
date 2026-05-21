@@ -33,7 +33,7 @@ rducks_validate_type_s7 <- function(self) {
     errors <- c(errors, "@parameters must be a list")
     parameters <- list()
   }
-  if (length(children) && !all(vapply(children, inherits, logical(1), what = "rducks_type"))) {
+  if (length(children) && !all(vapply(children, rducks_type_descriptor_inherits, logical(1), class = rducks_type_class))) {
     errors <- c(errors, "@children must contain only rducks_type descriptors")
   }
 
@@ -70,7 +70,7 @@ rducks_validate_type_s7 <- function(self) {
 
 rducks_type_class <- S7::new_class(
   "rducks_type",
-  package = NULL,
+  package = "Rducks",
   parent = S7::class_list,
   properties = list(
     token = S7::class_character,
@@ -84,60 +84,126 @@ rducks_type_class <- S7::new_class(
   validator = rducks_validate_type_s7
 )
 
-rducks_scalar_type_class <- S7::new_class("rducks_scalar_type", package = NULL, parent = rducks_type_class)
-rducks_list_type_class <- S7::new_class("rducks_list_type", package = NULL, parent = rducks_type_class)
-rducks_array_type_class <- S7::new_class("rducks_array_type", package = NULL, parent = rducks_type_class)
-rducks_struct_type_class <- S7::new_class("rducks_struct_type", package = NULL, parent = rducks_type_class)
-rducks_map_type_class <- S7::new_class("rducks_map_type", package = NULL, parent = rducks_type_class)
-rducks_decimal_type_class <- S7::new_class("rducks_decimal_type", package = NULL, parent = rducks_type_class)
-rducks_enum_type_class <- S7::new_class("rducks_enum_type", package = NULL, parent = rducks_type_class)
-rducks_union_type_class <- S7::new_class("rducks_union_type", package = NULL, parent = rducks_type_class)
+rducks_scalar_type_class <- S7::new_class("rducks_scalar_type", package = "Rducks", parent = rducks_type_class)
+rducks_list_type_class <- S7::new_class("rducks_list_type", package = "Rducks", parent = rducks_type_class)
+rducks_array_type_class <- S7::new_class("rducks_array_type", package = "Rducks", parent = rducks_type_class)
+rducks_struct_type_class <- S7::new_class("rducks_struct_type", package = "Rducks", parent = rducks_type_class)
+rducks_map_type_class <- S7::new_class("rducks_map_type", package = "Rducks", parent = rducks_type_class)
+rducks_decimal_type_class <- S7::new_class("rducks_decimal_type", package = "Rducks", parent = rducks_type_class)
+rducks_enum_type_class <- S7::new_class("rducks_enum_type", package = "Rducks", parent = rducks_type_class)
+rducks_union_type_class <- S7::new_class("rducks_union_type", package = "Rducks", parent = rducks_type_class)
 
-rducks_logical_scalar_type_class <- S7::new_class("rducks_logical_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_r_integer_scalar_type_class <- S7::new_class("rducks_r_integer_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_r_numeric_scalar_type_class <- S7::new_class("rducks_r_numeric_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_exact_integer_scalar_type_class <- S7::new_class("rducks_exact_integer_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_floating_scalar_type_class <- S7::new_class("rducks_floating_scalar_type", package = NULL, parent = rducks_r_numeric_scalar_type_class)
-rducks_character_scalar_type_class <- S7::new_class("rducks_character_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_binary_scalar_type_class <- S7::new_class("rducks_binary_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_temporal_scalar_type_class <- S7::new_class("rducks_temporal_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_uuid_scalar_type_class <- S7::new_class("rducks_uuid_scalar_type", package = NULL, parent = rducks_scalar_type_class)
-rducks_interval_scalar_type_class <- S7::new_class("rducks_interval_scalar_type", package = NULL, parent = rducks_scalar_type_class)
+rducks_logical_scalar_type_class <- S7::new_class("rducks_logical_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_r_integer_scalar_type_class <- S7::new_class("rducks_r_integer_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_r_numeric_scalar_type_class <- S7::new_class("rducks_r_numeric_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_exact_integer_scalar_type_class <- S7::new_class("rducks_exact_integer_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_floating_scalar_type_class <- S7::new_class("rducks_floating_scalar_type", package = "Rducks", parent = rducks_r_numeric_scalar_type_class)
+rducks_character_scalar_type_class <- S7::new_class("rducks_character_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_binary_scalar_type_class <- S7::new_class("rducks_binary_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_temporal_scalar_type_class <- S7::new_class("rducks_temporal_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_uuid_scalar_type_class <- S7::new_class("rducks_uuid_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_interval_scalar_type_class <- S7::new_class("rducks_interval_scalar_type", package = "Rducks", parent = rducks_scalar_type_class)
 
-rducks_bool_type_class <- S7::new_class("rducks_bool_type", package = NULL, parent = rducks_logical_scalar_type_class)
-rducks_i8_type_class <- S7::new_class("rducks_i8_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
-rducks_u8_type_class <- S7::new_class("rducks_u8_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
-rducks_i16_type_class <- S7::new_class("rducks_i16_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
-rducks_u16_type_class <- S7::new_class("rducks_u16_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
-rducks_i32_type_class <- S7::new_class("rducks_i32_type", package = NULL, parent = rducks_r_integer_scalar_type_class)
-rducks_u32_type_class <- S7::new_class("rducks_u32_type", package = NULL, parent = rducks_r_numeric_scalar_type_class)
-rducks_i64_type_class <- S7::new_class("rducks_i64_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
-rducks_u64_type_class <- S7::new_class("rducks_u64_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
-rducks_f32_type_class <- S7::new_class("rducks_f32_type", package = NULL, parent = rducks_floating_scalar_type_class)
-rducks_f64_type_class <- S7::new_class("rducks_f64_type", package = NULL, parent = rducks_floating_scalar_type_class)
-rducks_varchar_type_class <- S7::new_class("rducks_varchar_type", package = NULL, parent = rducks_character_scalar_type_class)
-rducks_blob_type_class <- S7::new_class("rducks_blob_type", package = NULL, parent = rducks_binary_scalar_type_class)
-rducks_date_type_class <- S7::new_class("rducks_date_type", package = NULL, parent = rducks_temporal_scalar_type_class)
-rducks_time_type_class <- S7::new_class("rducks_time_type", package = NULL, parent = rducks_temporal_scalar_type_class)
-rducks_timestamp_type_class <- S7::new_class("rducks_timestamp_type", package = NULL, parent = rducks_temporal_scalar_type_class)
-rducks_hugeint_type_class <- S7::new_class("rducks_hugeint_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
-rducks_uhugeint_type_class <- S7::new_class("rducks_uhugeint_type", package = NULL, parent = rducks_exact_integer_scalar_type_class)
-rducks_uuid_type_class <- S7::new_class("rducks_uuid_type", package = NULL, parent = rducks_uuid_scalar_type_class)
-rducks_interval_type_class <- S7::new_class("rducks_interval_type", package = NULL, parent = rducks_interval_scalar_type_class)
-rducks_bit_type_class <- S7::new_class("rducks_bit_type", package = NULL, parent = rducks_binary_scalar_type_class)
+rducks_bool_type_class <- S7::new_class("rducks_bool_type", package = "Rducks", parent = rducks_logical_scalar_type_class)
+rducks_i8_type_class <- S7::new_class("rducks_i8_type", package = "Rducks", parent = rducks_r_integer_scalar_type_class)
+rducks_u8_type_class <- S7::new_class("rducks_u8_type", package = "Rducks", parent = rducks_r_integer_scalar_type_class)
+rducks_i16_type_class <- S7::new_class("rducks_i16_type", package = "Rducks", parent = rducks_r_integer_scalar_type_class)
+rducks_u16_type_class <- S7::new_class("rducks_u16_type", package = "Rducks", parent = rducks_r_integer_scalar_type_class)
+rducks_i32_type_class <- S7::new_class("rducks_i32_type", package = "Rducks", parent = rducks_r_integer_scalar_type_class)
+rducks_u32_type_class <- S7::new_class("rducks_u32_type", package = "Rducks", parent = rducks_r_numeric_scalar_type_class)
+rducks_i64_type_class <- S7::new_class("rducks_i64_type", package = "Rducks", parent = rducks_exact_integer_scalar_type_class)
+rducks_u64_type_class <- S7::new_class("rducks_u64_type", package = "Rducks", parent = rducks_exact_integer_scalar_type_class)
+rducks_f32_type_class <- S7::new_class("rducks_f32_type", package = "Rducks", parent = rducks_floating_scalar_type_class)
+rducks_f64_type_class <- S7::new_class("rducks_f64_type", package = "Rducks", parent = rducks_floating_scalar_type_class)
+rducks_varchar_type_class <- S7::new_class("rducks_varchar_type", package = "Rducks", parent = rducks_character_scalar_type_class)
+rducks_blob_type_class <- S7::new_class("rducks_blob_type", package = "Rducks", parent = rducks_binary_scalar_type_class)
+rducks_geometry_type_class <- S7::new_class("rducks_geometry_type", package = "Rducks", parent = rducks_binary_scalar_type_class)
+rducks_variant_type_class <- S7::new_class("rducks_variant_type", package = "Rducks", parent = rducks_scalar_type_class)
+rducks_date_type_class <- S7::new_class("rducks_date_type", package = "Rducks", parent = rducks_temporal_scalar_type_class)
+rducks_time_type_class <- S7::new_class("rducks_time_type", package = "Rducks", parent = rducks_temporal_scalar_type_class)
+rducks_timestamp_type_class <- S7::new_class("rducks_timestamp_type", package = "Rducks", parent = rducks_temporal_scalar_type_class)
+rducks_hugeint_type_class <- S7::new_class("rducks_hugeint_type", package = "Rducks", parent = rducks_exact_integer_scalar_type_class)
+rducks_uhugeint_type_class <- S7::new_class("rducks_uhugeint_type", package = "Rducks", parent = rducks_exact_integer_scalar_type_class)
+rducks_uuid_type_class <- S7::new_class("rducks_uuid_type", package = "Rducks", parent = rducks_uuid_scalar_type_class)
+rducks_interval_type_class <- S7::new_class("rducks_interval_type", package = "Rducks", parent = rducks_interval_scalar_type_class)
+rducks_bit_type_class <- S7::new_class("rducks_bit_type", package = "Rducks", parent = rducks_binary_scalar_type_class)
 
 rducks_validate_type_list_s7 <- function(self) {
-  if (!all(vapply(unclass(self), inherits, logical(1), what = "rducks_type"))) {
+  if (!all(vapply(as.list(self), rducks_type_descriptor_inherits, logical(1), class = rducks_type_class))) {
     "all elements must be rducks_type descriptors"
   }
 }
 
 rducks_type_list_class <- S7::new_class(
   "rducks_type_list",
-  package = NULL,
+  package = "Rducks",
   parent = S7::class_list,
   validator = rducks_validate_type_list_s7
 )
+
+rducks_type_descriptor_inherits <- function(x, class) {
+  isTRUE(S7::S7_inherits(x, class))
+}
+
+rducks_type_descriptor_inherits_any <- function(x, classes) {
+  any(vapply(classes, function(class) rducks_type_descriptor_inherits(x, class), logical(1)))
+}
+
+rducks_type_class_by_name <- function(name) {
+  name <- sub("^Rducks::", "", name)
+  switch(name,
+    rducks_type = rducks_type_class,
+    rducks_scalar_type = rducks_scalar_type_class,
+    rducks_list_type = rducks_list_type_class,
+    rducks_array_type = rducks_array_type_class,
+    rducks_struct_type = rducks_struct_type_class,
+    rducks_map_type = rducks_map_type_class,
+    rducks_decimal_type = rducks_decimal_type_class,
+    rducks_enum_type = rducks_enum_type_class,
+    rducks_union_type = rducks_union_type_class,
+    rducks_type_list = rducks_type_list_class,
+    rducks_logical_scalar_type = rducks_logical_scalar_type_class,
+    rducks_r_integer_scalar_type = rducks_r_integer_scalar_type_class,
+    rducks_r_numeric_scalar_type = rducks_r_numeric_scalar_type_class,
+    rducks_exact_integer_scalar_type = rducks_exact_integer_scalar_type_class,
+    rducks_floating_scalar_type = rducks_floating_scalar_type_class,
+    rducks_character_scalar_type = rducks_character_scalar_type_class,
+    rducks_binary_scalar_type = rducks_binary_scalar_type_class,
+    rducks_temporal_scalar_type = rducks_temporal_scalar_type_class,
+    rducks_uuid_scalar_type = rducks_uuid_scalar_type_class,
+    rducks_interval_scalar_type = rducks_interval_scalar_type_class,
+    rducks_bool_type = rducks_bool_type_class,
+    rducks_i8_type = rducks_i8_type_class,
+    rducks_u8_type = rducks_u8_type_class,
+    rducks_i16_type = rducks_i16_type_class,
+    rducks_u16_type = rducks_u16_type_class,
+    rducks_i32_type = rducks_i32_type_class,
+    rducks_u32_type = rducks_u32_type_class,
+    rducks_i64_type = rducks_i64_type_class,
+    rducks_u64_type = rducks_u64_type_class,
+    rducks_f32_type = rducks_f32_type_class,
+    rducks_f64_type = rducks_f64_type_class,
+    rducks_varchar_type = rducks_varchar_type_class,
+    rducks_blob_type = rducks_blob_type_class,
+    rducks_geometry_type = rducks_geometry_type_class,
+    rducks_variant_type = rducks_variant_type_class,
+    rducks_date_type = rducks_date_type_class,
+    rducks_time_type = rducks_time_type_class,
+    rducks_timestamp_type = rducks_timestamp_type_class,
+    rducks_hugeint_type = rducks_hugeint_type_class,
+    rducks_uhugeint_type = rducks_uhugeint_type_class,
+    rducks_uuid_type = rducks_uuid_type_class,
+    rducks_interval_type = rducks_interval_type_class,
+    rducks_bit_type = rducks_bit_type_class,
+    stop("unknown Rducks S7 type class: ", name, call. = FALSE)
+  )
+}
+
+rducks_type_inherits <- function(x, what) {
+  any(vapply(as.character(what), function(name) {
+    rducks_type_descriptor_inherits(x, rducks_type_class_by_name(name))
+  }, logical(1)))
+}
 
 rducks_scalar_type_class_for_token <- function(token) {
   switch(rducks_type_normalize_scalar(token),
@@ -154,6 +220,8 @@ rducks_scalar_type_class_for_token <- function(token) {
     f64 = rducks_f64_type_class,
     varchar = rducks_varchar_type_class,
     blob = rducks_blob_type_class,
+    geometry = rducks_geometry_type_class,
+    variant = rducks_variant_type_class,
     date = rducks_date_type_class,
     time = rducks_time_type_class,
     timestamp = rducks_timestamp_type_class,
@@ -190,24 +258,13 @@ rducks_type_construct_s7 <- function(token, duckdb_sql, kind, children, child_na
     size = size,
     parameters = parameters
   )
-  class <- rducks_type_class_for_kind(kind, token)
-  class(data, token = token, duckdb_sql = duckdb_sql, kind = kind,
-        children = children, child_names = child_names, size = size, parameters = parameters)
+  type_class <- rducks_type_class_for_kind(kind, token)
+  type_class(data, token = token, duckdb_sql = duckdb_sql, kind = kind,
+             children = children, child_names = child_names, size = size, parameters = parameters)
 }
 
 rducks_type_prop <- function(x, name) {
-  value <- NULL
-  if (is.list(x)) {
-    value <- x[[name]]
-  }
-  if (!is.null(value)) {
-    return(value)
-  }
   S7::prop(x, name)
-}
-
-rducks_type_method_error <- function(x, method) {
-  stop(method, " requires a rducks_type descriptor, not: ", paste(class(x), collapse = ", "), call. = FALSE)
 }
 
 #' Rducks type descriptor helpers
@@ -229,11 +286,7 @@ rducks_type_token <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_token, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_token()")
-}
-
-S7::method(rducks_type_token, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_token, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "token")
 }
 
@@ -245,11 +298,7 @@ rducks_type_sql <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_sql, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_sql()")
-}
-
-S7::method(rducks_type_sql, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_sql, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "duckdb_sql")
 }
 
@@ -263,11 +312,7 @@ rducks_type_kind <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_kind, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_kind()")
-}
-
-S7::method(rducks_type_kind, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_kind, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "kind")
 }
 
@@ -279,11 +324,7 @@ rducks_type_children <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_children, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_children()")
-}
-
-S7::method(rducks_type_children, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_children, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "children")
 }
 
@@ -295,11 +336,7 @@ rducks_type_child_names <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_child_names, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_child_names()")
-}
-
-S7::method(rducks_type_child_names, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_child_names, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "child_names")
 }
 
@@ -311,11 +348,7 @@ rducks_type_size <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_size, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_size()")
-}
-
-S7::method(rducks_type_size, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_size, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "size")
 }
 
@@ -327,10 +360,6 @@ rducks_type_parameters <- S7::new_generic(
   function(x, ...) S7::S7_dispatch()
 )
 
-S7::method(rducks_type_parameters, S7::class_any) <- function(x, ...) {
-  rducks_type_method_error(x, "rducks_type_parameters()")
-}
-
-S7::method(rducks_type_parameters, rducks_type_class) <- function(x, ...) {
+S7::method(rducks_type_parameters, rducks_type_class) <- function(x) {
   rducks_type_prop(x, "parameters")
 }

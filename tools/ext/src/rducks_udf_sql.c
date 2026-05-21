@@ -58,7 +58,12 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     fn = duckdb_create_scalar_function();
     return_logical_type = rducks_create_logical_type_for_desc(return_desc);
     if (!fn || !return_logical_type) {
-        snprintf(err, err_cap, "failed to allocate DuckDB scalar function for Rducks UDF");
+        if (!return_logical_type && rducks_type_desc_contains_scalar(return_desc, RDUCKS_TYPE_VARIANT)) {
+            snprintf(err, err_cap,
+                     "DuckDB runtime C API does not expose VARIANT logical types required for Rducks VARIANT scalar-UDF registration");
+        } else {
+            snprintf(err, err_cap, "failed to allocate DuckDB scalar function for Rducks UDF");
+        }
         if (fn) {
             duckdb_destroy_scalar_function(&fn);
         }
@@ -87,7 +92,13 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         for (size_t i = 0; i < arity; i++) {
             duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
             if (!arg_logical_type) {
-                snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
+                if (rducks_type_desc_contains_scalar(arg_descs[i], RDUCKS_TYPE_VARIANT)) {
+                    snprintf(err, err_cap,
+                             "DuckDB runtime C API does not expose VARIANT logical types required for Rducks VARIANT scalar-UDF argument %zu",
+                             i + 1);
+                } else {
+                    snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks argument %zu", i + 1);
+                }
                 duckdb_destroy_scalar_function(&fn);
                 duckdb_destroy_logical_type(&return_logical_type);
                 for (size_t j = 0; j < arity; j++) rducks_type_desc_destroy(arg_descs[j]);
@@ -142,6 +153,11 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     R_PreserveObject(eval_ref);
     meta->fun = eval_ref;
 
+    /* DuckDB copies/retains logical-type metadata when adding scalar-function
+     * parameters and return type; the temporary duckdb_logical_type handles are
+     * destroyed after registration. The parsed Rducks descriptors are owned by
+     * meta so bind/execution can inspect exact nested semantics later.
+     */
     duckdb_scalar_function_set_return_type(fn, return_logical_type);
     if (null_handling == RDUCKS_NULL_SPECIAL) {
         duckdb_scalar_function_set_special_handling(fn);

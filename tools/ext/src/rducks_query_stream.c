@@ -155,6 +155,8 @@ static const char *rducks_query_stream_scalar_token(duckdb_type type_id) {
     case DUCKDB_TYPE_DOUBLE: return "f64";
     case DUCKDB_TYPE_VARCHAR: return "varchar";
     case DUCKDB_TYPE_BLOB: return "blob";
+    case DUCKDB_TYPE_GEOMETRY: return "geometry";
+    case RDUCKS_DUCKDB_TYPE_VARIANT: return "variant";
     case DUCKDB_TYPE_DATE: return "date";
     case DUCKDB_TYPE_TIME: return "time";
     case DUCKDB_TYPE_TIMESTAMP: return "timestamp";

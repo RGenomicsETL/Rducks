@@ -18,9 +18,35 @@ local({
   invisible(rducks_register_scalar_udf(con, "rducks_blob", function(x) c(x, as.raw(0xff)), "blob", "blob"))
   expect_equal(DBI::dbGetQuery(con, "SELECT hex(rducks_blob(from_hex('00AA'))) AS x")$x, "00AAFF")
 
+  point_1_2_wkb <- "0101000000000000000000F03F0000000000000040"
+  invisible(rducks_register_scalar_udf(con, "rducks_geometry_echo", function(x) {
+    if (!is.raw(x)) stop("geometry did not materialize as WKB raw")
+    x
+  }, GEOMETRY, GEOMETRY))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_geometry_echo('POINT (1 2)'::GEOMETRY)::VARCHAR AS x")$x, "POINT (1 2)")
+  invisible(rducks_register_scalar_udf(con, "rducks_geometry_hex", function(x) {
+    paste(sprintf("%02X", as.integer(x)), collapse = "")
+  }, GEOMETRY, VARCHAR))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_geometry_hex('POINT (1 2)'::GEOMETRY) AS x")$x, point_1_2_wkb)
+
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
   invisible(rducks_register_scalar_udf(con, "rducks_enum_arrow_c", function(x) x, ENUM(c("red", "blue")), ENUM(c("red", "blue"))))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_enum_arrow_c('blue'::ENUM('red','blue'))::VARCHAR AS x")$x, "blue")
+
+  invisible(rducks_register_scalar_udf(con, "rducks_geometry_arrow_c", function(x) {
+    if (!is.raw(x)) stop("geometry did not materialize as WKB raw")
+    x
+  }, GEOMETRY, GEOMETRY))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_geometry_arrow_c('POINT (3 4)'::GEOMETRY)::VARCHAR AS x")$x, "POINT (3 4)")
+  invisible(rducks_register_scalar_udf(con, "rducks_geometry_hex_arrow_c", function(x) {
+    paste(sprintf("%02X", as.integer(x)), collapse = "")
+  }, GEOMETRY, VARCHAR))
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_geometry_hex_arrow_c('POINT (1 2)'::GEOMETRY) AS x")$x, point_1_2_wkb)
+  geometry_explain <- rducks_explain_udf(con, "rducks_geometry_arrow_c")
+  expect_equal(geometry_explain$evaluator, "RC")
+  expect_true(geometry_explain$arrow_c_chunks >= 1)
+  expect_equal(geometry_explain$arrow_r_chunks, 0)
+
   enum_explain <- rducks_explain_udf(con, "rducks_enum_arrow_c")
   expect_equal(enum_explain$evaluator, "RC")
   expect_true(enum_explain$arrow_c_chunks >= 1)
