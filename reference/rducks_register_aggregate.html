@@ -195,22 +195,20 @@ callbacks receive the declared type's R missing-value shape for NULL inputs.</p>
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">rducks_register_aggregate</span><span class="op">(</span></span></span>
 <span class="r-in"><span>  <span class="va">db</span>, <span class="st">"my_sum"</span>,</span></span>
 <span class="r-in"><span>  update <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span>, <span class="va">x</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span><span class="op">)</span> <span class="va">x</span> <span class="kw">else</span> <span class="va">state</span> <span class="op">+</span> <span class="va">x</span>,</span></span>
 <span class="r-in"><span>  finalize <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">state</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">state</span><span class="op">)</span><span class="op">)</span> <span class="fl">0L</span> <span class="kw">else</span> <span class="va">state</span>,</span></span>
 <span class="r-in"><span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span>, returns <span class="op">=</span> <span class="va">INTEGER</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_aggregate_registration&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   registered: yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   name:       my_sum</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   signature:  my_sum(INTEGER) -&gt; INTEGER</span>
 <span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">db</span>, <span class="st">"SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)"</span><span class="op">)</span></span></span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in dbSendQuery(conn, statement, ...):</span> Catalog Error: Scalar Function with name my_sum does not exist!</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> Did you mean "fsum"?</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> LINE 1: SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span>                ^</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Context: rapi_prepare</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Error type: CATALOG</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   my_sum(x)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1         6</span>
 <span class="r-in"><span><span class="fu"><a href="rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># }</span></span></span>

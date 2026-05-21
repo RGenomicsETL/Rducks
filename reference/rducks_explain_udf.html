@@ -105,14 +105,32 @@ example, an <code>arrow_c</code> scalar UDF should increment <code>arrow_c_chunk
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span><span class="va">db</span>, <span class="st">"my_fn"</span>, <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span></span>
 <span class="r-in"><span>  args <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">INTEGER</span><span class="op">)</span>, returns <span class="op">=</span> <span class="va">INTEGER</span><span class="op">)</span></span></span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error:</span> Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_scalar_udf_registration&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   registered:      yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   name:            my_fn</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluation_mode: scalar</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   plan:            arrow_r+serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   signature:       my_fn(INTEGER) -&gt; INTEGER</span>
 <span class="r-in"><span><span class="fu">rducks_explain_udf</span><span class="op">(</span><span class="va">db</span>, <span class="st">"my_fn"</span><span class="op">)</span></span></span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow):</span> Invalid Error: Invalid Input Error: unknown Rducks UDF: my_fn</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Context: rapi_execute</span>
-<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> Error type: INVALID</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    name   mode        plan_id      engine_id marshalling concurrency</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 my_fn scalar arrow_r+serial arrow_r_serial     arrow_r      serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   native_marshalling evaluator args returns r_side_record null_handling</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1            arrow_r         R  i32     i32          TRUE       default</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   exception_handling side_effects dispatch_chunks dispatch_rows direct_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1            rethrow        FALSE               0             0             0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   queued_chunks queue_pending_current queue_pending_max arrow_r_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1             0                     0                 0              0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   arrow_c_chunks arrow_c_input_snapshot_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1              0                             0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   arrow_c_owned_result_chunk_chunks arrow_ipc_chunks ripc_collect_batches</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                 0                0                    0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   ripc_collect_requests ripc_collect_max_batch ripc_submit_wave_max</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                     0                      0                    0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   ripc_collect_ready_max ripc_inflight_current ripc_inflight_max</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                      0                     0                 0</span>
 <span class="r-in"><span><span class="fu"><a href="rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">db</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># }</span></span></span>

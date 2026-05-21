@@ -73,17 +73,17 @@ execution; worker-thread calls into R are rejected.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db)
+rducks_enable(db, threads = "single")
 rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
-#> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
+#> <rducks_table_registration>
+#>   registered: yes
+#>   name:       my_table
+#>   signature:  my_table() -> TABLE(<bind-time schema>)
 DBI::dbGetQuery(db, "SELECT * FROM my_table()")
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Table Function with name my_table does not exist!
-#> Did you mean "query_table"?
-#> 
-#> LINE 1: SELECT * FROM my_table()
-#>                       ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#>   x
+#> 1 1
+#> 2 2
+#> 3 3
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

@@ -148,22 +148,20 @@ receive the declared type's R missing-value shape for NULL inputs.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db)
+rducks_enable(db, threads = "single")
 rducks_register_aggregate(
   db, "my_sum",
   update = function(state, x) if (is.null(state)) x else state + x,
   finalize = function(state) if (is.null(state)) 0L else state,
   args = list(INTEGER), returns = INTEGER
 )
-#> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
+#> <rducks_aggregate_registration>
+#>   registered: yes
+#>   name:       my_sum
+#>   signature:  my_sum(INTEGER) -> INTEGER
 DBI::dbGetQuery(db, "SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)")
-#> Error in dbSendQuery(conn, statement, ...): Catalog Error: Scalar Function with name my_sum does not exist!
-#> Did you mean "fsum"?
-#> 
-#> LINE 1: SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)
-#>                ^
-#> ℹ Context: rapi_prepare
-#> ℹ Error type: CATALOG
+#>   my_sum(x)
+#> 1         6
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

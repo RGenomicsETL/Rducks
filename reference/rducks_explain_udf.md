@@ -40,14 +40,32 @@ counters.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db)
+rducks_enable(db, threads = "single")
 rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER)
-#> Error: Rducks R-backed functions require DuckDB to execute R code on the calling R thread; call rducks_enable(con, threads = 'single') or set external_threads=1 and PRAGMA threads=1 before registering R-backed functions
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            my_fn
+#>   evaluation_mode: scalar
+#>   plan:            arrow_r+serial
+#>   signature:       my_fn(INTEGER) -> INTEGER
 rducks_explain_udf(db, "my_fn")
-#> Error in duckdb_result(connection = conn, stmt_lst = stmt_lst, arrow = arrow): Invalid Error: Invalid Input Error: unknown Rducks UDF: my_fn
-#> ℹ Context: rapi_execute
-#> ℹ Error type: INVALID
+#>    name   mode        plan_id      engine_id marshalling concurrency
+#> 1 my_fn scalar arrow_r+serial arrow_r_serial     arrow_r      serial
+#>   native_marshalling evaluator args returns r_side_record null_handling
+#> 1            arrow_r         R  i32     i32          TRUE       default
+#>   exception_handling side_effects dispatch_chunks dispatch_rows direct_chunks
+#> 1            rethrow        FALSE               0             0             0
+#>   queued_chunks queue_pending_current queue_pending_max arrow_r_chunks
+#> 1             0                     0                 0              0
+#>   arrow_c_chunks arrow_c_input_snapshot_chunks
+#> 1              0                             0
+#>   arrow_c_owned_result_chunk_chunks arrow_ipc_chunks ripc_collect_batches
+#> 1                                 0                0                    0
+#>   ripc_collect_requests ripc_collect_max_batch ripc_submit_wave_max
+#> 1                     0                      0                    0
+#>   ripc_collect_ready_max ripc_inflight_current ripc_inflight_max
+#> 1                      0                     0                 0
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }
