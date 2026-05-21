@@ -52,7 +52,7 @@ jobs:
           R -q -e '
             pkgs <- c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7",
                       "bench", "dplyr", "duckplyr", "globals", "knitr",
-                      "rmarkdown", "tinytest")
+                      "mori", "rmarkdown", "tinytest")
             pak::pkg_install(pkgs, lib = "/root/R-libs", ask = FALSE)
           '
 
