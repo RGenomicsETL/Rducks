@@ -25,3 +25,12 @@ are the managed workers used by \code{arrow_ipc + multiprocess_parallel} scalar-
 execution plans when \code{ipc_endpoints} is not supplied. Caller-supplied external
 endpoints are shown as external providers.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_ipc_workers(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

@@ -1,0 +1,2007 @@
+diff --git a/NAMESPACE b/NAMESPACE
+index f884fe6..c63355c 100644
+--- a/NAMESPACE
++++ b/NAMESPACE
+@@ -159,6 +159,7 @@ export(rducks_release_stats)
+ export(rducks_reset_udf_counters)
+ export(rducks_runtime_stats)
+ export(rducks_set_execution_plan)
++export(rducks_table_stream)
+ export(rducks_type_child_names)
+ export(rducks_type_children)
+ export(rducks_type_kind)
+diff --git a/R/register.R b/R/register.R
+index a6ddce8..d4ae2ca 100644
+--- a/R/register.R
++++ b/R/register.R
+@@ -276,6 +276,128 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
+   )
+ }
+ 
++
++#' Create a streaming result for an Rducks table function
++#'
++#' Return this object from a function registered with
++#' \code{\link[=rducks_register_table]{rducks_register_table()}} to expose a
++#' finite table without materializing all rows during DuckDB bind. The
++#' \code{prototype} supplies the output column names and types. During scan,
++#' Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
++#' frame, named list, \code{nanoarrow_array}, or one-batch
++#' \code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
++#' signal end-of-stream.
++#'
++#' \code{close}, when supplied, is called at most once when the stream reaches
++#' EOF or when DuckDB releases the table-function bind data on the recorded R
++#' thread. Use it to release file handles, sockets, iterators, or other
++#' producer-side resources. \code{cardinality} is optional scan metadata; set
++#' \code{exact = TRUE} only when the stream will emit exactly that many rows.
++#'
++#' @param prototype Data frame or named list whose column names and R types
++#'   define the stream schema. A zero-row prototype is usually appropriate.
++#' @param next_batch Function called as \code{next_batch(n)} or
++#'   \code{next_batch()} if it has no formal arguments. It must return the next
++#'   batch or \code{NULL} for EOF.
++#' @param close Optional cleanup function.
++#' @param cardinality Optional non-negative row count, or \code{NA} when
++#'   unknown.
++#' @param exact Whether \code{cardinality} is exact rather than an estimate.
++#' @return Object of class \code{rducks_table_stream}.
++#' @export
++rducks_table_stream <- function(prototype, next_batch, close = NULL,
++                                cardinality = NA_real_, exact = FALSE) {
++  prototype <- rducks_table_result_as_data_frame(prototype)
++  if (!is.function(next_batch)) {
++    stop("next_batch must be a function", call. = FALSE)
++  }
++  if (!is.null(close) && !is.function(close)) {
++    stop("close must be NULL or a function", call. = FALSE)
++  }
++  if (!is.numeric(cardinality) || length(cardinality) != 1L || is.na(cardinality)) {
++    cardinality <- NA_real_
++  } else if (!is.finite(cardinality) || cardinality < 0 || cardinality != floor(cardinality)) {
++    stop("cardinality must be NA or a non-negative integer-like number", call. = FALSE)
++  }
++  if (!is.logical(exact) || length(exact) != 1L || is.na(exact)) {
++    stop("exact must be TRUE or FALSE", call. = FALSE)
++  }
++  state <- new.env(parent = emptyenv())
++  state$next_batch <- next_batch
++  state$close <- close
++  state$closed <- FALSE
++  state$cardinality <- cardinality
++  state$exact <- exact
++  structure(
++    list(prototype = prototype, state = state),
++    class = "rducks_table_stream"
++  )
++}
++
++rducks_table_is_stream <- function(x) inherits(x, "rducks_table_stream")
++
++rducks_table_stream_prototype <- function(stream) {
++  if (!rducks_table_is_stream(stream)) {
++    stop("Rducks table stream object is invalid", call. = FALSE)
++  }
++  rducks_table_result_as_data_frame(stream$prototype)
++}
++
++rducks_table_stream_cardinality <- function(stream) {
++  if (!rducks_table_is_stream(stream)) {
++    stop("Rducks table stream object is invalid", call. = FALSE)
++  }
++  cardinality <- stream$state$cardinality
++  if (is.na(cardinality)) {
++    list(known = FALSE, rows = 0, exact = FALSE)
++  } else {
++    list(known = TRUE, rows = as.numeric(cardinality), exact = isTRUE(stream$state$exact))
++  }
++}
++
++rducks_table_stream_close <- function(stream) {
++  if (!rducks_table_is_stream(stream)) return(invisible(FALSE))
++  state <- stream$state
++  if (isTRUE(state$closed)) return(invisible(FALSE))
++  state$closed <- TRUE
++  if (is.function(state$close)) state$close()
++  invisible(TRUE)
++}
++
++rducks_table_call_next_batch <- function(next_batch, n) {
++  if (identical(typeof(next_batch), "closure")) {
++    fmls <- formals(next_batch)
++    if (is.null(fmls) || !length(fmls)) return(next_batch())
++  }
++  next_batch(as.integer(n))
++}
++
++rducks_table_stream_validate_batch <- function(stream, batch) {
++  if (inherits(batch, "nanoarrow_array") || inherits(batch, "nanoarrow_array_stream")) return(batch)
++  batch <- rducks_table_result_as_data_frame(batch)
++  expected <- names(stream$prototype)
++  actual <- names(batch)
++  if (!identical(actual, expected)) {
++    stop("Rducks table stream next_batch columns must match the prototype names and order", call. = FALSE)
++  }
++  batch
++}
++
++rducks_table_stream_next_array <- function(stream, n) {
++  if (!rducks_table_is_stream(stream)) {
++    stop("Rducks table stream object is invalid", call. = FALSE)
++  }
++  state <- stream$state
++  if (isTRUE(state$closed)) return(NULL)
++  batch <- rducks_table_call_next_batch(state$next_batch, n)
++  if (is.null(batch)) {
++    rducks_table_stream_close(stream)
++    return(NULL)
++  }
++  batch <- rducks_table_stream_validate_batch(stream, batch)
++  rducks_table_as_arrow_array(batch)
++}
++
+ rducks_table_result_as_data_frame <- function(result) {
+   if (is.data.frame(result)) return(result)
+   if (!is.list(result)) {
+@@ -318,34 +440,35 @@ rducks_table_as_arrow_array <- function(result) {
+ #' table function infers its positional SQL argument count from `formals(fun)`
+ #' and registers those arguments with DuckDB's dynamic `ANY` type. During
+ #' DuckDB's bind phase, Rducks converts the actual SQL argument values to R
+-#' scalars/lists, calls `fun(...)` on the recorded calling R thread, and infers
+-#' the DuckDB output schema from the returned data frame or named list of
+-#' equal-length columns. It then converts the result through a nanoarrow Arrow C
+-#' Data stream, imports it into a DuckDB chunk, and emits row batches from
+-#' that imported chunk during table-function scans. Scans honor DuckDB
+-#' projection pushdown, so unreferenced columns are not copied from the imported
+-#' chunk into the output chunk.
++#' scalars/lists and calls `fun(...)` on the recorded calling R thread. `fun()`
++#' may return either a finite data frame/named list or a
++#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
++#'
++#' For finite results, Rducks imports the full result into one DuckDB data chunk
++#' during bind and then emits row batches during scan. For streaming results,
++#' bind uses only the stream prototype to define the DuckDB schema; scan calls
++#' `next_batch()` repeatedly and imports one returned batch at a time. Both
++#' paths honor DuckDB projection pushdown, so unreferenced columns are not copied
++#' from imported chunks into DuckDB output chunks.
+ #'
+ #' This is intentionally separate from DuckDB scalar-UDF registration through
+ #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
+-#' functions have their own bind/init/scan state and currently support only the
+-#' one-shot finite table shape. DuckDB table functions can have bind-time dynamic
+-#' schemas and broad input signatures; this Rducks API follows that model
+-#' for output schemas and positional input types, while the number of SQL
+-#' arguments is fixed by the R function's formal argument count. Variadic `...`
+-#' arguments are not supported. If you already have a static R data frame to
+-#' expose as a virtual table, prefer `duckdb::duckdb_register()`; DuckDB's R
+-#' package routes that through its native data-frame scan path. Use
+-#' `rducks_enable(con, threads = "single")` or otherwise set `external_threads=1`
+-#' plus `PRAGMA threads=1` before registration and execution; worker-thread calls
+-#' into R are rejected.
++#' functions have their own bind/init/scan state, bind-time dynamic schemas, and
++#' positional SQL arguments fixed by the R function's finite formal argument
++#' count. Variadic `...` arguments are not supported. If you already have a
++#' static R data frame to expose as a virtual table, prefer
++#' `duckdb::duckdb_register()`; DuckDB's R package routes that through its native
++#' data-frame scan path. Use `rducks_enable(con, threads = "single")` or
++#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before registration
++#' and execution; worker-thread calls into R are rejected.
+ #'
+ #' @param con A `duckdb_connection`.
+ #' @param name SQL table function name.
+-#' @param fun R function returning a data frame or named list of columns. Its
+-#'   finite formal argument count defines the SQL positional argument count;
+-#'   each positional argument is registered as DuckDB `ANY` and converted at
+-#'   bind time from the actual SQL value.
++#' @param fun R function returning a data frame, named list of columns, or
++#'   \code{\link[=rducks_table_stream]{rducks_table_stream()}}. Its finite formal
++#'   argument count defines the SQL positional argument count; each positional
++#'   argument is registered as DuckDB `ANY` and converted at bind time from the
++#'   actual SQL value.
+ #' @param chunk_size Maximum number of rows emitted per DuckDB output chunk.
+ #'   Must be an integer from 1 to 1024.
+ #' @return Object of class `rducks_table_registration` containing the
+@@ -392,19 +515,35 @@ print.rducks_table_registration <- function(x, ...) {
+   invisible(x)
+ }
+ 
+-rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine) {
++rducks_aggregate_registration_spec <- function(name, update, finalize, args, returns, combine,
++                                                update_chunk = NULL, combine_chunk = NULL, finalize_chunk = NULL) {
+   if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)) {
+     stop("name must be a non-empty character scalar", call. = FALSE)
+   }
+-  if (!is.function(update)) {
+-    stop("update must be a function", call. = FALSE)
++  if (!is.null(update) && !is.function(update)) {
++    stop("update must be NULL or a function", call. = FALSE)
+   }
+-  if (!is.function(finalize)) {
+-    stop("finalize must be a function", call. = FALSE)
++  if (!is.null(finalize) && !is.function(finalize)) {
++    stop("finalize must be NULL or a function", call. = FALSE)
+   }
+   if (!is.null(combine) && !is.function(combine)) {
+     stop("combine must be NULL or a function", call. = FALSE)
+   }
++  if (!is.null(update_chunk) && !is.function(update_chunk)) {
++    stop("update_chunk must be NULL or a function", call. = FALSE)
++  }
++  if (!is.null(combine_chunk) && !is.function(combine_chunk)) {
++    stop("combine_chunk must be NULL or a function", call. = FALSE)
++  }
++  if (!is.null(finalize_chunk) && !is.function(finalize_chunk)) {
++    stop("finalize_chunk must be NULL or a function", call. = FALSE)
++  }
++  if (is.null(update) && is.null(update_chunk)) {
++    stop("at least one of update or update_chunk must be supplied", call. = FALSE)
++  }
++  if (is.null(finalize) && is.null(finalize_chunk)) {
++    stop("at least one of finalize or finalize_chunk must be supplied", call. = FALSE)
++  }
+   arg_types <- rducks_as_type_list(args)
+   if (!length(arg_types)) {
+     stop("Rducks aggregate UDFs require at least one input argument", call. = FALSE)
+@@ -430,33 +569,41 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
+ #'
+ #' Registers an R-backed DuckDB aggregate. The aggregate state stored
+ #' inside DuckDB is native memory containing bytes from an R `raw` vector, never
+-#' an R object pointer. For each non-NULL input row, Rducks calls
+-#' `update(state, ...)`, where `state` is the previous raw state or `NULL` and
+-#' `...` are the row's scalar input values. `update()` must return the next raw
+-#' state or `NULL`. `raw(0)` is a valid non-`NULL` state; return `NULL` only
+-#' when the aggregate intentionally has no state. At finalization Rducks calls
+-#' `finalize(state)` and marshals that scalar result to the declared DuckDB
+-#' return type.
++#' an R object pointer. `raw(0)` is a valid non-`NULL` state; return `NULL` only
++#' when the aggregate intentionally has no state.
++#'
++#' The row-wise API calls `update(state, ...)` for each selected input row and
++#' `finalize(state)` for each output state. The optional vectorized API calls
++#' `update_chunk(state, ...)` once per DuckDB state group and passes R vectors
++#' containing that group's input values; it calls `combine_chunk(left, right)`
++#' with lists of raw states when partial states must be merged and
++#' `finalize_chunk(states)` with a list of raw states at finalization. When a
++#' chunk callback is supplied, it takes precedence over the corresponding
++#' row-wise callback. `update_chunk()` and `combine_chunk()` must return raw
++#' vector states or `NULL`; `combine_chunk()` must return a list with one state
++#' per merged pair; `finalize_chunk()` must return a vector or list with one
++#' scalar result per output state.
+ #'
+ #' This API is deliberately serialized. Registration requires
+ #' `rducks_enable(con, threads = "single")` or equivalent
+ #' `external_threads=1` plus `PRAGMA threads=1`, and execution rejects attempts
+ #' to call R from non-calling DuckDB worker threads. If DuckDB combines partial
+ #' states, Rducks can copy a source state into an empty target; merging two
+-#' non-`NULL` states requires `combine(left, right)` and must still run on the
+-#' recorded R thread. Cross-thread R aggregate execution is future work.
++#' non-`NULL` states requires either `combine(left, right)` or
++#' `combine_chunk(left, right)` and must still run on the recorded R thread.
+ #'
+ #' With `null_handling = "default"`, rows with any top-level SQL `NULL` input
+-#' do not call `update()`. Groups with no non-NULL rows therefore pass `NULL` to
+-#' `finalize()`. With `null_handling = "special"`, `update()` receives the
+-#' declared type's R missing-value shape for NULL inputs.
++#' do not call `update()` or `update_chunk()`. Groups with no non-NULL rows
++#' therefore pass `NULL` to `finalize()` or `finalize_chunk()`. With
++#' `null_handling = "special"`, update callbacks receive the declared type's R
++#' missing-value shape for NULL inputs.
+ #'
+ #' @param con A `duckdb_connection`.
+ #' @param name SQL aggregate function name.
+-#' @param update R function called as `update(state, ...)`; must return a raw
+-#'   vector state or `NULL`.
+-#' @param finalize R function called as `finalize(state)`; must return a scalar
+-#'   compatible with `returns` or `NULL` for SQL `NULL`.
++#' @param update Optional row-wise R function called as `update(state, ...)`;
++#'   must return a raw vector state or `NULL`.
++#' @param finalize Optional row-wise R function called as `finalize(state)`;
++#'   must return a scalar compatible with `returns` or `NULL` for SQL `NULL`.
+ #' @param args Input type specification. Use exported DuckDB-style descriptors
+ #'   such as `INTEGER`, `DOUBLE`, or `VARCHAR`.
+ #' @param returns Return type specification.
+@@ -464,22 +611,40 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
+ #'   non-`NULL` partial raw states must be merged. It must return a raw vector
+ #'   state or `NULL`.
+ #' @param null_handling Either `"default"` to skip rows with top-level NULL
+-#'   inputs, or `"special"` to pass missing values to `update()`.
++#'   inputs, or `"special"` to pass missing values to update callbacks.
++#' @param update_chunk Optional vectorized R function called as
++#'   `update_chunk(state, ...)` with one R vector/list-column per aggregate
++#'   input for the current DuckDB state group. It must return a raw vector state
++#'   or `NULL`.
++#' @param combine_chunk Optional vectorized R function called as
++#'   `combine_chunk(left_states, right_states)`, where both arguments are lists
++#'   of raw states or `NULL`. It must return a list of raw states or `NULL` of
++#'   the same length.
++#' @param finalize_chunk Optional vectorized R function called as
++#'   `finalize_chunk(states)`, where `states` is a list of raw states or `NULL`.
++#'   It must return one result per state as either a vector or list.
+ #' @return Object of class `rducks_aggregate_registration` containing the
+ #'   connection and normalized aggregate signature. The aggregate remains
+ #'   registered in DuckDB even if this object is discarded.
+ #' @export
+-rducks_register_aggregate <- function(con, name, update, finalize, args, returns,
++rducks_register_aggregate <- function(con, name, update = NULL, finalize = NULL, args, returns,
+                                       combine = NULL,
+-                                      null_handling = c("default", "special")) {
++                                      null_handling = c("default", "special"),
++                                      update_chunk = NULL, combine_chunk = NULL, finalize_chunk = NULL) {
+   null_handling <- match.arg(null_handling)
+   if (!inherits(con, "duckdb_connection")) {
+     stop("con must be a duckdb_connection", call. = FALSE)
+   }
+-  spec <- rducks_aggregate_registration_spec(name, update, finalize, args, returns, combine)
++  spec <- rducks_aggregate_registration_spec(
++    name, update, finalize, args, returns, combine,
++    update_chunk = update_chunk, combine_chunk = combine_chunk, finalize_chunk = finalize_chunk
++  )
+   rducks_assert_single_thread(con)
+   rducks_attach_runtime_anchor(con)
+-  bundle <- list(update = update, combine = combine, finalize = finalize)
++  bundle <- list(
++    update = update, combine = combine, finalize = finalize,
++    update_chunk = update_chunk, combine_chunk = combine_chunk, finalize_chunk = finalize_chunk
++  )
+   eval_ref_handle <- rducks_evaluator_ref_put(bundle)
+   on.exit(rducks_evaluator_ref_remove(eval_ref_handle), add = TRUE)
+   sql <- sprintf(
+diff --git a/inst/rducks_extension/src/rducks_aggregate.c b/inst/rducks_extension/src/rducks_aggregate.c
+index 8a5c9e4..ee89917 100644
+--- a/inst/rducks_extension/src/rducks_aggregate.c
++++ b/inst/rducks_extension/src/rducks_aggregate.c
+@@ -11,6 +11,9 @@ typedef struct rducks_r_aggregate_meta {
+     SEXP update_fun;
+     SEXP combine_fun;
+     SEXP finalize_fun;
++    SEXP update_chunk_fun;
++    SEXP combine_chunk_fun;
++    SEXP finalize_chunk_fun;
+     char *name;
+     size_t arity;
+     rducks_type_desc_t **args;
+@@ -161,12 +164,24 @@ static int rducks_r_aggregate_bundle_valid(SEXP bundle) {
+     SEXP update_fun;
+     SEXP finalize_fun;
+     SEXP combine_fun;
++    SEXP update_chunk_fun;
++    SEXP combine_chunk_fun;
++    SEXP finalize_chunk_fun;
+     if (TYPEOF(bundle) != VECSXP) return 0;
+     update_fun = rducks_named_list_get(bundle, "update");
+     finalize_fun = rducks_named_list_get(bundle, "finalize");
+     combine_fun = rducks_named_list_get(bundle, "combine");
+-    if (!Rf_isFunction(update_fun) || !Rf_isFunction(finalize_fun)) return 0;
++    update_chunk_fun = rducks_named_list_get(bundle, "update_chunk");
++    combine_chunk_fun = rducks_named_list_get(bundle, "combine_chunk");
++    finalize_chunk_fun = rducks_named_list_get(bundle, "finalize_chunk");
++    if (update_fun != R_NilValue && !Rf_isFunction(update_fun)) return 0;
++    if (finalize_fun != R_NilValue && !Rf_isFunction(finalize_fun)) return 0;
+     if (combine_fun != R_NilValue && !Rf_isFunction(combine_fun)) return 0;
++    if (update_chunk_fun != R_NilValue && !Rf_isFunction(update_chunk_fun)) return 0;
++    if (combine_chunk_fun != R_NilValue && !Rf_isFunction(combine_chunk_fun)) return 0;
++    if (finalize_chunk_fun != R_NilValue && !Rf_isFunction(finalize_chunk_fun)) return 0;
++    if (update_fun == R_NilValue && update_chunk_fun == R_NilValue) return 0;
++    if (finalize_fun == R_NilValue && finalize_chunk_fun == R_NilValue) return 0;
+     return 1;
+ }
+ 
+@@ -243,6 +258,182 @@ static SEXP rducks_r_aggregate_update_call(rducks_r_aggregate_meta_t *meta,
+     return call;
+ }
+ 
++static int rducks_r_aggregate_row_selected(rducks_r_aggregate_meta_t *meta,
++                                           rducks_rc_direct_vector_view_t *views,
++                                           idx_t row) {
++    return !(meta->null_handling == RDUCKS_NULL_DEFAULT && rducks_r_aggregate_row_has_null(meta, views, row));
++}
++
++static SEXP rducks_r_aggregate_subset_vector(SEXP values, const idx_t *rows, idx_t row_count,
++                                             idx_t full_count, int *protect_count,
++                                             char *err, size_t err_cap) {
++    int identity = row_count == full_count;
++    if (identity) {
++        for (idx_t i = 0; i < row_count; i++) {
++            if (rows[i] != i) {
++                identity = 0;
++                break;
++            }
++        }
++    }
++    if (identity) return values;
++    if (row_count > (idx_t)INT_MAX) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized update group is too large for R indexing");
++        return R_NilValue;
++    }
++    SEXP idx = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)row_count));
++    for (idx_t i = 0; i < row_count; i++) {
++        if (rows[i] >= (idx_t)INT_MAX) {
++            UNPROTECT(1);
++            snprintf(err, err_cap, "Rducks aggregate row index is too large for R indexing");
++            return R_NilValue;
++        }
++        INTEGER(idx)[(R_xlen_t)i] = (int)rows[i] + 1;
++    }
++    SEXP call = PROTECT(Rf_lang3(Rf_install("["), values, idx));
++    int r_err = 0;
++    SEXP out = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
++    UNPROTECT(2); /* idx, call */
++    if (r_err) {
++        UNPROTECT(1); /* out */
++        snprintf(err, err_cap, "Rducks aggregate vectorized update failed while subsetting input vectors");
++        return R_NilValue;
++    }
++    (*protect_count)++;
++    return out;
++}
++
++static SEXP rducks_r_aggregate_update_chunk_call(rducks_r_aggregate_meta_t *meta,
++                                                 rducks_r_aggregate_state_t *state,
++                                                 SEXP full_columns,
++                                                 const idx_t *rows,
++                                                 idx_t row_count,
++                                                 idx_t full_count,
++                                                 int *protect_count,
++                                                 char *err, size_t err_cap) {
++    SEXP args;
++    SEXP node;
++    SEXP state_raw;
++    SEXP call;
++    if (!Rf_isFunction(meta->update_chunk_fun)) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized update function is missing");
++        return R_NilValue;
++    }
++    if (row_count > (idx_t)R_XLEN_T_MAX) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized update group is too large for R");
++        return R_NilValue;
++    }
++    args = PROTECT(Rf_allocList((int)meta->arity + 1));
++    (*protect_count)++;
++    node = args;
++    state_raw = rducks_r_aggregate_state_to_raw(state);
++    SETCAR(node, state_raw);
++    node = CDR(node);
++    for (size_t col = 0; col < meta->arity; col++) {
++        SEXP full = VECTOR_ELT(full_columns, (R_xlen_t)col);
++        SEXP arg = rducks_r_aggregate_subset_vector(full, rows, row_count, full_count,
++                                                    protect_count, err, err_cap);
++        if (err[0]) return R_NilValue;
++        SETCAR(node, arg);
++        node = CDR(node);
++    }
++    call = PROTECT(Rf_lcons(meta->update_chunk_fun, args));
++    (*protect_count)++;
++    return call;
++}
++
++static int rducks_r_aggregate_update_vectorized(duckdb_function_info info,
++                                                rducks_r_aggregate_meta_t *meta,
++                                                duckdb_data_chunk input,
++                                                duckdb_aggregate_state *states,
++                                                rducks_rc_direct_vector_view_t *views,
++                                                idx_t n,
++                                                char *err, size_t err_cap) {
++    uint8_t *processed = NULL;
++    idx_t *rows = NULL;
++    SEXP full_columns = R_NilValue;
++    int protect_count = 0;
++    if (!Rf_isFunction(meta->update_chunk_fun)) return 0;
++    if (n == 0) return 1;
++    if (n > (idx_t)R_XLEN_T_MAX || meta->arity > (size_t)INT_MAX) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized update input is too large for R");
++        return 0;
++    }
++    processed = (uint8_t *)calloc((size_t)n, sizeof(*processed));
++    rows = (idx_t *)rducks_calloc_array((size_t)n, sizeof(*rows));
++    if (!processed || !rows) {
++        free(processed);
++        free(rows);
++        snprintf(err, err_cap, "out of memory preparing Rducks aggregate vectorized update");
++        return 0;
++    }
++
++    full_columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
++    protect_count++;
++    for (size_t col = 0; col < meta->arity; col++) {
++        duckdb_vector vector = duckdb_data_chunk_get_vector(input, (idx_t)col);
++        SEXP values = PROTECT(rducks_rc_direct_column_values(meta->args[col], vector, n, err, err_cap));
++        if (err[0] || values == R_NilValue) {
++            UNPROTECT(1);
++            free(processed);
++            free(rows);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        SET_VECTOR_ELT(full_columns, (R_xlen_t)col, values);
++        UNPROTECT(1);
++    }
++
++    for (idx_t row = 0; row < n; row++) {
++        rducks_r_aggregate_state_t *state = (rducks_r_aggregate_state_t *)states[row];
++        idx_t row_count = 0;
++        int ok = 1;
++        SEXP call;
++        SEXP result;
++        if (processed[row]) continue;
++        for (idx_t j = row; j < n; j++) {
++            if ((rducks_r_aggregate_state_t *)states[j] == state) {
++                processed[j] = 1;
++                if (state && rducks_r_aggregate_row_selected(meta, views, j)) rows[row_count++] = j;
++            }
++        }
++        if (!state || row_count == 0) continue;
++        int call_protect_count = 0;
++        err[0] = '\0';
++        call = PROTECT(rducks_r_aggregate_update_chunk_call(meta, state, full_columns, rows, row_count, n,
++                                                            &call_protect_count, err, err_cap));
++        if (err[0] || call == R_NilValue) {
++            UNPROTECT(call_protect_count + 1);
++            free(processed);
++            free(rows);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        result = PROTECT(rducks_r_aggregate_eval_call(call, &ok, err, err_cap));
++        if (!ok) {
++            rducks_r_aggregate_set_error(info, "update_chunk", err);
++            UNPROTECT(call_protect_count + 2);
++            free(processed);
++            free(rows);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        if (!rducks_r_aggregate_state_from_raw(state, result, err, err_cap)) {
++            rducks_r_aggregate_set_error(info, "update_chunk", err);
++            UNPROTECT(call_protect_count + 2);
++            free(processed);
++            free(rows);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        UNPROTECT(call_protect_count + 2);
++    }
++    free(processed);
++    free(rows);
++    UNPROTECT(protect_count);
++    return 1;
++}
++
+ static void rducks_r_aggregate_update(duckdb_function_info info, duckdb_data_chunk input,
+                                       duckdb_aggregate_state *states) {
+     rducks_r_aggregate_meta_t *meta = (rducks_r_aggregate_meta_t *)duckdb_aggregate_function_get_extra_info(info);
+@@ -275,6 +466,20 @@ static void rducks_r_aggregate_update(duckdb_function_info info, duckdb_data_chu
+         }
+     }
+ 
++    if (Rf_isFunction(meta->update_chunk_fun)) {
++        if (!rducks_r_aggregate_update_vectorized(info, meta, input, states, views, n, err, sizeof(err))) {
++            if (err[0]) rducks_r_aggregate_set_error(info, "update_chunk", err);
++        }
++        free(views);
++        return;
++    }
++
++    if (!Rf_isFunction(meta->update_fun)) {
++        duckdb_aggregate_function_set_error(info, "Rducks aggregate update function is missing");
++        free(views);
++        return;
++    }
++
+     for (idx_t row = 0; row < n; row++) {
+         rducks_r_aggregate_state_t *state = (rducks_r_aggregate_state_t *)states[row];
+         int ok = 1;
+@@ -334,6 +539,74 @@ static int rducks_r_aggregate_call_combine(rducks_r_aggregate_meta_t *meta,
+     return 1;
+ }
+ 
++
++static SEXP rducks_r_aggregate_state_list(rducks_r_aggregate_state_t **states,
++                                          idx_t count,
++                                          int *protect_count,
++                                          char *err, size_t err_cap) {
++    SEXP out;
++    if (count > (idx_t)R_XLEN_T_MAX) {
++        snprintf(err, err_cap, "Rducks aggregate state batch is too large for R");
++        return R_NilValue;
++    }
++    out = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)count));
++    (*protect_count)++;
++    for (idx_t i = 0; i < count; i++) {
++        SET_VECTOR_ELT(out, (R_xlen_t)i, rducks_r_aggregate_state_to_raw(states[i]));
++    }
++    return out;
++}
++
++static int rducks_r_aggregate_call_combine_chunk(rducks_r_aggregate_meta_t *meta,
++                                                 rducks_r_aggregate_state_t **targets,
++                                                 rducks_r_aggregate_state_t **sources,
++                                                 idx_t count,
++                                                 char *err, size_t err_cap) {
++    int ok = 1;
++    int protect_count = 0;
++    SEXP target_list;
++    SEXP source_list;
++    SEXP call;
++    SEXP result;
++    if (count == 0) return 1;
++    if (!Rf_isFunction(meta->combine_chunk_fun)) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized combine function is missing");
++        return 0;
++    }
++    target_list = rducks_r_aggregate_state_list(targets, count, &protect_count, err, err_cap);
++    if (err[0] || target_list == R_NilValue) {
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    source_list = rducks_r_aggregate_state_list(sources, count, &protect_count, err, err_cap);
++    if (err[0] || source_list == R_NilValue) {
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    call = PROTECT(Rf_lang3(meta->combine_chunk_fun, target_list, source_list));
++    protect_count++;
++    result = PROTECT(rducks_r_aggregate_eval_call(call, &ok, err, err_cap));
++    protect_count++;
++    if (!ok) {
++        if (err && err_cap > 0U && !err[0]) snprintf(err, err_cap, "R combine_chunk function error");
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    if (TYPEOF(result) != VECSXP || XLENGTH(result) != (R_xlen_t)count) {
++        snprintf(err, err_cap, "Rducks aggregate combine_chunk must return a list with one raw state or NULL per combined state");
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    for (idx_t i = 0; i < count; i++) {
++        if (!rducks_r_aggregate_state_from_raw(targets[i], VECTOR_ELT(result, (R_xlen_t)i), err, err_cap)) {
++            UNPROTECT(protect_count);
++            return 0;
++        }
++    }
++    UNPROTECT(protect_count);
++    return 1;
++}
++
+ static void rducks_r_aggregate_combine(duckdb_function_info info, duckdb_aggregate_state *source,
+                                        duckdb_aggregate_state *target, idx_t count) {
+     rducks_r_aggregate_meta_t *meta = (rducks_r_aggregate_meta_t *)duckdb_aggregate_function_get_extra_info(info);
+@@ -343,6 +616,61 @@ static void rducks_r_aggregate_combine(duckdb_function_info info, duckdb_aggrega
+         duckdb_aggregate_function_set_error(info, "Rducks aggregate metadata is missing");
+         return;
+     }
++
++    if (Rf_isFunction(meta->combine_chunk_fun)) {
++        rducks_r_aggregate_state_t **targets = NULL;
++        rducks_r_aggregate_state_t **sources = NULL;
++        idx_t pair_count = 0;
++        if (!meta->runtime || !rducks_is_main_thread(meta->runtime)) {
++            duckdb_aggregate_function_set_error(
++                info,
++                "Rducks aggregate combine_chunk reached a non-calling DuckDB execution thread; R-backed aggregate combine is single-threaded in this release"
++            );
++            return;
++        }
++        rducks_preserved_release_drain_on_main(meta->runtime);
++        if (count > 0 && (uint64_t)count > (uint64_t)(SIZE_MAX / sizeof(*targets))) {
++            duckdb_aggregate_function_set_error(info, "Rducks aggregate combine batch is too large");
++            return;
++        }
++        if (count > 0) {
++            targets = (rducks_r_aggregate_state_t **)rducks_calloc_array((size_t)count, sizeof(*targets));
++            sources = (rducks_r_aggregate_state_t **)rducks_calloc_array((size_t)count, sizeof(*sources));
++            if (!targets || !sources) {
++                free(targets);
++                free(sources);
++                duckdb_aggregate_function_set_error(info, "out of memory preparing Rducks aggregate combine_chunk");
++                return;
++            }
++        }
++        for (idx_t i = 0; i < count; i++) {
++            rducks_r_aggregate_state_t *src = (rducks_r_aggregate_state_t *)source[i];
++            rducks_r_aggregate_state_t *dst = (rducks_r_aggregate_state_t *)target[i];
++            if (!src || !dst || src->is_null) continue;
++            if (dst->is_null) {
++                if (!rducks_r_aggregate_state_copy(dst, src, err, sizeof(err))) {
++                    free(targets);
++                    free(sources);
++                    rducks_r_aggregate_set_error(info, "combine", err);
++                    return;
++                }
++                continue;
++            }
++            targets[pair_count] = dst;
++            sources[pair_count] = src;
++            pair_count++;
++        }
++        if (pair_count > 0 && !rducks_r_aggregate_call_combine_chunk(meta, targets, sources, pair_count, err, sizeof(err))) {
++            free(targets);
++            free(sources);
++            rducks_r_aggregate_set_error(info, "combine_chunk", err);
++            return;
++        }
++        free(targets);
++        free(sources);
++        return;
++    }
++
+     for (idx_t i = 0; i < count; i++) {
+         rducks_r_aggregate_state_t *src = (rducks_r_aggregate_state_t *)source[i];
+         rducks_r_aggregate_state_t *dst = (rducks_r_aggregate_state_t *)target[i];
+@@ -369,6 +697,110 @@ static void rducks_r_aggregate_combine(duckdb_function_info info, duckdb_aggrega
+     }
+ }
+ 
++
++static SEXP rducks_r_aggregate_finalize_chunk_value_at(SEXP values,
++                                                       idx_t index,
++                                                       idx_t count,
++                                                       int *protect_count,
++                                                       char *err, size_t err_cap) {
++    if (values == R_NilValue) {
++        if (count == 1) return R_NilValue;
++        snprintf(err, err_cap, "Rducks aggregate finalize_chunk returned NULL for more than one output state");
++        return R_NilValue;
++    }
++    if (TYPEOF(values) == VECSXP && XLENGTH(values) == (R_xlen_t)count) {
++        return VECTOR_ELT(values, (R_xlen_t)index);
++    }
++    if (XLENGTH(values) == (R_xlen_t)count) {
++        int r_err = 0;
++        SEXP idx;
++        SEXP call;
++        SEXP out;
++        if (index >= (idx_t)INT_MAX) {
++            snprintf(err, err_cap, "Rducks aggregate finalize_chunk output index is too large for R indexing");
++            return R_NilValue;
++        }
++        idx = PROTECT(Rf_ScalarInteger((int)index + 1));
++        call = PROTECT(Rf_lang3(Rf_install("["), values, idx));
++        out = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
++        UNPROTECT(2); /* idx, call */
++        if (r_err) {
++            UNPROTECT(1); /* out */
++            snprintf(err, err_cap, "Rducks aggregate finalize_chunk failed while extracting output value");
++            return R_NilValue;
++        }
++        (*protect_count)++;
++        return out;
++    }
++    if (count == 1) return values;
++    snprintf(err, err_cap, "Rducks aggregate finalize_chunk must return a vector/list with one value per output state");
++    return R_NilValue;
++}
++
++static int rducks_r_aggregate_finalize_vectorized(duckdb_function_info info,
++                                                  rducks_r_aggregate_meta_t *meta,
++                                                  duckdb_aggregate_state *source,
++                                                  rducks_rc_direct_vector_view_t *output_view,
++                                                  idx_t count,
++                                                  idx_t offset,
++                                                  char *err, size_t err_cap) {
++    rducks_r_aggregate_state_t **states = NULL;
++    int ok = 1;
++    int protect_count = 0;
++    SEXP state_list;
++    SEXP call;
++    SEXP values;
++    if (count == 0) return 1;
++    if (!Rf_isFunction(meta->finalize_chunk_fun)) {
++        snprintf(err, err_cap, "Rducks aggregate vectorized finalize function is missing");
++        return 0;
++    }
++    if ((uint64_t)count > (uint64_t)(SIZE_MAX / sizeof(*states))) {
++        snprintf(err, err_cap, "Rducks aggregate finalize batch is too large");
++        return 0;
++    }
++    states = (rducks_r_aggregate_state_t **)rducks_calloc_array((size_t)count, sizeof(*states));
++    if (!states) {
++        snprintf(err, err_cap, "out of memory preparing Rducks aggregate finalize_chunk");
++        return 0;
++    }
++    for (idx_t i = 0; i < count; i++) states[i] = (rducks_r_aggregate_state_t *)source[i];
++    state_list = rducks_r_aggregate_state_list(states, count, &protect_count, err, err_cap);
++    free(states);
++    if (err[0] || state_list == R_NilValue) {
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    call = PROTECT(Rf_lang2(meta->finalize_chunk_fun, state_list));
++    protect_count++;
++    values = PROTECT(rducks_r_aggregate_eval_call(call, &ok, err, err_cap));
++    protect_count++;
++    if (!ok) {
++        if (err && err_cap > 0U && !err[0]) snprintf(err, err_cap, "R finalize_chunk function error");
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    for (idx_t i = 0; i < count; i++) {
++        int value_protect_count = 0;
++        SEXP value = rducks_r_aggregate_finalize_chunk_value_at(values, i, count,
++                                                                &value_protect_count, err, err_cap);
++        if (err[0]) {
++            UNPROTECT(value_protect_count);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        if (!rducks_rc_write_direct_output(meta->return_desc, output_view, offset + i, value, err, err_cap)) {
++            UNPROTECT(value_protect_count);
++            UNPROTECT(protect_count);
++            return 0;
++        }
++        UNPROTECT(value_protect_count);
++    }
++    UNPROTECT(protect_count);
++    (void)info;
++    return 1;
++}
++
+ static void rducks_r_aggregate_finalize(duckdb_function_info info, duckdb_aggregate_state *source,
+                                         duckdb_vector result, idx_t count, idx_t offset) {
+     rducks_r_aggregate_meta_t *meta = (rducks_r_aggregate_meta_t *)duckdb_aggregate_function_get_extra_info(info);
+@@ -388,6 +820,19 @@ static void rducks_r_aggregate_finalize(duckdb_function_info info, duckdb_aggreg
+     }
+     rducks_preserved_release_drain_on_main(meta->runtime);
+     rducks_rc_direct_output_view_init(&output_view, result);
++
++    if (Rf_isFunction(meta->finalize_chunk_fun)) {
++        if (!rducks_r_aggregate_finalize_vectorized(info, meta, source, &output_view, count, offset, err, sizeof(err))) {
++            rducks_r_aggregate_set_error(info, "finalize_chunk", err);
++        }
++        return;
++    }
++
++    if (!Rf_isFunction(meta->finalize_fun)) {
++        duckdb_aggregate_function_set_error(info, "Rducks aggregate finalize function is missing");
++        return;
++    }
++
+     for (idx_t i = 0; i < count; i++) {
+         rducks_r_aggregate_state_t *state = (rducks_r_aggregate_state_t *)source[i];
+         int ok = 1;
+@@ -511,6 +956,9 @@ static bool rducks_register_r_aggregate(rducks_runtime_entry_t *runtime, const c
+     meta->update_fun = rducks_named_list_get(bundle, "update");
+     meta->combine_fun = rducks_named_list_get(bundle, "combine");
+     meta->finalize_fun = rducks_named_list_get(bundle, "finalize");
++    meta->update_chunk_fun = rducks_named_list_get(bundle, "update_chunk");
++    meta->combine_chunk_fun = rducks_named_list_get(bundle, "combine_chunk");
++    meta->finalize_chunk_fun = rducks_named_list_get(bundle, "finalize_chunk");
+     R_PreserveObject(bundle);
+     meta->bundle = bundle;
+ 
+diff --git a/inst/rducks_extension/src/rducks_arrow.c b/inst/rducks_extension/src/rducks_arrow.c
+index d31858f..d412ad5 100644
+--- a/inst/rducks_extension/src/rducks_arrow.c
++++ b/inst/rducks_extension/src/rducks_arrow.c
+@@ -53,6 +53,116 @@ static void rducks_release_arrow_array_if_set(struct ArrowArray *array) {
+     }
+ }
+ 
++
++typedef struct rducks_arrow_import_result {
++    duckdb_data_chunk chunk;
++    idx_t rows;
++    idx_t columns;
++} rducks_arrow_import_result_t;
++
++static int rducks_arrow_import_nanoarrow_xptr_to_chunk(rducks_runtime_entry_t *runtime,
++                                                       SEXP array_xptr,
++                                                       int check_rows, idx_t expected_rows,
++                                                       int check_columns, idx_t expected_columns,
++                                                       const char *context,
++                                                       rducks_arrow_import_result_t *out,
++                                                       char *err_msg, size_t err_cap) {
++    SEXP schema_xptr;
++    struct ArrowArray *array;
++    struct ArrowSchema *schema;
++    duckdb_arrow_converted_schema converted_schema = NULL;
++    duckdb_data_chunk imported_chunk = NULL;
++    duckdb_error_data error_data = NULL;
++    idx_t imported_size;
++    idx_t imported_columns;
++    const char *label = context && context[0] ? context : "Rducks Arrow";
++
++    if (out) memset(out, 0, sizeof(*out));
++    if (!runtime || !runtime->connection) {
++        snprintf(err_msg, err_cap, "%s runtime is unavailable for Arrow import", label);
++        return 0;
++    }
++    if (!out || array_xptr == R_NilValue || !Rf_inherits(array_xptr, "nanoarrow_array")) {
++        snprintf(err_msg, err_cap, "%s import requires a nanoarrow_array", label);
++        return 0;
++    }
++    schema_xptr = R_ExternalPtrTag(array_xptr);
++    if (schema_xptr == R_NilValue || !Rf_inherits(schema_xptr, "nanoarrow_schema")) {
++        snprintf(err_msg, err_cap, "%s nanoarrow array does not carry a nanoarrow schema", label);
++        return 0;
++    }
++    array = nanoarrow_array_from_xptr(array_xptr);
++    schema = nanoarrow_schema_from_xptr(schema_xptr);
++    if (!array || !schema || array->release == NULL || schema->release == NULL) {
++        snprintf(err_msg, err_cap, "%s nanoarrow array or schema is invalid", label);
++        return 0;
++    }
++    if (array->length < 0) {
++        snprintf(err_msg, err_cap, "%s nanoarrow array has a negative row count", label);
++        return 0;
++    }
++    if ((uint64_t)array->length > (uint64_t)((idx_t)-1)) {
++        snprintf(err_msg, err_cap, "%s nanoarrow array row count is too large", label);
++        return 0;
++    }
++    if (check_rows && (idx_t)array->length != expected_rows) {
++        snprintf(err_msg, err_cap, "%s nanoarrow array returned %lld rows, expected %llu",
++                 label, (long long)array->length, (unsigned long long)expected_rows);
++        return 0;
++    }
++
++    error_data = duckdb_schema_from_arrow(runtime->connection, schema, &converted_schema);
++    if (error_data) {
++        int has_error = duckdb_error_data_has_error(error_data);
++        if (has_error) {
++            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow schema", err_msg, err_cap);
++            duckdb_destroy_error_data(&error_data);
++            return 0;
++        }
++        duckdb_destroy_error_data(&error_data);
++    }
++    if (!converted_schema) {
++        snprintf(err_msg, err_cap, "DuckDB returned no converted schema for %s Arrow data", label);
++        return 0;
++    }
++    error_data = duckdb_data_chunk_from_arrow(runtime->connection, array, converted_schema, &imported_chunk);
++    if (error_data) {
++        int has_error = duckdb_error_data_has_error(error_data);
++        if (has_error) {
++            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Arrow data", err_msg, err_cap);
++            duckdb_destroy_error_data(&error_data);
++            duckdb_destroy_arrow_converted_schema(&converted_schema);
++            return 0;
++        }
++        duckdb_destroy_error_data(&error_data);
++    }
++    duckdb_destroy_arrow_converted_schema(&converted_schema);
++    if (!imported_chunk) {
++        snprintf(err_msg, err_cap, "DuckDB returned no data chunk for %s Arrow data", label);
++        return 0;
++    }
++
++    array->release = NULL;
++    imported_size = duckdb_data_chunk_get_size(imported_chunk);
++    imported_columns = duckdb_data_chunk_get_column_count(imported_chunk);
++    if (check_rows && imported_size != expected_rows) {
++        snprintf(err_msg, err_cap, "DuckDB imported %llu %s rows, expected %llu",
++                 (unsigned long long)imported_size, label, (unsigned long long)expected_rows);
++        duckdb_destroy_data_chunk(&imported_chunk);
++        return 0;
++    }
++    if (check_columns && imported_columns != expected_columns) {
++        snprintf(err_msg, err_cap, "DuckDB imported %llu %s columns, expected %llu",
++                 (unsigned long long)imported_columns, label, (unsigned long long)expected_columns);
++        duckdb_destroy_data_chunk(&imported_chunk);
++        return 0;
++    }
++    out->chunk = imported_chunk;
++    out->rows = imported_size;
++    out->columns = imported_columns;
++    return 1;
++}
++
+ static void rducks_arrow_buffer_noop_free(struct ArrowBufferAllocator *allocator, uint8_t *ptr, int64_t size) {
+     (void)allocator;
+     (void)ptr;
+diff --git a/inst/rducks_extension/src/rducks_query_stream.c b/inst/rducks_extension/src/rducks_query_stream.c
+index 17115f5..c2c13ec 100644
+--- a/inst/rducks_extension/src/rducks_query_stream.c
++++ b/inst/rducks_extension/src/rducks_query_stream.c
+@@ -567,12 +567,12 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
+         goto error;
+     }
+ 
+-    rc = duckdb_pending_prepared_streaming(stmt, &pending);
++    rc = duckdb_pending_prepared(stmt, &pending);
+     duckdb_destroy_prepare(&stmt);
+     stmt = NULL;
+     if (rc == DuckDBError) {
+         const char *msg = pending ? duckdb_pending_error(pending) : NULL;
+-        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to create pending query stream");
++        snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to create pending query result");
+         goto error;
+     }
+ 
+@@ -585,10 +585,6 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
+         snprintf(err_msg, err_cap, "%s", (msg && msg[0]) ? msg : "DuckDB failed to open query stream");
+         goto error;
+     }
+-    if (!duckdb_result_is_streaming(entry->result)) {
+-        snprintf(err_msg, err_cap, "DuckDB did not create a streaming result for this query");
+-        goto error;
+-    }
+     if (!rducks_query_stream_capture_schema(entry, err_msg, err_cap)) goto error;
+     if (!rducks_query_stream_cache_r_metadata(runtime, entry, err_msg, err_cap)) goto error;
+ 
+@@ -702,7 +698,7 @@ static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, cons
+         goto cleanup;
+     }
+ 
+-    chunk = duckdb_stream_fetch_chunk(entry->result);
++    chunk = duckdb_fetch_chunk(entry->result);
+     if (!chunk || duckdb_data_chunk_get_size(chunk) == 0) {
+         const char *msg = duckdb_result_error(&entry->result);
+         if (msg && msg[0]) {
+diff --git a/inst/rducks_extension/src/rducks_table.c b/inst/rducks_extension/src/rducks_table.c
+index 3d083d4..b0540ea 100644
+--- a/inst/rducks_extension/src/rducks_table.c
++++ b/inst/rducks_extension/src/rducks_table.c
+@@ -18,6 +18,10 @@ typedef struct rducks_r_table_bind {
+     rducks_type_desc_t **column_descs;
+     duckdb_data_chunk imported_chunk;
+     idx_t rows;
++    int streaming;
++    int cardinality_known;
++    int cardinality_exact;
++    idx_t cardinality;
+ } rducks_r_table_bind_t;
+ 
+ typedef struct rducks_r_table_state {
+@@ -27,6 +31,10 @@ typedef struct rducks_r_table_state {
+     idx_t *projected_columns;
+     duckdb_selection_vector sel;
+     idx_t sel_capacity;
++    duckdb_data_chunk current_chunk;
++    idx_t current_rows;
++    idx_t current_pos;
++    int stream_done;
+ } rducks_r_table_state_t;
+ 
+ static void rducks_r_table_release_preserved(rducks_runtime_entry_t *runtime, SEXP object) {
+@@ -47,9 +55,30 @@ static void rducks_r_table_meta_destroy(void *ptr) {
+     free(meta);
+ }
+ 
++static void rducks_r_table_close_stream_if_main(rducks_r_table_bind_t *bind) {
++    int r_err = 0;
++    SEXP pkg;
++    SEXP ns;
++    SEXP fun;
++    SEXP call;
++    SEXP result;
++    if (!bind || !bind->streaming || bind->result == R_NilValue ||
++        !bind->meta || !bind->meta->runtime || !rducks_is_main_thread(bind->meta->runtime)) {
++        return;
++    }
++    pkg = PROTECT(Rf_mkString("Rducks"));
++    ns = PROTECT(R_FindNamespace(pkg));
++    fun = PROTECT(Rf_findFun(Rf_install("rducks_table_stream_close"), ns));
++    call = PROTECT(Rf_lang2(fun, bind->result));
++    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
++    (void)result;
++    UNPROTECT(5);
++}
++
+ static void rducks_r_table_bind_destroy(void *ptr) {
+     rducks_r_table_bind_t *bind = (rducks_r_table_bind_t *)ptr;
+     if (!bind) return;
++    rducks_r_table_close_stream_if_main(bind);
+     rducks_r_table_release_preserved(bind->meta ? bind->meta->runtime : NULL, bind->result);
+     bind->result = R_NilValue;
+     if (bind->imported_chunk) duckdb_destroy_data_chunk(&bind->imported_chunk);
+@@ -67,6 +96,7 @@ static void rducks_r_table_bind_destroy(void *ptr) {
+ static void rducks_r_table_state_destroy(void *ptr) {
+     rducks_r_table_state_t *state = (rducks_r_table_state_t *)ptr;
+     if (!state) return;
++    if (state->current_chunk) duckdb_destroy_data_chunk(&state->current_chunk);
+     if (state->sel) duckdb_destroy_selection_vector(state->sel);
+     free(state->projected_columns);
+     free(state);
+@@ -559,133 +589,168 @@ static int rducks_r_table_arrow_array_from_result(SEXP result, SEXP *array_xptr_
+     return 1;
+ }
+ 
+-static int rducks_r_table_import_arrow_result(rducks_r_table_bind_t *bind, SEXP result,
+-                                              char *err, size_t err_cap) {
+-    SEXP array_xptr = R_NilValue;
+-    SEXP schema_xptr;
+-    struct ArrowArray *array;
+-    struct ArrowSchema *schema;
+-    duckdb_arrow_converted_schema converted_schema = NULL;
+-    duckdb_data_chunk imported_chunk = NULL;
+-    duckdb_error_data error_data = NULL;
+-    idx_t imported_size;
+-    idx_t imported_columns;
+-    if (!bind || !bind->meta || !bind->meta->runtime || !bind->meta->runtime->connection) {
+-        snprintf(err, err_cap, "Rducks table runtime is unavailable for Arrow import");
+-        return 0;
+-    }
+-    if (!rducks_r_table_arrow_array_from_result(result, &array_xptr, err, err_cap)) return 0;
+-    schema_xptr = R_ExternalPtrTag(array_xptr);
+-    if (schema_xptr == R_NilValue || !Rf_inherits(schema_xptr, "nanoarrow_schema")) {
+-        snprintf(err, err_cap, "Rducks table nanoarrow array does not carry a nanoarrow schema");
+-        R_ReleaseObject(array_xptr);
++static int rducks_r_table_call_namespace_fun1(const char *fun_name, SEXP arg, SEXP *out,
++                                             const char *fallback, char *err, size_t err_cap) {
++    int r_err = 0;
++    int protect_count = 0;
++    SEXP pkg = PROTECT(Rf_mkString("Rducks"));
++    protect_count++;
++    SEXP ns = PROTECT(R_FindNamespace(pkg));
++    protect_count++;
++    SEXP fun = PROTECT(Rf_findFun(Rf_install(fun_name), ns));
++    protect_count++;
++    SEXP call = PROTECT(Rf_lang2(fun, arg));
++    protect_count++;
++    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
++    protect_count++;
++    if (r_err) {
++        rducks_r_table_set_r_error(result, fallback, err, err_cap);
++        UNPROTECT(protect_count);
+         return 0;
+     }
+-    array = nanoarrow_array_from_xptr(array_xptr);
+-    schema = nanoarrow_schema_from_xptr(schema_xptr);
+-    if (!array || !schema || array->release == NULL || schema->release == NULL) {
+-        snprintf(err, err_cap, "Rducks table nanoarrow array or schema is invalid");
+-        R_ReleaseObject(array_xptr);
++    R_PreserveObject(result);
++    *out = result;
++    UNPROTECT(protect_count);
++    return 1;
++}
++
++static int rducks_r_table_stream_prototype(SEXP stream, SEXP *prototype_out, char *err, size_t err_cap) {
++    return rducks_r_table_call_namespace_fun1("rducks_table_stream_prototype", stream, prototype_out,
++                                              "Rducks table stream prototype error", err, err_cap);
++}
++
++static int rducks_r_table_stream_cardinality(SEXP stream, int *known_out, idx_t *rows_out, int *exact_out,
++                                             char *err, size_t err_cap) {
++    SEXP info = R_NilValue;
++    SEXP known;
++    SEXP rows;
++    SEXP exact;
++    double rows_d;
++    if (known_out) *known_out = 0;
++    if (rows_out) *rows_out = 0;
++    if (exact_out) *exact_out = 0;
++    if (!rducks_r_table_call_namespace_fun1("rducks_table_stream_cardinality", stream, &info,
++                                            "Rducks table stream cardinality error", err, err_cap)) {
+         return 0;
+     }
+-    if (array->length != (int64_t)bind->rows) {
+-        snprintf(err, err_cap, "Rducks table nanoarrow array returned %lld rows, expected %llu",
+-                 (long long)array->length, (unsigned long long)bind->rows);
+-        R_ReleaseObject(array_xptr);
++    if (TYPEOF(info) != VECSXP) {
++        snprintf(err, err_cap, "Rducks table stream cardinality helper returned invalid metadata");
++        R_ReleaseObject(info);
+         return 0;
+     }
+-    error_data = duckdb_schema_from_arrow(bind->meta->runtime->connection, schema, &converted_schema);
+-    if (error_data) {
+-        int has_error = duckdb_error_data_has_error(error_data);
+-        if (has_error) {
+-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Rducks table Arrow schema", err, err_cap);
+-            duckdb_destroy_error_data(&error_data);
+-            R_ReleaseObject(array_xptr);
+-            return 0;
+-        }
+-        duckdb_destroy_error_data(&error_data);
+-    }
+-    error_data = duckdb_data_chunk_from_arrow(bind->meta->runtime->connection, array, converted_schema, &imported_chunk);
+-    if (error_data) {
+-        int has_error = duckdb_error_data_has_error(error_data);
+-        if (has_error) {
+-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to import Rducks table Arrow data", err, err_cap);
+-            duckdb_destroy_error_data(&error_data);
+-            duckdb_destroy_arrow_converted_schema(&converted_schema);
+-            R_ReleaseObject(array_xptr);
+-            return 0;
+-        }
+-        duckdb_destroy_error_data(&error_data);
++    known = rducks_named_list_get(info, "known");
++    rows = rducks_named_list_get(info, "rows");
++    exact = rducks_named_list_get(info, "exact");
++    if (!Rf_isLogical(known) || XLENGTH(known) != 1 || LOGICAL(known)[0] != TRUE) {
++        R_ReleaseObject(info);
++        return 1;
+     }
+-    duckdb_destroy_arrow_converted_schema(&converted_schema);
+-    if (!imported_chunk) {
+-        snprintf(err, err_cap, "DuckDB returned no data chunk for Rducks table Arrow data");
+-        R_ReleaseObject(array_xptr);
++    rows_d = Rf_asReal(rows);
++    if (!isfinite(rows_d) || rows_d < 0 || rows_d != floor(rows_d) || rows_d > (double)((idx_t)-1)) {
++        snprintf(err, err_cap, "Rducks table stream cardinality is invalid or too large");
++        R_ReleaseObject(info);
+         return 0;
+     }
+-    array->release = NULL;
+-    imported_size = duckdb_data_chunk_get_size(imported_chunk);
+-    imported_columns = duckdb_data_chunk_get_column_count(imported_chunk);
+-    if (imported_size != bind->rows) {
+-        snprintf(err, err_cap, "DuckDB imported %llu Rducks table rows, expected %llu",
+-                 (unsigned long long)imported_size, (unsigned long long)bind->rows);
+-        duckdb_destroy_data_chunk(&imported_chunk);
+-        R_ReleaseObject(array_xptr);
++    if (known_out) *known_out = 1;
++    if (rows_out) *rows_out = (idx_t)rows_d;
++    if (exact_out) *exact_out = (Rf_isLogical(exact) && XLENGTH(exact) == 1 && LOGICAL(exact)[0] == TRUE) ? 1 : 0;
++    R_ReleaseObject(info);
++    return 1;
++}
++
++static int rducks_r_table_import_arrow_result(rducks_r_table_bind_t *bind, SEXP result,
++                                              char *err, size_t err_cap) {
++    SEXP array_xptr = R_NilValue;
++    rducks_arrow_import_result_t imported;
++    if (!bind || !bind->meta || !bind->meta->runtime) {
++        snprintf(err, err_cap, "Rducks table runtime is unavailable for Arrow import");
+         return 0;
+     }
+-    if (imported_columns != (idx_t)bind->column_count) {
+-        snprintf(err, err_cap, "DuckDB imported %llu Rducks table columns, expected %llu",
+-                 (unsigned long long)imported_columns, (unsigned long long)bind->column_count);
+-        duckdb_destroy_data_chunk(&imported_chunk);
++    if (!rducks_r_table_arrow_array_from_result(result, &array_xptr, err, err_cap)) return 0;
++    if (!rducks_arrow_import_nanoarrow_xptr_to_chunk(bind->meta->runtime,
++                                                     array_xptr,
++                                                     1, bind->rows,
++                                                     1, (idx_t)bind->column_count,
++                                                     "Rducks table",
++                                                     &imported,
++                                                     err, err_cap)) {
+         R_ReleaseObject(array_xptr);
+         return 0;
+     }
+-    bind->imported_chunk = imported_chunk;
++    bind->imported_chunk = imported.chunk;
+     R_ReleaseObject(array_xptr);
+     return 1;
+ }
+ 
+ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
+                                       duckdb_bind_info info, char *err, size_t err_cap) {
++    SEXP schema_result = result;
+     SEXP names;
+     R_xlen_t ncols_x;
+     idx_t rows = 0;
+     int have_rows = 0;
++    int is_streaming = Rf_inherits(result, "rducks_table_stream") ? 1 : 0;
++    int release_schema_result = 0;
++    int cardinality_known = 0;
++    int cardinality_exact = 0;
++    idx_t cardinality = 0;
+     rducks_r_table_bind_t *bind = NULL;
+ 
+-    if (TYPEOF(result) != VECSXP) {
+-        snprintf(err, err_cap, "Rducks table function must return a data frame or named list of columns");
++    if (is_streaming) {
++        if (!rducks_r_table_stream_prototype(result, &schema_result, err, err_cap)) return 0;
++        release_schema_result = 1;
++        if (!rducks_r_table_stream_cardinality(result, &cardinality_known, &cardinality,
++                                               &cardinality_exact, err, err_cap)) {
++            R_ReleaseObject(schema_result);
++            return 0;
++        }
++    }
++
++    if (TYPEOF(schema_result) != VECSXP) {
++        snprintf(err, err_cap, is_streaming ?
++                 "Rducks table stream prototype must be a data frame or named list of columns" :
++                 "Rducks table function must return a data frame or named list of columns");
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+-    names = Rf_getAttrib(result, R_NamesSymbol);
+-    ncols_x = XLENGTH(result);
++    names = Rf_getAttrib(schema_result, R_NamesSymbol);
++    ncols_x = XLENGTH(schema_result);
+     if (ncols_x <= 0) {
+         snprintf(err, err_cap, "Rducks table function must return at least one column");
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+     if (TYPEOF(names) != STRSXP || XLENGTH(names) != ncols_x) {
+         snprintf(err, err_cap, "Rducks table function result columns must be named");
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+     if ((uint64_t)ncols_x > (uint64_t)SIZE_MAX) {
+         snprintf(err, err_cap, "Rducks table function returned too many columns");
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+ 
+     bind = (rducks_r_table_bind_t *)rducks_calloc_array(1, sizeof(*bind));
+     if (!bind) {
+         snprintf(err, err_cap, "out of memory allocating Rducks table bind data");
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+     bind->meta = meta;
+     bind->result = R_NilValue;
+     bind->column_count = (size_t)ncols_x;
+     bind->imported_chunk = NULL;
++    bind->streaming = is_streaming;
++    bind->cardinality_known = cardinality_known;
++    bind->cardinality_exact = cardinality_exact;
++    bind->cardinality = cardinality;
+     bind->column_names = (char **)rducks_calloc_array(bind->column_count, sizeof(*bind->column_names));
+     bind->column_descs = (rducks_type_desc_t **)rducks_calloc_array(bind->column_count, sizeof(*bind->column_descs));
+     if (!bind->column_names || !bind->column_descs) {
+         snprintf(err, err_cap, "out of memory allocating Rducks table column metadata");
+         rducks_r_table_bind_destroy(bind);
++        if (release_schema_result) R_ReleaseObject(schema_result);
+         return 0;
+     }
+ 
+@@ -698,25 +763,29 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
+         if (name_sexp == NA_STRING || !CHAR(name_sexp)[0]) {
+             snprintf(err, err_cap, "Rducks table function result columns must have non-empty names");
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         name_text = CHAR(name_sexp);
+         if (rducks_r_table_name_seen(bind->column_names, col, name_text)) {
+             snprintf(err, err_cap, "Rducks table function result column names must be unique");
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         bind->column_names[col] = rducks_strdup(name_text);
+         if (!bind->column_names[col]) {
+             snprintf(err, err_cap, "out of memory copying Rducks table column name");
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+-        column = VECTOR_ELT(result, (R_xlen_t)col);
++        column = VECTOR_ELT(schema_result, (R_xlen_t)col);
+         len = XLENGTH(column);
+         if (len < 0 || (uint64_t)len > (uint64_t)((idx_t)-1)) {
+             snprintf(err, err_cap, "Rducks table column %s has invalid length", bind->column_names[col]);
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         if (!have_rows) {
+@@ -725,18 +794,21 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
+         } else if (rows != (idx_t)len) {
+             snprintf(err, err_cap, "Rducks table result columns must have equal lengths");
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         bind->column_descs[col] = rducks_r_table_infer_column_desc(column, bind->column_names[col], err, err_cap);
+         if (!bind->column_descs[col]) {
+             if (!err[0]) snprintf(err, err_cap, "failed to infer Rducks table column type");
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         type = rducks_create_logical_type_for_desc(bind->column_descs[col]);
+         if (!type) {
+             snprintf(err, err_cap, "failed to allocate DuckDB logical type for Rducks table column %s", bind->column_names[col]);
+             rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
+             return 0;
+         }
+         duckdb_bind_add_result_column(info, bind->column_names[col], type);
+@@ -746,12 +818,18 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
+     R_PreserveObject(result);
+     bind->result = result;
+     bind->rows = rows;
+-    if (!rducks_r_table_import_arrow_result(bind, result, err, err_cap)) {
+-        rducks_r_table_bind_destroy(bind);
+-        return 0;
++    if (is_streaming) {
++        if (cardinality_known) duckdb_bind_set_cardinality(info, cardinality, cardinality_exact ? true : false);
++    } else {
++        if (!rducks_r_table_import_arrow_result(bind, result, err, err_cap)) {
++            rducks_r_table_bind_destroy(bind);
++            if (release_schema_result) R_ReleaseObject(schema_result);
++            return 0;
++        }
++        duckdb_bind_set_cardinality(info, rows, true);
+     }
+-    duckdb_bind_set_cardinality(info, rows, true);
+     duckdb_bind_set_bind_data(info, bind, rducks_r_table_bind_destroy);
++    if (release_schema_result) R_ReleaseObject(schema_result);
+     return 1;
+ }
+ 
+@@ -864,6 +942,139 @@ static int rducks_r_table_state_init_projection(rducks_r_table_state_t *state,
+     return 1;
+ }
+ 
++static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
++                                                   SEXP *array_xptr_out,
++                                                   char *err, size_t err_cap) {
++    int r_err = 0;
++    int protect_count = 0;
++    rducks_r_table_bind_t *bind = state ? state->bind : NULL;
++    rducks_r_table_meta_t *meta = bind ? bind->meta : NULL;
++    SEXP pkg;
++    SEXP ns;
++    SEXP fun;
++    SEXP n_arg;
++    SEXP call;
++    SEXP result;
++    if (array_xptr_out) *array_xptr_out = R_NilValue;
++    if (!state || !bind || !meta || bind->result == R_NilValue) {
++        snprintf(err, err_cap, "Rducks table stream state is missing");
++        return 0;
++    }
++    pkg = PROTECT(Rf_mkString("Rducks"));
++    protect_count++;
++    ns = PROTECT(R_FindNamespace(pkg));
++    protect_count++;
++    fun = PROTECT(Rf_findFun(Rf_install("rducks_table_stream_next_array"), ns));
++    protect_count++;
++    n_arg = PROTECT(Rf_ScalarReal((double)meta->chunk_size));
++    protect_count++;
++    call = PROTECT(Rf_lang3(fun, bind->result, n_arg));
++    protect_count++;
++    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
++    protect_count++;
++    if (r_err) {
++        rducks_r_table_set_r_error(result, "Rducks table stream next_batch error", err, err_cap);
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    if (result == R_NilValue) {
++        if (array_xptr_out) *array_xptr_out = R_NilValue;
++        UNPROTECT(protect_count);
++        return 1;
++    }
++    if (!Rf_inherits(result, "nanoarrow_array")) {
++        snprintf(err, err_cap, "Rducks table stream next_batch did not return a nanoarrow_array");
++        UNPROTECT(protect_count);
++        return 0;
++    }
++    R_PreserveObject(result);
++    if (array_xptr_out) *array_xptr_out = result;
++    UNPROTECT(protect_count);
++    return 1;
++}
++
++static int rducks_r_table_stream_load_next_chunk(rducks_r_table_state_t *state,
++                                                 char *err, size_t err_cap) {
++    SEXP array_xptr = R_NilValue;
++    rducks_arrow_import_result_t imported;
++    rducks_r_table_bind_t *bind = state ? state->bind : NULL;
++    if (!state || !bind || !bind->meta) {
++        snprintf(err, err_cap, "Rducks table stream state is missing");
++        return 0;
++    }
++    if (state->current_chunk) {
++        duckdb_destroy_data_chunk(&state->current_chunk);
++        state->current_rows = 0;
++        state->current_pos = 0;
++    }
++    if (!rducks_r_table_stream_next_array_xptr(state, &array_xptr, err, err_cap)) return 0;
++    if (array_xptr == R_NilValue) {
++        state->stream_done = 1;
++        return 1;
++    }
++    if (!rducks_arrow_import_nanoarrow_xptr_to_chunk(bind->meta->runtime,
++                                                     array_xptr,
++                                                     0, 0,
++                                                     1, (idx_t)bind->column_count,
++                                                     "Rducks streaming table batch",
++                                                     &imported,
++                                                     err, err_cap)) {
++        R_ReleaseObject(array_xptr);
++        return 0;
++    }
++    R_ReleaseObject(array_xptr);
++    if (imported.rows == 0) {
++        duckdb_destroy_data_chunk(&imported.chunk);
++        snprintf(err, err_cap, "Rducks table stream next_batch returned an empty batch; return NULL to signal end-of-stream");
++        return 0;
++    }
++    state->current_chunk = imported.chunk;
++    state->current_rows = imported.rows;
++    state->current_pos = 0;
++    return 1;
++}
++
++static int rducks_r_table_copy_projected_rows(duckdb_function_info info,
++                                              rducks_r_table_state_t *state,
++                                              duckdb_data_chunk source,
++                                              idx_t source_pos,
++                                              idx_t count,
++                                              duckdb_data_chunk output) {
++    idx_t output_columns = duckdb_data_chunk_get_column_count(output);
++    if (output_columns != state->projected_count) {
++        duckdb_function_set_error(info, "Rducks table output projection does not match DuckDB scan state");
++        return 0;
++    }
++    if (state->projected_count == 0) return 1;
++    if (!source) {
++        duckdb_function_set_error(info, "Rducks table imported Arrow chunk is missing");
++        return 0;
++    }
++    if (count > (idx_t)UINT32_MAX || source_pos > (idx_t)UINT32_MAX || source_pos + count > (idx_t)UINT32_MAX) {
++        duckdb_function_set_error(info, "Rducks table chunk offset is too large for DuckDB selection vector copy");
++        return 0;
++    }
++    if (!state->sel || state->sel_capacity < count) {
++        if (state->sel) duckdb_destroy_selection_vector(state->sel);
++        state->sel = duckdb_create_selection_vector(count);
++        if (!state->sel) {
++            duckdb_function_set_error(info, "failed to allocate DuckDB selection vector for Rducks table scan");
++            state->sel_capacity = 0;
++            return 0;
++        }
++        state->sel_capacity = count;
++    }
++    sel_t *sel_data = duckdb_selection_vector_get_data_ptr(state->sel);
++    for (idx_t row = 0; row < count; row++) sel_data[row] = (sel_t)(source_pos + row);
++    for (idx_t out_col = 0; out_col < state->projected_count; out_col++) {
++        idx_t src_col = state->projected_columns ? state->projected_columns[out_col] : out_col;
++        duckdb_vector imported = duckdb_data_chunk_get_vector(source, src_col);
++        duckdb_vector vector = duckdb_data_chunk_get_vector(output, out_col);
++        duckdb_vector_copy_sel(imported, vector, state->sel, count, 0, 0);
++    }
++    return 1;
++}
++
+ static void rducks_r_table_init(duckdb_init_info info) {
+     rducks_r_table_state_t *state;
+     char err[512];
+@@ -896,7 +1107,6 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
+     rducks_r_table_meta_t *meta;
+     idx_t remaining;
+     idx_t count;
+-    idx_t output_columns;
+     char err[512];
+     if (!info || !output) return;
+     err[0] = '\0';
+@@ -914,49 +1124,56 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
+         return;
+     }
+     rducks_preserved_release_drain_on_main(meta->runtime);
+-    if (state->pos >= bind->rows) {
+-        duckdb_data_chunk_set_size(output, 0);
+-        return;
+-    }
+ 
+-    remaining = bind->rows - state->pos;
+-    count = remaining < meta->chunk_size ? remaining : meta->chunk_size;
+-    output_columns = duckdb_data_chunk_get_column_count(output);
+-    if (output_columns != state->projected_count) {
+-        duckdb_function_set_error(info, "Rducks table output projection does not match DuckDB scan state");
+-        duckdb_data_chunk_set_size(output, 0);
+-        return;
+-    }
+-    if (state->projected_count > 0) {
+-        if (!bind->imported_chunk) {
+-            duckdb_function_set_error(info, "Rducks table imported Arrow chunk is missing");
++    if (bind->streaming) {
++        while ((!state->current_chunk || state->current_pos >= state->current_rows) && !state->stream_done) {
++            if (!rducks_r_table_stream_load_next_chunk(state, err, sizeof(err))) {
++                duckdb_function_set_error(info, err[0] ? err : "Rducks table stream failed to produce a batch");
++                duckdb_data_chunk_set_size(output, 0);
++                return;
++            }
++        }
++        if (!state->current_chunk || state->current_pos >= state->current_rows) {
++            if (bind->cardinality_known && bind->cardinality_exact && state->pos != bind->cardinality) {
++                duckdb_function_set_error(info, "Rducks table stream emitted a different row count than its exact cardinality");
++            }
+             duckdb_data_chunk_set_size(output, 0);
+             return;
+         }
+-        if (count > (idx_t)UINT32_MAX || state->pos > (idx_t)UINT32_MAX || state->pos + count > (idx_t)UINT32_MAX) {
+-            duckdb_function_set_error(info, "Rducks table chunk offset is too large for DuckDB selection vector copy");
++        remaining = state->current_rows - state->current_pos;
++        count = remaining < meta->chunk_size ? remaining : meta->chunk_size;
++        if (bind->cardinality_known && bind->cardinality_exact &&
++            (state->pos > bind->cardinality || count > bind->cardinality - state->pos)) {
++            duckdb_function_set_error(info, "Rducks table stream emitted more rows than its exact cardinality");
+             duckdb_data_chunk_set_size(output, 0);
+             return;
+         }
+-        if (!state->sel || state->sel_capacity < count) {
+-            if (state->sel) duckdb_destroy_selection_vector(state->sel);
+-            state->sel = duckdb_create_selection_vector(count);
+-            if (!state->sel) {
+-                duckdb_function_set_error(info, "failed to allocate DuckDB selection vector for Rducks table scan");
+-                duckdb_data_chunk_set_size(output, 0);
+-                state->sel_capacity = 0;
+-                return;
+-            }
+-            state->sel_capacity = count;
++        if (!rducks_r_table_copy_projected_rows(info, state, state->current_chunk,
++                                                state->current_pos, count, output)) {
++            duckdb_data_chunk_set_size(output, 0);
++            return;
+         }
+-        sel_t *sel_data = duckdb_selection_vector_get_data_ptr(state->sel);
+-        for (idx_t row = 0; row < count; row++) sel_data[row] = (sel_t)(state->pos + row);
+-        for (idx_t out_col = 0; out_col < state->projected_count; out_col++) {
+-            idx_t src_col = state->projected_columns ? state->projected_columns[out_col] : out_col;
+-            duckdb_vector imported = duckdb_data_chunk_get_vector(bind->imported_chunk, src_col);
+-            duckdb_vector vector = duckdb_data_chunk_get_vector(output, out_col);
+-            duckdb_vector_copy_sel(imported, vector, state->sel, count, 0, 0);
++        state->current_pos += count;
++        state->pos += count;
++        if (state->current_pos >= state->current_rows) {
++            duckdb_destroy_data_chunk(&state->current_chunk);
++            state->current_rows = 0;
++            state->current_pos = 0;
+         }
++        duckdb_data_chunk_set_size(output, count);
++        return;
++    }
++
++    if (state->pos >= bind->rows) {
++        duckdb_data_chunk_set_size(output, 0);
++        return;
++    }
++
++    remaining = bind->rows - state->pos;
++    count = remaining < meta->chunk_size ? remaining : meta->chunk_size;
++    if (!rducks_r_table_copy_projected_rows(info, state, bind->imported_chunk, state->pos, count, output)) {
++        duckdb_data_chunk_set_size(output, 0);
++        return;
+     }
+ 
+     state->pos += count;
+diff --git a/inst/tinytest/test_duckdb_runtime_aggregate.R b/inst/tinytest/test_duckdb_runtime_aggregate.R
+index 66749c0..b06881f 100644
+--- a/inst/tinytest/test_duckdb_runtime_aggregate.R
++++ b/inst/tinytest/test_duckdb_runtime_aggregate.R
+@@ -83,6 +83,56 @@ local({
+   expect_equal(out$n, 0L)
+ })
+ 
++local({
++  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
++  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
++  rducks_enable(con, threads = "single")
++
++  update_chunk_calls <- 0L
++  update_row_calls <- 0L
++  update_chunk_sum <- function(state, x) {
++    update_chunk_calls <<- update_chunk_calls + 1L
++    s <- rducks_agg_unpack(state, list(sum = 0L, n = 0L))
++    s$sum <- as.integer(s$sum + sum(x))
++    s$n <- as.integer(s$n + length(x))
++    rducks_agg_pack(s)
++  }
++  update_row_fallback <- function(state, x) {
++    update_row_calls <<- update_row_calls + 1L
++    update_chunk_sum(state, x)
++  }
++  finalize_chunk_sum <- function(states) {
++    vapply(states, function(state) {
++      s <- rducks_agg_unpack(state, list(sum = 0L, n = 0L))
++      if (identical(s$n, 0L)) NA_integer_ else as.integer(s$sum)
++    }, integer(1))
++  }
++
++  invisible(rducks_register_aggregate(
++    con,
++    "rducks_r_sum_i32_chunk",
++    update = update_row_fallback,
++    finalize = function(state) -999L,
++    args = INTEGER,
++    returns = INTEGER,
++    update_chunk = update_chunk_sum,
++    finalize_chunk = finalize_chunk_sum
++  ))
++  chunked <- DBI::dbGetQuery(
++    con,
++    paste(
++      "SELECT g, rducks_r_sum_i32_chunk(i) AS s",
++      "FROM (VALUES (1, 1::INTEGER), (1, 2::INTEGER), (1, NULL::INTEGER),",
++      "             (2, 5::INTEGER), (2, 7::INTEGER)) t(g, i)",
++      "GROUP BY g ORDER BY g"
++    )
++  )
++  expect_equal(chunked$g, c(1, 2))
++  expect_equal(chunked$s, c(3L, 12L))
++  expect_true(update_chunk_calls >= 1L)
++  expect_equal(update_row_calls, 0L)
++})
++
+ local({
+   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+diff --git a/inst/tinytest/test_duckdb_runtime_table_function.R b/inst/tinytest/test_duckdb_runtime_table_function.R
+index b79809d..5eec47d 100644
+--- a/inst/tinytest/test_duckdb_runtime_table_function.R
++++ b/inst/tinytest/test_duckdb_runtime_table_function.R
+@@ -59,6 +59,62 @@ local({
+   expect_equal(nrow(empty), 0L)
+   expect_equal(names(empty), c("i", "label"))
+ 
++  stream_next_calls <- 0L
++  stream_close_calls <- 0L
++  invisible(rducks_register_table(
++    con,
++    "rducks_table_streaming",
++    function() {
++      batch_index <- 0L
++      batches <- list(
++        data.frame(i = 1:2, label = c("a", "b"), ignored = 10:11),
++        data.frame(i = 3:5, label = c("c", "d", "e"), ignored = 12:14)
++      )
++      rducks_table_stream(
++        prototype = data.frame(i = integer(), label = character(), ignored = integer()),
++        cardinality = 5,
++        exact = TRUE,
++        next_batch = function(n) {
++          stream_next_calls <<- stream_next_calls + 1L
++          batch_index <<- batch_index + 1L
++          if (batch_index > length(batches)) return(NULL)
++          batches[[batch_index]]
++        },
++        close = function() {
++          stream_close_calls <<- stream_close_calls + 1L
++        }
++      )
++    },
++    chunk_size = 2L
++  ))
++  streamed <- DBI::dbGetQuery(con, "SELECT label FROM rducks_table_streaming() WHERE i >= 2 ORDER BY label")
++  expect_equal(streamed$label, c("b", "c", "d", "e"))
++  expect_true(stream_next_calls >= 3L)
++  expect_equal(stream_close_calls, 1L)
++
++  stream_count_close_calls <- 0L
++  invisible(rducks_register_table(
++    con,
++    "rducks_table_streaming_count",
++    function() {
++      batch_index <- 0L
++      rducks_table_stream(
++        prototype = data.frame(i = integer(), ignored = integer()),
++        next_batch = function(n) {
++          batch_index <<- batch_index + 1L
++          if (batch_index == 1L) data.frame(i = 1:3, ignored = 11:13) else NULL
++        },
++        close = function() {
++          stream_count_close_calls <<- stream_count_close_calls + 1L
++        }
++      )
++    },
++    chunk_size = 2L
++  ))
++  stream_counted <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM rducks_table_streaming_count()")
++  expect_equal(as.integer(stream_counted$n), 3L)
++  expect_equal(stream_count_close_calls, 1L)
++
+   invisible(rducks_register_table(
+     con,
+     "rducks_table_nulls",
+diff --git a/man/rducks_register_aggregate.Rd b/man/rducks_register_aggregate.Rd
+index 802b3e6..fdb323f 100644
+--- a/man/rducks_register_aggregate.Rd
++++ b/man/rducks_register_aggregate.Rd
+@@ -7,12 +7,15 @@
+ rducks_register_aggregate(
+   con,
+   name,
+-  update,
+-  finalize,
++  update = NULL,
++  finalize = NULL,
+   args,
+   returns,
+   combine = NULL,
+-  null_handling = c("default", "special")
++  null_handling = c("default", "special"),
++  update_chunk = NULL,
++  combine_chunk = NULL,
++  finalize_chunk = NULL
+ )
+ }
+ \arguments{
+@@ -20,11 +23,11 @@ rducks_register_aggregate(
+ 
+ \item{name}{SQL aggregate function name.}
+ 
+-\item{update}{R function called as \code{update(state, ...)}; must return a raw
+-vector state or \code{NULL}.}
++\item{update}{Optional row-wise R function called as \code{update(state, ...)};
++must return a raw vector state or \code{NULL}.}
+ 
+-\item{finalize}{R function called as \code{finalize(state)}; must return a scalar
+-compatible with \code{returns} or \code{NULL} for SQL \code{NULL}.}
++\item{finalize}{Optional row-wise R function called as \code{finalize(state)};
++must return a scalar compatible with \code{returns} or \code{NULL} for SQL \code{NULL}.}
+ 
+ \item{args}{Input type specification. Use exported DuckDB-style descriptors
+ such as \code{INTEGER}, \code{DOUBLE}, or \code{VARCHAR}.}
+@@ -36,7 +39,21 @@ non-\code{NULL} partial raw states must be merged. It must return a raw vector
+ state or \code{NULL}.}
+ 
+ \item{null_handling}{Either \code{"default"} to skip rows with top-level NULL
+-inputs, or \code{"special"} to pass missing values to \code{update()}.}
++inputs, or \code{"special"} to pass missing values to update callbacks.}
++
++\item{update_chunk}{Optional vectorized R function called as
++\code{update_chunk(state, ...)} with one R vector/list-column per aggregate
++input for the current DuckDB state group. It must return a raw vector state
++or \code{NULL}.}
++
++\item{combine_chunk}{Optional vectorized R function called as
++\code{combine_chunk(left_states, right_states)}, where both arguments are lists
++of raw states or \code{NULL}. It must return a list of raw states or \code{NULL}
++of the same length.}
++
++\item{finalize_chunk}{Optional vectorized R function called as
++\code{finalize_chunk(states)}, where \code{states} is a list of raw states or
++\code{NULL}. It must return one result per state as either a vector or list.}
+ }
+ \value{
+ Object of class \code{rducks_aggregate_registration} containing the
+@@ -46,25 +63,33 @@ registered in DuckDB even if this object is discarded.
+ \description{
+ Registers an R-backed DuckDB aggregate. The aggregate state stored
+ inside DuckDB is native memory containing bytes from an R \code{raw} vector, never
+-an R object pointer. For each non-NULL input row, Rducks calls
+-\code{update(state, ...)}, where \code{state} is the previous raw state or \code{NULL} and
+-\code{...} are the row's scalar input values. \code{update()} must return the next raw
+-state or \code{NULL}. \code{raw(0)} is a valid non-\code{NULL} state; return \code{NULL} only
+-when the aggregate intentionally has no state. At finalization Rducks calls
+-\code{finalize(state)} and marshals that scalar result to the declared DuckDB
+-return type.
++an R object pointer. \code{raw(0)} is a valid non-\code{NULL} state; return \code{NULL} only
++when the aggregate intentionally has no state.
+ }
+ \details{
++The row-wise API calls \code{update(state, ...)} for each selected input row and
++\code{finalize(state)} for each output state. The optional vectorized API calls
++\code{update_chunk(state, ...)} once per DuckDB state group and passes R vectors
++containing that group's input values; it calls \code{combine_chunk(left, right)}
++with lists of raw states when partial states must be merged and
++\code{finalize_chunk(states)} with a list of raw states at finalization. When a
++chunk callback is supplied, it takes precedence over the corresponding
++row-wise callback. \code{update_chunk()} and \code{combine_chunk()} must return raw
++vector states or \code{NULL}; \code{combine_chunk()} must return a list with one state
++per merged pair; \code{finalize_chunk()} must return a vector or list with one
++scalar result per output state.
++
+ This API is deliberately serialized. Registration requires
+ \code{rducks_enable(con, threads = "single")} or equivalent
+ \code{external_threads=1} plus \verb{PRAGMA threads=1}, and execution rejects attempts
+ to call R from non-calling DuckDB worker threads. If DuckDB combines partial
+ states, Rducks can copy a source state into an empty target; merging two
+-non-\code{NULL} states requires \code{combine(left, right)} and must still run on the
+-recorded R thread. Cross-thread R aggregate execution is future work.
++non-\code{NULL} states requires either \code{combine(left, right)} or
++\code{combine_chunk(left, right)} and must still run on the recorded R thread.
+ 
+ With \code{null_handling = "default"}, rows with any top-level SQL \code{NULL} input
+-do not call \code{update()}. Groups with no non-NULL rows therefore pass \code{NULL} to
+-\code{finalize()}. With \code{null_handling = "special"}, \code{update()} receives the
+-declared type's R missing-value shape for NULL inputs.
++do not call \code{update()} or \code{update_chunk()}. Groups with no non-NULL rows
++therefore pass \code{NULL} to \code{finalize()} or \code{finalize_chunk()}. With
++\code{null_handling = "special"}, update callbacks receive the declared type's R
++missing-value shape for NULL inputs.
+ }
+diff --git a/man/rducks_register_table.Rd b/man/rducks_register_table.Rd
+index 04af6a8..6871a57 100644
+--- a/man/rducks_register_table.Rd
++++ b/man/rducks_register_table.Rd
+@@ -11,10 +11,11 @@ rducks_register_table(con, name, fun, chunk_size = 1024L)
+ 
+ \item{name}{SQL table function name.}
+ 
+-\item{fun}{R function returning a data frame or named list of columns. Its
+-finite formal argument count defines the SQL positional argument count;
+-each positional argument is registered as DuckDB \code{ANY} and converted at
+-bind time from the actual SQL value.}
++\item{fun}{R function returning a data frame, named list of columns, or
++\code{\link[=rducks_table_stream]{rducks_table_stream()}}. Its finite formal
++argument count defines the SQL positional argument count; each positional
++argument is registered as DuckDB \code{ANY} and converted at bind time from the
++actual SQL value.}
+ 
+ \item{chunk_size}{Maximum number of rows emitted per DuckDB output chunk.
+ Must be an integer from 1 to 1024.}
+@@ -29,26 +30,26 @@ Registers an R-backed DuckDB table function. The registered SQL
+ table function infers its positional SQL argument count from \code{formals(fun)}
+ and registers those arguments with DuckDB's dynamic \code{ANY} type. During
+ DuckDB's bind phase, Rducks converts the actual SQL argument values to R
+-scalars/lists, calls \code{fun(...)} on the recorded calling R thread, and infers
+-the DuckDB output schema from the returned data frame or named list of
+-equal-length columns. It then converts the result through a nanoarrow Arrow C
+-Data stream, imports it into a DuckDB chunk, and emits row batches from
+-that imported chunk during table-function scans. Scans honor DuckDB
+-projection pushdown, so unreferenced columns are not copied from the imported
+-chunk into the output chunk.
++scalars/lists and calls \code{fun(...)} on the recorded calling R thread. \code{fun()}
++may return either a finite data frame/named list or a
++\code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
+ }
+ \details{
++For finite results, Rducks imports the full result into one DuckDB data chunk
++during bind and then emits row batches during scan. For streaming results,
++bind uses only the stream prototype to define the DuckDB schema; scan calls
++\code{next_batch()} repeatedly and imports one returned batch at a time. Both
++paths honor DuckDB projection pushdown, so unreferenced columns are not copied
++from imported chunks into DuckDB output chunks.
++
+ This is intentionally separate from DuckDB scalar-UDF registration through
+ \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
+-functions have their own bind/init/scan state and currently support only the
+-one-shot finite table shape. DuckDB table functions can have bind-time dynamic
+-schemas and broad input signatures; this Rducks API follows that model
+-for output schemas and positional input types, while the number of SQL
+-arguments is fixed by the R function's formal argument count. Variadic \code{...}
+-arguments are not supported. If you already have a static R data frame to
+-expose as a virtual table, prefer \code{duckdb::duckdb_register()}; DuckDB's R
+-package routes that through its native data-frame scan path. Use
+-\code{rducks_enable(con, threads = "single")} or otherwise set \code{external_threads=1}
+-plus \verb{PRAGMA threads=1} before registration and execution; worker-thread calls
+-into R are rejected.
++functions have their own bind/init/scan state, bind-time dynamic schemas, and
++positional SQL arguments fixed by the R function's finite formal argument
++count. Variadic \code{...} arguments are not supported. If you already have a
++static R data frame to expose as a virtual table, prefer
++\code{duckdb::duckdb_register()}; DuckDB's R package routes that through its native
++data-frame scan path. Use \code{rducks_enable(con, threads = "single")} or
++otherwise set \code{external_threads=1} plus \verb{PRAGMA threads=1} before registration
++and execution; worker-thread calls into R are rejected.
+ }
+diff --git a/man/rducks_table_stream.Rd b/man/rducks_table_stream.Rd
+new file mode 100644
+index 0000000..ae290f1
+--- /dev/null
++++ b/man/rducks_table_stream.Rd
+@@ -0,0 +1,49 @@
++% Generated by roxygen2: do not edit by hand
++% Please edit documentation in R/register.R
++\name{rducks_table_stream}
++\alias{rducks_table_stream}
++\title{Create a streaming result for an Rducks table function}
++\usage{
++rducks_table_stream(
++  prototype,
++  next_batch,
++  close = NULL,
++  cardinality = NA_real_,
++  exact = FALSE
++)
++}
++\arguments{
++\item{prototype}{Data frame or named list whose column names and R types
++define the stream schema. A zero-row prototype is usually appropriate.}
++
++\item{next_batch}{Function called as \code{next_batch(n)} or
++\code{next_batch()} if it has no formal arguments. It must return the next
++batch or \code{NULL} for EOF.}
++
++\item{close}{Optional cleanup function.}
++
++\item{cardinality}{Optional non-negative row count, or \code{NA} when
++unknown.}
++
++\item{exact}{Whether \code{cardinality} is exact rather than an estimate.}
++}
++\value{
++Object of class \code{rducks_table_stream}.
++}
++\description{
++Return this object from a function registered with
++\code{\link[=rducks_register_table]{rducks_register_table()}} to expose a
++finite table without materializing all rows during DuckDB bind. The
++\code{prototype} supplies the output column names and types. During scan,
++Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
++frame, named list, \code{nanoarrow_array}, or one-batch
++\code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
++signal end-of-stream.
++}
++\details{
++\code{close}, when supplied, is called at most once when the stream reaches
++EOF or when DuckDB releases the table-function bind data on the recorded R
++thread. Use it to release file handles, sockets, iterators, or other
++producer-side resources. \code{cardinality} is optional scan metadata; set
++\code{exact = TRUE} only when the stream will emit exactly that many rows.
++}

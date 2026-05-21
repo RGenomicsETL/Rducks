@@ -49,6 +49,10 @@ rducks_match_mode <- function(mode) {
 #' @return A data frame describing status, call granularity, input and return
 #'   shape, NULL handling, length checks, error behavior, threading, and copy
 #'   semantics for each scalar-UDF evaluation mode.
+#' @examples
+#' rducks_mode_semantics()
+#' rducks_mode_semantics("scalar")
+#' rducks_mode_semantics("vectorized")
 #' @export
 rducks_mode_semantics <- function(mode = NULL) {
   modes <- names(rducks_mode_semantics_rows)

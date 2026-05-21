@@ -160,6 +160,16 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' @return Object of class `rducks_scalar_udf_registration` containing the
 #'   connection, normalized signature, and registration options. The scalar UDF
 #'   remains registered in DuckDB even if this object is discarded.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
+#'   args = list(INTEGER), returns = INTEGER)
+#' DBI::dbGetQuery(db, "SELECT my_double(3)")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_register_scalar_udf <- function(con, name, fun, args, returns,
                                        mode = "scalar",
@@ -330,6 +340,14 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
 #'   unknown.
 #' @param exact Whether \code{cardinality} is exact rather than an estimate.
 #' @return Object of class \code{rducks_table_stream}.
+#' @examples
+#' rows <- data.frame(x = 1:3)
+#' i <- 0L
+#' stream <- rducks_table_stream(
+#'   prototype = rows[0, , drop = FALSE],
+#'   next_batch = function(n) { i <<- i + 1L; if (i > 1L) NULL else rows }
+#' )
+#' stream
 #' @export
 rducks_table_stream <- function(prototype, next_batch, close = NULL,
                                 cardinality = NA_real_, exact = FALSE) {
@@ -536,6 +554,15 @@ rducks_table_as_arrow_array <- function(result) {
 #' @return Object of class `rducks_table_registration` containing the
 #'   connection and normalized table signature. The table function remains
 #'   registered in DuckDB even if this object is discarded.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
+#' DBI::dbGetQuery(db, "SELECT * FROM my_table()")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_register_table <- function(con, name, fun, chunk_size = 1024L) {
   if (!inherits(con, "duckdb_connection")) {
@@ -690,6 +717,20 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #' @return Object of class `rducks_aggregate_registration` containing the
 #'   connection and normalized aggregate signature. The aggregate remains
 #'   registered in DuckDB even if this object is discarded.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_aggregate(
+#'   db, "my_sum",
+#'   update = function(state, x) if (is.null(state)) x else state + x,
+#'   finalize = function(state) if (is.null(state)) 0L else state,
+#'   args = list(INTEGER), returns = INTEGER
+#' )
+#' DBI::dbGetQuery(db, "SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_register_aggregate <- function(con, name, update = NULL, finalize = NULL, args, returns,
                                       combine = NULL,

@@ -15,3 +15,8 @@ Character vector of DuckDB SQL type names.
 \description{
 Convert Rducks type descriptors to DuckDB SQL types
 }
+\examples{
+rducks_duckdb_types(INTEGER)
+rducks_duckdb_types(c(INTEGER, DOUBLE, VARCHAR))
+rducks_duckdb_types(STRUCT(a = INTEGER, b = VARCHAR))
+}

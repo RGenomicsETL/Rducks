@@ -29,3 +29,14 @@ through its requested evaluator instead of silently switching engines: for
 example, an \code{arrow_c} scalar UDF should increment \code{arrow_c_chunks} and leave
 \code{arrow_r_chunks} unchanged.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+  args = list(INTEGER), returns = INTEGER)
+rducks_explain_udf(db, "my_fn")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

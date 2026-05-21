@@ -23,3 +23,8 @@ Object of class \code{rducks_bits}.
 Bits are packed left-to-right, with the first bit in the high bit of the
 first byte.
 }
+\examples{
+b <- rducks_bits("10110")
+as.character(b)
+rducks_bits_raw(b)
+}

@@ -21,3 +21,9 @@ rducks_duckdb_literal(x, ...)
 These helpers provide a small common interface for Rducks' exact value
 classes used to represent DuckDB-specific values.
 }
+\examples{
+rducks_value_type(rducks_bigint(1L))
+rducks_value_type(rducks_decimal(1.5, width = 10, scale = 2))
+rducks_duckdb_literal(rducks_bigint("42"))
+rducks_duckdb_literal(rducks_uuid("550e8400-e29b-41d4-a716-446655440000"))
+}

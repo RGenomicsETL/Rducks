@@ -14,11 +14,13 @@ Authors@R: c(
     person(given = "The Mbed TLS Contributors", role = c("cph"),
     comment = "Mbed TLS copyright holders for bundled vendored Mbed TLS")
   )
-Description: R package and DuckDB extension bridge for registering R functions
-    as DuckDB user-defined functions. The package is designed around
-    a loaded DuckDB extension, declarative type descriptors, nanoarrow
-    marshalling over DuckDB Arrow C Data, and a calling-R-thread execution
-    discipline for safe interaction with R from DuckDB execution.
+Description: R package and 'DuckDB' extension bridge for registering R
+    functions as 'DuckDB' user-defined functions (UDFs). The package is
+    designed around a loaded 'DuckDB' extension, declarative type descriptors,
+    'nanoarrow' marshalling over 'Arrow C Data', and a calling-R-thread
+    execution discipline for safe interaction with R from 'DuckDB' execution.
+    An optional Arrow IPC (inter-process communication) transport uses 'NNG'
+    (nanomsg next generation) for worker-process communication.
 License: GPL (>= 3)
 Copyright: See inst/LICENSE.note for bundled third-party copyright and
     licensing details.

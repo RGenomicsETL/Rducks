@@ -416,6 +416,16 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
 #' @return Object of class `rducks_query_stream` with
 #'   `next_batch(n = NULL, format = NULL)`, `close()`, `is_closed()`, `schema`,
 #'   and `prototype` fields.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
+#' stream$next_batch()
+#' stream$close()
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_query_stream <- function(con, sql, batch_size = 1024L, format = c("data.frame", "record_batch", "nanoarrow")) {
   rducks_assert_duckdb_connection(con)

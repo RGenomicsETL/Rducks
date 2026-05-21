@@ -49,3 +49,12 @@ Use it to release file handles, sockets, iterators, or other producer-side
 resources. \code{cardinality} is optional scan metadata; set \code{exact =
 TRUE} only when the stream will emit exactly that many rows.
 }
+\examples{
+rows <- data.frame(x = 1:3)
+i <- 0L
+stream <- rducks_table_stream(
+  prototype = rows[0, , drop = FALSE],
+  next_batch = function(n) { i <<- i + 1L; if (i > 1L) NULL else rows }
+)
+stream
+}

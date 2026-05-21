@@ -32,3 +32,11 @@ marshalling. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_pl
 before scalar-UDF registration to select a non-reference marshalling or
 concurrency plan.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

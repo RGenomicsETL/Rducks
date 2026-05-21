@@ -20,3 +20,6 @@ Object of class \code{rducks_decimal}.
 Values are stored as fixed-point character data plus a declared width and
 scale. This avoids silently rounding exact decimal values through R double.
 }
+\examples{
+rducks_decimal(c(1.5, 2.25, NA), width = 10, scale = 2)
+}

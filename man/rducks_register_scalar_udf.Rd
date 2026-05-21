@@ -90,3 +90,14 @@ enabled and registered again after it is fully closed and reopened. For
 each NNG worker in the shared provider pool and retained for that pool's
 lifetime.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
+  args = list(INTEGER), returns = INTEGER)
+DBI::dbGetQuery(db, "SELECT my_double(3)")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

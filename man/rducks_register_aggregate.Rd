@@ -110,3 +110,18 @@ not call \code{update()} or appear in a positive \code{group_id} entry for
 \code{finalize()} or \code{finalize_chunk()}. With \code{null_handling = "special"}, update
 callbacks receive the declared type's R missing-value shape for NULL inputs.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_aggregate(
+  db, "my_sum",
+  update = function(state, x) if (is.null(state)) x else state + x,
+  finalize = function(state) if (is.null(state)) 0L else state,
+  args = list(INTEGER), returns = INTEGER
+)
+DBI::dbGetQuery(db, "SELECT my_sum(x) FROM (VALUES (1), (2), (3)) t(x)")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

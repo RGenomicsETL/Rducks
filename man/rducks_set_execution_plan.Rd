@@ -37,3 +37,12 @@ handling, error handling, and side effects. The selected evaluator/marshalling
 for an already-registered scalar UDF remains frozen in its database-catalog
 metadata.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_set_execution_plan(db, rducks_execution_plan("arrow_c", "serial"))
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

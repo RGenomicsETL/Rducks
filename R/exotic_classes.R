@@ -36,6 +36,9 @@ rducks_check_integer_bounds <- function(x, min, max, what) {
 #'
 #' @param x Numeric, integer, or character vector of whole numbers.
 #' @return Character vector with class `rducks_bigint`.
+#' @examples
+#' rducks_bigint(1:3)
+#' rducks_bigint("9223372036854775807")
 #' @export
 rducks_bigint <- function(x = character()) {
   value <- rducks_normalize_integer_string(x, unsigned = FALSE, what = "BIGINT")
@@ -70,6 +73,9 @@ print.rducks_bigint <- function(x, ...) {
 #'
 #' @param x Numeric, integer, or character vector of whole unsigned numbers.
 #' @return Character vector with class `rducks_ubigint`.
+#' @examples
+#' rducks_ubigint(0:2)
+#' rducks_ubigint("18446744073709551615")
 #' @export
 rducks_ubigint <- function(x = character()) {
   value <- rducks_normalize_integer_string(x, unsigned = TRUE, what = "UBIGINT")
@@ -105,6 +111,8 @@ print.rducks_ubigint <- function(x, ...) {
 #'
 #' @param x Character vector of UUID strings.
 #' @return Character vector with class `rducks_uuid`.
+#' @examples
+#' rducks_uuid("550e8400-e29b-41d4-a716-446655440000")
 #' @export
 rducks_uuid <- function(x = character()) {
   structure(.Call(RDUCKS_uuid_normalize_strings, x), class = c("rducks_uuid", "character"))
@@ -138,6 +146,9 @@ print.rducks_uuid <- function(x, ...) {
 #'
 #' @param x Numeric, integer, or character vector of whole numbers.
 #' @return Character vector with class `rducks_hugeint`.
+#' @examples
+#' rducks_hugeint(1:3)
+#' rducks_hugeint("170141183460469231731687303715884105727")
 #' @export
 rducks_hugeint <- function(x = character()) {
   value <- rducks_normalize_integer_string(x, unsigned = FALSE, what = "HUGEINT")
@@ -177,6 +188,9 @@ print.rducks_hugeint <- function(x, ...) {
 #'
 #' @param x Numeric, integer, or character vector of whole unsigned numbers.
 #' @return Character vector with class `rducks_uhugeint`.
+#' @examples
+#' rducks_uhugeint(0:2)
+#' rducks_uhugeint("340282366920938463463374607431768211455")
 #' @export
 rducks_uhugeint <- function(x = character()) {
   value <- rducks_normalize_integer_string(x, unsigned = TRUE, what = "UHUGEINT")
@@ -247,6 +261,8 @@ rducks_normalize_decimal_string <- function(x, width, scale) {
 #' @param width DuckDB decimal width, from 1 to 38.
 #' @param scale DuckDB decimal scale, from 0 to `width`.
 #' @return Object of class `rducks_decimal`.
+#' @examples
+#' rducks_decimal(c(1.5, 2.25, NA), width = 10, scale = 2)
 #' @export
 rducks_decimal <- function(x = character(), width, scale = 0L) {
   spec <- rducks_check_decimal_spec(width, scale)
@@ -322,6 +338,9 @@ rducks_interval_i32_component <- function(x, what) {
 #' @param micros Integer microsecond components. Values outside R's exact
 #'   numeric range should be supplied as character strings.
 #' @return Object of class `rducks_interval`.
+#' @examples
+#' rducks_interval(months = 1L, days = 15L, micros = 0L)
+#' rducks_interval(days = c(1L, 2L, NA_integer_))
 #' @export
 rducks_interval <- function(months = 0L, days = 0L, micros = 0L) {
   n <- max(length(months), length(days), length(micros))
@@ -440,6 +459,10 @@ rducks_unpack_bits <- function(data, bit_length) {
 #'   or another `rducks_bits` object.
 #' @param length Optional bit length when `x` is raw.
 #' @return Object of class `rducks_bits`.
+#' @examples
+#' b <- rducks_bits("10110")
+#' as.character(b)
+#' rducks_bits_raw(b)
 #' @export
 rducks_bits <- function(x = raw(), length = NULL) {
   if (inherits(x, "rducks_bits")) return(x)
@@ -507,6 +530,8 @@ rducks_bits_raw <- function(x) {
 #' @param levels Character vector of allowed enum dictionary values. If `x` is a
 #'   factor and `levels` is omitted, the factor levels are used.
 #' @return Factor with class `rducks_enum`.
+#' @examples
+#' rducks_enum(c("a", "b", NA), levels = c("a", "b", "c"))
 #' @export
 rducks_enum <- function(x, levels = NULL) {
   if (is.factor(x) && is.null(levels)) levels <- levels(x)
@@ -560,6 +585,9 @@ print.rducks_enum <- function(x, ...) {
 #' @param tag Character scalar union member name.
 #' @param value R value for that member.
 #' @return Object of class `rducks_union`.
+#' @examples
+#' rducks_union("num", 42L)
+#' rducks_union("str", "hello")
 #' @export
 rducks_union <- function(tag, value) {
   rducks_assert_non_empty_character_scalar(tag, "tag")
@@ -603,6 +631,11 @@ print.rducks_union <- function(x, ...) {
 #' @param x A value object.
 #' @param ... Reserved for methods.
 #' @return `rducks_value_type()` returns a DuckDB type string.
+#' @examples
+#' rducks_value_type(rducks_bigint(1L))
+#' rducks_value_type(rducks_decimal(1.5, width = 10, scale = 2))
+#' rducks_duckdb_literal(rducks_bigint("42"))
+#' rducks_duckdb_literal(rducks_uuid("550e8400-e29b-41d4-a716-446655440000"))
 #' @export
 rducks_value_type <- S7::new_generic(
   "rducks_value_type",
@@ -958,6 +991,13 @@ rducks_bits_binary_op <- function(e1, e2, op) {
 #'
 #' @param e1,e2 `rducks_bits` values, raw bytes, or 0/1 vectors.
 #' @return `rducks_bits` for bitwise operations or logical values for equality.
+#' @examples
+#' a <- rducks_bits("1010")
+#' b <- rducks_bits("1100")
+#' as.character(a & b)
+#' as.character(a | b)
+#' as.character(rducks_bits_xor(a, b))
+#' a == b
 #' @export
 Ops.rducks_bits <- function(e1, e2) {
   if (.Generic %in% c("&", "|")) return(rducks_bits_binary_op(e1, e2, .Generic))

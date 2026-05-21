@@ -18,3 +18,11 @@ rducks_bits_xor(e1, e2)
 \description{
 BIT logical operations
 }
+\examples{
+a <- rducks_bits("1010")
+b <- rducks_bits("1100")
+as.character(a & b)
+as.character(a | b)
+as.character(rducks_bits_xor(a, b))
+a == b
+}

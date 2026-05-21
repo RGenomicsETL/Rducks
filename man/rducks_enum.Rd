@@ -19,3 +19,6 @@ Factor with class \code{rducks_enum}.
 \code{rducks_enum()} stores values as a factor with an additional class so the
 DuckDB enum dictionary is explicit.
 }
+\examples{
+rducks_enum(c("a", "b", NA), levels = c("a", "b", "c"))
+}

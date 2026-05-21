@@ -23,3 +23,14 @@ extensions, and raw SQL functions are not included. Because DuckDB's function
 catalog is database scoped, sibling DBI connections to the same database
 runtime share this view.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+  args = list(INTEGER), returns = INTEGER)
+rducks_list_udfs(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

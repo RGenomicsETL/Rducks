@@ -37,3 +37,12 @@ directly with \code{rducks_execution_plan("arrow_r", "inproc_concurrent")} or
 before registering scalar UDFs whose reported execution plan should be the
 queued in-process path.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_enable_inproc(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

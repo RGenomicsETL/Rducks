@@ -21,3 +21,14 @@ Resets native per-scalar-UDF diagnostic counters without unregistering any
 DuckDB catalog function. Current liveness gauges such as pending/in-flight
 counts are preserved; their max fields are reset to the current values.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+  args = list(INTEGER), returns = INTEGER)
+rducks_reset_udf_counters(db, "my_fn")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

@@ -18,3 +18,8 @@ a named list with \code{keys}, \code{children}, \code{values}, and \code{data} f
 receives this object from a VARIANT argument and returns it unchanged or after
 using DuckDB SQL functions such as \code{variant_extract()} before crossing into R.
 }
+\examples{
+# VARIANT storage objects are normally produced by DuckDB at the R boundary.
+# rducks_variant() validates the storage shape; constructing one by hand
+# requires the full internal DuckDB VARIANT storage layout.
+}

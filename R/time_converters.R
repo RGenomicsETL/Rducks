@@ -73,6 +73,16 @@ rducks_parse_time_string <- function(x) {
 #'   numeric seconds since midnight; `rducks_as_timestamp()` returns `POSIXct`;
 #'   `rducks_as_interval()` and `rducks_interval_between()` return
 #'   `rducks_interval`.
+#' @examples
+#' rducks_as_date(as.Date("2024-01-15"))
+#' rducks_as_date("2024-01-15")
+#' rducks_as_timestamp(as.POSIXct("2024-01-15 12:00:00", tz = "UTC"))
+#' rducks_as_time("08:30:00")
+#' rducks_as_interval(3600, units = "secs")
+#' rducks_interval_between(
+#'   as.POSIXct("2024-01-01", tz = "UTC"),
+#'   as.POSIXct("2024-01-02", tz = "UTC")
+#' )
 #' @export
 rducks_as_date <- function(x, tz = "UTC", origin = "1970-01-01") {
   if (inherits(x, "Date")) {

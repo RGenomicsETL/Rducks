@@ -214,6 +214,9 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   batching, but this value is enforced as a bounded pending/in-flight guard
 #'   before a callback enters the native request path.
 #' @return An object of class `rducks_execution_plan`.
+#' @examples
+#' rducks_execution_plan("arrow_r", "serial")
+#' rducks_execution_plan("arrow_c", "inproc_concurrent")
 #' @export
 rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
                                   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
@@ -520,6 +523,14 @@ rducks_store_connection_plan <- function(con, plan) {
 #'
 #' @param con A `duckdb_connection`.
 #' @return An object of class `rducks_execution_plan`.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_current_execution_plan(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_current_execution_plan <- function(con) {
   rducks_assert_duckdb_connection(con)

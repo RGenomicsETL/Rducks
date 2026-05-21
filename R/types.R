@@ -91,6 +91,10 @@ rducks_reject_character_composite_type <- function(token) {
 #' @param x Character scalar type token or a `rducks_type` descriptor.
 #' @return Canonical scalar token for character input, or the descriptor's wire
 #'   token for a `rducks_type`.
+#' @examples
+#' rducks_type_normalize("i32")
+#' rducks_type_normalize(INTEGER)
+#' rducks_type_normalize(LIST(VARCHAR))
 #' @export
 rducks_type_normalize <- function(x) {
   if (rducks_type_inherits(x, "rducks_type")) {
@@ -355,6 +359,18 @@ rducks_enum_level_token <- function(levels) {
 #' @param ... Named field types for `STRUCT()`/`UNION()` or descriptors for `c()`.
 #' @param x Object to test with `rducks_is_type()`.
 #' @return A formal S7 `rducks_type` descriptor, or a `rducks_type_list` from `c()`.
+#' @examples
+#' INTEGER
+#' rducks_is_type(INTEGER)
+#' rducks_is_type("not a type")
+#' LIST(VARCHAR)
+#' ARRAY(INTEGER, 3L)
+#' STRUCT(a = INTEGER, b = VARCHAR)
+#' MAP(VARCHAR, DOUBLE)
+#' DECIMAL(10L, 2L)
+#' ENUM(c("small", "medium", "large"))
+#' UNION(i = INTEGER, s = VARCHAR)
+#' c(INTEGER, DOUBLE, VARCHAR)
 #' @name rducks_type_objects
 NULL
 
@@ -633,6 +649,10 @@ rducks_variant_storage_type <- function() {
 #'
 #' @param x Named list in DuckDB VARIANT storage shape.
 #' @return `x` with class `rducks_variant` after validation.
+#' @examples
+#' # VARIANT storage objects are normally produced by DuckDB at the R boundary.
+#' # rducks_variant() validates the storage shape; constructing one by hand
+#' # requires the full internal DuckDB VARIANT storage layout.
 #' @export
 rducks_variant <- function(x) {
   rducks_check_value(rducks_variant_storage_type(), x, what = "variant value")
@@ -941,6 +961,10 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #'   as `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, and
 #'   `MAP(VARCHAR, INTEGER)`.
 #' @return A data frame with one row per requested type descriptor.
+#' @examples
+#' rducks_argument_type_mapping()
+#' rducks_argument_type_mapping(INTEGER)
+#' rducks_argument_type_mapping(STRUCT(a = INTEGER, b = VARCHAR))
 #' @export
 rducks_argument_type_mapping <- function(x = NULL) {
   items <- if (is.null(x)) {
@@ -976,6 +1000,10 @@ rducks_argument_type_mapping <- function(x = NULL) {
 #'
 #' @param x Character scalar tokens, `rducks_type` descriptors, or a list of descriptors.
 #' @return Character vector of DuckDB SQL type names.
+#' @examples
+#' rducks_duckdb_types(INTEGER)
+#' rducks_duckdb_types(c(INTEGER, DOUBLE, VARCHAR))
+#' rducks_duckdb_types(STRUCT(a = INTEGER, b = VARCHAR))
 #' @export
 rducks_duckdb_types <- function(x) {
   types <- rducks_as_type_list(x)
@@ -988,6 +1016,8 @@ rducks_duckdb_types <- function(x) {
 #' @param args Argument type descriptors.
 #' @param returns Return type descriptor.
 #' @return Character scalar signature such as `f(INTEGER) -> DOUBLE`.
+#' @examples
+#' rducks_duckdb_signature("my_udf", c(INTEGER, VARCHAR), DOUBLE)
 #' @export
 rducks_duckdb_signature <- function(name, args, returns) {
   rducks_assert_non_empty_character_scalar(name, "name")

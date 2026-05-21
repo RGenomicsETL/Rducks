@@ -200,6 +200,11 @@ rducks_check_union_value <- function(type, x, what) {
 #' @param name Argument label used by `rducks_check_argument()` in error
 #'   messages.
 #' @return `x`, invisibly, on success.
+#' @examples
+#' rducks_check_value(INTEGER, 42L)
+#' rducks_check_value(VARCHAR, "hello")
+#' rducks_check_argument(DOUBLE, 3.14, name = "x")
+#' rducks_check_return(BOOLEAN, TRUE)
 #' @export
 rducks_check_value <- function(type, x, size = NULL, what = "value") {
   if (!rducks_type_inherits(type, "rducks_type")) {

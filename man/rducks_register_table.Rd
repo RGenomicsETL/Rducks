@@ -53,3 +53,13 @@ data-frame scan path. Use \code{rducks_enable(con, threads = "single")} or
 otherwise set \code{external_threads=1} plus \verb{PRAGMA threads=1} before registration
 and execution; worker-thread calls into R are rejected.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
+DBI::dbGetQuery(db, "SELECT * FROM my_table()")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

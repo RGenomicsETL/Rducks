@@ -19,3 +19,6 @@ Character scalar signature such as \code{f(INTEGER) -> DOUBLE}.
 \description{
 Format a DuckDB scalar function signature
 }
+\examples{
+rducks_duckdb_signature("my_udf", c(INTEGER, VARCHAR), DOUBLE)
+}

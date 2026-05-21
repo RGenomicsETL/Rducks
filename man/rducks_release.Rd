@@ -41,3 +41,11 @@ the connection object is garbage-collected.
 Call \code{\link[=rducks_enable]{rducks_enable()}} again before using \code{con} for further Rducks
 registrations or connection-local plan changes.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

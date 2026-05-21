@@ -34,3 +34,9 @@ This is a pre-marshalling guard for Rducks type descriptors. It checks the R
 value shape that the marshaller expects for scalar, decimal, enum, list,
 array, struct, map, and union descriptors.
 }
+\examples{
+rducks_check_value(INTEGER, 42L)
+rducks_check_value(VARCHAR, "hello")
+rducks_check_argument(DOUBLE, 3.14, name = "x")
+rducks_check_return(BOOLEAN, TRUE)
+}

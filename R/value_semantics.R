@@ -250,6 +250,10 @@ rducks_value_semantics_empty <- function() {
 #' @return A data frame with one row per requested type descriptor and columns
 #'   describing SQL NULL input handling, R missing/non-finite return handling,
 #'   Rducks value-class binary operation behavior, and error semantics.
+#' @examples
+#' rducks_value_semantics()
+#' rducks_value_semantics(INTEGER)
+#' rducks_value_semantics(DECIMAL(10L, 2L))
 #' @export
 rducks_value_semantics <- function(x = NULL) {
   items <- if (is.null(x)) {

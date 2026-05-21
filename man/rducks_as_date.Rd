@@ -53,3 +53,14 @@ These helpers normalize common R date/time inputs to the R value shapes used
 by Rducks DuckDB scalar-UDF marshalling for \code{DATE}, \code{TIME}, \code{TIMESTAMP}, and
 \code{INTERVAL} values.
 }
+\examples{
+rducks_as_date(as.Date("2024-01-15"))
+rducks_as_date("2024-01-15")
+rducks_as_timestamp(as.POSIXct("2024-01-15 12:00:00", tz = "UTC"))
+rducks_as_time("08:30:00")
+rducks_as_interval(3600, units = "secs")
+rducks_interval_between(
+  as.POSIXct("2024-01-01", tz = "UTC"),
+  as.POSIXct("2024-01-02", tz = "UTC")
+)
+}

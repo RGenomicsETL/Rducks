@@ -18,3 +18,8 @@ Character input is limited to canonical scalar tokens such as \code{i32}, \code{
 and \code{varchar}. Composite, DECIMAL, ENUM, and UNION types are represented by
 constructed \code{rducks_type} descriptors rather than quoted type strings.
 }
+\examples{
+rducks_type_normalize("i32")
+rducks_type_normalize(INTEGER)
+rducks_type_normalize(LIST(VARCHAR))
+}

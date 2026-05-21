@@ -60,3 +60,14 @@ native streaming result; it is safe to call more than once. A finalizer also
 closes unclosed streams, and \code{rducks_release(con)} closes streams registered
 on that connection before detaching connection-local state.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
+stream$next_batch()
+stream$close()
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

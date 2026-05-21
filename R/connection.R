@@ -1,6 +1,8 @@
 #' Locate the built Rducks DuckDB extension
 #'
 #' @return Character scalar path to `rducks.duckdb_extension`.
+#' @examples
+#' rducks_extension_path()
 #' @export
 rducks_extension_path <- function() {
   system.file(
@@ -29,6 +31,13 @@ rducks_extension_path <- function() {
 #' @param extension_path Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.
 #' @param threads Either `"unchanged"` or `"single"`.
 #' @return `con`, invisibly.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_enable <- function(con, extension_path = rducks_extension_path(),
                           threads = c("unchanged", "single")) {
@@ -92,6 +101,14 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #'   to leave unchanged. For actual DuckDB worker concurrency, keep this smaller
 #'   than `threads` (for example `threads = 4, external_threads = 1`).
 #' @return `con`, invisibly.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_enable_inproc(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
   rducks_set_inproc_state(con, "inproc_concurrent", threads = threads, external_threads = external_threads)
@@ -107,6 +124,15 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 #' @param external_threads Optional positive integer to set with
 #'   `SET external_threads`. Use `NULL` to leave unchanged.
 #' @return `con`, invisibly.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_enable_inproc(db)
+#' rducks_disable_inproc(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) {
   rducks_set_inproc_state(con, "serial", threads = threads, external_threads = external_threads)
@@ -140,6 +166,13 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #'
 #' @param con A `duckdb_connection`.
 #' @return `con`, invisibly.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_release <- function(con) {
   rducks_assert_duckdb_connection(con)
@@ -207,6 +240,14 @@ rducks_detach <- function(con) {
 #'
 #' @param con A `duckdb_connection`.
 #' @return A one-row data frame with queue diagnostic columns.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_inproc_stats(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_inproc_stats <- function(con) {
   rducks_assert_duckdb_connection(con)
@@ -241,6 +282,14 @@ rducks_inproc_stats <- function(con) {
 #' @param con A `duckdb_connection`.
 #' @return A one-row data frame with queued, released, failed, and pending
 #'   counters.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_release_stats(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_release_stats <- function(con) {
   rducks_assert_duckdb_connection(con)
@@ -274,6 +323,14 @@ rducks_release_stats <- function(con) {
 #'
 #' @param con An enabled `duckdb_connection`.
 #' @return A one-row data frame with runtime registry and connection counters.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_runtime_stats(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_runtime_stats <- function(con) {
   rducks_assert_duckdb_connection(con)
@@ -312,6 +369,15 @@ rducks_runtime_stats <- function(con) {
 #' @param con A `duckdb_connection`.
 #' @param n Number of queue round trips to run.
 #' @return Integer-like numeric scalar: number of requests completed.
+#' @examples
+#' \donttest{
+#' # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_inproc_self_test(db, n = 10L)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_inproc_self_test <- function(con, n = 1000L) {
   rducks_assert_duckdb_connection(con)
@@ -418,6 +484,14 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #'   backend on the recorded main R thread. For actual DuckDB worker
 #'   concurrency, keep this smaller than `threads`.
 #' @return `con`, invisibly.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_set_execution_plan(db, rducks_execution_plan("arrow_c", "serial"))
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
                                       threads = NULL, external_threads = NULL) {
@@ -467,6 +541,14 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
 #' @param con A `duckdb_connection` already enabled with \code{\link[=rducks_enable]{rducks_enable()}}.
 #' @return Character scalar backend name: `"single"`, `"concurrent_inproc"`,
 #'   or `"multiprocess_parallel"`.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_native_execution_backend(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_native_execution_backend <- function(con) {
   rducks_assert_duckdb_connection(con)

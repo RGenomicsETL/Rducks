@@ -16,3 +16,6 @@ Character vector with class \code{rducks_uuid}.
 \code{rducks_uuid()} stores canonical UUID text in a dedicated class. Native UDF
 marshalling for DuckDB \code{UUID} is implemented separately from this value class.
 }
+\examples{
+rducks_uuid("550e8400-e29b-41d4-a716-446655440000")
+}

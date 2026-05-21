@@ -21,3 +21,13 @@ rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 Switches a Rducks-enabled DuckDB connection back to the direct serial backend.
 Optionally updates DuckDB thread settings at the same time.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_enable_inproc(db)
+rducks_disable_inproc(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

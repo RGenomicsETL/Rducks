@@ -26,3 +26,8 @@ with one R vector/list-column per declared or dynamically bound argument. Vector
 exposed for \code{arrow_r}, direct \code{arrow_c}, and worker-provider \code{arrow_ipc}
 plans.
 }
+\examples{
+rducks_mode_semantics()
+rducks_mode_semantics("scalar")
+rducks_mode_semantics("vectorized")
+}

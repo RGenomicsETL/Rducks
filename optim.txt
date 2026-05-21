@@ -1,0 +1,2 @@
+ - It fills projected DuckDB chunks from R vectors, avoiding Rducks’ current per-value result marshalling loop.                                                                            
+ - DuckDB table functions can use dynamic bind-time schemas and overloads; Rducks’ first slice is only intentionally limited.                                                              

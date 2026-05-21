@@ -105,3 +105,7 @@ reference; Rducks does not silently switch from one plan to another.
 nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal \code{engine_id} such as
 \code{"arrow_c_direct_serial"} or \code{"ipc_nng_pool"}.
 }
+\examples{
+rducks_execution_plan("arrow_r", "serial")
+rducks_execution_plan("arrow_c", "inproc_concurrent")
+}

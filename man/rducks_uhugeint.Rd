@@ -15,3 +15,7 @@ Character vector with class \code{rducks_uhugeint}.
 \description{
 Values are stored as canonical unsigned decimal strings.
 }
+\examples{
+rducks_uhugeint(0:2)
+rducks_uhugeint("340282366920938463463374607431768211455")
+}

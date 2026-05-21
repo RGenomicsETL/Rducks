@@ -18,3 +18,7 @@ Object of class \code{rducks_union}.
 \code{rducks_union()} represents one tagged union value. The tag should match a
 DuckDB union member name; \code{value} is the corresponding R value.
 }
+\examples{
+rducks_union("num", 42L)
+rducks_union("str", "hello")
+}

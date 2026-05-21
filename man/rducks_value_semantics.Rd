@@ -37,3 +37,8 @@ top-level \code{NULL} returns map to SQL \code{NULL}; type-specific R \code{NA} 
 for \code{FLOAT} and \code{DOUBLE}; integer, date, time, timestamp, and exact Rducks
 value classes reject non-finite values.
 }
+\examples{
+rducks_value_semantics()
+rducks_value_semantics(INTEGER)
+rducks_value_semantics(DECIMAL(10L, 2L))
+}

@@ -19,3 +19,12 @@ This is a diagnostic cross-check for \code{\link[=rducks_current_execution_plan]
 value is the R-side default plan for future registrations through this
 connection.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_native_execution_backend(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

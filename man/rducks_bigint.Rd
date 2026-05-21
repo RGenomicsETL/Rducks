@@ -16,3 +16,7 @@ Character vector with class \code{rducks_bigint}.
 Values are stored as canonical decimal strings so signed 64-bit values are
 not silently rounded through R double.
 }
+\examples{
+rducks_bigint(1:3)
+rducks_bigint("9223372036854775807")
+}

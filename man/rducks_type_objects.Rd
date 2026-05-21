@@ -170,4 +170,17 @@ specifications. Examples include \code{args = INTEGER}, \code{args = c(INTEGER, 
 \code{args = STRUCT(a = INTEGER, b = VARCHAR)}, and
 \code{args = MAP(VARCHAR, INTEGER)}.
 }
+\examples{
+INTEGER
+rducks_is_type(INTEGER)
+rducks_is_type("not a type")
+LIST(VARCHAR)
+ARRAY(INTEGER, 3L)
+STRUCT(a = INTEGER, b = VARCHAR)
+MAP(VARCHAR, DOUBLE)
+DECIMAL(10L, 2L)
+ENUM(c("small", "medium", "large"))
+UNION(i = INTEGER, s = VARCHAR)
+c(INTEGER, DOUBLE, VARCHAR)
+}
 \keyword{datasets}

@@ -31,3 +31,12 @@ per-scalar-UDF execution detail such as selected evaluator, Arrow IPC waves, dir
 \code{arrow_c} input snapshots, and owned result-chunk counters, use
 \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_inproc_stats(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

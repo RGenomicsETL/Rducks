@@ -213,6 +213,16 @@ rducks_explain_udf_row <- function(con, name) {
 #' @param name SQL scalar-UDF function name registered with
 #'   \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}.
 #' @return A one-row data frame with scalar-UDF registration metadata and native counters.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+#'   args = list(INTEGER), returns = INTEGER)
+#' rducks_explain_udf(db, "my_fn")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_explain_udf <- function(con, name) {
   rducks_assert_duckdb_connection(con)
@@ -232,6 +242,16 @@ rducks_explain_udf <- function(con, name) {
 #'   \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}. If
 #'   `NULL`, reset counters for all native Rducks scalar UDFs in the database runtime.
 #' @return Invisibly `TRUE` on success.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+#'   args = list(INTEGER), returns = INTEGER)
+#' rducks_reset_udf_counters(db, "my_fn")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_reset_udf_counters <- function(con, name = NULL) {
   rducks_assert_duckdb_connection(con)
@@ -262,6 +282,16 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @return A data frame with one row per Rducks scalar UDF registered on `con`.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
+#'   args = list(INTEGER), returns = INTEGER)
+#' rducks_list_udfs(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_list_udfs <- function(con) {
   rducks_assert_duckdb_connection(con)

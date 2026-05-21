@@ -714,6 +714,14 @@ rducks_ipc_workers_from_store <- function(runtime_token = NULL, ping = FALSE, ti
 #'   listed endpoint and report `ok` or the ping error.
 #' @param timeout Positive timeout in seconds used for `ping = TRUE`.
 #' @return A data frame with one row per configured worker endpoint.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' rducks_enable(db)
+#' rducks_ipc_workers(db)
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_ipc_workers <- function(con = NULL, ping = FALSE, timeout = 1) {
   if (!is.logical(ping) || length(ping) != 1L || is.na(ping)) {

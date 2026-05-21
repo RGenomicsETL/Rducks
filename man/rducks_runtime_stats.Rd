@@ -28,3 +28,12 @@ DuckDB connections when the last Rducks attachment to a runtime is released;
 the process-local runtime entry itself is retained as inert metadata so
 catalog destructors and stale database-address detection remain safe.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_runtime_stats(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

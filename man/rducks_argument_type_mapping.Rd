@@ -38,3 +38,8 @@ scalar-UDF marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and c
 descriptors can be requested explicitly to inspect their recursive R function
 shapes.
 }
+\examples{
+rducks_argument_type_mapping()
+rducks_argument_type_mapping(INTEGER)
+rducks_argument_type_mapping(STRUCT(a = INTEGER, b = VARCHAR))
+}

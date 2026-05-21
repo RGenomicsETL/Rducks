@@ -12,3 +12,6 @@ Character scalar path to \code{rducks.duckdb_extension}.
 \description{
 Locate the built Rducks DuckDB extension
 }
+\examples{
+rducks_extension_path()
+}

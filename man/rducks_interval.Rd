@@ -22,3 +22,7 @@ DuckDB intervals have three independent components: months, days, and
 microseconds. This class preserves those components instead of collapsing an
 interval to a single duration.
 }
+\examples{
+rducks_interval(months = 1L, days = 15L, micros = 0L)
+rducks_interval(days = c(1L, 2L, NA_integer_))
+}

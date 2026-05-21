@@ -21,3 +21,12 @@ off the recorded main R thread. Safe main-thread drain points include
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}},
 scalar-UDF execution, and metadata/stat queries.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_release_stats(db)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

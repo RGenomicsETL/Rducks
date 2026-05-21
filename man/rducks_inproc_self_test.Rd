@@ -21,3 +21,13 @@ thread. This validates the queue/condition-variable path without calling an R
 UDF. This diagnostic SQL surface is dev/test-only; set
 \code{RDUCKS_DEV_SURFACES=true} before \code{rducks_enable()} if you need it.
 }
+\examples{
+\donttest{
+# Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
+db <- duckdb::dbConnect(duckdb::duckdb())
+rducks_enable(db)
+rducks_inproc_self_test(db, n = 10L)
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}
