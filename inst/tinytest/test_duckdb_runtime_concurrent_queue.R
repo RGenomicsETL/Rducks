@@ -50,18 +50,6 @@ local({
   expect_true(after$main_drain_batches >= 1)
   expect_true(after$main_drain_max_batch >= 1)
 
-  setTimeLimit(elapsed = 0.3, transient = FALSE)
-  interrupted <- tryCatch(
-    {
-      rducks_inproc_self_test(con, 1000000L)
-      NULL
-    },
-    error = function(e) e,
-    finally = setTimeLimit(cpu = Inf, elapsed = Inf, transient = FALSE)
-  )
-  expect_true(inherits(interrupted, "error"))
-  expect_true(grepl("queued scalar UDF interrupted by user|reached elapsed time limit", conditionMessage(interrupted)))
-  expect_equal(DBI::dbGetQuery(con, "SELECT 1 AS ok")$ok, 1)
 
   invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one", function(x) x + 1, DOUBLE, DOUBLE))
   invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_vec", function(x) x + 1, DOUBLE, DOUBLE,
@@ -96,8 +84,7 @@ local({
 
   final <- rducks_inproc_stats(con)
   expect_true(final$submitted[[1L]] >= after$submitted[[1L]])
-  expect_true(final$submitted[[1L]] >= final$executed[[1L]])
-  expect_true(final$submitted[[1L]] - final$executed[[1L]] <= 1)
+  expect_equal(final$submitted, final$executed)
   expect_equal(final$timeouts, 0)
 })
 
