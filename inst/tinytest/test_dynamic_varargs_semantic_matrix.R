@@ -14,6 +14,12 @@ rducks_semantic_connection <- function() {
   con
 }
 
+rducks_semantic_ipc_transport <- function() {
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  preferred <- Rducks:::rducks_nng_default_transport()
+  if (preferred %in% transports) preferred else transports[[1L]]
+}
+
 rducks_semantic_cleanup <- function(con, stop_nng = FALSE) {
   try(rducks_release(con), silent = TRUE)
   if (isTRUE(stop_nng)) try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
@@ -287,7 +293,7 @@ local({
     arrow_ipc = rducks_execution_plan(
       "arrow_ipc", "multiprocess_parallel",
       ipc_workers = 1L,
-      ipc_transport = "tcp",
+      ipc_transport = rducks_semantic_ipc_transport(),
       ipc_timeout = 30,
       ipc_globals = FALSE
     )
