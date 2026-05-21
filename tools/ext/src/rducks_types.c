@@ -896,6 +896,7 @@ static char *rducks_type_desc_token(const rducks_type_desc_t *desc) {
 }
 
 static rducks_type_id_t rducks_type_id_from_duckdb_type(duckdb_type type_id) {
+    if ((int)type_id == RDUCKS_DUCKDB_TYPE_VARIANT_ID) return RDUCKS_TYPE_VARIANT;
     switch (type_id) {
     case DUCKDB_TYPE_BOOLEAN: return RDUCKS_TYPE_BOOL;
     case DUCKDB_TYPE_TINYINT: return RDUCKS_TYPE_I8;
@@ -911,7 +912,6 @@ static rducks_type_id_t rducks_type_id_from_duckdb_type(duckdb_type type_id) {
     case DUCKDB_TYPE_VARCHAR: return RDUCKS_TYPE_VARCHAR;
     case DUCKDB_TYPE_BLOB: return RDUCKS_TYPE_BLOB;
     case DUCKDB_TYPE_GEOMETRY: return RDUCKS_TYPE_GEOMETRY;
-    case RDUCKS_DUCKDB_TYPE_VARIANT: return RDUCKS_TYPE_VARIANT;
     case DUCKDB_TYPE_DATE: return RDUCKS_TYPE_DATE;
     case DUCKDB_TYPE_TIME: return RDUCKS_TYPE_TIME;
     case DUCKDB_TYPE_TIMESTAMP: return RDUCKS_TYPE_TIMESTAMP;

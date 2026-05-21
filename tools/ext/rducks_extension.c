@@ -9,8 +9,12 @@
 /* DuckDB exposed VARIANT in the C API after early 1.5 headers. Keep the numeric
  * id isolated here so Rducks can compile against those headers while still
  * recognizing VARIANT when loaded by a DuckDB runtime whose C API returns it.
+ * Do not use the cast duckdb_type value in switch labels: older headers define
+ * duckdb_type as an enum without value 41, and CRAN/CI compilers warn on such
+ * case labels.
  */
-#define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)41)
+#define RDUCKS_DUCKDB_TYPE_VARIANT_ID 41
+#define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)RDUCKS_DUCKDB_TYPE_VARIANT_ID)
 
 #if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
 #error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"

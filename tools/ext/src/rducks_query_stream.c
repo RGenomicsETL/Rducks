@@ -141,6 +141,7 @@ static int rducks_qs_set_string(SEXP list, int i, const char *value) {
 }
 
 static const char *rducks_query_stream_scalar_token(duckdb_type type_id) {
+    if ((int)type_id == RDUCKS_DUCKDB_TYPE_VARIANT_ID) return "variant";
     switch (type_id) {
     case DUCKDB_TYPE_BOOLEAN: return "bool";
     case DUCKDB_TYPE_TINYINT: return "i8";
@@ -156,7 +157,6 @@ static const char *rducks_query_stream_scalar_token(duckdb_type type_id) {
     case DUCKDB_TYPE_VARCHAR: return "varchar";
     case DUCKDB_TYPE_BLOB: return "blob";
     case DUCKDB_TYPE_GEOMETRY: return "geometry";
-    case RDUCKS_DUCKDB_TYPE_VARIANT: return "variant";
     case DUCKDB_TYPE_DATE: return "date";
     case DUCKDB_TYPE_TIME: return "time";
     case DUCKDB_TYPE_TIMESTAMP: return "timestamp";
