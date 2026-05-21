@@ -100,4 +100,7 @@ connections can still call. For `arrow_ipc + multiprocess_parallel`, releasing
 the last Rducks attachment to a runtime also closes native client pools for
 Rducks-launched local workers and stops those local mirai/NNG workers. If
 `ipc_endpoints` was supplied, those URLs name user-owned worker processes;
-Rducks does not send stop requests to them during release.
+Rducks does not send stop requests to them during release. For file-backed
+DuckDB databases, releasing the last attachment also closes Rducks'
+extension-owned DuckDB connections while keeping the process-local runtime entry
+inert for catalog-destructor safety and stale address detection.

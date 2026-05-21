@@ -39,6 +39,12 @@ rducks_fake_hanging_worker <- function(endpoint, sleep = 2) {
   TRUE
 }
 
+rducks_test_batch_contract_transport <- function() {
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  preferred <- if (identical(Sys.info()[["sysname"]], "Windows")) "ipc" else "tcp"
+  if (preferred %in% transports) preferred else transports[[1L]]
+}
+
 rducks_fake_multibatch_worker <- function(endpoint) {
   suppressPackageStartupMessages({
     library(Rducks)
@@ -102,7 +108,7 @@ local({
   }, add = TRUE)
 
   compute <- paste("rducks-fake-multibatch", Sys.getpid(), sep = "-")
-  bundle <- Rducks:::rducks_nng_endpoint_bundle(1L, "tcp")
+  bundle <- Rducks:::rducks_nng_endpoint_bundle(1L, rducks_test_batch_contract_transport())
   endpoint <- bundle$endpoints[[1L]]
   mirai::daemons(1L, dispatcher = FALSE, .compute = compute)
   task <- mirai::mirai(
@@ -164,7 +170,7 @@ local({
   }, add = TRUE)
 
   compute <- paste("rducks-fake-hanging", Sys.getpid(), sep = "-")
-  bundle <- Rducks:::rducks_nng_endpoint_bundle(1L, "tcp")
+  bundle <- Rducks:::rducks_nng_endpoint_bundle(1L, rducks_test_batch_contract_transport())
   endpoint <- bundle$endpoints[[1L]]
   mirai::daemons(1L, dispatcher = FALSE, .compute = compute)
   task <- mirai::mirai(

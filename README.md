@@ -123,9 +123,11 @@ pure expressions.
 
 `rducks_release(con)` detaches connection-local Rducks state and stops
 Rducks-launched local IPC workers when the last attachment for the
-DuckDB runtime is released. It does not drop DuckDB catalog functions or
-release closures still owned by native catalog metadata. For
-deterministic cleanup, call it before `DBI::dbDisconnect(con)`; to
+DuckDB runtime is released. For file-backed databases, it also closes
+Rducks’ extension-owned DuckDB connections so the file can be fully
+closed on strict file-locking platforms. It does not drop DuckDB catalog
+functions or release closures still owned by native catalog metadata.
+For deterministic cleanup, call it before `DBI::dbDisconnect(con)`; to
 replace a scalar UDF, register the same SQL name/signature again.
 
 ## Type descriptors
@@ -528,9 +530,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344      21.469
-#> 2   arrow_c serial 65961344      21.240
-#> 3 arrow_ipc + mori 65961344      12.200
+#> 1   arrow_r serial 65961344      30.171
+#> 2   arrow_c serial 65961344      29.883
+#> 3 arrow_ipc + mori 65961344      17.747
 ```
 
 ## duckplyr integration

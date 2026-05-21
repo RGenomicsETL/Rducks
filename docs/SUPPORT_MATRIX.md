@@ -71,7 +71,7 @@ does not survive connection release.
 | Scope | Owns | Release behavior |
 | --- | --- | --- |
 | R process/package | recorded R-thread identity, provider factories, release queues, diagnostics | Process-global. Safe drain points release preserved objects on the R thread. |
-| DuckDB database runtime/catalog | SQL UDFs, evaluator handles, preserved closures, counters, frozen evaluator/marshalling metadata, runtime backend | Database-scoped and visible to sibling DBI connections. |
+| DuckDB database runtime/catalog | SQL UDFs, evaluator handles, preserved closures, counters, frozen evaluator/marshalling metadata, runtime backend | Database-scoped and visible to sibling DBI connections. For file-backed databases, last-attachment release closes Rducks' extension-owned DuckDB connections but does not unregister catalog functions. |
 | DBI connection attachment | default plan for future registrations, finalizer bookkeeping, R-side registry view | `rducks_release(con)` clears this scope only. |
 
 ## Copy/borrow expectations

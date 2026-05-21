@@ -20,25 +20,6 @@ environment(rducks_lifecycle_plus_one_fun) <- baseenv()
 rducks_lifecycle_times_two_fun <- function(x) x * 2L
 environment(rducks_lifecycle_times_two_fun) <- baseenv()
 
-rducks_test_run_rscript <- function(code, args = character()) {
-  script <- tempfile(fileext = ".R")
-  writeLines(code, script, useBytes = TRUE)
-  on.exit(unlink(script), add = TRUE)
-  rscript <- file.path(R.home("bin"), if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript")
-  out <- system2(
-    rscript,
-    c("--vanilla", shQuote(script), vapply(args, shQuote, character(1))),
-    stdout = TRUE,
-    stderr = TRUE
-  )
-  status <- attr(out, "status", exact = TRUE)
-  if (is.null(status)) status <- 0L
-  if (!identical(as.integer(status), 0L)) {
-    stop("child Rscript failed:\n", paste(out, collapse = "\n"), call. = FALSE)
-  }
-  invisible(out)
-}
-
 rducks_runtime_lifecycle_body <- function() {
   local({
     make_connection_token <- function() {
@@ -105,7 +86,7 @@ rducks_runtime_lifecycle_body <- function() {
     expect_true(runtime_stats$entries_created[[1L]] >= runtime_stats$active_entries[[1L]])
     expect_true(runtime_stats$connections_opened[[1L]] >= runtime_stats$connections_closed[[1L]])
     expect_equal(runtime_stats$connections_current[[1L]], runtime_stats$connections_opened[[1L]] - runtime_stats$connections_closed[[1L]])
-    expect_false(runtime_stats$native_release_supported[[1L]])
+    expect_true(runtime_stats$native_release_supported[[1L]])
     expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_registry_capacity()"), "function|Function|Catalog")
     expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_connections_current()"), "function|Function|Catalog")
     expect_error(DBI::dbGetQuery(con1, "SELECT rducks_runtime_native_release_supported()"), "function|Function|Catalog")
@@ -195,30 +176,28 @@ rducks_runtime_lifecycle_body <- function() {
     db_path <- tempfile(fileext = ".duckdb")
     on.exit(unlink(c(db_path, paste0(db_path, ".wal")), force = TRUE), add = TRUE)
 
-    rducks_test_run_rscript(
-      paste(
-        "args <- commandArgs(trailingOnly = TRUE)",
-        "db_path <- args[[1L]]",
-        "library(Rducks)",
-        "drv <- duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = 'true'))",
-        "con <- DBI::dbConnect(drv)",
-        "on.exit({",
-        "  try(rducks_release(con), silent = TRUE)",
-        "  try(DBI::dbDisconnect(con), silent = TRUE)",
-        "  try(duckdb::duckdb_shutdown(drv), silent = TRUE)",
-        "  for (i in seq_len(6L)) invisible(gc())",
-        "}, add = TRUE)",
-        "rducks_enable(con, threads = 'single')",
-        "rducks_set_execution_plan(con, rducks_execution_plan('arrow_c', 'serial'))",
-        "DBI::dbExecute(con, 'CREATE TABLE durable_values(i INTEGER)')",
-        "DBI::dbExecute(con, 'INSERT INTO durable_values VALUES (1), (41)')",
-        "rducks_register_scalar_udf(con, 'rducks_lifecycle_file_plus', function(x) x + 1L, INTEGER, INTEGER)",
-        "stopifnot(DBI::dbGetQuery(con, 'SELECT sum(rducks_lifecycle_file_plus(i))::INTEGER AS x FROM durable_values')$x == 44L)",
-        "stopifnot('rducks_lifecycle_file_plus' %in% rducks_list_udfs(con)$name)",
-        sep = "\n"
-      ),
-      db_path
+    drv <- duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true"))
+    con <- DBI::dbConnect(drv)
+    on.exit(rducks_test_disconnect_shutdown(con, drv), add = TRUE)
+    rducks_enable(con, threads = "single")
+    rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+    DBI::dbExecute(con, "CREATE TABLE durable_values(i INTEGER)")
+    DBI::dbExecute(con, "INSERT INTO durable_values VALUES (1), (41)")
+    invisible(rducks_register_scalar_udf(
+      con, "rducks_lifecycle_file_plus", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER
+    ))
+    expect_equal(
+      DBI::dbGetQuery(con, "SELECT sum(rducks_lifecycle_file_plus(i))::INTEGER AS x FROM durable_values")$x,
+      44L
     )
+    expect_true("rducks_lifecycle_file_plus" %in% rducks_list_udfs(con)$name)
+    open_before_release <- rducks_runtime_stats(con)$connections_current[[1L]]
+    rducks_release(con)
+    open_after_release <- rducks_runtime_stats(con)$connections_current[[1L]]
+    expect_true(open_after_release <= open_before_release - 2L)
+    rducks_test_disconnect_shutdown(con, drv)
+    con <- NULL
+    drv <- NULL
 
     reopened_drv <- duckdb::duckdb(dbdir = db_path, config = list(allow_unsigned_extensions = "true"))
     reopened <- DBI::dbConnect(reopened_drv)

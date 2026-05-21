@@ -23,7 +23,8 @@ raw database address. DuckDB's C extension API does not currently provide a
 clean database-close callback for this package, so these counters are
 accounting diagnostics rather than deterministic lifetime guarantees.
 \code{connections_current} and \code{native_release_supported} are derived R-side
-summary fields: native runtime entries and successful extension-owned
-connections are currently retained for the process lifetime unless a failure
-path closes them during initialization.
+summary fields. For file-backed databases, Rducks closes extension-owned
+DuckDB connections when the last Rducks attachment to a runtime is released;
+the process-local runtime entry itself is retained as inert metadata so
+catalog destructors and stale database-address detection remain safe.
 }

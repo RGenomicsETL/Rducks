@@ -124,7 +124,10 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' to a runtime also closes native client pools for Rducks-launched local workers
 #' and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
 #' those URLs name user-owned worker processes; Rducks does not send stop
-#' requests to them during release.
+#' requests to them during release. For file-backed databases, releasing the
+#' last attachment also closes Rducks' extension-owned DuckDB connections, which
+#' lets the DuckDB file be closed and reopened in the same R process on
+#' platforms with strict file locking.
 #'
 #' Rducks deliberately keeps the plain `duckdb_connection` object and does not
 #' override DBI's `dbDisconnect()` method. Call `rducks_release(con)` explicitly
@@ -160,7 +163,20 @@ rducks_release <- function(con) {
     try(DBI::dbGetQuery(con, "SELECT rducks_nng_quiesce() AS ok"), silent = TRUE)
   }
   rducks_detach_connection_token(con)
+  if (isTRUE(last_runtime_anchor) && rducks_connection_is_file_backed(con)) {
+    try(DBI::dbGetQuery(con, "SELECT rducks_runtime_release_connections() AS ok"), silent = TRUE)
+  }
   invisible(con)
+}
+
+rducks_connection_dbdir <- function(con) {
+  tryCatch(methods::slot(methods::slot(con, "driver"), "dbdir"), error = function(e) NA_character_)
+}
+
+rducks_connection_is_file_backed <- function(con) {
+  dbdir <- rducks_connection_dbdir(con)
+  is.character(dbdir) && length(dbdir) == 1L && !is.na(dbdir) && nzchar(dbdir) &&
+    !identical(dbdir, ":memory:")
 }
 
 #' @rdname rducks_release
@@ -251,9 +267,10 @@ rducks_release_stats <- function(con) {
 #' clean database-close callback for this package, so these counters are
 #' accounting diagnostics rather than deterministic lifetime guarantees.
 #' `connections_current` and `native_release_supported` are derived R-side
-#' summary fields: native runtime entries and successful extension-owned
-#' connections are currently retained for the process lifetime unless a failure
-#' path closes them during initialization.
+#' summary fields. For file-backed databases, Rducks closes extension-owned
+#' DuckDB connections when the last Rducks attachment to a runtime is released;
+#' the process-local runtime entry itself is retained as inert metadata so
+#' catalog destructors and stale database-address detection remain safe.
 #'
 #' @param con An enabled `duckdb_connection`.
 #' @return A one-row data frame with runtime registry and connection counters.
@@ -275,7 +292,7 @@ rducks_runtime_stats <- function(con) {
     )
   )
   stats$connections_current <- stats$connections_opened - stats$connections_closed
-  stats$native_release_supported <- rep(FALSE, nrow(stats))
+  stats$native_release_supported <- rep(TRUE, nrow(stats))
   stats[, c(
     "registry_entries", "active_entries", "stale_entries", "entries_created",
     "stale_aliases", "connections_opened", "connections_closed",

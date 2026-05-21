@@ -19,6 +19,11 @@ consequences.
   and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
   those URLs name user-owned worker processes; Rducks does not send stop
   requests to them during release.
+- For file-backed databases, last-attachment release also closes Rducks'
+  extension-owned DuckDB connections so the database can be fully closed and
+  reopened in the same R process on strict file-locking platforms. This is still
+  not an unregister: catalog functions remain until DuckDB drops their catalog
+  metadata.
 - Registered DuckDB catalog functions remain callable while their catalog
   metadata exists; after last-anchor cleanup of a Rducks-launched local IPC
   provider, IPC scalar UDFs need a live IPC route from a new registration before they
