@@ -73,23 +73,6 @@ local({
   expect_equal(shutdown$tasks_unresolved, 0L)
   expect_false(shutdown$forced_daemon_shutdown)
 
-  bad_con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
-  rducks_enable(bad_con, threads = "single")
-  bad_plan <- rducks_execution_plan(
-    "arrow_ipc", "multiprocess_parallel",
-    ipc_endpoints = "tcp://127.0.0.1:9",
-    ipc_workers = 1L,
-    ipc_timeout = 0.2
-  )
-  rducks_set_execution_plan(bad_con, bad_plan, threads = 1L, external_threads = 1L)
-  expect_error(
-    rducks_register_scalar_udf(bad_con, "nng_missing_endpoint", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized"),
-    "NNG request failed|nng_"
-  )
-  try(rducks_release(bad_con), silent = TRUE)
-  DBI::dbDisconnect(bad_con, shutdown = TRUE)
-  Rducks:::rducks_nng_stop_all_providers(quiet = TRUE)
-
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
   on.exit({
     try(rducks_release(con), silent = TRUE)
@@ -98,14 +81,28 @@ local({
   }, add = TRUE)
   rducks_enable(con, threads = "single")
 
+  bad_plan <- rducks_execution_plan(
+    "arrow_ipc", "multiprocess_parallel",
+    ipc_endpoints = "tcp://127.0.0.1:9",
+    ipc_workers = 1L,
+    ipc_timeout = 0.2
+  )
+  rducks_set_execution_plan(con, bad_plan, threads = 1L, external_threads = 1L)
+  expect_error(
+    rducks_register_scalar_udf(con, "nng_missing_endpoint", function(x) x + 1L, INTEGER, INTEGER, mode = "vectorized"),
+    "NNG request failed|nng_"
+  )
+
   runtime_token <- Rducks:::rducks_runtime_token(con)
-  provider_records <- function() {
+  provider_records <- function(started = TRUE) {
     store <- Rducks:::.rducks_state$nng_providers
     if (is.null(store)) return(list())
     records <- mget(ls(store, all.names = TRUE), envir = store, inherits = FALSE)
     records <- Filter(function(record) identical(record$runtime_token, runtime_token), records)
-    Filter(function(record) isTRUE(record$provider$stats()$started[[1L]]), records)
+    if (is.null(started)) return(records)
+    Filter(function(record) identical(isTRUE(record$provider$stats()$started[[1L]]), started), records)
   }
+  expect_equal(length(provider_records(started = NULL)), 0L)
 
   plan_one <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",

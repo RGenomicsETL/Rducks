@@ -596,26 +596,50 @@ rducks_nng_provider_key <- function(runtime_token, workers, max_pending, endpoin
         endpoint_key, sep = "\r")
 }
 
-rducks_nng_provider_for_runtime <- function(runtime_token, workers, max_pending, endpoints, transport = NULL) {
+rducks_nng_provider_key_parts <- function(runtime_token, workers, max_pending, endpoints, transport = NULL) {
   runtime_token <- runtime_token %||% paste("process", Sys.getpid(), sep = "-")
   external_endpoints <- !is.null(endpoints)
   if (external_endpoints && !is.null(transport)) {
     stop("ipc_transport only applies when ipc_endpoints is NULL", call. = FALSE)
   }
   transport <- if (external_endpoints) "external" else rducks_nng_normalize_transport(transport, runtime = TRUE)
-  key <- rducks_nng_provider_key(runtime_token, workers, max_pending, endpoints, transport)
+  list(
+    runtime_token = runtime_token,
+    workers = workers,
+    max_pending = max_pending,
+    endpoints = endpoints,
+    transport = transport,
+    key = rducks_nng_provider_key(runtime_token, workers, max_pending, endpoints, transport)
+  )
+}
+
+rducks_nng_remove_provider_record <- function(parts, quiet = TRUE) {
+  store <- .rducks_state$nng_providers
+  if (is.null(store) || !exists(parts$key, envir = store, inherits = FALSE)) {
+    return(invisible(NULL))
+  }
+  record <- get(parts$key, envir = store, inherits = FALSE)
+  if (is.list(record$provider) && is.function(record$provider$stop)) {
+    try(record$provider$stop(quiet = quiet), silent = TRUE)
+  }
+  rm(list = parts$key, envir = store)
+  invisible(NULL)
+}
+
+rducks_nng_provider_for_runtime <- function(runtime_token, workers, max_pending, endpoints, transport = NULL) {
+  parts <- rducks_nng_provider_key_parts(runtime_token, workers, max_pending, endpoints, transport)
   store <- rducks_nng_provider_store()
-  if (exists(key, envir = store, inherits = FALSE)) {
-    return(get(key, envir = store, inherits = FALSE)$provider)
+  if (exists(parts$key, envir = store, inherits = FALSE)) {
+    return(get(parts$key, envir = store, inherits = FALSE)$provider)
   }
   provider <- rducks_nng_provider(
     workers = workers,
     max_pending = max_pending,
-    endpoints = endpoints,
-    transport = if (external_endpoints) NULL else transport
+    endpoints = parts$endpoints,
+    transport = if (identical(parts$transport, "external")) NULL else parts$transport
   )
-  assign(key, list(runtime_token = runtime_token, workers = workers, max_pending = max_pending,
-                   endpoints = endpoints, transport = transport, provider = provider), envir = store)
+  assign(parts$key, list(runtime_token = parts$runtime_token, workers = workers, max_pending = max_pending,
+                         endpoints = endpoints, transport = parts$transport, provider = provider), envir = store)
   provider
 }
 
@@ -968,14 +992,24 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
 
   ensure_provider_started <- function() {
     if (is.null(provider)) {
+      workers <- engine$plan$ipc_workers %||% 1L
+      max_pending <- engine$plan$ipc_max_pending %||% 64L
+      parts <- rducks_nng_provider_key_parts(runtime_token, workers, max_pending, opts$endpoints, opts$transport)
       provider <<- rducks_nng_provider_for_runtime(
         runtime_token = runtime_token,
-        workers = engine$plan$ipc_workers %||% 1L,
-        max_pending = engine$plan$ipc_max_pending %||% 64L,
+        workers = workers,
+        max_pending = max_pending,
         endpoints = opts$endpoints,
         transport = opts$transport
       )
-      provider$start(engine$plan)
+      tryCatch(
+        provider$start(engine$plan),
+        error = function(e) {
+          rducks_nng_remove_provider_record(parts, quiet = TRUE)
+          provider <<- NULL
+          stop(conditionMessage(e), call. = FALSE)
+        }
+      )
     }
     invisible(provider)
   }
