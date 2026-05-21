@@ -23,7 +23,7 @@ scalar-UDF execution, and metadata/stat queries.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_release_stats(db)
 rducks_release(db)

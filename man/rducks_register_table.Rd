@@ -55,7 +55,7 @@ and execution; worker-thread calls into R are rejected.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
 DBI::dbGetQuery(db, "SELECT * FROM my_table()")

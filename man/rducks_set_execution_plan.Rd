@@ -39,7 +39,7 @@ metadata.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_set_execution_plan(db, rducks_execution_plan("arrow_c", "serial"))
 rducks_release(db)

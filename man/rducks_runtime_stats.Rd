@@ -30,7 +30,7 @@ catalog destructors and stale database-address detection remain safe.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_runtime_stats(db)
 rducks_release(db)

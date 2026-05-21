@@ -33,7 +33,7 @@ rducks_extension_path <- function() {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
@@ -103,7 +103,7 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_release(db)
@@ -126,7 +126,7 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_disable_inproc(db)
@@ -168,7 +168,7 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
@@ -242,7 +242,7 @@ rducks_detach <- function(con) {
 #' @return A one-row data frame with queue diagnostic columns.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_inproc_stats(db)
 #' rducks_release(db)
@@ -284,7 +284,7 @@ rducks_inproc_stats <- function(con) {
 #'   counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_release_stats(db)
 #' rducks_release(db)
@@ -325,7 +325,7 @@ rducks_release_stats <- function(con) {
 #' @return A one-row data frame with runtime registry and connection counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_runtime_stats(db)
 #' rducks_release(db)
@@ -372,7 +372,7 @@ rducks_runtime_stats <- function(con) {
 #' @examples
 #' \donttest{
 #' # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_inproc_self_test(db, n = 10L)
 #' rducks_release(db)
@@ -486,7 +486,7 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_set_execution_plan(db, rducks_execution_plan("arrow_c", "serial"))
 #' rducks_release(db)
@@ -543,7 +543,7 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
 #'   or `"multiprocess_parallel"`.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_native_execution_backend(db)
 #' rducks_release(db)

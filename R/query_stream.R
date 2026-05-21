@@ -418,7 +418,7 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
 #'   and `prototype` fields.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
 #' stream$next_batch()

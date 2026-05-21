@@ -92,7 +92,7 @@ lifetime.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
   args = list(INTEGER), returns = INTEGER)

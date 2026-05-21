@@ -24,7 +24,7 @@ UDF. This diagnostic SQL surface is dev/test-only; set
 \examples{
 \donttest{
 # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_inproc_self_test(db, n = 10L)
 rducks_release(db)

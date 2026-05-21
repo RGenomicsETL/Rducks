@@ -162,7 +162,7 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #'   remains registered in DuckDB even if this object is discarded.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
 #'   args = list(INTEGER), returns = INTEGER)
@@ -556,7 +556,7 @@ rducks_table_as_arrow_array <- function(result) {
 #'   registered in DuckDB even if this object is discarded.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
 #' DBI::dbGetQuery(db, "SELECT * FROM my_table()")
@@ -719,7 +719,7 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #'   registered in DuckDB even if this object is discarded.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb())
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
 #' rducks_register_aggregate(
 #'   db, "my_sum",

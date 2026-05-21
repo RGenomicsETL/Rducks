@@ -18,7 +18,7 @@ has been recorded yet, this returns the reference plan \code{arrow_r + serial}.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_current_execution_plan(db)
 rducks_release(db)

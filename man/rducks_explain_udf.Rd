@@ -31,7 +31,7 @@ example, an \code{arrow_c} scalar UDF should increment \code{arrow_c_chunks} and
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb())
+db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER)
