@@ -248,24 +248,81 @@ rducks_query_stream_native_open <- function(con, sql) {
   out
 }
 
+rducks_query_stream_parse_metadata <- function(metadata) {
+  if (!is.character(metadata) || length(metadata) != 1L || is.na(metadata)) {
+    stop("native Rducks query stream did not return metadata", call. = FALSE)
+  }
+  if (!nzchar(metadata)) {
+    return(list(type_specs = list(), type_objects = list(), column_names = character()))
+  }
+  lines <- strsplit(metadata, "\n", fixed = TRUE)[[1L]]
+  lines <- lines[nzchar(lines)]
+  column_names <- character(length(lines))
+  tokens <- character(length(lines))
+  for (i in seq_along(lines)) {
+    parts <- strsplit(lines[[i]], "\t", fixed = TRUE)[[1L]]
+    if (length(parts) != 2L) {
+      stop("invalid native Rducks query stream metadata", call. = FALSE)
+    }
+    column_names[[i]] <- rducks_token_percent_decode(parts[[1L]])
+    tokens[[i]] <- parts[[2L]]
+  }
+  type_objects <- vector("list", length(tokens))
+  for (i in seq_along(tokens)) {
+    type_objects[[i]] <- if (identical(tokens[[i]], "null")) NULL else rducks_type_from_wire_token(tokens[[i]])
+  }
+  list(type_specs = as.list(tokens), type_objects = type_objects, column_names = column_names)
+}
+
+rducks_query_stream_native_metadata <- function(con, native_token) {
+  out <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT rducks_query_stream_metadata(%s) AS metadata", rducks_sql_string(native_token))
+  )$metadata[[1L]]
+  rducks_query_stream_parse_metadata(out)
+}
+
+rducks_query_stream_native_handle <- function(con, native_token, function_name) {
+  out <- DBI::dbGetQuery(
+    con,
+    sprintf("SELECT %s(%s) AS handle", function_name, rducks_sql_string(native_token))
+  )$handle[[1L]]
+  if (is.null(out) || length(out) != 1L || is.na(out)) return(NULL)
+  if (!rducks_is_non_empty_character_scalar(out)) {
+    stop("native Rducks query stream did not return an Arrow C Data handle", call. = FALSE)
+  }
+  out
+}
+
+rducks_query_stream_batch_from_handle <- function(handle, metadata) {
+  cdata <- .Call(RDUCKS_query_stream_wrap_cdata, handle)
+  rducks_query_stream_arrow_batch(
+    cdata$array,
+    cdata$schema,
+    metadata$type_specs,
+    metadata$column_names,
+    type_objects = metadata$type_objects
+  )
+}
+
+rducks_query_stream_native_schema <- function(con, native_token, metadata) {
+  handle <- rducks_query_stream_native_handle(con, native_token, "rducks_query_stream_schema_handle")
+  if (is.null(handle)) stop("native Rducks query stream did not produce a schema batch", call. = FALSE)
+  rducks_query_stream_batch_from_handle(handle, metadata)
+}
+
+rducks_query_stream_native_next <- function(con, native_token, metadata) {
+  handle <- rducks_query_stream_native_handle(con, native_token, "rducks_query_stream_next_handle")
+  if (is.null(handle)) return(NULL)
+  rducks_query_stream_batch_from_handle(handle, metadata)
+}
+
 rducks_query_stream_native_bool <- function(con, native_token, function_name) {
   out <- DBI::dbGetQuery(
     con,
     sprintf("SELECT %s(%s) AS ok", function_name, rducks_sql_string(native_token))
   )$ok[[1L]]
   isTRUE(out)
-}
-
-rducks_query_stream_native_schema <- function(con, native_token) {
-  ok <- rducks_query_stream_native_bool(con, native_token, "rducks_query_stream_schema")
-  if (!ok) stop("native Rducks query stream did not produce a schema batch", call. = FALSE)
-  rducks_query_stream_take_arrow_batch(native_token)
-}
-
-rducks_query_stream_native_next <- function(con, native_token) {
-  ok <- rducks_query_stream_native_bool(con, native_token, "rducks_query_stream_next")
-  if (!ok) return(NULL)
-  rducks_query_stream_take_arrow_batch(native_token)
 }
 
 rducks_query_stream_native_close <- function(con, native_token) {
@@ -343,7 +400,7 @@ rducks_query_stream_next_batch_state <- function(state, n = NULL, format = NULL)
   if (is.null(state$pending) || !rducks_query_stream_arrow_batch_nrow(state$pending)) {
     if (isTRUE(state$done)) return(NULL)
     state$pending <- tryCatch(
-      rducks_query_stream_native_next(state$con, state$native_token),
+      rducks_query_stream_native_next(state$con, state$native_token, state$metadata),
       error = function(e) {
         rducks_query_stream_close_state(state)
         stop(conditionMessage(e), call. = FALSE)
@@ -449,7 +506,9 @@ rducks_query_stream <- function(con, sql, batch_size = 1024L, format = c("data.f
     if (!ok) rducks_query_stream_close_state(state)
   }, add = TRUE)
 
-  prototype_batch <- rducks_query_stream_native_schema(con, native_token)
+  metadata <- rducks_query_stream_native_metadata(con, native_token)
+  state$metadata <- metadata
+  prototype_batch <- rducks_query_stream_native_schema(con, native_token, metadata)
   prototype <- rducks_query_stream_materialize_stored_arrow_batch(prototype_batch)
   schema <- prototype_batch$schema
   state$prototype <- prototype

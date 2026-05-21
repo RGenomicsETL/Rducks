@@ -55,6 +55,7 @@ SEXP RDUCKS_arrow_binary_payload_array(SEXP payloads);
 SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp);
 SEXP RDUCKS_arrow_i64_storage_from_numeric(SEXP values_sexp);
 SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr);
+SEXP RDUCKS_query_stream_wrap_cdata(SEXP handle_sexp);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -133,6 +134,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_arrow_i64_micros_to_seconds", (DL_FUNC) &RDUCKS_arrow_i64_micros_to_seconds, 4},
     {"RDUCKS_arrow_i64_storage_from_numeric", (DL_FUNC) &RDUCKS_arrow_i64_storage_from_numeric, 1},
     {"RDUCKS_arrow_ipc_encode_array", (DL_FUNC) &RDUCKS_arrow_ipc_encode_array, 1},
+    {"RDUCKS_query_stream_wrap_cdata", (DL_FUNC) &RDUCKS_query_stream_wrap_cdata, 1},
     {NULL, NULL, 0}
 };
 

@@ -12,6 +12,12 @@ rducks_dynamic_consistency_connection <- function() {
   con
 }
 
+rducks_dynamic_consistency_ipc_transport <- function() {
+  transports <- Rducks:::rducks_nng_runtime_transports()
+  preferred <- Rducks:::rducks_nng_default_transport()
+  if (preferred %in% transports) preferred else transports[[1L]]
+}
+
 rducks_expect_no_try_error <- function(value, info) {
   ok <- !inherits(value, "try-error")
   expect_true(ok, info = info)
@@ -164,7 +170,10 @@ local({
     arrow_ipc = rducks_execution_plan(
       "arrow_ipc", "multiprocess_parallel",
       ipc_workers = 1L,
-      ipc_transport = "tcp",
+      # The consistency matrix exercises dynamic-argument semantics over the
+      # real managed NNG/Arrow IPC provider path; transport-specific TCP/IPC/ws
+      # coverage lives in test_zzzy_duckdb_runtime_nng_transports.R.
+      ipc_transport = rducks_dynamic_consistency_ipc_transport(),
       ipc_timeout = 30
     )
   )

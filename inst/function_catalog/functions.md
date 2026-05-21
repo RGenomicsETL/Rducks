@@ -556,13 +556,13 @@ Convert R date/time values to the exact shapes expected by Rducks temporal scala
 
 - Kind: `DuckDB SQL scalar functions`
 - Category: `native extension surface`
-- Signature: `rducks_version(); rducks_runtime_token(); rducks_register_scalar(...); rducks_register_table(...); rducks_register_aggregate(...); rducks_query_stream_open(sql); rducks_query_stream_schema(token); rducks_query_stream_next(token); rducks_query_stream_close(token)`
+- Signature: `rducks_version(); rducks_runtime_token(); rducks_register_scalar(...); rducks_register_table(...); rducks_register_aggregate(...); rducks_query_stream_open(sql); rducks_query_stream_metadata(token); rducks_query_stream_schema_handle(token); rducks_query_stream_next_handle(token); rducks_query_stream_schema(token); rducks_query_stream_next(token); rducks_query_stream_close(token)`
 - Returns: `DuckDB scalar values`
-- Aliases: `rducks_version`, `rducks_runtime_token`, `rducks_register_scalar`, `rducks_register_table`, `rducks_register_aggregate`, `rducks_query_stream_open`, `rducks_query_stream_schema`, `rducks_query_stream_next`, `rducks_query_stream_close`
+- Aliases: `rducks_version`, `rducks_runtime_token`, `rducks_register_scalar`, `rducks_register_table`, `rducks_register_aggregate`, `rducks_query_stream_open`, `rducks_query_stream_metadata`, `rducks_query_stream_schema_handle`, `rducks_query_stream_next_handle`, `rducks_query_stream_schema`, `rducks_query_stream_next`, `rducks_query_stream_close`
 - Lifecycle: `internal/experimental`
 - Since: `0.1.0`
 
-Built-in SQL functions installed by the Rducks extension and used by the R wrappers for registration, runtime identity, and native query-stream control.
+Built-in SQL functions installed by the Rducks extension and used by the R wrappers for registration, runtime identity, and native query-stream control. Query-stream handle surfaces return process-local Arrow C Data handles that the R package wraps on the calling R thread.
 
 Notes:
 
