@@ -200,9 +200,7 @@ rducks_type_class_by_name <- function(name) {
 }
 
 rducks_type_inherits <- function(x, what) {
-  any(vapply(as.character(what), function(name) {
-    rducks_type_descriptor_inherits(x, rducks_type_class_by_name(name))
-  }, logical(1)))
+  .Call(RDUCKS_type_inherits_names, x, as.character(what))
 }
 
 rducks_scalar_type_class_for_token <- function(token) {

@@ -52,10 +52,18 @@ rducks_vectorized_return_value_at <- function(type, value, i) {
   value[[i]]
 }
 
+rducks_vectorized_fast_scalar_rows <- function(return_type, value, n) {
+  .Call(RDUCKS_vectorized_fast_scalar_rows, return_type, value, as.integer(n))
+}
+
 rducks_vectorized_result_to_rows <- function(return_type, value, n) {
   n <- as.integer(n)
   if (is.null(value)) {
     return(vector("list", n))
+  }
+  fast_rows <- rducks_vectorized_fast_scalar_rows(return_type, value, n)
+  if (!is.null(fast_rows)) {
+    return(fast_rows)
   }
   actual <- rducks_vectorized_return_length(return_type, value)
   if (!identical(as.integer(actual), n)) {

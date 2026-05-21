@@ -2,9 +2,15 @@
 
 #define RDUCKS_QUEUE_ERROR_SIZE 512
 #define RDUCKS_QUEUE_WAIT_MS 100U
+#define RDUCKS_QUEUE_POLL_WAIT_US 100U
+#define RDUCKS_QUEUE_DRAIN_MAX_REQUESTS 1000
+#ifdef _WIN32
+#define RDUCKS_QUEUE_POLL_MAX_SPINS 5000U
+#else
+#define RDUCKS_QUEUE_POLL_MAX_SPINS 50000U
+#endif
 #define RDUCKS_QUEUE_TIMEOUT_TICKS 300U
 #define RDUCKS_QUEUE_PENDING_TIMEOUT_MS ((uint64_t)RDUCKS_QUEUE_WAIT_MS * (uint64_t)RDUCKS_QUEUE_TIMEOUT_TICKS)
-static int rducks_queue_sleep_ms(unsigned int ms);
 
 typedef enum rducks_udf_request_state {
     RDUCKS_REQUEST_PENDING = 0,
@@ -63,17 +69,18 @@ static void rducks_queue_signal_all(rducks_runtime_entry_t *runtime) {
 #endif
 }
 
-static int rducks_queue_wait_timed(rducks_runtime_entry_t *runtime, unsigned int ms) {
+static int rducks_queue_wait_timed_us(rducks_runtime_entry_t *runtime, uint64_t us) {
 #ifdef _WIN32
-    BOOL ok = SleepConditionVariableCS(&runtime->queue_cond, &runtime->queue_lock, (DWORD)ms);
+    DWORD ms = us == 0U ? 0U : (DWORD)((us + 999U) / 1000U);
+    BOOL ok = SleepConditionVariableCS(&runtime->queue_cond, &runtime->queue_lock, ms);
     return ok ? 1 : 0;
 #else
     struct timespec ts;
     long nsec;
     if (clock_gettime(CLOCK_REALTIME, &ts) != 0) return 0;
-    ts.tv_sec += (time_t)(ms / 1000U);
-    nsec = ts.tv_nsec + (long)(ms % 1000U) * 1000000L;
-    if (nsec >= 1000000000L) {
+    ts.tv_sec += (time_t)(us / 1000000U);
+    nsec = ts.tv_nsec + (long)(us % 1000000U) * 1000L;
+    while (nsec >= 1000000000L) {
         ts.tv_sec += 1;
         nsec -= 1000000000L;
     }
@@ -81,6 +88,17 @@ static int rducks_queue_wait_timed(rducks_runtime_entry_t *runtime, unsigned int
     int rc = pthread_cond_timedwait(&runtime->queue_cond, &runtime->queue_lock, &ts);
     return rc != ETIMEDOUT;
 #endif
+}
+
+static int rducks_queue_wait_timed(rducks_runtime_entry_t *runtime, unsigned int ms) {
+    return rducks_queue_wait_timed_us(runtime, (uint64_t)ms * 1000U);
+}
+
+static void rducks_queue_wait_for_signal(rducks_runtime_entry_t *runtime, uint64_t us) {
+    if (!runtime || !runtime->queue_initialized) return;
+    rducks_queue_lock(runtime);
+    (void)rducks_queue_wait_timed_us(runtime, us);
+    rducks_queue_unlock(runtime);
 }
 
 static void rducks_queue_error_copy(char *dst, size_t dst_cap, const char *src, const char *default_msg) {
@@ -405,18 +423,6 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                              1, 1, NULL, NULL, err_msg, err_cap);
 }
 
-static int rducks_queue_sleep_ms(unsigned int ms) {
-#ifdef _WIN32
-    Sleep((DWORD)ms);
-    return 1;
-#else
-    struct timespec ts;
-    ts.tv_sec = (time_t)(ms / 1000U);
-    ts.tv_nsec = (long)(ms % 1000U) * 1000000L;
-    return nanosleep(&ts, NULL) == 0;
-#endif
-}
-
 typedef struct rducks_queue_scalar_worker_state {
     rducks_runtime_entry_t *runtime;
     rducks_r_scalar_meta_t *meta;
@@ -484,9 +490,11 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
         return 0;
     }
 #endif
-    while (!atomic_load_explicit(&state.done, memory_order_acquire) && spins < 5000U) {
-        (void)rducks_queue_drain_on_main(runtime, 1000);
-        if (!atomic_load_explicit(&state.done, memory_order_acquire)) rducks_queue_sleep_ms(1);
+    while (!atomic_load_explicit(&state.done, memory_order_acquire) && spins < RDUCKS_QUEUE_POLL_MAX_SPINS) {
+        (void)rducks_queue_drain_on_main(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
+        if (!atomic_load_explicit(&state.done, memory_order_acquire)) {
+            rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_POLL_WAIT_US);
+        }
         spins++;
     }
 #ifdef _WIN32
@@ -630,9 +638,11 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
             return 0;
         }
 #endif
-        while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < 5000U) {
-            (void)rducks_queue_drain_self_test(runtime, 1000);
-            if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) rducks_queue_sleep_ms(1);
+        while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < RDUCKS_QUEUE_POLL_MAX_SPINS) {
+            (void)rducks_queue_drain_self_test(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
+            if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
+                rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_POLL_WAIT_US);
+            }
             spins++;
         }
 #ifdef _WIN32

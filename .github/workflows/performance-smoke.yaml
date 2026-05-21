@@ -1,0 +1,97 @@
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+name: Performance smoke
+
+permissions: read-all
+
+jobs:
+  vectorized-udf-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      USE_UNSTABLE_C_API: "1"
+      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
+      RDUCKS_DEV_SURFACES: "true"
+      RDUCKS_PERF_ROWS: "262144"
+      RDUCKS_PERF_ARROW_R_MAX_SEC: "8"
+      RDUCKS_PERF_ARROW_C_MAX_SEC: "8"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: check
+
+      - name: Build current and compare with previous commit
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          run_perf() {
+            local srcdir="$1"
+            local output="$2"
+            local enforce="$3"
+            local libdir
+            libdir="$(mktemp -d)"
+            (
+              cd "$srcdir"
+              rm -f Rducks_*.tar.gz
+              R CMD build --no-build-vignettes .
+              USE_UNSTABLE_C_API="$USE_UNSTABLE_C_API" \
+              RDUCKS_EXTENSION_ABI_TYPE="$RDUCKS_EXTENSION_ABI_TYPE" \
+              R CMD INSTALL -l "$libdir" Rducks_*.tar.gz
+            )
+            R_LIBS_USER="$libdir${R_LIBS_USER:+:$R_LIBS_USER}" \
+            RDUCKS_DEV_SURFACES="$RDUCKS_DEV_SURFACES" \
+            RDUCKS_PERF_OUTPUT="$output" \
+            RDUCKS_PERF_ENFORCE_THRESHOLDS="$enforce" \
+            Rscript "$GITHUB_WORKSPACE/tools/performance_smoke.R"
+            rm -rf "$libdir"
+          }
+
+          baseline_ref="HEAD^"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            baseline_ref="${{ github.event.pull_request.base.sha }}"
+            git fetch --depth=1 origin "$baseline_ref"
+          fi
+          if ! git rev-parse --verify "$baseline_ref^{commit}" >/dev/null 2>&1; then
+            echo "No baseline commit available for performance comparison; running current smoke only."
+            run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+            exit 0
+          fi
+
+          baseline_dir="$(mktemp -d)"
+          git worktree add --detach "$baseline_dir" "$baseline_ref"
+          trap 'git worktree remove --force "$baseline_dir" 2>/dev/null || true; rm -rf "$baseline_dir"' EXIT
+
+          run_perf "$baseline_dir" "$GITHUB_WORKSPACE/performance-baseline.csv" false
+          run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+
+          RDUCKS_PERF_COMPARE_OUTPUT="$GITHUB_WORKSPACE/performance-compare.csv" \
+          Rscript tools/performance_compare.R performance-baseline.csv performance-current.csv
+
+      - name: Upload performance smoke results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-smoke-results
+          path: |
+            performance-baseline.csv
+            performance-current.csv
+            performance-compare.csv
+          if-no-files-found: ignore
