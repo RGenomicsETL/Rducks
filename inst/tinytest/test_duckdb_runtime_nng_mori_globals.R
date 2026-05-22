@@ -21,6 +21,7 @@ local({
   rducks_enable(con, threads = "single")
   plan <- rducks_execution_plan(
     "arrow_ipc", "multiprocess_parallel",
+    ipc_globals = "shared_offsets",
     ipc_globals_share = "mori",
     ipc_workers = 1L,
     ipc_timeout = 5
