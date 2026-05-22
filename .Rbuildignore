@@ -12,6 +12,12 @@
 ^TODO\.md$
 ^AGENTS\.md$
 ^Rducks_review_patches\.patch$
+^Rducks_.*\.patch$
+^Rducks_query_stream_.*\.patch$
+^review[0-9]*\.md$
+^cran-readiness\.md$
+^optim\.txt$
+^REVIEW_FOLLOWUP_CHECKLIST\.md$
 ^claude_review\.md$
 ^scripts$
 ^inst/rducks_extension/build$
