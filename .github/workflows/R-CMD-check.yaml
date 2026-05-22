@@ -61,3 +61,11 @@ jobs:
         with:
           upload-snapshots: true
           build_args: 'c("--no-manual","--compact-vignettes=gs+qpdf")'
+
+      - name: Show tinytest output on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo ::group::Show tinytest output
+          find check -name 'tinytest.Rout*' -exec cat '{}' \; || true
+          echo ::endgroup::

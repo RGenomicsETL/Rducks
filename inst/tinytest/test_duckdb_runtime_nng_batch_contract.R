@@ -45,6 +45,36 @@ rducks_test_batch_contract_transport <- function() {
   if (preferred %in% transports) preferred else transports[[1L]]
 }
 
+# Cleanup must stay bounded: fake workers intentionally exercise timeout paths,
+# and an unconditional collect_mirai() can block forever if the stop request was
+# the operation that failed.
+rducks_test_mirai_unresolved <- function(task) {
+  tryCatch(mirai::unresolved(task), error = function(e) TRUE)
+}
+
+rducks_test_stop_fake_worker <- function(endpoint, task, compute, cleanup_paths = character(),
+                                        stop_timeout = 2, wait_timeout = 2) {
+  try(Rducks:::rducks_nng_transact(
+    endpoint,
+    Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_stop),
+    timeout = stop_timeout,
+    retries = 5L
+  ), silent = TRUE)
+
+  deadline <- unname(proc.time()[["elapsed"]]) + wait_timeout
+  while (isTRUE(rducks_test_mirai_unresolved(task)) &&
+         unname(proc.time()[["elapsed"]]) < deadline) {
+    Sys.sleep(0.02)
+  }
+  if (!isTRUE(rducks_test_mirai_unresolved(task))) {
+    try(mirai::collect_mirai(task), silent = TRUE)
+  }
+  try(mirai::daemons(0L, .compute = compute), silent = TRUE)
+  if (is.null(cleanup_paths)) cleanup_paths <- character()
+  unlink(cleanup_paths, force = TRUE)
+  invisible(NULL)
+}
+
 rducks_fake_multibatch_worker <- function(endpoint) {
   suppressPackageStartupMessages({
     library(Rducks)
@@ -118,16 +148,12 @@ local({
     .compute = compute
   )
   on.exit({
-    try(Rducks:::rducks_nng_transact(
-      endpoint,
-      Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_stop),
-      timeout = 5,
-      retries = 5L
-    ), silent = TRUE)
-    try(mirai::collect_mirai(task), silent = TRUE)
-    try(mirai::daemons(0L, .compute = compute), silent = TRUE)
-    cleanup_paths <- if (is.null(bundle$cleanup_paths)) character() else bundle$cleanup_paths
-    unlink(cleanup_paths, force = TRUE)
+    rducks_test_stop_fake_worker(
+      endpoint, task, compute,
+      cleanup_paths = bundle$cleanup_paths,
+      stop_timeout = 5,
+      wait_timeout = 2
+    )
   }, add = TRUE)
   invisible(Rducks:::rducks_nng_transact(
     endpoint,
@@ -180,16 +206,12 @@ local({
     .compute = compute
   )
   on.exit({
-    try(Rducks:::rducks_nng_transact(
-      endpoint,
-      Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_stop),
-      timeout = 2,
-      retries = 5L
-    ), silent = TRUE)
-    try(mirai::collect_mirai(task), silent = TRUE)
-    try(mirai::daemons(0L, .compute = compute), silent = TRUE)
-    cleanup_paths <- if (is.null(bundle$cleanup_paths)) character() else bundle$cleanup_paths
-    unlink(cleanup_paths, force = TRUE)
+    rducks_test_stop_fake_worker(
+      endpoint, task, compute,
+      cleanup_paths = bundle$cleanup_paths,
+      stop_timeout = 2,
+      wait_timeout = 2
+    )
   }, add = TRUE)
   invisible(Rducks:::rducks_nng_transact(
     endpoint,
