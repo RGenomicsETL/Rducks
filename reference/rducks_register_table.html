@@ -113,7 +113,7 @@ functions have their own bind/init/scan state, bind-time dynamic schemas, and
 positional SQL arguments fixed by the R function's finite formal argument
 count. Variadic <code>...</code> arguments are not supported. If you already have a
 static R data frame to expose as a virtual table, prefer
-<code><a href="https://rdrr.io/pkg/duckdb/man/duckdb_register.html" class="external-link">duckdb::duckdb_register()</a></code>; DuckDB's R package routes that through its native
+<code><a href="https://r.duckdb.org/reference/duckdb_register.html" class="external-link">duckdb::duckdb_register()</a></code>; DuckDB's R package routes that through its native
 data-frame scan path. Use <code>rducks_enable(con, threads = "single")</code> or
 otherwise set <code>external_threads=1</code> plus <code>PRAGMA threads=1</code> before registration
 and execution; worker-thread calls into R are rejected.</p>
@@ -122,7 +122,7 @@ and execution; worker-thread calls into R are rejected.</p>
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/duckdb/man/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">db</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">rducks_register_table</span><span class="op">(</span><span class="va">db</span>, <span class="st">"my_table"</span>, <span class="kw">function</span><span class="op">(</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> &lt;rducks_table_registration&gt;</span>

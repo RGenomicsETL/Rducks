@@ -62,7 +62,7 @@ schemas, and positional SQL arguments fixed by the R function's finite
 formal argument count. Variadic `...` arguments are not supported. If
 you already have a static R data frame to expose as a virtual table,
 prefer
-[`duckdb::duckdb_register()`](https://rdrr.io/pkg/duckdb/man/duckdb_register.html);
+[`duckdb::duckdb_register()`](https://r.duckdb.org/reference/duckdb_register.html);
 DuckDB's R package routes that through its native data-frame scan path.
 Use `rducks_enable(con, threads = "single")` or otherwise set
 `external_threads=1` plus `PRAGMA threads=1` before registration and
