@@ -120,6 +120,25 @@ rducks_nng_elapsed <- function() {
   unname(proc.time()[["elapsed"]])
 }
 
+rducks_nng_collect_mirai <- function(task, timeout, what) {
+  timeout <- rducks_nng_check_seconds(timeout, paste0(what, " timeout"),
+                                      default = rducks_nng_defaults$startup_timeout)
+  deadline <- rducks_nng_elapsed() + timeout
+  repeat {
+    unresolved <- tryCatch(mirai::unresolved(task), error = function(e) FALSE)
+    if (!isTRUE(unresolved)) break
+    remaining <- deadline - rducks_nng_elapsed()
+    if (remaining <= 0) {
+      stop(what, " timed out after ", format(timeout, scientific = FALSE, trim = TRUE),
+           " seconds", call. = FALSE)
+    }
+    Sys.sleep(min(0.01, remaining))
+  }
+  value <- mirai::collect_mirai(task)
+  if (mirai::is_mirai_error(value)) stop(as.character(value), call. = FALSE)
+  value
+}
+
 rducks_nng_error_label <- function(value) {
   code <- suppressWarnings(as.integer(value))
   msg <- tryCatch(nanonext::nng_error(code), error = function(e) "")
@@ -470,9 +489,9 @@ rducks_nng_backend_mirai <- function(compute, workers, transport) {
       last_record <- NULL
       start_once <- function() {
         mirai::daemons(workers, dispatcher = FALSE, .compute = compute)
+        setup_timeout <- rducks_nng_plan_timeout(plan, rducks_nng_defaults$startup_timeout)
         setup <- mirai::everywhere({ library(Rducks); TRUE }, .compute = compute)
-        setup_value <- mirai::collect_mirai(setup)
-        if (mirai::is_mirai_error(setup_value)) stop(as.character(setup_value), call. = FALSE)
+        rducks_nng_collect_mirai(setup, setup_timeout, "Rducks NNG worker setup")
         bundle <- rducks_nng_endpoint_bundle(workers, transport)
         if (length(bundle$endpoints) != workers) {
           stop(
