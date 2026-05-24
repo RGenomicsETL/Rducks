@@ -141,10 +141,6 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
-if [ "${WASM_BUILD}" = "yes" ]; then
-  echo "ERROR: the Rducks DuckDB extension requires vendored NNG; WebAssembly builds are not supported by this native extension"
-  exit 1
-fi
 if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ] || \
    [ ! -f "${VENDOR_MBEDTLS_DIR}/include/mbedtls/version.h" ]; then
   echo "ERROR: vendored NNG/Mbed TLS sources are missing. Run tools/vendor_nng_mbedtls.R."
@@ -158,25 +154,32 @@ fi
 RDUCKS_CMAKE=`command -v cmake`
 
 VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
+VENDOR_NNG_CMAKE_ARGS=""
+if [ "${WASM_BUILD}" = "yes" ]; then
+  VENDOR_NNG_CMAKE_ARGS="-DNNG_HAVE_ARC4RANDOM=OFF -DNNG_HAVE_GETRANDOM=OFF"
+fi
 "${RDUCKS_CMAKE}" -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER="${CC}"
+  -DCMAKE_C_COMPILER="${CC}" \
+  ${VENDOR_NNG_CMAKE_ARGS}
 "${RDUCKS_CMAKE}" --build "${VENDOR_BUILD_DIR}" --target nng --parallel
 VENDOR_NNG_CPPFLAGS="-I${VENDOR_NNG_DIR}/include"
 VENDOR_NNG_LINK_FLAGS=""
 VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a"
-case "${OS_NAME}" in
-  Linux)
-    VENDOR_NNG_LINK_FLAGS="-Wl,--exclude-libs,ALL"
-    VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread -latomic"
-    ;;
-  Darwin)
-    VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread"
-    ;;
-  *)
-    VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread"
-    ;;
-esac
+if [ "${WASM_BUILD}" != "yes" ]; then
+  case "${OS_NAME}" in
+    Linux)
+      VENDOR_NNG_LINK_FLAGS="-Wl,--exclude-libs,ALL"
+      VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread -latomic"
+      ;;
+    Darwin)
+      VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread"
+      ;;
+    *)
+      VENDOR_NNG_LIBS="${VENDOR_NNG_LIBS} -lpthread"
+      ;;
+  esac
+fi
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2 -fPIC"
 if [ "${OS_NAME}" != "Windows_NT" ]; then

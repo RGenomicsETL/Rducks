@@ -88,6 +88,26 @@ rducks_dynamic_value_string <- function(x) {
   paste(as.character(x), collapse = ",")
 }
 
+# Keep managed IPC worker serialization focused on the actual UDF dependency
+# graph. Without this, globals auto-discovery captures the whole test-file
+# environment, including live DuckDB connection state from prior plan checks.
+rducks_dynamic_helper_env <- new.env(parent = baseenv())
+for (nm in c(
+  "rducks_dynamic_nested_summary_one",
+  "rducks_dynamic_nested_summary_vec",
+  "rducks_dynamic_null_probe",
+  "rducks_dynamic_delim_struct_summary",
+  "rducks_dynamic_value_string"
+)) {
+  assign(nm, get(nm), envir = rducks_dynamic_helper_env)
+}
+for (nm in ls(rducks_dynamic_helper_env, all.names = TRUE)) {
+  fn <- get(nm, envir = rducks_dynamic_helper_env)
+  environment(fn) <- rducks_dynamic_helper_env
+  assign(nm, fn, envir = rducks_dynamic_helper_env)
+  assign(nm, fn)
+}
+
 rducks_dynamic_exotic_cases <- list(
   uuid = list(
     type = UUID,
@@ -174,7 +194,8 @@ local({
       # real managed NNG/Arrow IPC provider path; transport-specific TCP/IPC/ws
       # coverage lives in test_zzzy_duckdb_runtime_nng_transports.R.
       ipc_transport = rducks_dynamic_consistency_ipc_transport(),
-      ipc_timeout = 30
+      ipc_timeout = 30,
+      ipc_globals = FALSE
     )
   )
 
