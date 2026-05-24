@@ -481,6 +481,24 @@ static void rducks_queue_self_test_scalar(duckdb_function_info info, duckdb_data
     }
 }
 
+static void rducks_queue_self_test_cancel_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
+    idx_t n = duckdb_data_chunk_get_size(input);
+    uint64_t *iterations = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 0));
+    uint64_t *cancel_after = (uint64_t *)duckdb_vector_get_data(duckdb_data_chunk_get_vector(input, 1));
+    uint64_t *out = (uint64_t *)duckdb_vector_get_data(output);
+    for (idx_t i = 0; i < n; i++) {
+        char err[RDUCKS_ERROR_BUFFER_SIZE];
+        uint64_t value = 0;
+        err[0] = '\0';
+        if (!rducks_queue_self_test_cancel_after(runtime, iterations[i], cancel_after[i], &value, err, sizeof(err))) {
+            duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks queue self-test cancellation failed");
+            return;
+        }
+        out[i] = value;
+    }
+}
+
 static bool rducks_register_unary_ubigint_typed_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
                                                         const char *name, duckdb_type return_type,
                                                         duckdb_scalar_function_t callback) {
@@ -510,6 +528,32 @@ static bool rducks_register_unary_ubigint_typed_surface(duckdb_connection con, r
 static bool rducks_register_unary_ubigint_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
                                                   const char *name, duckdb_scalar_function_t callback) {
     return rducks_register_unary_ubigint_typed_surface(con, runtime, name, DUCKDB_TYPE_UBIGINT, callback);
+}
+
+static bool rducks_register_binary_ubigint_surface(duckdb_connection con, rducks_runtime_entry_t *runtime,
+                                                   const char *name, duckdb_scalar_function_t callback) {
+    duckdb_scalar_function fn = duckdb_create_scalar_function();
+    duckdb_logical_type ubigint_type = duckdb_create_logical_type(DUCKDB_TYPE_UBIGINT);
+    duckdb_logical_type out_type = duckdb_create_logical_type(DUCKDB_TYPE_UBIGINT);
+    duckdb_state rc;
+    if (!fn || !ubigint_type || !out_type) {
+        if (fn) duckdb_destroy_scalar_function(&fn);
+        if (ubigint_type) duckdb_destroy_logical_type(&ubigint_type);
+        if (out_type) duckdb_destroy_logical_type(&out_type);
+        return false;
+    }
+    duckdb_scalar_function_set_name(fn, name);
+    duckdb_scalar_function_add_parameter(fn, ubigint_type);
+    duckdb_scalar_function_add_parameter(fn, ubigint_type);
+    duckdb_scalar_function_set_return_type(fn, out_type);
+    duckdb_scalar_function_set_volatile(fn);
+    duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
+    duckdb_scalar_function_set_function(fn, callback);
+    rc = duckdb_register_scalar_function(con, fn);
+    duckdb_destroy_scalar_function(&fn);
+    duckdb_destroy_logical_type(&ubigint_type);
+    duckdb_destroy_logical_type(&out_type);
+    return rc == DuckDBSuccess;
 }
 
 static void rducks_queue_pending_timeout_ms_scalar(duckdb_function_info info, duckdb_data_chunk input,
@@ -590,6 +634,8 @@ static bool rducks_register_dev_diagnostic_surfaces(duckdb_connection con, rduck
            rducks_register_parallel_thread_probe(con, runtime) &&
            rducks_register_unary_ubigint_surface(con, runtime, "rducks_queue_self_test",
                                                  rducks_queue_self_test_scalar) &&
+           rducks_register_binary_ubigint_surface(con, runtime, "rducks_queue_self_test_cancel",
+                                                  rducks_queue_self_test_cancel_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
                                                        DUCKDB_TYPE_BOOLEAN, rducks_thread_is_main_scalar) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_enabled", DUCKDB_TYPE_BOOLEAN,

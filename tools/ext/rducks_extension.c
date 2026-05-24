@@ -550,6 +550,9 @@ static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
                                   uint64_t *out_value, char *err_msg, size_t err_cap);
+static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, uint64_t iterations,
+                                               uint64_t cancel_after,
+                                               uint64_t *out_value, char *err_msg, size_t err_cap);
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */

@@ -394,6 +394,26 @@ rducks_inproc_self_test <- function(con, n = 1000L) {
   )$n[[1L]]
 }
 
+rducks_inproc_cancel_self_test <- function(con, n = 1000L, cancel_after = 1L) {
+  rducks_assert_duckdb_connection(con)
+  if (!rducks_dev_surfaces_enabled()) {
+    stop(
+      "rducks_inproc_cancel_self_test() requires RDUCKS_DEV_SURFACES=true before rducks_enable()",
+      call. = FALSE
+    )
+  }
+  n <- rducks_validate_thread_count(n, "n")
+  cancel_after <- rducks_validate_nonnegative_count(cancel_after, "cancel_after")
+  DBI::dbGetQuery(
+    con,
+    sprintf(
+      "SELECT rducks_queue_self_test_cancel(%s::UBIGINT, %s::UBIGINT) AS n",
+      as.character(n),
+      as.character(cancel_after)
+    )
+  )$n[[1L]]
+}
+
 rducks_dev_surfaces_enabled <- function() {
   tolower(Sys.getenv("RDUCKS_DEV_SURFACES", "")) %in% c("1", "true", "yes", "on")
 }
@@ -414,6 +434,14 @@ rducks_validate_thread_count <- function(x, name) {
   if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x < 1 ||
       x != floor(x) || x > .Machine$integer.max) {
     stop(name, " must be a positive integer scalar or NULL", call. = FALSE)
+  }
+  as.integer(x)
+}
+
+rducks_validate_nonnegative_count <- function(x, name) {
+  if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) || x < 0 ||
+      x != floor(x) || x > .Machine$integer.max) {
+    stop(name, " must be a non-negative integer scalar", call. = FALSE)
   }
   as.integer(x)
 }

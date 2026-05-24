@@ -723,8 +723,9 @@ static void *rducks_queue_self_test_worker(void *arg) {
 #endif
 }
 
-static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
-                                  uint64_t *out_value, char *err_msg, size_t err_cap) {
+static int rducks_queue_self_test_impl(rducks_runtime_entry_t *runtime, uint64_t iterations,
+                                       int deterministic_cancel, uint64_t cancel_after,
+                                       uint64_t *out_value, char *err_msg, size_t err_cap) {
     uint64_t i;
     if (!runtime || !out_value) {
         rducks_format_error_message(err_msg, err_cap, "Rducks queue self-test runtime is not initialized");
@@ -755,12 +756,18 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
             return 0;
         }
 #endif
+        if (deterministic_cancel && i >= cancel_after) {
+            rducks_queue_cancel_request(runtime);
+            interrupted = 1;
+        }
         while (!atomic_load_explicit(&state.worker_done, memory_order_acquire) && spins < RDUCKS_QUEUE_POLL_MAX_SPINS) {
-            if (!rducks_queue_maybe_check_interrupt_on_main(runtime, &last_interrupt_check_us, err_msg, err_cap)) {
+            if (!interrupted && !rducks_queue_maybe_check_interrupt_on_main(runtime, &last_interrupt_check_us, err_msg, err_cap)) {
                 interrupted = 1;
                 break;
             }
-            (void)rducks_queue_drain_self_test(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
+            if (!interrupted) {
+                (void)rducks_queue_drain_self_test(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS);
+            }
             if (!atomic_load_explicit(&state.worker_done, memory_order_acquire)) {
                 rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_POLL_WAIT_US);
             }
@@ -787,4 +794,15 @@ static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iter
         *out_value += state.value;
     }
     return 1;
+}
+
+static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
+                                  uint64_t *out_value, char *err_msg, size_t err_cap) {
+    return rducks_queue_self_test_impl(runtime, iterations, 0, 0U, out_value, err_msg, err_cap);
+}
+
+static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, uint64_t iterations,
+                                               uint64_t cancel_after,
+                                               uint64_t *out_value, char *err_msg, size_t err_cap) {
+    return rducks_queue_self_test_impl(runtime, iterations, 1, cancel_after, out_value, err_msg, err_cap);
 }
