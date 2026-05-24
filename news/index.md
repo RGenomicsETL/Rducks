@@ -72,10 +72,9 @@
   optional cardinality metadata, and projection-aware output copying.
 - Added vendored NNG/Mbed TLS source management for the native
   worker-provider foundation. `tools/vendor_nng_mbedtls.R` pins and
-  refreshes the vendored sources, source builds can statically link a
-  hidden NNG client shim when CMake is available, and dev/test SQL
-  diagnostics expose `rducks_nng_enabled()`, `rducks_nng_version()`, and
-  `rducks_nng_self_test()`.
+  refreshes the vendored sources, source builds statically link a hidden
+  NNG client shim, and dev/test SQL diagnostics expose
+  `rducks_nng_version()` and `rducks_nng_self_test()`.
 - Added
   [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
   as a connection-bound R-side streaming query object with explicit
