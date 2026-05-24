@@ -54,6 +54,11 @@ jobs:
     needs: source-package
     runs-on: windows-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        r-version: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.r_version) || '["release","devel"]') }}
+    name: Windows ${{ matrix.r-version }}
     env:
       UNIVERSE_NAME: sounkou-bioinfo
       MY_UNIVERSE: https://sounkou-bioinfo.r-universe.dev
@@ -63,7 +68,7 @@ jobs:
     steps:
       - uses: r-universe-org/actions/setup-r@v12
         with:
-          r-version: ${{ github.event.inputs.r_version || 'release' }}
+          r-version: ${{ matrix.r-version }}
 
       - uses: r-universe-org/actions/windows-prep@v12
 
@@ -112,7 +117,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: runiverse-windows-check-artifacts
+          name: runiverse-windows-${{ matrix.r-version }}-check-artifacts
           path: |
             *.log
             *.Rcheck
