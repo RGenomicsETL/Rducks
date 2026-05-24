@@ -244,6 +244,7 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
         char *eval_mode_spec = rducks_copy_duckdb_string(&eval_mode_specs[i]);
         char err[RDUCKS_ERROR_BUFFER_SIZE];
         SEXP eval_ref = R_NilValue;
+        int eval_ref_protected = 0;
         err[0] = '\0';
         if (!name || !evaluator_id || !evaluator_token || !args_spec || !return_spec ||
             !null_handling_spec || !exception_handling_spec || !eval_mode_spec) {
@@ -271,8 +272,14 @@ static void rducks_register_scalar_scalar(duckdb_function_info info, duckdb_data
             duckdb_scalar_function_set_error(info, err[0] ? err : "invalid Rducks evaluator handle");
             return;
         }
+        PROTECT(eval_ref);
+        eval_ref_protected = 1;
         out[i] = rducks_register_r_scalar(runtime, name, eval_ref, args_spec, return_spec, null_handling_spec,
                                           exception_handling_spec, side_effects_values[i], eval_mode_spec, err, sizeof(err));
+        if (eval_ref_protected) {
+            UNPROTECT(1);
+            eval_ref_protected = 0;
+        }
         free(name);
         free(evaluator_id);
         free(evaluator_token);
