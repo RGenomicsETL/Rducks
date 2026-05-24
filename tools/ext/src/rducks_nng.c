@@ -1,6 +1,5 @@
 /* Included by ../rducks_extension.c. */
 
-#ifdef RDUCKS_WITH_NNG
 #include <nng/nng.h>
 #include <nng/protocol/pair0/pair.h>
 #include <nng/protocol/reqrep0/req.h>
@@ -9,25 +8,11 @@
 #include <nng/protocol/pipeline0/pull.h>
 #include <nng/protocol/pubsub0/pub.h>
 #include <nng/protocol/pubsub0/sub.h>
-#endif
-
-static int rducks_nng_enabled_native(void) {
-#ifdef RDUCKS_WITH_NNG
-    return 1;
-#else
-    return 0;
-#endif
-}
 
 static const char *rducks_nng_version_native(void) {
-#ifdef RDUCKS_WITH_NNG
     return nng_version();
-#else
-    return "disabled";
-#endif
 }
 
-#ifdef RDUCKS_WITH_NNG
 #ifdef _WIN32
 typedef struct rducks_nng_mutex {
     CRITICAL_SECTION cs;
@@ -745,83 +730,6 @@ static int rducks_nng_pair_self_test(char *err_msg, size_t err_cap) {
     if (ok) (void)rducks_nng_global_quiesce(NULL, 0);
     return ok;
 }
-#else
-struct rducks_nng_client_pool {
-    int disabled;
-};
-
-static void rducks_nng_response_msg_free(void *response_msg) {
-    (void)response_msg;
-}
-
-static rducks_nng_client_pool_t *rducks_nng_client_pool_new(char **endpoints, size_t endpoint_count,
-                                                            int timeout_ms, uint64_t max_pending,
-                                                            char *err_msg, size_t err_cap) {
-    (void)endpoints;
-    (void)endpoint_count;
-    (void)timeout_ms;
-    (void)max_pending;
-    if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return NULL;
-}
-
-static void rducks_nng_client_pool_destroy(rducks_nng_client_pool_t **pool_ptr) {
-    if (pool_ptr) *pool_ptr = NULL;
-}
-
-static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap) {
-    (void)err_msg;
-    (void)err_cap;
-    return 1;
-}
-
-static int rducks_nng_pair_self_test(char *err_msg, size_t err_cap) {
-    if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return 0;
-}
-
-static int rducks_nng_pool_ref_self_test_native(uint64_t worker_count, char *err_msg, size_t err_cap) {
-    (void)worker_count;
-    if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return 0;
-}
-
-static int rducks_nng_global_quiesce_allow_open(uint64_t allowed_open_pools,
-                                                char *err_msg, size_t err_cap) {
-    (void)allowed_open_pools;
-    (void)err_msg;
-    (void)err_cap;
-    return 1;
-}
-
-static int rducks_nng_client_pool_acquire(rducks_nng_client_pool_t *pool, char *err_msg, size_t err_cap) {
-    (void)pool;
-    if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return 0;
-}
-
-static void rducks_nng_client_pool_release(rducks_nng_client_pool_t *pool) {
-    (void)pool;
-}
-
-static int rducks_nng_client_pool_request_reply_borrowed_acquired(rducks_nng_client_pool_t *pool,
-                                                                  const uint8_t *request, size_t request_size,
-                                                                  void **response_msg_out,
-                                                                  const uint8_t **response_body_out,
-                                                                  size_t *response_size_out,
-                                                                  char *err_msg, size_t err_cap) {
-    (void)pool;
-    (void)request;
-    (void)request_size;
-    if (response_msg_out) *response_msg_out = NULL;
-    if (response_body_out) *response_body_out = NULL;
-    if (response_size_out) *response_size_out = 0;
-    if (err_msg && err_cap) rducks_format_error_message(err_msg, err_cap, "vendored NNG support was not compiled into this Rducks extension");
-    return 0;
-}
-
-#endif
-
 static rducks_nng_client_pool_t **rducks_nng_runtime_detach_local_pools(rducks_runtime_entry_t *runtime,
                                                                  uint64_t *external_pools_out,
                                                                  size_t *pool_count_out) {
@@ -876,14 +784,6 @@ static uint64_t rducks_nng_runtime_close_local_pools(rducks_runtime_entry_t *run
     return external_pools;
 }
 
-static void rducks_nng_enabled_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    (void)info;
-    idx_t n = duckdb_data_chunk_get_size(input);
-    bool *out = (bool *)duckdb_vector_get_data(output);
-    bool enabled = rducks_nng_enabled_native() ? true : false;
-    for (idx_t i = 0; i < n; i++) out[i] = enabled;
-}
-
 static void rducks_nng_version_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
     (void)info;
     idx_t n = duckdb_data_chunk_get_size(input);
@@ -897,10 +797,6 @@ static void rducks_nng_self_test_scalar(duckdb_function_info info, duckdb_data_c
     int ok;
     char err[RDUCKS_ERROR_BUFFER_SIZE];
     err[0] = '\0';
-    if (!rducks_nng_enabled_native()) {
-        for (idx_t i = 0; i < n; i++) out[i] = false;
-        return;
-    }
     ok = rducks_nng_pair_self_test(err, sizeof(err));
     if (!ok) {
         duckdb_scalar_function_set_error(info, err[0] ? err : "Rducks vendored NNG self-test failed");

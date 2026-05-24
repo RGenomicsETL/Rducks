@@ -77,8 +77,6 @@ local({
   expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
   expect_equal(Rducks:::rducks_connection_threads(con), 2L)
 
-  nng_enabled <- DBI::dbGetQuery(con, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
-  expect_true(nng_enabled)
   rducks_set_execution_plan(con, ipc_plan, threads = 1L, external_threads = 1L)
   reg_ipc <- rducks_register_scalar_udf(
     con, "plan_ipc_vec", function(x) x + 1L,

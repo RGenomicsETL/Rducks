@@ -14,11 +14,8 @@ local({
   }, add = TRUE)
   rducks_enable(con, threads = "single")
 
-  enabled <- DBI::dbGetQuery(con, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
   version <- DBI::dbGetQuery(con, "SELECT rducks_nng_version() AS nng_version")$nng_version[[1L]]
 
-  expect_true(is.logical(enabled))
-  expect_true(enabled)
   expect_true(is.character(version))
   expect_true(nzchar(version))
   expect_true(grepl("^1\\.", version))

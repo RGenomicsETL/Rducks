@@ -19,12 +19,12 @@ Description: R package and 'DuckDB' extension bridge for registering R
     designed around a loaded 'DuckDB' extension, declarative type descriptors,
     'nanoarrow' marshalling over 'Arrow C Data', and a calling-R-thread
     execution discipline for safe interaction with R from 'DuckDB' execution.
-    An optional Arrow IPC (inter-process communication) transport uses 'NNG'
+    Arrow IPC (inter-process communication) worker transport uses vendored 'NNG'
     (nanomsg next generation) for worker-process communication.
 License: GPL (>= 3)
 Copyright: See inst/LICENSE.note for bundled third-party copyright and
     licensing details.
-SystemRequirements: cmake for optional vendored NNG/Mbed TLS support
+SystemRequirements: cmake for building vendored NNG/Mbed TLS support
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

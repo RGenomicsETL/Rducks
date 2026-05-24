@@ -13,6 +13,7 @@ RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
 FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
 VENDOR_DIR="${EXT_SRC_DIR}/third_party"
 VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
+VENDOR_MBEDTLS_DIR="${VENDOR_DIR}/mbedtls"
 VENDOR_NANOARROW_DIR="${VENDOR_DIR}/na"
 
 if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
@@ -33,14 +34,6 @@ fi
 
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
 RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
-RDUCKS_WITH_NNG="${RDUCKS_WITH_NNG:-1}"
-case "${RDUCKS_WITH_NNG}" in
-  0|1) ;;
-  *)
-    echo "ERROR: RDUCKS_WITH_NNG must be 0 or 1 (got '${RDUCKS_WITH_NNG}')"
-    exit 1
-    ;;
-esac
 if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
   echo "ERROR: USE_UNSTABLE_C_API must be 0 or 1 (got '${USE_UNSTABLE_C_API}')"
   exit 1
@@ -122,25 +115,25 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
-VENDOR_NNG_CPPFLAGS=""
-VENDOR_NNG_LIBS=""
-if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
-  if ! command -v cmake >/dev/null 2>&1; then
-    echo "ERROR: RDUCKS_WITH_NNG=1 requires cmake to build vendored NNG"
-    exit 1
-  fi
-  if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ]; then
-    echo "ERROR: vendored NNG sources are missing. Run tools/vendor_nng_mbedtls.R."
-    exit 1
-  fi
-  VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
-  cmake -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER="${CC}"
-  cmake --build "${VENDOR_BUILD_DIR}" --target nng --parallel
-  VENDOR_NNG_CPPFLAGS="-DRDUCKS_WITH_NNG=1 -DNNG_STATIC_LIB -I${VENDOR_NNG_DIR}/include"
-  VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
+if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ] || \
+   [ ! -f "${VENDOR_MBEDTLS_DIR}/include/mbedtls/version.h" ]; then
+  echo "ERROR: vendored NNG/Mbed TLS sources are missing. Run tools/vendor_nng_mbedtls.R."
+  exit 1
 fi
+
+if ! command -v cmake >/dev/null 2>&1; then
+  echo "ERROR: cmake is required to build the vendored NNG library"
+  exit 1
+fi
+RDUCKS_CMAKE=`command -v cmake`
+
+VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
+"${RDUCKS_CMAKE}" -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="${CC}"
+"${RDUCKS_CMAKE}" --build "${VENDOR_BUILD_DIR}" --target nng --parallel
+VENDOR_NNG_CPPFLAGS="-DNNG_STATIC_LIB -I${VENDOR_NNG_DIR}/include"
+VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
 CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
@@ -149,11 +142,10 @@ SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
 echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
-echo "Vendored NNG support: ${RDUCKS_WITH_NNG}"
+echo "Vendored NNG support: 1"
+echo "CMake: ${RDUCKS_CMAKE}"
 ${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LD_FLAGS}
-if [ "${RDUCKS_WITH_NNG}" = "1" ]; then
-  rm -rf "${VENDOR_BUILD_DIR}"
-fi
+rm -rf "${VENDOR_BUILD_DIR}"
 
 echo "Appending DuckDB extension metadata..."
 "${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \

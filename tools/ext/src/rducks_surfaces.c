@@ -638,8 +638,6 @@ static bool rducks_register_dev_diagnostic_surfaces(duckdb_connection con, rduck
                                                   rducks_queue_self_test_cancel_scalar) &&
            rducks_register_unary_ubigint_typed_surface(con, runtime, "rducks_thread_is_main",
                                                        DUCKDB_TYPE_BOOLEAN, rducks_thread_is_main_scalar) &&
-           rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_enabled", DUCKDB_TYPE_BOOLEAN,
-                                           rducks_nng_enabled_scalar, false) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_version", DUCKDB_TYPE_VARCHAR,
                                            rducks_nng_version_scalar, false) &&
            rducks_register_noarg_scalar_ex(con, runtime, "rducks_nng_self_test", DUCKDB_TYPE_BOOLEAN,

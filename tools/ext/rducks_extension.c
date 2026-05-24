@@ -546,7 +546,6 @@ static int rducks_nng_client_pool_request_reply_borrowed_acquired(rducks_nng_cli
                                                                   size_t *response_size_out,
                                                                   char *err_msg, size_t err_cap);
 static void rducks_nng_response_msg_free(void *response_msg);
-static int rducks_nng_global_quiesce(char *err_msg, size_t err_cap);
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests);
 static int rducks_queue_self_test(rducks_runtime_entry_t *runtime, uint64_t iterations,
                                   uint64_t *out_value, char *err_msg, size_t err_cap);

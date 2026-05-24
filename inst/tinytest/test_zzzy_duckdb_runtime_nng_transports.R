@@ -15,8 +15,6 @@ local({
   con0 <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con0, shutdown = TRUE), add = TRUE)
   rducks_enable(con0)
-  enabled <- DBI::dbGetQuery(con0, "SELECT rducks_nng_enabled() AS enabled")$enabled[[1L]]
-  expect_true(enabled)
   expect_true(DBI::dbGetQuery(con0, "SELECT rducks_nng_self_test() AS ok")$ok[[1L]])
   rducks_release(con0)
   rducks_nng_transport_trace("diagnostic-connect:done")
