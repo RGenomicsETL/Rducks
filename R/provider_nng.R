@@ -470,7 +470,10 @@ rducks_nng_backend_external <- function(endpoints, transport) {
 
 rducks_nng_backend_mirai <- function(compute, workers, transport) {
   cleanup_record <- function(record) {
-    try(mirai::daemons(0L, .compute = compute), silent = TRUE)
+    # Ask mirai daemons to stop explicitly before reaping them. On Windows,
+    # relying on reap-only shutdown can leave idle daemon R processes holding
+    # inherited R CMD check handles open in some CI hosts.
+    try(mirai::daemons(NULL, .compute = compute), silent = TRUE)
     unlink(record$cleanup_paths %||% character(), force = TRUE)
     invisible(NULL)
   }

@@ -69,7 +69,7 @@ rducks_test_stop_fake_worker <- function(endpoint, task, compute, cleanup_paths 
   if (!isTRUE(rducks_test_mirai_unresolved(task))) {
     try(mirai::collect_mirai(task), silent = TRUE)
   }
-  try(mirai::daemons(0L, .compute = compute), silent = TRUE)
+  try(mirai::daemons(NULL, .compute = compute), silent = TRUE)
   if (is.null(cleanup_paths)) cleanup_paths <- character()
   unlink(cleanup_paths, force = TRUE)
   invisible(NULL)
