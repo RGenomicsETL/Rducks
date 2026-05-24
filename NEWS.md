@@ -1,5 +1,16 @@
 # Rducks 0.1.0
 
+- Fixed a Windows R-devel check hang in the dev/test in-process queue
+  cancellation coverage. The test previously used R's elapsed-time limit as a
+  synthetic interrupt while execution was inside native queue-draining code;
+  that interrupt is not delivered reliably on Windows while native code is
+  running. Rducks now exercises the same queue cancel-generation cleanup path
+  with a deterministic dev-only cancellation diagnostic, verifies that the
+  connection and queue remain usable afterward, and keeps pending/running queue
+  counters at zero after cancellation.
+- Protected the transient evaluator object during native scalar-UDF
+  registration so R-devel garbage collection cannot reclaim it before the
+  extension preserves it in DuckDB metadata.
 - Added first-class `GEOMETRY` and `VARIANT` type descriptors. `GEOMETRY`
   crosses the R boundary as WKB `raw` bytes; `VARIANT` is exposed as DuckDB's
   typed storage struct wrapped by `rducks_variant`, with SQL-side DuckDB
