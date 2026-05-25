@@ -43,6 +43,7 @@
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.1" id="rducks-011">Rducks 0.1.1<a class="anchor" aria-label="anchor" href="#rducks-011"></a></h2>
 <ul><li>Improved configure-time CMake discovery for required vendored NNG builds on macOS builders by honoring <code>CMAKE</code>, using <code>cmake</code> from <code>PATH</code>, and probing CRAN/macbuilder’s <code>/Applications/CMake.app/Contents/bin/cmake</code> location while keeping missing CMake as a hard configuration error.</li>
+<li>Cleaned up macOS source-check diagnostics by removing an unused native Arrow helper, suppressing private-extension debug-map noise from vendored static archives, and making NNG batch-contract tests use local IPC fake workers instead of random loopback TCP ports in sandboxed check environments.</li>
 </ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.0" id="rducks-010">Rducks 0.1.0<a class="anchor" aria-label="anchor" href="#rducks-010"></a></h2>
