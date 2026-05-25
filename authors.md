@@ -21,7 +21,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/sounkou-bioinfo/Rducks/blob/main/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/sounkou-bioinfo/Rducks/blob/v0.1.0/DESCRIPTION)
 
 Toure S (2026). *Rducks: Register R User-Defined Functions in DuckDB*. R
 package version 0.1.0, <https://github.com/sounkou-bioinfo/Rducks>.
