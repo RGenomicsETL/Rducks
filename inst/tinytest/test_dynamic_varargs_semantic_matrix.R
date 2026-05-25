@@ -21,6 +21,7 @@ rducks_semantic_ipc_transport <- function() {
 }
 
 rducks_semantic_cleanup <- function(con, stop_nng = FALSE) {
+  try(DBI::dbGetQuery(con, "SELECT rducks_runtime_release_connections() AS ok"), silent = TRUE)
   try(rducks_release(con), silent = TRUE)
   if (isTRUE(stop_nng)) try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
   try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
