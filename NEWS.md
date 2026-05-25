@@ -1,3 +1,10 @@
+# Rducks 0.1.1
+
+- Improved configure-time CMake discovery for required vendored NNG builds on
+  macOS builders by honoring `CMAKE`, using `cmake` from `PATH`, and probing
+  CRAN/macbuilder's `/Applications/CMake.app/Contents/bin/cmake` location while
+  keeping missing CMake as a hard configuration error.
+
 # Rducks 0.1.0
 
 - Fixed a Windows R-devel check hang in the dev/test in-process queue

@@ -121,11 +121,30 @@ if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/
   exit 1
 fi
 
-if ! command -v cmake >/dev/null 2>&1; then
+RDUCKS_CMAKE="${CMAKE:-}"
+if [ -n "${RDUCKS_CMAKE}" ]; then
+  case "${RDUCKS_CMAKE}" in
+    */*)
+      if [ ! -x "${RDUCKS_CMAKE}" ]; then
+        echo "ERROR: CMAKE points to a non-executable path: ${RDUCKS_CMAKE}"
+        exit 1
+      fi
+      ;;
+    *)
+      if ! command -v "${RDUCKS_CMAKE}" >/dev/null 2>&1; then
+        echo "ERROR: CMAKE is set but not executable on PATH: ${RDUCKS_CMAKE}"
+        exit 1
+      fi
+      RDUCKS_CMAKE=`command -v "${RDUCKS_CMAKE}"`
+      ;;
+  esac
+elif command -v cmake >/dev/null 2>&1; then
+  RDUCKS_CMAKE=`command -v cmake`
+else
   echo "ERROR: cmake is required to build the vendored NNG library"
+  echo "Set CMAKE=/path/to/cmake if cmake is installed outside PATH."
   exit 1
 fi
-RDUCKS_CMAKE=`command -v cmake`
 
 VENDOR_BUILD_DIR="${BUILD_DIR}/vendor_nng"
 "${RDUCKS_CMAKE}" -S "${VENDOR_DIR}" -B "${VENDOR_BUILD_DIR}" \
