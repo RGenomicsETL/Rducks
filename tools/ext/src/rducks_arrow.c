@@ -450,12 +450,6 @@ static int rducks_fill_input_arrow_array_native(rducks_runtime_entry_t *runtime,
     return rducks_fill_input_arrow_array_native_for_connection(runtime->connection, array, input, err_msg, err_cap);
 }
 
-static int rducks_fill_input_arrow_array_for_connection(duckdb_connection connection, SEXP array_xptr,
-                                                        duckdb_data_chunk input,
-                                                        char *err_msg, size_t err_cap) {
-    return rducks_fill_input_arrow_array_native_for_connection(connection, nanoarrow_output_array_from_xptr(array_xptr), input, err_msg, err_cap);
-}
-
 static int rducks_fill_input_arrow_array(rducks_runtime_entry_t *runtime, SEXP array_xptr,
                                          duckdb_data_chunk input,
                                          char *err_msg, size_t err_cap) {

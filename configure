@@ -203,6 +203,12 @@ if [ "${WASM_BUILD}" != "yes" ]; then
 fi
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2 -fPIC"
+if [ "${OS_NAME}" = "Darwin" ]; then
+  # The DuckDB extension is built during configure as a private loadable
+  # artifact. Avoid macOS dsymutil duplicate-debug-map warnings from vendored
+  # static archives with repeated object basenames.
+  CFLAGS="${CFLAGS} -g0"
+fi
 if [ "${OS_NAME}" != "Windows_NT" ]; then
   CFLAGS="${CFLAGS} -fvisibility=hidden"
 fi

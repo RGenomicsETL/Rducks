@@ -4,6 +4,10 @@
   macOS builders by honoring `CMAKE`, using `cmake` from `PATH`, and probing
   CRAN/macbuilder's `/Applications/CMake.app/Contents/bin/cmake` location while
   keeping missing CMake as a hard configuration error.
+- Cleaned up macOS source-check diagnostics by removing an unused native Arrow
+  helper, suppressing private-extension debug-map noise from vendored static
+  archives, and making NNG batch-contract tests use local IPC fake workers
+  instead of random loopback TCP ports in sandboxed check environments.
 
 # Rducks 0.1.0
 

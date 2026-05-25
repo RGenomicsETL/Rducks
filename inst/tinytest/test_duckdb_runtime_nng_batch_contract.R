@@ -41,7 +41,11 @@ rducks_fake_hanging_worker <- function(endpoint, sleep = 2) {
 
 rducks_test_batch_contract_transport <- function() {
   transports <- Rducks:::rducks_nng_runtime_transports()
-  preferred <- if (identical(Sys.info()[["sysname"]], "Windows")) "ipc" else "tcp"
+  # This file validates NNG batch and timeout contracts, not transport
+  # coverage. Prefer the local IPC transport on CRAN/macbuilder-style
+  # machines; random loopback TCP ports can be unavailable or delayed under
+  # sandboxed macOS checks before the fake worker has bound its REP socket.
+  preferred <- "ipc"
   if (preferred %in% transports) preferred else transports[[1L]]
 }
 
@@ -216,7 +220,7 @@ local({
   invisible(Rducks:::rducks_nng_transact(
     endpoint,
     Rducks:::rducks_nng_wire_encode_request(Rducks:::rducks_nng_wire_type_ping),
-    timeout = 10
+    timeout = 30
   ))
 
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")), dbdir = ":memory:")
