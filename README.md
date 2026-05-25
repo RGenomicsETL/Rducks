@@ -530,9 +530,9 @@ rducks_set_execution_plan(
 )
 benchmark
 #>              label    total elapsed_sec
-#> 1   arrow_r serial 65961344       6.906
-#> 2   arrow_c serial 65961344       6.650
-#> 3 arrow_ipc + mori 65961344       4.027
+#> 1   arrow_r serial 65961344       7.002
+#> 2   arrow_c serial 65961344       6.664
+#> 3 arrow_ipc + mori 65961344       4.010
 ```
 
 ## duckplyr integration
