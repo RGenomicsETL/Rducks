@@ -18,6 +18,15 @@ rducks_dynamic_consistency_ipc_transport <- function() {
   if (preferred %in% transports) preferred else transports[[1L]]
 }
 
+rducks_dynamic_consistency_cleanup <- function(con, stop_nng = FALSE) {
+  # Close extension-owned DuckDB connections before the in-memory test database
+  # is disconnected so catalog/UDF metadata is torn down deterministically.
+  try(DBI::dbGetQuery(con, "SELECT rducks_runtime_release_connections() AS ok"), silent = TRUE)
+  try(rducks_release(con), silent = TRUE)
+  if (isTRUE(stop_nng)) try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
+  try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+}
+
 rducks_expect_no_try_error <- function(value, info) {
   ok <- !inherits(value, "try-error")
   expect_true(ok, info = info)
@@ -176,11 +185,7 @@ local({
 
 local({
   con <- rducks_dynamic_consistency_connection()
-  on.exit({
-    try(rducks_release(con), silent = TRUE)
-    try(Rducks:::rducks_nng_stop_all_providers(quiet = TRUE), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-  }, add = TRUE)
+  on.exit(rducks_dynamic_consistency_cleanup(con, stop_nng = TRUE), add = TRUE)
 
   plans <- list(
     arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
@@ -371,10 +376,7 @@ local({
 
 local({
   con <- rducks_dynamic_consistency_connection()
-  on.exit({
-    try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-  }, add = TRUE)
+  on.exit(rducks_dynamic_consistency_cleanup(con), add = TRUE)
 
   result <- try({
     invisible(rducks_register_scalar_udf(
@@ -398,10 +400,7 @@ local({
 
 local({
   con <- rducks_dynamic_consistency_connection()
-  on.exit({
-    try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-  }, add = TRUE)
+  on.exit(rducks_dynamic_consistency_cleanup(con), add = TRUE)
 
   rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"), threads = 1L, external_threads = 1L)
   invisible(rducks_register_scalar_udf(
@@ -428,10 +427,7 @@ local({
 
 local({
   con <- rducks_dynamic_consistency_connection()
-  on.exit({
-    try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-  }, add = TRUE)
+  on.exit(rducks_dynamic_consistency_cleanup(con), add = TRUE)
 
   invisible(rducks_register_scalar_udf(
     con,
@@ -462,10 +458,7 @@ local({
   on.exit(options(nanoarrow.warn_unregistered_extension = old_warn), add = TRUE)
 
   con <- rducks_dynamic_consistency_connection()
-  on.exit({
-    try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
-  }, add = TRUE)
+  on.exit(rducks_dynamic_consistency_cleanup(con), add = TRUE)
 
   class_string <- function(x) paste(class(x), collapse = "/")
   cases <- rducks_dynamic_exotic_cases
