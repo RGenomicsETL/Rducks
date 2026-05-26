@@ -47,7 +47,7 @@ jobs:
         run: |
           pkg <- read.dcf("DESCRIPTION", fields = c("Package", "Version"))
           tarball <- sprintf("%s_%s.tar.gz", pkg[1, "Package"], pkg[1, "Version"])
-          status <- system2("R", c("CMD", "build", "."))
+          status <- system2("R", c("CMD", "build", "--no-build-vignettes", "."))
           if (!identical(status, 0L)) quit(status = status)
           lib <- tempfile("rducks-lib-")
           dir.create(lib)
