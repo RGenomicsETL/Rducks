@@ -12,6 +12,10 @@
   vendored static archives, and making NNG batch-contract tests use
   local IPC fake workers instead of random loopback TCP ports in
   sandboxed check environments.
+- Tightened dynamic-varargs test lifecycle cleanup so extension-owned
+  DuckDB connections are closed before in-memory test databases are
+  disconnected, avoiding delayed catalog teardown between adjacent
+  dynamic-varargs matrices.
 
 ## Rducks 0.1.0
 
