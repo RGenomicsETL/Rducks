@@ -1261,7 +1261,8 @@ DUCKDB_EXTENSION_ENTRYPOINT(duckdb_connection connection,
         rducks_registration_unlock();
         return false;
     }
-    if (!rducks_registration_surface_available(connection)) {
+    int surface_available = rducks_registration_surface_available(connection);
+    if (!surface_available || !ready) {
         if (ready && !rducks_runtime_refresh_connection(runtime, database, err, sizeof(err))) {
             if (access) {
                 access->set_error(info, err[0] ? err : "failed to refresh Rducks runtime connection");
