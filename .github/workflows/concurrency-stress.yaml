@@ -43,11 +43,24 @@ jobs:
           install.packages(c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
-      - name: Install Rducks
-        run: R CMD INSTALL --preclean .
+      - name: Build and install Rducks
+        run: |
+          pkg <- read.dcf("DESCRIPTION", fields = c("Package", "Version"))
+          tarball <- sprintf("%s_%s.tar.gz", pkg[1, "Package"], pkg[1, "Version"])
+          status <- system2("R", c("CMD", "build", "."))
+          if (!identical(status, 0L)) quit(status = status)
+          lib <- tempfile("rducks-lib-")
+          dir.create(lib)
+          writeLines(lib, ".rducks-test-lib")
+          status <- system2("R", c("CMD", "INSTALL", "-l", lib, tarball))
+          if (!identical(status, 0L)) quit(status = status)
+        shell: Rscript {0}
 
       - name: Run focused concurrency stress tests
         run: |
+          lib <- readLines(".rducks-test-lib", warn = FALSE)
+          .libPaths(c(lib, .libPaths()))
+          library(Rducks)
           tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_concurrent_queue.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_transports.R")
+          tinytest::run_test_file("inst/tinytest/test_zzzy_duckdb_runtime_nng_transports.R")
         shell: Rscript {0}
