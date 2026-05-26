@@ -1017,9 +1017,15 @@ static int rducks_runtime_release_internal_connections(rducks_runtime_entry_t *r
     old_connection = runtime->connection;
     old_stream_connection = runtime->query_stream_connection;
     runtime->query_streams = NULL;
+    /* After the extension-owned connections are closed, this entry must not be
+     * matched to a future DuckDB database that reuses the same raw address.
+     */
     runtime->connection = NULL;
     runtime->query_stream_connection = NULL;
     runtime->query_stream_connection_busy = 0;
+    runtime->database = NULL;
+    runtime->registration_surface_ready = 0;
+    runtime->generation++;
     rducks_runtime_unlock();
 
     rducks_query_stream_destroy_detached_list(detached_streams);
