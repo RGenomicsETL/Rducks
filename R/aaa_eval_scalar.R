@@ -1,56 +1,46 @@
-rducks_scalar_prepare_dynamic_inputs <- function(input_array, input_schema, n) {
-  input_children <- input_array$children
-  input_schema_children <- input_schema$children
-  arity <- length(input_children)
-  if (length(input_schema_children) != arity) {
-    stop("dynamic Rducks scalar input schema does not match input array", call. = FALSE)
-  }
+# Prepared-inputs shape consumed by the row/chunk evaluators:
+#   list(columns, nulls, top_level_null, n[, dynamic_args])
+# Inputs arrive either as Rducks values materialized from a quack wire payload
+# (worker processes, in-process slow path) or as SEXP columns built directly
+# by the extension's direct evaluator on the recorded R thread.
 
-  columns <- vector("list", arity)
-  nulls <- vector("list", arity)
-  for (i in seq_len(arity)) {
-    child <- input_children[[i]]
-    schema_child <- input_schema_children[[i]]
-    nanoarrow::nanoarrow_array_set_schema(child, schema_child, validate = FALSE)
-    columns[[i]] <- nanoarrow::convert_array(child)
-    nulls[[i]] <- !rducks_arrow_validity(child, n)
+rducks_native_prepared_inputs <- function(arg_types, values, n, nulls = NULL) {
+  n <- as.integer(n)
+  columns <- values
+  if (is.null(nulls)) {
+    nulls <- lapply(seq_along(columns), function(i) {
+      type <- if (is.null(arg_types)) NULL else arg_types[[i]]
+      if (!is.null(type) && rducks_type_inherits(type, "rducks_union_type")) {
+        return(rep(FALSE, n))
+      }
+      column <- columns[[i]]
+      if (is.data.frame(column)) {
+        rep(FALSE, n)
+      } else if (is.list(column) && !inherits(column, c("Date", "POSIXct", "POSIXlt", "difftime"))) {
+        vapply(column, is.null, logical(1))
+      } else {
+        is.na(column)
+      }
+    })
   }
-
   top_level_null <- rep(FALSE, n)
   for (i in seq_along(nulls)) {
     top_level_null <- top_level_null | nulls[[i]]
   }
-
-  list(columns = columns, nulls = nulls, top_level_null = top_level_null, n = n, dynamic_args = TRUE)
+  out <- list(columns = columns, nulls = nulls, top_level_null = top_level_null, n = n)
+  if (is.null(arg_types)) out$dynamic_args <- TRUE
+  out
 }
 
-rducks_scalar_prepare_inputs <- function(arg_types, input_array, input_schema, n) {
-  n <- as.integer(n)
-  if (!nanoarrow::nanoarrow_pointer_is_valid(input_array)) {
-    stop("input nanoarrow array pointer is not valid", call. = FALSE)
-  }
-  if (!nanoarrow::nanoarrow_pointer_is_valid(input_schema)) {
-    stop("input nanoarrow schema pointer is not valid", call. = FALSE)
-  }
+rducks_wire_prepared_inputs <- function(arg_types, input_payload, n) {
   if (is.null(arg_types)) {
-    return(rducks_scalar_prepare_dynamic_inputs(input_array, input_schema, n))
+    stop("dynamic varargs are not on the Rducks wire yet", call. = FALSE)
   }
-
-  input_children <- input_array$children
-  input_schema_children <- input_schema$children
-  columns <- vector("list", length(arg_types))
-  nulls <- vector("list", length(arg_types))
-  for (i in seq_along(arg_types)) {
-    columns[[i]] <- rducks_arrow_array_to_values(arg_types[[i]], input_children[[i]], input_schema_children[[i]])
-    nulls[[i]] <- if (rducks_type_inherits(arg_types[[i]], "rducks_union_type")) rep(FALSE, n) else !rducks_arrow_validity(input_children[[i]], n)
+  decoded <- rducks_wire_decode_values(arg_types, input_payload)
+  if (!identical(decoded$rows, as.integer(n))) {
+    stop("Rducks wire payload row count disagrees with the chunk row count", call. = FALSE)
   }
-
-  top_level_null <- rep(FALSE, n)
-  for (i in seq_along(nulls)) {
-    top_level_null <- top_level_null | nulls[[i]]
-  }
-
-  list(columns = columns, nulls = nulls, top_level_null = top_level_null, n = n)
+  rducks_native_prepared_inputs(arg_types, decoded$values, n)
 }
 
 rducks_scalar_dynamic_value_at <- function(column, nulls, row) {
@@ -74,7 +64,7 @@ rducks_scalar_args_at <- function(arg_types, prepared, row) {
 
   args <- vector("list", length(arg_types))
   for (col in seq_along(arg_types)) {
-    args[col] <- list(rducks_arrow_value_at(
+    args[col] <- list(rducks_value_at(
       arg_types[[col]], prepared$columns[[col]], prepared$nulls[[col]], row
     ))
   }
@@ -86,7 +76,7 @@ rducks_scalar_eval_one <- function(fun, args, exception_handling) {
     do.call(fun, args),
     error = function(e) {
       if (identical(exception_handling, "return_null")) {
-        return(structure(list(), class = "rducks_arrow_return_null"))
+        return(structure(list(), class = "rducks_return_null"))
       }
       stop(e)
     }
@@ -108,7 +98,7 @@ rducks_scalar_eval_prepared_rows <- function(fun, arg_types, return_type, prepar
       rducks_scalar_args_at(arg_types, prepared, row),
       exception_handling
     )
-    if (inherits(value, "rducks_arrow_return_null")) {
+    if (inherits(value, "rducks_return_null")) {
       results[row] <- list(NULL)
     } else {
       value <- rducks_check_scalar_udf_return(return_type, value)
@@ -118,6 +108,8 @@ rducks_scalar_eval_prepared_rows <- function(fun, arg_types, return_type, prepar
   results
 }
 
-rducks_scalar_results_to_arrow <- function(return_type, results, output_schema, n) {
-  rducks_arrow_result_array(return_type, results, output_schema, n)
+rducks_scalar_results_to_wire <- function(return_type, results, output_schema, n) {
+  # output_schema is retained for call-shape compatibility; quack payloads are
+  # self-describing and carry the declared return type themselves.
+  rducks_quack_results_payload(return_type, results, as.integer(n))
 }

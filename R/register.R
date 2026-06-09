@@ -82,7 +82,7 @@ rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, 
   )
 }
 
-rducks_assert_arrow_marshalling_supported <- function(spec) {
+rducks_assert_marshalling_supported <- function(spec) {
   types <- c(spec$arg_types %||% list(), list(spec$return_type))
   unsupported <- vapply(types, function(type) {
     if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
@@ -197,25 +197,21 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
     dynamic_args = dynamic_args
   )
   plan <- rducks_current_execution_plan(con)
-  rducks_assert_arrow_marshalling_supported(spec)
+  rducks_assert_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
   rducks_assert_single_thread(con)
   runtime_token <- rducks_attach_runtime_anchor(con)
   native_evaluator <- rducks_plan_native_evaluator_token(plan, spec$mode)
-  eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_r")) {
-    rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
+  eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "direct")) {
     rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_nng_vectorized_wrapper(
+  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "wire")) {
+    rducks_make_wire_ipc_nng_vectorized_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
-  } else if (identical(plan$marshalling, "arrow_r")) {
-    rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(plan$marshalling, "arrow_c")) {
+  } else if (identical(plan$marshalling, "direct")) {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_nng_scalar_wrapper(
+  } else if (identical(plan$marshalling, "wire")) {
+    rducks_make_wire_ipc_nng_scalar_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
   } else {
@@ -446,7 +442,10 @@ rducks_table_stream_column_signature <- function(x) {
 }
 
 rducks_table_stream_validate_batch <- function(stream, batch) {
-  if (inherits(batch, "nanoarrow_array") || inherits(batch, "nanoarrow_array_stream")) return(batch)
+  if (inherits(batch, c("nanoarrow_array", "nanoarrow_array_stream"))) {
+    stop("Rducks table streams no longer accept Arrow batches; return a data frame or named list",
+         call. = FALSE)
+  }
   batch <- rducks_table_result_as_data_frame(batch)
   expected <- names(stream$prototype)
   actual <- names(batch)
@@ -475,7 +474,8 @@ rducks_table_stream_next_array <- function(stream, n) {
     return(NULL)
   }
   batch <- rducks_table_stream_validate_batch(stream, batch)
-  rducks_table_as_arrow_array(batch)
+  # Self-describing quack payload; the extension fills DuckDB vectors from it.
+  rducks_table_result_payload(batch, rducks_table_prototype_types(stream$prototype))
 }
 
 rducks_table_result_as_data_frame <- function(result) {
@@ -500,18 +500,24 @@ rducks_table_result_as_data_frame <- function(result) {
   structure(result, names = column_names, class = "data.frame", row.names = .set_row_names(lengths[[1L]]))
 }
 
-rducks_table_as_arrow_array <- function(result) {
-  if (inherits(result, "nanoarrow_array")) return(result)
-  stream <- if (inherits(result, "nanoarrow_array_stream")) {
-    result
-  } else {
-    nanoarrow::as_nanoarrow_array_stream(rducks_table_result_as_data_frame(result))
-  }
-  batches <- nanoarrow::collect_array_stream(stream)
-  if (length(batches) != 1L) {
-    stop("Rducks table nanoarrow stream must yield exactly one record batch", call. = FALSE)
-  }
-  batches[[1L]]
+
+rducks_table_prototype_types <- function(prototype) {
+  lapply(prototype, function(column) {
+    if (is.logical(column)) return(BOOLEAN())
+    if (is.factor(column)) return(ENUM(levels(column)))
+    if (inherits(column, "Date")) return(DATE())
+    if (inherits(column, "POSIXct")) return(TIMESTAMP())
+    if (is.integer(column)) return(INTEGER())
+    if (is.numeric(column)) return(DOUBLE())
+    if (is.character(column)) return(VARCHAR())
+    if (is.list(column)) return(BLOB())
+    stop("Rducks table stream column type is unsupported", call. = FALSE)
+  })
+}
+
+rducks_table_result_payload <- function(result, column_types) {
+  df <- rducks_table_result_as_data_frame(result)
+  rducks_wire_encode_values(column_types, as.list(df), nrow(df))
 }
 
 #' Register an R table function in DuckDB

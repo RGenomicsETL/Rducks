@@ -1,5 +1,13 @@
+# Internal engine vocabulary. "direct" is the in-process evaluator that
+# materializes DuckDB vectors to SEXPs in extension C on the recorded main R
+# thread; "wire" is the serialized worker-process data plane (Quack-style
+# DuckDB BinarySerializer chunk payloads over NNG).
 rducks_plan_marshalling <- function(x) {
-  match.arg(x, c("arrow_r", "arrow_c", "arrow_ipc"))
+  match.arg(x, c("direct", "wire"))
+}
+
+rducks_plan_transport <- function(x) {
+  match.arg(x, c("inproc", "ipc"))
 }
 
 rducks_plan_concurrency <- function(x) {
@@ -17,7 +25,7 @@ rducks_plan_backend <- function(concurrency) {
 }
 
 rducks_plan_serialization <- function(marshalling) {
-  if (identical(marshalling, "arrow_ipc")) "arrow_ipc" else "none"
+  if (identical(marshalling, "wire")) "quack" else "none"
 }
 
 rducks_plan_ipc_provider <- function(x) {
@@ -68,24 +76,22 @@ rducks_validate_ipc_globals_share <- function(share) {
 
 rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng") {
   key <- paste(marshalling, concurrency, sep = "+")
-  if (identical(key, "arrow_ipc+multiprocess_parallel")) {
+  if (identical(key, "wire+multiprocess_parallel")) {
     ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
     return("ipc_nng_pool")
   }
   switch(
     key,
-    `arrow_r+serial` = "arrow_r_serial",
-    `arrow_r+inproc_concurrent` = "arrow_r_main_queue",
-    `arrow_c+serial` = "arrow_c_direct_serial",
-    `arrow_c+inproc_concurrent` = "arrow_c_direct_main_queue",
+    `direct+serial` = "direct_serial",
+    `direct+inproc_concurrent` = "direct_main_queue",
     stop("unsupported Rducks execution-plan pair: ", key, call. = FALSE)
   )
 }
 
 rducks_plan_implemented <- function(marshalling, concurrency) {
-  (marshalling %in% c("arrow_r", "arrow_c") &&
+  (identical(marshalling, "direct") &&
     concurrency %in% c("serial", "inproc_concurrent")) ||
-    (identical(marshalling, "arrow_ipc") && identical(concurrency, "multiprocess_parallel"))
+    (identical(marshalling, "wire") && identical(concurrency, "multiprocess_parallel"))
 }
 
 rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
@@ -94,9 +100,8 @@ rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
   }
   switch(
     marshalling,
-    arrow_r = c("scalar", "vectorized"),
-    arrow_c = c("scalar", "vectorized"),
-    arrow_ipc = c("scalar", "vectorized"),
+    direct = c("scalar", "vectorized"),
+    wire = c("scalar", "vectorized"),
     character()
   )
 }
@@ -127,47 +132,43 @@ rducks_ipc_options <- function(globals = "auto",
 }
 
 rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
-  if (identical(marshalling, "arrow_ipc") && !identical(concurrency, "multiprocess_parallel")) {
-    stop("marshalling = 'arrow_ipc' requires concurrency = 'multiprocess_parallel'", call. = FALSE)
+  if (identical(marshalling, "wire") && !identical(concurrency, "multiprocess_parallel")) {
+    stop("marshalling = 'wire' requires concurrency = 'multiprocess_parallel'", call. = FALSE)
   }
-  if (!identical(marshalling, "arrow_ipc") && identical(concurrency, "multiprocess_parallel")) {
-    stop("concurrency = 'multiprocess_parallel' requires marshalling = 'arrow_ipc'", call. = FALSE)
+  if (!identical(marshalling, "wire") && identical(concurrency, "multiprocess_parallel")) {
+    stop("concurrency = 'multiprocess_parallel' requires marshalling = 'wire'", call. = FALSE)
   }
   invisible(TRUE)
 }
 
 #' Define an Rducks execution plan
 #'
-#' An execution plan describes how Rducks should marshal DuckDB chunks and what
-#' concurrency model is allowed. When stored on a connection it is the default
-#' for future \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+#' An execution plan describes where Rducks evaluates registered scalar-UDF
+#' chunks: in the current R process (`transport = "inproc"`) or in persistent
+#' worker R processes (`transport = "ipc"`). When stored on a connection it is
+#' the default for future
+#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
 #' calls and updates the native runtime backend used for matching concurrent
-#' execution; the selected evaluator/marshalling is frozen into each registered
+#' execution; the resolved transport metadata is frozen into each registered
 #' scalar UDF's database-catalog metadata. It is separate from DuckDB function
 #' kind and from scalar-UDF registration semantics such as Rducks evaluation
 #' mode (`"scalar"` row calls versus `"vectorized"` chunk calls),
 #' argument/return types, NULL handling, error handling, and side effects.
 #'
-#' `arrow_r + serial` is the reference implementation used for conformance.
-#' Other plans must be explicitly implemented and validated against that
-#' reference; Rducks does not silently switch from one plan to another.
-#' `arrow_ipc + multiprocess_parallel` uses the native NNG path with vendored
-#' nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal `engine_id` such as
-#' `"arrow_c_direct_serial"` or `"ipc_nng_pool"`.
+#' `"inproc"` keeps all R API work serialized on the recorded main R thread
+#' while allowing DuckDB callback concurrency; DuckDB vectors are materialized
+#' to SEXPs directly in extension C with no intermediate columnar format.
+#' `"ipc"` uses persistent NNG/nanonext workers and Rducks Quack-style binary
+#' chunk payloads (DuckDB BinarySerializer subset) for process-isolated chunk
+#' work. Each transport maps to a concrete internal `engine_id` such as
+#' `"direct_main_queue"` or `"ipc_nng_pool"`.
 #'
-#' @param marshalling Chunk marshalling implementation. `"arrow_r"` uses Arrow C
-#'   Data plus nanoarrow/R materialization and is the reference implementation.
-#'   `"arrow_c"` uses native C/DuckDB-vector materialization for supported
-#'   scalar-UDF evaluation modes. `"arrow_ipc"` uses Arrow IPC bytes as
-#'   the explicit task/result payload for the NNG multiprocess path.
-#' @param concurrency Concurrency contract. `"serial"` evaluates one chunk at a
-#'   time in the calling process. `"inproc_concurrent"` allows in-process DuckDB
-#'   callback concurrency while keeping R API work serialized on the recorded
-#'   main R thread. `"multiprocess_parallel"` uses persistent NNG/nanonext
-#'   workers for process-isolated chunk work and requires `marshalling = "arrow_ipc"`.
-#'   When `ipc_endpoints` is `NULL`, Rducks starts local worker loops with
-#'   mirai daemons; otherwise the endpoint URLs are passed through unchanged.
-#' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport Arrow IPC worker options.
+#' @param transport Placement/transport. `"inproc"` evaluates in the current R
+#'   process with the in-process queued backend. `"ipc"` evaluates in worker R
+#'   processes over NNG; when `ipc_endpoints` is `NULL`, Rducks starts local
+#'   worker loops with mirai daemons, otherwise the endpoint URLs are passed
+#'   through unchanged.
+#' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport IPC worker options.
 #'   By default (`ipc_globals = "auto"`), Rducks discovers scalar-UDF globals
 #'   once at registration-wrapper creation and broadcasts them to each NNG worker
 #'   when the scalar UDF is registered with the shared provider pool. Automatic capture
@@ -200,7 +201,7 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   serialization, which can turn large atomic vectors, lists, and data frames
 #'   into same-host shared-memory references. This requires the optional mori
 #'   package and workers on the same machine.
-#' @param ipc_provider Worker provider for `arrow_ipc + multiprocess_parallel`.
+#' @param ipc_provider Worker provider for `transport = "ipc"`.
 #'   Only `"nng"` is supported. The NNG provider broadcasts each registered scalar UDF
 #'   closure plus discovered globals/packages to every worker in the shared
 #'   database-runtime provider pool, so avoid capturing large objects in UDF
@@ -215,10 +216,45 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'   before a callback enters the native request path.
 #' @return An object of class `rducks_execution_plan`.
 #' @examples
-#' rducks_execution_plan("arrow_r", "serial")
-#' rducks_execution_plan("arrow_c", "inproc_concurrent")
+#' rducks_execution_plan("inproc")
+#' rducks_execution_plan("ipc", ipc_workers = 2L)
 #' @export
-rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
+rducks_execution_plan <- function(transport = c("inproc", "ipc"),
+                                  ipc_globals = "auto",
+                                  ipc_packages = NULL,
+                                  ipc_timeout = NULL,
+                                  ipc_endpoints = NULL,
+                                  ipc_transport = NULL,
+                                  ipc_globals_share = "none",
+                                  ipc_provider = "nng",
+                                  ipc_workers = 1L,
+                                  ipc_max_pending = 64L) {
+  transport <- rducks_plan_transport(transport)
+  if (identical(transport, "ipc")) {
+    marshalling <- "wire"
+    concurrency <- "multiprocess_parallel"
+  } else {
+    marshalling <- "direct"
+    concurrency <- "inproc_concurrent"
+  }
+  rducks_execution_plan_internal(
+    marshalling, concurrency,
+    ipc_globals = ipc_globals,
+    ipc_packages = ipc_packages,
+    ipc_timeout = ipc_timeout,
+    ipc_endpoints = ipc_endpoints,
+    ipc_transport = ipc_transport,
+    ipc_globals_share = ipc_globals_share,
+    ipc_provider = ipc_provider,
+    ipc_workers = ipc_workers,
+    ipc_max_pending = ipc_max_pending
+  )
+}
+
+# Internal constructor over the implementation engine vocabulary. Conformance
+# tests and internal helpers may construct serial reference plans here; the
+# public constructor only exposes the transport axis.
+rducks_execution_plan_internal <- function(marshalling = c("direct", "wire"),
                                   concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
                                   ipc_globals = "auto",
                                   ipc_packages = NULL,
@@ -231,11 +267,11 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
                                   ipc_max_pending = 64L) {
   marshalling <- rducks_plan_marshalling(marshalling)
   concurrency <- rducks_plan_concurrency(concurrency)
-  if (identical(marshalling, "arrow_ipc")) {
+  if (identical(marshalling, "wire")) {
     ipc_provider <- rducks_plan_ipc_provider(ipc_provider)
   } else {
     if (!identical(ipc_provider, "nng")) {
-      stop("ipc_provider only applies to marshalling = 'arrow_ipc'", call. = FALSE)
+      stop("ipc_provider only applies to transport = 'ipc'", call. = FALSE)
     }
     ipc_provider <- "none"
   }
@@ -254,7 +290,7 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
   implemented <- rducks_plan_implemented(marshalling, concurrency)
   engine_id <- rducks_plan_engine_id(marshalling, concurrency, ipc_provider = ipc_provider)
   supported_call_shapes <- rducks_plan_supported_call_shapes(marshalling, concurrency)
-  ipc_options <- if (identical(marshalling, "arrow_ipc")) {
+  ipc_options <- if (identical(marshalling, "wire")) {
     rducks_ipc_options(
       globals = ipc_globals,
       packages = ipc_packages,
@@ -268,21 +304,22 @@ rducks_execution_plan <- function(marshalling = c("arrow_r", "arrow_c", "arrow_i
   }
   structure(
     list(
+      transport = if (identical(marshalling, "wire")) "ipc" else "inproc",
       marshalling = marshalling,
       concurrency = concurrency,
       plan_id = paste(marshalling, concurrency, sep = "+"),
       engine_id = engine_id,
-      reference = identical(marshalling, "arrow_r") && identical(concurrency, "serial"),
+      reference = identical(marshalling, "direct") && identical(concurrency, "serial"),
       implemented = implemented,
       supported_call_shapes = supported_call_shapes,
       backend = backend,
       serialization = serialization,
       ipc_options = ipc_options,
-      ipc_provider = if (identical(marshalling, "arrow_ipc")) ipc_provider else "none",
-      ipc_workers = if (identical(marshalling, "arrow_ipc")) ipc_workers else NA_integer_,
-      ipc_max_pending = if (identical(marshalling, "arrow_ipc")) ipc_max_pending else NA_integer_,
+      ipc_provider = if (identical(marshalling, "wire")) ipc_provider else "none",
+      ipc_workers = if (identical(marshalling, "wire")) ipc_workers else NA_integer_,
+      ipc_max_pending = if (identical(marshalling, "wire")) ipc_max_pending else NA_integer_,
       in_process = !identical(concurrency, "multiprocess_parallel"),
-      uses_r_thread = !identical(marshalling, "arrow_ipc")
+      uses_r_thread = !identical(marshalling, "wire")
     ),
     class = "rducks_execution_plan"
   )
@@ -293,9 +330,9 @@ print.rducks_execution_plan <- function(x, ...) {
   cat("<rducks_execution_plan>\n")
   cat("  plan_id:     ", x$plan_id, "\n", sep = "")
   cat("  engine_id:   ", x$engine_id %||% "<unknown>", "\n", sep = "")
-  cat("  marshalling: ", x$marshalling, "\n", sep = "")
+  cat("  transport:   ", x$transport %||% "<unknown>", "\n", sep = "")
   cat("  concurrency: ", x$concurrency, "\n", sep = "")
-  if (identical(x$marshalling, "arrow_ipc")) {
+  if (identical(x$marshalling, "wire")) {
     cat("  ipc provider: ", x$ipc_provider %||% "nng", "\n", sep = "")
   }
   cat("  reference:   ", if (isTRUE(x$reference)) "yes" else "no", "\n", sep = "")
@@ -311,12 +348,12 @@ rducks_as_execution_plan <- function(plan) {
   if (is.character(plan) && length(plan) == 1L) {
     return(switch(
       plan,
-      reference = rducks_execution_plan("arrow_r", "serial"),
-      arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
-      arrow_r_main_queue = rducks_execution_plan("arrow_r", "inproc_concurrent"),
-      arrow_c_direct_serial = rducks_execution_plan("arrow_c", "serial"),
-      arrow_c_direct_main_queue = rducks_execution_plan("arrow_c", "inproc_concurrent"),
-      ipc_nng_pool = rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_provider = "nng"),
+      reference = rducks_execution_plan_internal("direct", "serial"),
+      direct_serial = rducks_execution_plan_internal("direct", "serial"),
+      direct_main_queue = rducks_execution_plan_internal("direct", "inproc_concurrent"),
+      inproc = rducks_execution_plan("inproc"),
+      ipc = rducks_execution_plan("ipc"),
+      ipc_nng_pool = rducks_execution_plan("ipc", ipc_provider = "nng"),
       stop("unknown Rducks execution plan shortcut: ", plan, call. = FALSE)
     ))
   }
@@ -473,7 +510,6 @@ rducks_cleanup_connection_token <- function(ref_key, token) {
       rm(list = ref_key, envir = token_store)
     }
   }
-  rducks_query_stream_close_for_token(token)
   rducks_remove_store_entry(.rducks_state$connection_plans, token)
   invisible(NULL)
 }
@@ -519,7 +555,7 @@ rducks_store_connection_plan <- function(con, plan) {
 #' Inspect the current Rducks execution plan
 #'
 #' Returns the R-side execution plan recorded for a DuckDB connection. If no plan
-#' has been recorded yet, this returns the reference plan `arrow_r + serial`.
+#' has been recorded yet, this returns the reference plan `direct + serial`.
 #'
 #' @param con A `duckdb_connection`.
 #' @return An object of class `rducks_execution_plan`.
@@ -539,7 +575,7 @@ rducks_current_execution_plan <- function(con) {
   if (exists(key, envir = store, inherits = FALSE)) {
     get(key, envir = store, inherits = FALSE)
   } else {
-    rducks_execution_plan("arrow_r", "serial")
+    rducks_execution_plan_internal("direct", "serial")
   }
 }
 
@@ -550,7 +586,7 @@ rducks_assert_execution_plan_implemented <- function(plan) {
   invisible(TRUE)
 }
 
-rducks_arrow_ipc_unsupported_types <- function(type) {
+rducks_wire_unsupported_types <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(rducks_type_normalize(type))
   kind <- rducks_type_kind(type)
   if (identical(kind, "scalar")) {
@@ -561,14 +597,14 @@ rducks_arrow_ipc_unsupported_types <- function(type) {
   }
   if (kind %in% c("list", "array", "struct", "map", "union")) {
     children <- rducks_type_children(type)
-    out <- unlist(lapply(children, rducks_arrow_ipc_unsupported_types), use.names = FALSE)
+    out <- unlist(lapply(children, rducks_wire_unsupported_types), use.names = FALSE)
     return(if (is.null(out)) character() else unique(out))
   }
   rducks_type_duckdb_sql(type)
 }
 
-rducks_arrow_ipc_mapping_supported <- function(type) {
-  !length(rducks_arrow_ipc_unsupported_types(type))
+rducks_wire_mapping_supported <- function(type) {
+  !length(rducks_wire_unsupported_types(type))
 }
 
 rducks_validate_execution_plan_for_registration <- function(plan, spec) {
@@ -583,25 +619,24 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
       call. = FALSE
     )
   }
-  if (identical(plan$marshalling, "arrow_c")) {
+  if (identical(plan$marshalling, "direct")) {
     types <- c(spec$arg_types %||% list(), list(spec$return_type))
-    unsupported <- unique(unlist(lapply(types, rducks_arrow_c_direct_unsupported_types), use.names = FALSE))
+    unsupported <- unique(unlist(lapply(types, rducks_direct_unsupported_types), use.names = FALSE))
     if (length(unsupported)) {
       stop(
-        "arrow_c direct marshalling is not implemented for: ",
+        "direct in-process marshalling is not implemented for: ",
         paste(unsupported, collapse = ", "),
-        "; use marshalling = 'arrow_r' for these types",
         call. = FALSE
       )
     }
   }
-  if (identical(plan$marshalling, "arrow_ipc")) {
-    unsupported <- unique(unlist(lapply(c(spec$arg_types %||% list(), list(spec$return_type)), rducks_arrow_ipc_unsupported_types), use.names = FALSE))
+  if (identical(plan$marshalling, "wire")) {
+    unsupported <- unique(unlist(lapply(c(spec$arg_types %||% list(), list(spec$return_type)), rducks_wire_unsupported_types), use.names = FALSE))
     unsupported <- unsupported[nzchar(unsupported)]
     if (length(unsupported)) {
       stop(
         "Rducks execution plan ", plan$plan_id,
-        " cannot use Arrow IPC marshalling for: ",
+        " cannot use the Quack wire marshalling for: ",
         paste(unsupported, collapse = ", "),
         call. = FALSE
       )
@@ -617,9 +652,8 @@ rducks_plan_native_evaluator_token <- function(plan, mode = "scalar") {
   mode <- rducks_match_mode(mode)
   switch(
     plan$marshalling,
-    arrow_r = "R",
-    arrow_c = if (identical(mode, "vectorized")) "RCV" else "RC",
-    arrow_ipc = "RIPC",
+    direct = if (identical(mode, "vectorized")) "RCV" else "RC",
+    wire = "RIPC",
     stop("unsupported Rducks execution-plan marshalling: ", plan$marshalling, call. = FALSE)
   )
 }

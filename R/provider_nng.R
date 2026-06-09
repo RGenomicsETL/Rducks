@@ -297,7 +297,7 @@ rducks_nng_worker_loop <- function(endpoint) {
           stop("unknown Rducks NNG UDF id: ", req$udf_id, call. = FALSE)
         }
         rec <- get(req$udf_id, envir = registry, inherits = FALSE)
-        output <- rducks_ipc_worker_eval_arrow_ipc_chunk(
+        output <- rducks_ipc_worker_eval_quack_chunk(
           input_payload = req$payload,
           output_schema_spec = rec$output_schema_spec,
           n = req$row_count,
@@ -1037,7 +1037,9 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
   }
 
   configure <- function(output_schema) {
-    output_schema_spec <- rducks_arrow_schema_to_spec(output_schema)
+    # Quack payloads are self-describing; carry the declared return type token
+    # for validation instead of an Arrow schema spec.
+    output_schema_spec <- rducks_type_token(engine$return_type)
     ensure_provider_started()
     if (!isTRUE(provider_registered)) {
       provider$register_udf(
@@ -1069,14 +1071,14 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
   list(provider = "nng", prepare = ensure_provider_started, configure = configure)
 }
 
-rducks_make_arrow_ipc_nng_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
+rducks_make_wire_ipc_nng_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                      plan = rducks_execution_plan(),
                                                      runtime_token = NULL) {
   rducks_make_arrow_ipc_nng_wrapper(fun, spec, null_handling, exception_handling,
                                     mode = "scalar", plan = plan, runtime_token = runtime_token)
 }
 
-rducks_make_arrow_ipc_nng_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
+rducks_make_wire_ipc_nng_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                          plan = rducks_execution_plan(),
                                                          runtime_token = NULL) {
   rducks_make_arrow_ipc_nng_wrapper(fun, spec, null_handling, exception_handling,

@@ -64,14 +64,14 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   }
 
   rducks_attach_runtime_anchor(con)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   invisible(con)
 }
 
 rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_threads = NULL) {
   rducks_assert_duckdb_connection(con)
   current <- rducks_current_execution_plan(con)
-  plan <- rducks_execution_plan(current$marshalling, concurrency)
+  plan <- rducks_execution_plan_internal(current$marshalling, concurrency)
   rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
   invisible(con)
 }
@@ -86,10 +86,9 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #' work. This is a same-process scheduling mode, not a performance promise; R
 #' function calls are still serialized on the main R thread.
 #'
-#' This is a compatibility helper for the `arrow_r`/`arrow_c` in-process queue.
+#' This is a compatibility helper for the direct in-process queue.
 #' New code can call \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
-#' directly with `rducks_execution_plan("arrow_r", "inproc_concurrent")` or
-#' `rducks_execution_plan("arrow_c", "inproc_concurrent")`. Select the plan
+#' directly with `rducks_execution_plan("inproc")`. Select the plan
 #' before registering scalar UDFs whose reported execution plan should be the
 #' queued in-process path.
 #'
@@ -516,7 +515,7 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)
-#' rducks_set_execution_plan(db, rducks_execution_plan("arrow_c", "serial"))
+#' rducks_set_execution_plan(db, rducks_execution_plan("inproc"))
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
 #' }

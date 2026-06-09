@@ -1,7 +1,3 @@
-rducks_nanoarrow_pointer_is_valid <- function(ptr) {
-  isTRUE(tryCatch(nanoarrow::nanoarrow_pointer_is_valid(ptr), error = function(e) FALSE))
-}
-
 rducks_ipc_worker_check_n <- function(n) {
   if (!is.numeric(n) || length(n) != 1L || is.na(n) || !is.finite(n) || n < 0 || n != floor(n) ||
       n > .Machine$integer.max) {
@@ -10,22 +6,24 @@ rducks_ipc_worker_check_n <- function(n) {
   as.integer(n)
 }
 
-rducks_ipc_worker_eval_arrow_ipc_chunk <- function(input_payload,
-                                                   output_schema_spec,
-                                                   n,
-                                                   fun,
-                                                   arg_types,
-                                                   return_type,
-                                                   null_handling,
-                                                   exception_handling,
-                                                   mode,
-                                                   dynamic_arg_tokens = NULL) {
+rducks_ipc_worker_eval_quack_chunk <- function(input_payload,
+                                               output_schema_spec,
+                                               n,
+                                               fun,
+                                               arg_types,
+                                               return_type,
+                                               null_handling,
+                                               exception_handling,
+                                               mode,
+                                               dynamic_arg_tokens = NULL) {
   n <- rducks_ipc_worker_check_n(n)
   mode <- rducks_match_mode(mode)
   arg_types <- rducks_resolve_dynamic_arg_types(arg_types, dynamic_arg_tokens)
-  decoded <- rducks_arrow_ipc_decode_array(input_payload)
-  output_schema <- rducks_arrow_schema_from_spec(output_schema_spec)
-  prepared <- rducks_scalar_prepare_inputs(arg_types, decoded$array, decoded$schema, n)
+  decoded <- rducks_wire_decode_values(arg_types, input_payload)
+  if (!identical(decoded$rows, n)) {
+    stop("Rducks wire payload row count disagrees with the task row count", call. = FALSE)
+  }
+  prepared <- rducks_native_prepared_inputs(arg_types, decoded$values, n)
   results <- if (identical(mode, "scalar")) {
     rducks_scalar_eval_prepared_rows(
       fun,
@@ -45,8 +43,7 @@ rducks_ipc_worker_eval_arrow_ipc_chunk <- function(input_payload,
       exception_handling
     )
   }
-  result_array <- rducks_scalar_results_to_arrow(return_type, results, output_schema, n)
-  rducks_arrow_ipc_encode(result_array)
+  rducks_quack_results_payload(return_type, results, n)
 }
 
 rducks_ipc_worker_eval_vectorized_chunk <- function(input_payload,
@@ -57,7 +54,7 @@ rducks_ipc_worker_eval_vectorized_chunk <- function(input_payload,
                                                     return_type,
                                                     null_handling,
                                                     exception_handling) {
-  rducks_ipc_worker_eval_arrow_ipc_chunk(
+  rducks_ipc_worker_eval_quack_chunk(
     input_payload = input_payload,
     output_schema_spec = output_schema_spec,
     n = n,
