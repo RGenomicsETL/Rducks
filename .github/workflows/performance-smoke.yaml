@@ -20,8 +20,8 @@ jobs:
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_PERF_ROWS: "262144"
-      RDUCKS_PERF_ARROW_R_MAX_SEC: "8"
-      RDUCKS_PERF_ARROW_C_MAX_SEC: "8"
+      RDUCKS_PERF_DIRECT_MAX_SEC: "8"
+      RDUCKS_PERF_QUACK_MAX_SEC: "8"
 
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +71,11 @@ jobs:
           fi
           if ! git rev-parse --verify "$baseline_ref^{commit}" >/dev/null 2>&1; then
             echo "No baseline commit available for performance comparison; running current smoke only."
+            run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+            exit 0
+          fi
+          if git show "$baseline_ref:DESCRIPTION" | grep -qi 'nanoarrow'; then
+            echo "Baseline still depends on nanoarrow; no-Arrow PR is not performance-comparable. Running current smoke only."
             run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
             exit 0
           fi

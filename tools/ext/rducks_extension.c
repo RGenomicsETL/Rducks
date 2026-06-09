@@ -230,11 +230,11 @@ struct rducks_r_scalar_meta {
     atomic_uint_fast64_t queued_chunks;
     atomic_uint_fast64_t queue_pending_current;
     atomic_uint_fast64_t queue_pending_max;
-    atomic_uint_fast64_t arrow_r_chunks;
-    atomic_uint_fast64_t arrow_c_chunks;
-    atomic_uint_fast64_t arrow_c_input_snapshot_chunks;
-    atomic_uint_fast64_t arrow_c_owned_result_chunk_chunks;
-    atomic_uint_fast64_t arrow_ipc_chunks;
+    atomic_uint_fast64_t sexp_chunks;
+    atomic_uint_fast64_t direct_eval_chunks;
+    atomic_uint_fast64_t direct_input_snapshot_chunks;
+    atomic_uint_fast64_t direct_owned_result_chunk_chunks;
+    atomic_uint_fast64_t wire_chunks;
     atomic_uint_fast64_t ripc_collect_batches;
     atomic_uint_fast64_t ripc_collect_requests;
     atomic_uint_fast64_t ripc_collect_max_batch;

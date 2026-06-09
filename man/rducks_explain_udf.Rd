@@ -26,8 +26,8 @@ time. The
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
 through its requested evaluator instead of silently switching engines: for
-example, an \code{arrow_c} scalar UDF should increment \code{arrow_c_chunks} and leave
-\code{arrow_r_chunks} unchanged.
+example, a direct scalar UDF should increment \code{direct_eval_chunks} and leave
+\code{wire_chunks} unchanged.
 }
 \examples{
 \donttest{

@@ -59,11 +59,11 @@ rducks_native_udf_stat_fields_compat <- c(
   "queued_chunks",
   "queue_pending_current",
   "queue_pending_max",
-  "arrow_r_chunks",
-  "arrow_c_chunks",
-  "arrow_c_input_snapshot_chunks",
-  "arrow_c_owned_result_chunk_chunks",
-  "arrow_ipc_chunks",
+  "sexp_chunks",
+  "direct_eval_chunks",
+  "direct_input_snapshot_chunks",
+  "direct_owned_result_chunk_chunks",
+  "wire_chunks",
   "ripc_collect_batches",
   "ripc_collect_requests",
   "ripc_collect_max_batch",
@@ -121,11 +121,11 @@ rducks_explain_udf_columns <- list(
   queued_chunks = numeric,
   queue_pending_current = numeric,
   queue_pending_max = numeric,
-  arrow_r_chunks = numeric,
-  arrow_c_chunks = numeric,
-  arrow_c_input_snapshot_chunks = numeric,
-  arrow_c_owned_result_chunk_chunks = numeric,
-  arrow_ipc_chunks = numeric,
+  sexp_chunks = numeric,
+  direct_eval_chunks = numeric,
+  direct_input_snapshot_chunks = numeric,
+  direct_owned_result_chunk_chunks = numeric,
+  wire_chunks = numeric,
   ripc_collect_batches = numeric,
   ripc_collect_requests = numeric,
   ripc_collect_max_batch = numeric,
@@ -179,11 +179,11 @@ rducks_explain_udf_row <- function(con, name) {
     queued_chunks = rducks_counter_value(stats, "queued_chunks"),
     queue_pending_current = rducks_counter_value(stats, "queue_pending_current"),
     queue_pending_max = rducks_counter_value(stats, "queue_pending_max"),
-    arrow_r_chunks = rducks_counter_value(stats, "arrow_r_chunks"),
-    arrow_c_chunks = rducks_counter_value(stats, "arrow_c_chunks"),
-    arrow_c_input_snapshot_chunks = rducks_counter_value(stats, "arrow_c_input_snapshot_chunks"),
-    arrow_c_owned_result_chunk_chunks = rducks_counter_value(stats, "arrow_c_owned_result_chunk_chunks"),
-    arrow_ipc_chunks = rducks_counter_value(stats, "arrow_ipc_chunks"),
+    sexp_chunks = rducks_counter_value(stats, "sexp_chunks"),
+    direct_eval_chunks = rducks_counter_value(stats, "direct_eval_chunks"),
+    direct_input_snapshot_chunks = rducks_counter_value(stats, "direct_input_snapshot_chunks"),
+    direct_owned_result_chunk_chunks = rducks_counter_value(stats, "direct_owned_result_chunk_chunks"),
+    wire_chunks = rducks_counter_value(stats, "wire_chunks"),
     ripc_collect_batches = rducks_counter_value(stats, "ripc_collect_batches"),
     ripc_collect_requests = rducks_counter_value(stats, "ripc_collect_requests"),
     ripc_collect_max_batch = rducks_counter_value(stats, "ripc_collect_max_batch"),
@@ -206,8 +206,8 @@ rducks_explain_udf_row <- function(con, name) {
 #' present but the connection-local R registry view was detached or is otherwise
 #' unavailable. The native counters are useful for checking that a plan executed
 #' through its requested evaluator instead of silently switching engines: for
-#' example, an `arrow_c` scalar UDF should increment `arrow_c_chunks` and leave
-#' `arrow_r_chunks` unchanged.
+#' example, a direct scalar UDF should increment `direct_eval_chunks` and leave
+#' `wire_chunks` unchanged.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param name SQL scalar-UDF function name registered with

@@ -1,6 +1,6 @@
 /* Included by ../rducks_extension.c.
  *
- * The arrow_c direct evaluator is intentionally a recorded-main-R-thread
+ * The direct evaluator is intentionally a recorded-main-R-thread
  * implementation today. The scalar path now has an explicit worker-safe borrowed
  * DuckDB-vector view snapshot phase followed by main-R-thread evaluation and
  * writeback. The vectorized path is split into named main-R-thread phases, but
@@ -2026,7 +2026,7 @@ static SEXP rducks_rc_direct_column_values(const rducks_type_desc_t *desc, duckd
         UNPROTECT(1);
     }
     if (!rducks_rc_direct_type_supported(desc)) {
-        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "direct marshalling is not implemented for this UDF signature");
     }
     UNPROTECT(1);
     return out;
@@ -3514,7 +3514,7 @@ static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rd
         return 0;
     }
     if (!rducks_rc_direct_supported(meta)) {
-        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     bundle = meta->fun;
@@ -3557,7 +3557,7 @@ fail_vectorized:
     return 0;
 }
 
-/* Current recorded-main-R-thread arrow_c direct dispatcher. This does not rule
+/* Current recorded-main-R-thread direct dispatcher. This does not rule
  * out a later worker-safe native backend; it means this direct-vector
  * implementation is only legal on the calling R thread because it may call R
  * and touch SEXPs. Concurrent
@@ -3573,7 +3573,7 @@ static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     if (!rducks_rc_direct_supported(meta)) {
-        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     return rducks_rc_direct_scalar_execute(meta, input, output, err_msg, err_cap);
@@ -3610,7 +3610,7 @@ static int rducks_rc_vectorized_execute_to_owned_payload(rducks_runtime_entry_t 
         return 0;
     }
     if (!rducks_rc_direct_supported(meta)) {
-        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     if (!rducks_rc_owned_result_type_supported(meta->return_desc)) {
@@ -3673,7 +3673,7 @@ static int rducks_rc_scalar_execute_to_owned_payload_impl(rducks_runtime_entry_t
     }
     rducks_udf_record_evaluator(meta, duckdb_data_chunk_get_size(input));
     if (!rducks_rc_direct_supported(meta)) {
-        rducks_format_error_message(err_msg, err_cap, "arrow_c direct marshalling is not implemented for this UDF signature");
+        rducks_format_error_message(err_msg, err_cap, "direct marshalling is not implemented for this UDF signature");
         return 0;
     }
     if (!rducks_rc_owned_result_supported(meta)) {
@@ -3974,7 +3974,7 @@ static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runti
         duckdb_destroy_data_chunk(&chunk);
         return 0;
     }
-    rducks_udf_record_arrow_c_owned_result_chunk(meta);
+    rducks_udf_record_direct_owned_result_chunk(meta);
     *chunk_out = chunk;
     return 1;
 }

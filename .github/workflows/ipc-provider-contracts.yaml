@@ -1,4 +1,4 @@
-name: IPC provider contracts
+name: No-Arrow provider contracts
 
 on:
   push:
@@ -10,10 +10,10 @@ on:
 permissions: read-all
 
 jobs:
-  ipc-provider-contracts:
+  noarrow-provider-contracts:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    name: ${{ matrix.os }} IPC contracts
+    name: ${{ matrix.os }} no-Arrow contracts
     strategy:
       fail-fast: false
       matrix:
@@ -50,10 +50,10 @@ jobs:
         run: R CMD INSTALL --preclean .
         shell: bash
 
-      - name: Run focused IPC provider contract tests
+      - name: Run focused no-Arrow provider contract tests
         run: |
-          tinytest::run_test_file("inst/tinytest/test_provider_ipc_worker.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_startup_retry.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_batch_contract.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_10_lifecycle.R")
+          tinytest::run_test_file("inst/tinytest/test_noarrow_dependency.R")
+          tinytest::run_test_file("inst/tinytest/test_execution_plan_noarrow.R")
+          tinytest::run_test_file("inst/tinytest/test_quack_codec_roundtrip.R")
+          tinytest::run_test_file("inst/tinytest/test_direct_scalar_noarrow.R")
         shell: Rscript {0}

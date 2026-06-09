@@ -478,7 +478,7 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
         }
         if (owned_input) {
             request.input = owned_input;
-            rducks_udf_record_arrow_c_input_snapshot(meta);
+            rducks_udf_record_direct_input_snapshot(meta);
         }
     }
 
