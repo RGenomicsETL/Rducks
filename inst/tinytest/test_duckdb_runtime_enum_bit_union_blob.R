@@ -29,7 +29,7 @@ local({
   }, GEOMETRY, VARCHAR))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_geometry_hex('POINT (1 2)'::GEOMETRY) AS x")$x, point_1_2_wkb)
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   invisible(rducks_register_scalar_udf(con, "rducks_enum_arrow_c", function(x) x, ENUM(c("red", "blue")), ENUM(c("red", "blue"))))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_enum_arrow_c('blue'::ENUM('red','blue'))::VARCHAR AS x")$x, "blue")
 

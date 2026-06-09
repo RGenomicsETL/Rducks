@@ -25,7 +25,7 @@ rducks_runtime_lifecycle_body <- function() {
     make_connection_token <- function() {
       con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
       rducks_enable(con, threads = "single")
-      rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+      rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
       reg <- rducks_register_scalar_udf(con, "rducks_lifecycle_plus_one", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER)
       conn_ref <- Rducks:::rducks_connection_ref(con)
       ref_key <- Rducks:::rducks_connection_ref_key(conn_ref)
@@ -101,9 +101,9 @@ rducks_runtime_lifecycle_body <- function() {
 
     expect_false(identical(token1, token2))
     expect_identical(db_token1, db_token2)
-    rducks_set_execution_plan(con1, rducks_execution_plan("arrow_c", "serial"))
+    rducks_set_execution_plan(con1, rducks_execution_plan_internal("direct", "serial"))
     expect_equal(rducks_current_execution_plan(con1)$plan_id, "arrow_c+serial")
-    expect_equal(rducks_current_execution_plan(con2)$plan_id, "arrow_r+serial")
+    expect_equal(rducks_current_execution_plan(con2)$plan_id, "direct+serial")
 
     invisible(rducks_register_scalar_udf(con1, "rducks_lifecycle_con1", rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
     invisible(rducks_register_scalar_udf(con2, "rducks_lifecycle_con2", rducks_lifecycle_times_two_fun, INTEGER, INTEGER))
@@ -128,7 +128,7 @@ rducks_runtime_lifecycle_body <- function() {
     expect_true(exists(token2, envir = Rducks:::rducks_connection_plan_store(), inherits = FALSE))
     expect_false(exists(token2, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
     expect_true(exists(db_token2, envir = Rducks:::rducks_registration_store(), inherits = FALSE))
-    expect_equal(rducks_current_execution_plan(con2)$plan_id, "arrow_r+serial")
+    expect_equal(rducks_current_execution_plan(con2)$plan_id, "direct+serial")
     expect_equal(DBI::dbGetQuery(con2, "SELECT rducks_lifecycle_con1(41::INTEGER) AS x")$x, 42L)
 
     rducks_release(con2)
@@ -180,7 +180,7 @@ rducks_runtime_lifecycle_body <- function() {
     con <- DBI::dbConnect(drv)
     on.exit(rducks_test_disconnect_shutdown(con, drv), add = TRUE)
     rducks_enable(con, threads = "single")
-    rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+    rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
     DBI::dbExecute(con, "CREATE TABLE durable_values(i INTEGER)")
     DBI::dbExecute(con, "INSERT INTO durable_values VALUES (1), (41)")
     invisible(rducks_register_scalar_udf(
@@ -251,7 +251,7 @@ rducks_runtime_lifecycle_body <- function() {
     for (i in seq_len(3L)) {
       con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
       rducks_enable(con, threads = "single")
-      rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+      rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
       name <- paste0("rducks_lifecycle_loop_", i)
       invisible(rducks_register_scalar_udf(con, name, rducks_lifecycle_plus_one_fun, INTEGER, INTEGER))
       expect_equal(DBI::dbGetQuery(con, sprintf("SELECT %s(41::INTEGER) AS x", name))$x, 42L)

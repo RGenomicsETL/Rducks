@@ -132,7 +132,7 @@ local({
     "vectorized return value must have length"
   )
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   seen_arrow_c <- list()
   invisible(rducks_register_scalar_udf(con, "vec_arrow_c_plus_one", function(x) {
     seen_arrow_c[[length(seen_arrow_c) + 1L]] <<- x
@@ -151,7 +151,7 @@ local({
                     mode = "vectorized", side_effects = TRUE),
     "arrow_c direct marshalling is not implemented"
   )
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   expect_error(
     rducks_register_scalar_udf(con, "vec_no_arg_rejected", function() 1L, character(), INTEGER,
                     mode = "vectorized"),

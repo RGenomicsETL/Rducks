@@ -35,29 +35,17 @@ SEXP RDUCKS_bits_to_character(SEXP data_sexp, SEXP bit_length_sexp);
 SEXP RDUCKS_bits_binary_raw(SEXP a_sexp, SEXP b_sexp, SEXP bit_length_sexp, SEXP op_sexp);
 SEXP RDUCKS_bits_not_raw(SEXP data_sexp, SEXP bit_length_sexp);
 SEXP RDUCKS_bits_from_character(SEXP x_sexp);
-SEXP RDUCKS_arrow_pack_bits(SEXP values_sexp);
 SEXP RDUCKS_bit_payloads_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP valid_sexp,
                                    SEXP offset_sexp, SEXP n_sexp);
 SEXP RDUCKS_bit_values_to_payloads(SEXP values);
 SEXP RDUCKS_uuid_bytes_from_strings(SEXP values_sexp);
 SEXP RDUCKS_uuid_strings_from_bytes(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp);
 SEXP RDUCKS_uuid_normalize_strings(SEXP values_sexp);
-SEXP RDUCKS_arrow_bool_to_logical(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp, SEXP bool8_sexp);
-SEXP RDUCKS_arrow_integer_storage_to_values(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp,
                                             SEXP width_sexp, SEXP signed_sexp, SEXP numeric_sexp);
-SEXP RDUCKS_arrow_integer_storage_from_values(SEXP values_sexp, SEXP width_sexp, SEXP signed_sexp);
-SEXP RDUCKS_arrow_string_array_to_character(SEXP data_sexp, SEXP offsets_sexp, SEXP valid_sexp,
                                             SEXP offset_sexp, SEXP n_sexp);
-SEXP RDUCKS_arrow_binary_array_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP valid_sexp,
                                          SEXP offset_sexp, SEXP n_sexp);
-SEXP RDUCKS_arrow_string_array_from_character(SEXP values_sexp);
-SEXP RDUCKS_arrow_binary_payload_array(SEXP payloads);
-SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp);
-SEXP RDUCKS_arrow_i64_storage_from_numeric(SEXP values_sexp);
-SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr);
 SEXP RDUCKS_quack_encode_chunk(SEXP rows, SEXP types, SEXP columns);
 SEXP RDUCKS_quack_decode_chunk(SEXP payload);
-SEXP RDUCKS_query_stream_wrap_cdata(SEXP handle_sexp);
 SEXP RDUCKS_type_inherits_names(SEXP x, SEXP names);
 SEXP RDUCKS_vectorized_fast_scalar_rows(SEXP type, SEXP value, SEXP n_sexp);
 
@@ -122,25 +110,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_bits_binary_raw", (DL_FUNC) &RDUCKS_bits_binary_raw, 4},
     {"RDUCKS_bits_not_raw", (DL_FUNC) &RDUCKS_bits_not_raw, 2},
     {"RDUCKS_bits_from_character", (DL_FUNC) &RDUCKS_bits_from_character, 1},
-    {"RDUCKS_arrow_pack_bits", (DL_FUNC) &RDUCKS_arrow_pack_bits, 1},
     {"RDUCKS_bit_payloads_to_values", (DL_FUNC) &RDUCKS_bit_payloads_to_values, 5},
     {"RDUCKS_bit_values_to_payloads", (DL_FUNC) &RDUCKS_bit_values_to_payloads, 1},
     {"RDUCKS_uuid_bytes_from_strings", (DL_FUNC) &RDUCKS_uuid_bytes_from_strings, 1},
     {"RDUCKS_uuid_strings_from_bytes", (DL_FUNC) &RDUCKS_uuid_strings_from_bytes, 4},
     {"RDUCKS_uuid_normalize_strings", (DL_FUNC) &RDUCKS_uuid_normalize_strings, 1},
-    {"RDUCKS_arrow_bool_to_logical", (DL_FUNC) &RDUCKS_arrow_bool_to_logical, 5},
-    {"RDUCKS_arrow_integer_storage_to_values", (DL_FUNC) &RDUCKS_arrow_integer_storage_to_values, 7},
-    {"RDUCKS_arrow_integer_storage_from_values", (DL_FUNC) &RDUCKS_arrow_integer_storage_from_values, 3},
-    {"RDUCKS_arrow_string_array_to_character", (DL_FUNC) &RDUCKS_arrow_string_array_to_character, 5},
-    {"RDUCKS_arrow_binary_array_to_values", (DL_FUNC) &RDUCKS_arrow_binary_array_to_values, 5},
-    {"RDUCKS_arrow_string_array_from_character", (DL_FUNC) &RDUCKS_arrow_string_array_from_character, 1},
-    {"RDUCKS_arrow_binary_payload_array", (DL_FUNC) &RDUCKS_arrow_binary_payload_array, 1},
-    {"RDUCKS_arrow_i64_micros_to_seconds", (DL_FUNC) &RDUCKS_arrow_i64_micros_to_seconds, 4},
-    {"RDUCKS_arrow_i64_storage_from_numeric", (DL_FUNC) &RDUCKS_arrow_i64_storage_from_numeric, 1},
-    {"RDUCKS_arrow_ipc_encode_array", (DL_FUNC) &RDUCKS_arrow_ipc_encode_array, 1},
     {"RDUCKS_quack_encode_chunk", (DL_FUNC) &RDUCKS_quack_encode_chunk, 3},
     {"RDUCKS_quack_decode_chunk", (DL_FUNC) &RDUCKS_quack_decode_chunk, 1},
-    {"RDUCKS_query_stream_wrap_cdata", (DL_FUNC) &RDUCKS_query_stream_wrap_cdata, 1},
     {"RDUCKS_type_inherits_names", (DL_FUNC) &RDUCKS_type_inherits_names, 2},
     {"RDUCKS_vectorized_fast_scalar_rows", (DL_FUNC) &RDUCKS_vectorized_fast_scalar_rows, 3},
     {NULL, NULL, 0}

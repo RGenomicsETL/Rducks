@@ -7,7 +7,7 @@ local({
   on.exit(DBI::dbDisconnect(con_c, shutdown = TRUE), add = TRUE)
   rducks_enable(con_r, threads = "single")
   rducks_enable(con_c, threads = "single")
-  rducks_set_execution_plan(con_c, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con_c, rducks_execution_plan_internal("direct", "serial"))
 
   register_pair <- function(name, fun, args, returns, ..., side_effects = TRUE) {
     invisible(rducks_register_scalar_udf(con_r, name, fun, args, returns, ..., side_effects = side_effects))

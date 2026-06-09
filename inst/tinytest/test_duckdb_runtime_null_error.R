@@ -68,7 +68,7 @@ local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
 
   invisible(rducks_register_scalar_udf(
     con,

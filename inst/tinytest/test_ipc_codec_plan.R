@@ -15,7 +15,7 @@ local({
   expect_error(Rducks:::rducks_arrow_ipc_decode_array(raw()), "record batch|Arrow|IPC|schema|Invalid|read")
   expect_error(Rducks:::rducks_arrow_ipc_decode_array(as.raw(c(1L, 2L, 3L, 4L))), "record batch|Arrow|IPC|schema|Invalid|read")
 
-  plan <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
+  plan <- rducks_execution_plan("ipc")
   expect_equal(plan$engine_id, "ipc_nng_pool")
   expect_true(plan$implemented)
   expect_equal(plan$supported_call_shapes, c("scalar", "vectorized"))

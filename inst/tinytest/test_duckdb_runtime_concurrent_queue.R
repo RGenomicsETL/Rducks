@@ -92,7 +92,7 @@ local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
 
   invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_c", function(x) x + 1, DOUBLE, DOUBLE))
   invisible(rducks_register_scalar_udf(con, "rducks_queue_plus_one_c_vec", function(x) x + 1, DOUBLE, DOUBLE,
@@ -257,7 +257,7 @@ local({
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "inproc_concurrent"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "inproc_concurrent"))
 
   invisible(rducks_register_scalar_udf(
     con, "rducks_queue_arrow_c_snapshot_varchar_input",

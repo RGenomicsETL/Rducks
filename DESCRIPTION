@@ -8,16 +8,13 @@ Authors@R: c(
     role = c("cph"),
     comment = "NNG copyright holders for bundled vendored NNG"),
     person(given = "The Apache Software Foundation", role = c("cph"),
-    comment = "Apache Arrow nanoarrow copyright holder for bundled vendored nanoarrow C/IPC"),
     person(given = "Mikkel F. Jørgensen", role = c("cph"),
-    comment = "flatcc copyright holder for bundled flatcc runtime"),
     person(given = "The Mbed TLS Contributors", role = c("cph"),
     comment = "Mbed TLS copyright holders for bundled vendored Mbed TLS")
   )
 Description: R package and 'DuckDB' extension bridge for registering R
     functions as 'DuckDB' user-defined functions (UDFs). The package is
     designed around a loaded 'DuckDB' extension, declarative type descriptors,
-    'nanoarrow' marshalling over 'Arrow C Data', and a calling-R-thread
     execution discipline for safe interaction with R from 'DuckDB' execution.
     Arrow IPC (inter-process communication) worker transport uses vendored 'NNG'
     (nanomsg next generation) for worker-process communication.
@@ -36,11 +33,9 @@ Imports:
     duckdb (>= 1.5.0),
     methods,
     mirai,
-    nanoarrow,
     nanonext,
     S7
 LinkingTo:
-    nanoarrow
 Suggests:
     bench,
     dplyr,

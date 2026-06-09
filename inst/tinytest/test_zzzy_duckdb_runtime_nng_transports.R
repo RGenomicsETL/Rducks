@@ -77,7 +77,7 @@ local({
         side_effects = TRUE
       )
       rducks_nng_transport_trace(paste0("transport:", transport, ":register:done"))
-      expect_equal(reg$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+      expect_equal(reg$execution_plan$plan_id, "wire+multiprocess_parallel")
       rducks_nng_transport_trace(paste0("transport:", transport, ":query:start"))
       result <- DBI::dbGetQuery(con, sprintf(
         "SELECT %s(i::INTEGER) AS x FROM range(4) t(i)",

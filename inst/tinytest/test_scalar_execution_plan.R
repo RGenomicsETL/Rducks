@@ -3,7 +3,7 @@ library(Rducks)
 plan <- rducks_execution_plan()
 expect_equal(plan$marshalling, "arrow_r")
 expect_equal(plan$concurrency, "serial")
-expect_equal(plan$plan_id, "arrow_r+serial")
+expect_equal(plan$plan_id, "direct+serial")
 expect_true(plan$reference)
 expect_true(plan$implemented)
 expect_equal(plan$backend, "single")
@@ -12,7 +12,7 @@ expect_true(plan$in_process)
 expect_true(plan$uses_r_thread)
 expect_equal(plan$supported_call_shapes, c("scalar", "vectorized"))
 
-inproc <- rducks_execution_plan("arrow_c", "inproc_concurrent")
+inproc <- rducks_execution_plan_internal("direct", "inproc_concurrent")
 expect_equal(inproc$marshalling, "arrow_c")
 expect_equal(inproc$concurrency, "inproc_concurrent")
 expect_equal(inproc$plan_id, "arrow_c+inproc_concurrent")
@@ -21,7 +21,7 @@ expect_true(inproc$implemented)
 expect_equal(inproc$backend, "concurrent_inproc")
 expect_equal(inproc$supported_call_shapes, c("scalar", "vectorized"))
 
-ipc <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel")
+ipc <- rducks_execution_plan("ipc")
 expect_equal(ipc$serialization, "arrow_ipc")
 expect_true(ipc$implemented)
 expect_equal(ipc$supported_call_shapes, c("scalar", "vectorized"))
@@ -32,16 +32,16 @@ expect_equal(ipc$ipc_options$globals, "auto")
 expect_equal(ipc$ipc_options$globals_share, "none")
 expect_equal(ipc$ipc_options$timeout, 30)
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 0),
+  rducks_execution_plan("ipc", ipc_timeout = 0),
   "ipc_timeout"
 )
 expect_true(ipc$ipc_options$transport %in% c("abstract", "ipc", "unix", "tcp", "ws"))
 expect_equal(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "tcp")$ipc_options$transport,
+  rducks_execution_plan("ipc", ipc_transport = "tcp")$ipc_options$transport,
   "tcp"
 )
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_transport = "bogus"),
+  rducks_execution_plan("ipc", ipc_transport = "bogus"),
   "ipc_transport"
 )
 expect_error(
@@ -53,48 +53,48 @@ expect_error(
   "ipc_transport only applies"
 )
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = c("ok", NA_character_)),
+  rducks_execution_plan("ipc", ipc_globals = c("ok", NA_character_)),
   "ipc_globals"
 )
 expect_equal(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals_share = "mori")$ipc_options$globals_share,
+  rducks_execution_plan("ipc", ipc_globals_share = "mori")$ipc_options$globals_share,
   "mori"
 )
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals_share = "bogus"),
+  rducks_execution_plan("ipc", ipc_globals_share = "bogus"),
   "ipc_globals_share"
 )
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_packages = ""),
+  rducks_execution_plan("ipc", ipc_packages = ""),
   "ipc_packages"
 )
 expect_equal(ipc$ipc_provider, "nng")
 expect_equal(ipc$engine_id, "ipc_nng_pool")
 expect_equal(ipc$ipc_max_pending, 64L)
 expect_equal(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = NULL)$ipc_max_pending,
+  rducks_execution_plan("ipc", ipc_max_pending = NULL)$ipc_max_pending,
   64L
 )
 expect_equal(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 2L)$ipc_max_pending,
+  rducks_execution_plan("ipc", ipc_max_pending = 2L)$ipc_max_pending,
   2L
 )
-expect_equal(rducks_execution_plan("arrow_r", "serial")$ipc_max_pending, NA_integer_)
+expect_equal(rducks_execution_plan_internal("direct", "serial")$ipc_max_pending, NA_integer_)
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 0L),
+  rducks_execution_plan("ipc", ipc_max_pending = 0L),
   "ipc_max_pending"
 )
 expect_error(
-  rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_max_pending = 1.5),
+  rducks_execution_plan("ipc", ipc_max_pending = 1.5),
   "ipc_max_pending"
 )
 shortcut_expected <- list(
-  reference = "arrow_r+serial",
-  arrow_r_serial = "arrow_r+serial",
+  reference = "direct+serial",
+  arrow_r_serial = "direct+serial",
   arrow_r_main_queue = "arrow_r+inproc_concurrent",
   arrow_c_direct_serial = "arrow_c+serial",
   arrow_c_direct_main_queue = "arrow_c+inproc_concurrent",
-  ipc_nng_pool = "arrow_ipc+multiprocess_parallel"
+  ipc_nng_pool = "wire+multiprocess_parallel"
 )
 for (shortcut in names(shortcut_expected)) {
   expect_equal(Rducks:::rducks_as_execution_plan(shortcut)$plan_id, shortcut_expected[[shortcut]])
@@ -104,8 +104,8 @@ expect_error(Rducks:::rducks_as_execution_plan("inproc_concurrent"), "unknown Rd
 expect_error(Rducks:::rducks_as_execution_plan("arrow_r"), "unknown Rducks execution plan shortcut")
 expect_error(Rducks:::rducks_as_execution_plan("arrow_c"), "unknown Rducks execution plan shortcut")
 expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$engine_id, "ipc_nng_pool")
-expect_true(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = TRUE)$ipc_options$globals)
-expect_false(rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_globals = FALSE)$ipc_options$globals)
+expect_true(rducks_execution_plan("ipc", ipc_globals = TRUE)$ipc_options$globals)
+expect_false(rducks_execution_plan("ipc", ipc_globals = FALSE)$ipc_options$globals)
 expect_silent(Rducks:::rducks_assert_execution_plan_implemented(ipc))
 
 enum_spec <- Rducks:::rducks_scalar_udf_registration_spec(
@@ -130,11 +130,11 @@ vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
 )
 expect_silent(
   Rducks:::rducks_validate_execution_plan_for_registration(
-    rducks_execution_plan("arrow_c", "serial"), vectorized_spec
+    rducks_execution_plan_internal("direct", "serial"), vectorized_spec
   )
 )
 expect_equal(
-  Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan("arrow_c", "serial"), "vectorized"),
+  Rducks:::rducks_plan_native_evaluator_token(rducks_execution_plan_internal("direct", "serial"), "vectorized"),
   "RCV"
 )
 zero_arg_vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
@@ -142,7 +142,7 @@ zero_arg_vectorized_spec <- Rducks:::rducks_scalar_udf_registration_spec(
 )
 expect_error(
   Rducks:::rducks_validate_execution_plan_for_registration(
-    rducks_execution_plan("arrow_r", "serial"), zero_arg_vectorized_spec
+    rducks_execution_plan_internal("direct", "serial"), zero_arg_vectorized_spec
   ),
   "requires at least one declared argument"
 )

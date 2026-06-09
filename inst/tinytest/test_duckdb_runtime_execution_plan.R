@@ -15,16 +15,16 @@ local({
   rducks_enable(con, threads = "single")
 
   current <- rducks_current_execution_plan(con)
-  expect_equal(current$plan_id, "arrow_r+serial")
-  expect_equal(current$engine_id, "arrow_r_serial")
+  expect_equal(current$plan_id, "direct+serial")
+  expect_equal(current$engine_id, "direct_serial")
   expect_equal(rducks_native_execution_backend(con), "single")
-  expect_equal(Rducks:::rducks_as_execution_plan("arrow_c_direct_serial")$plan_id, "arrow_c+serial")
-  expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$plan_id, "arrow_ipc+multiprocess_parallel")
+  expect_equal(Rducks:::rducks_as_execution_plan("direct_serial")$plan_id, "arrow_c+serial")
+  expect_equal(Rducks:::rducks_as_execution_plan("ipc_nng_pool")$plan_id, "wire+multiprocess_parallel")
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   current <- rducks_current_execution_plan(con)
   expect_equal(current$plan_id, "arrow_c+serial")
-  expect_equal(current$engine_id, "arrow_c_direct_serial")
+  expect_equal(current$engine_id, "direct_serial")
 
   reg <- rducks_register_scalar_udf(con, "plan_plus_one", function(x) x + 1L, INTEGER, INTEGER)
   expect_equal(reg$execution_plan$marshalling, "arrow_c")
@@ -38,11 +38,11 @@ local({
   expect_equal(result_vec$x, 1:3)
   expect_equal(rducks_explain_udf(con, "plan_vec")$evaluator, "RCV")
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   reg_r <- rducks_register_scalar_udf(con, "plan_r_plus_one", function(x) x + 1L, INTEGER, INTEGER)
   expect_equal(reg_r$execution_plan$marshalling, "arrow_r")
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   rducks_enable_inproc(con)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+inproc_concurrent")
   expect_equal(rducks_native_execution_backend(con), "concurrent_inproc")
@@ -59,7 +59,7 @@ local({
 
   before_threads <- Rducks:::rducks_connection_threads(con)
   before_external_threads <- Rducks:::rducks_connection_external_threads(con)
-  bad_plan <- rducks_execution_plan("arrow_c", "serial")
+  bad_plan <- rducks_execution_plan_internal("direct", "serial")
   bad_plan$backend <- "invalid_backend_for_rollback_test"
   new_threads <- if (identical(before_threads, 1L)) 2L else 1L
   new_external_threads <- if (new_threads > 1L && identical(before_external_threads, 1L)) new_threads else 1L
@@ -71,7 +71,7 @@ local({
   expect_equal(Rducks:::rducks_connection_external_threads(con), before_external_threads)
   expect_equal(rducks_current_execution_plan(con)$plan_id, "arrow_c+serial")
 
-  ipc_plan <- rducks_execution_plan("arrow_ipc", "multiprocess_parallel", ipc_timeout = 30)
+  ipc_plan <- rducks_execution_plan("ipc", ipc_timeout = 30)
   expect_true(ipc_plan$implemented)
   rducks_set_execution_plan(con, ipc_plan, threads = 2L, external_threads = 1L)
   expect_equal(rducks_native_execution_backend(con), "multiprocess_parallel")
@@ -84,7 +84,7 @@ local({
     mode = "vectorized",
     side_effects = TRUE
   )
-  expect_equal(reg_ipc$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+  expect_equal(reg_ipc$execution_plan$plan_id, "wire+multiprocess_parallel")
   result_ipc <- DBI::dbGetQuery(con, "SELECT plan_ipc_vec(i::INTEGER) AS x FROM range(3) t(i)")
   expect_equal(result_ipc$x, 1:3)
   explain_ipc <- rducks_explain_udf(con, "plan_ipc_vec")
@@ -108,7 +108,7 @@ local({
     mode = "vectorized",
     side_effects = TRUE
   )
-  expect_equal(reg_ipc_enum$execution_plan$plan_id, "arrow_ipc+multiprocess_parallel")
+  expect_equal(reg_ipc_enum$execution_plan$plan_id, "wire+multiprocess_parallel")
   result_ipc_enum <- DBI::dbGetQuery(
     con,
     "SELECT plan_ipc_enum(x)::VARCHAR AS x FROM (VALUES ('red'::ENUM('red','blue')), ('blue'::ENUM('red','blue'))) t(x)"

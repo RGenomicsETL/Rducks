@@ -46,7 +46,7 @@ local({
   gc()
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_tmp(32.0) AS x")$x, 42)
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   invisible(rducks_register_scalar_udf(con, "rducks_list_sum_arrow_c", function(x) sum(x), INTEGER[], INTEGER))
   expect_equal(DBI::dbGetQuery(con, "SELECT rducks_list_sum_arrow_c([20,22]::INTEGER[]) AS x")$x, 42L)
   list_explain <- rducks_explain_udf(con, "rducks_list_sum_arrow_c")

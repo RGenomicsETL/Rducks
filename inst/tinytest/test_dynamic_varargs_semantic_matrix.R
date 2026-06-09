@@ -204,7 +204,7 @@ rducks_semantic_scalar_cases <- list(
 local({
   con <- rducks_semantic_connection()
   on.exit(rducks_semantic_cleanup(con), add = TRUE)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
 
   for (case_name in names(rducks_semantic_scalar_cases)) {
     case <- rducks_semantic_scalar_cases[[case_name]]
@@ -239,7 +239,7 @@ local({
 local({
   con <- rducks_semantic_connection()
   on.exit(rducks_semantic_cleanup(con), add = TRUE)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
 
   args <- list(
     INTEGER,
@@ -287,10 +287,10 @@ local({
   on.exit(options(rducks.ipc_globals.warn_bytes = old_warn), add = TRUE)
 
   plans <- list(
-    arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
-    arrow_r_inproc = rducks_execution_plan("arrow_r", "inproc_concurrent"),
-    arrow_c_serial = rducks_execution_plan("arrow_c", "serial"),
-    arrow_c_inproc = rducks_execution_plan("arrow_c", "inproc_concurrent"),
+    arrow_r_serial = rducks_execution_plan_internal("direct", "serial"),
+    arrow_r_inproc = rducks_execution_plan_internal("direct", "inproc_concurrent"),
+    arrow_c_serial = rducks_execution_plan_internal("direct", "serial"),
+    arrow_c_inproc = rducks_execution_plan_internal("direct", "inproc_concurrent"),
     arrow_ipc = rducks_execution_plan(
       "arrow_ipc", "multiprocess_parallel",
       ipc_workers = 1L,
@@ -349,7 +349,7 @@ local({
 local({
   con <- rducks_semantic_connection()
   on.exit(rducks_semantic_cleanup(con), add = TRUE)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
 
   for (declared in c(TRUE, FALSE)) {
     prefix <- if (declared) "declared" else "dynamic"
@@ -393,7 +393,7 @@ local({
 local({
   con <- rducks_semantic_connection()
   on.exit(rducks_semantic_cleanup(con), add = TRUE)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
 
   for (declared in c(TRUE, FALSE)) {
     prefix <- if (declared) "declared" else "dynamic"
@@ -442,7 +442,7 @@ local({
 local({
   con <- rducks_semantic_connection()
   on.exit(rducks_semantic_cleanup(con), add = TRUE)
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
 
   cases <- list(
     integer = list(type = INTEGER, sql = "NULL::INTEGER", expected = "NA"),

@@ -1,3 +1,11 @@
+# Rducks (development): Arrow removal
+
+* BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")` only; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
+* nanoarrow is removed from Imports/LinkingTo; the vendored nanoarrow/flatcc trees are deleted from the extension.
+* The IPC data plane and the in-process slow path use the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
+* The nanoarrow query-stream and duckplyr surface is removed pending reimplementation over the wire codec.
+* Remaining extension port (direct evaluator internals and RIPC encode in tools/ext/src) is tracked in tools/ext/src/WIRE_PORT.md.
+
 # Rducks 0.1.1
 
 - Improved configure-time CMake discovery for required vendored NNG builds on

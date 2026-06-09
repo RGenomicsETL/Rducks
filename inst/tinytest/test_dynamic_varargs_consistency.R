@@ -188,10 +188,10 @@ local({
   on.exit(rducks_dynamic_consistency_cleanup(con, stop_nng = TRUE), add = TRUE)
 
   plans <- list(
-    arrow_r_serial = rducks_execution_plan("arrow_r", "serial"),
-    arrow_r_inproc = rducks_execution_plan("arrow_r", "inproc_concurrent"),
-    arrow_c_serial = rducks_execution_plan("arrow_c", "serial"),
-    arrow_c_inproc = rducks_execution_plan("arrow_c", "inproc_concurrent"),
+    arrow_r_serial = rducks_execution_plan_internal("direct", "serial"),
+    arrow_r_inproc = rducks_execution_plan_internal("direct", "inproc_concurrent"),
+    arrow_c_serial = rducks_execution_plan_internal("direct", "serial"),
+    arrow_c_inproc = rducks_execution_plan_internal("direct", "inproc_concurrent"),
     arrow_ipc = rducks_execution_plan(
       "arrow_ipc", "multiprocess_parallel",
       ipc_workers = 1L,
@@ -402,7 +402,7 @@ local({
   con <- rducks_dynamic_consistency_connection()
   on.exit(rducks_dynamic_consistency_cleanup(con), add = TRUE)
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"), threads = 1L, external_threads = 1L)
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"), threads = 1L, external_threads = 1L)
   invisible(rducks_register_scalar_udf(
     con,
     "dyn_arrow_c_queued_sum",

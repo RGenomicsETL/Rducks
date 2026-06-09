@@ -5,12 +5,12 @@ local({
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_c", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
   expect_error(
     rducks_register_scalar_udf(con, "rducks_variant_arrow_c", identity, VARIANT, VARIANT),
     "arrow_c direct marshalling is not implemented"
   )
-  rducks_set_execution_plan(con, rducks_execution_plan("arrow_r", "serial"))
+  rducks_set_execution_plan(con, rducks_execution_plan_internal("direct", "serial"))
 
   unsupported_variant_capi <- "does not expose VARIANT logical types"
   registered <- tryCatch({
