@@ -30,10 +30,9 @@ work. This is a same-process scheduling mode, not a performance promise; R
 function calls are still serialized on the main R thread.
 }
 \details{
-This is a compatibility helper for the \code{arrow_r}/\code{arrow_c} in-process queue.
-New code can call \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
-directly with \code{rducks_execution_plan("arrow_r", "inproc_concurrent")} or
-\code{rducks_execution_plan("arrow_c", "inproc_concurrent")}. Select the plan
+This is a helper for the direct in-process queue. New code can call
+\code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+directly with \code{rducks_execution_plan("inproc")}. Select the plan
 before registering scalar UDFs whose reported execution plan should be the
 queued in-process path.
 }

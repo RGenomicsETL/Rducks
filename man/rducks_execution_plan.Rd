@@ -5,8 +5,7 @@
 \title{Define an Rducks execution plan}
 \usage{
 rducks_execution_plan(
-  marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
-  concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
+  transport = "inproc",
   ipc_globals = "auto",
   ipc_packages = NULL,
   ipc_timeout = NULL,
@@ -19,21 +18,13 @@ rducks_execution_plan(
 )
 }
 \arguments{
-\item{marshalling}{Chunk marshalling implementation. \code{"arrow_r"} uses Arrow C
-Data plus nanoarrow/R materialization and is the reference implementation.
-\code{"arrow_c"} uses native C/DuckDB-vector materialization for supported
-scalar-UDF evaluation modes. \code{"arrow_ipc"} uses Arrow IPC bytes as
-the explicit task/result payload for the NNG multiprocess path.}
+\item{transport}{Placement/transport. \code{"inproc"} evaluates in the current R
+process with the in-process queued backend. \code{"ipc"} evaluates in worker R
+processes over NNG; when \code{ipc_endpoints} is \code{NULL}, Rducks starts local
+worker loops with mirai daemons, otherwise the endpoint URLs are passed
+through unchanged.}
 
-\item{concurrency}{Concurrency contract. \code{"serial"} evaluates one chunk at a
-time in the calling process. \code{"inproc_concurrent"} allows in-process DuckDB
-callback concurrency while keeping R API work serialized on the recorded
-main R thread. \code{"multiprocess_parallel"} uses persistent NNG/nanonext
-workers for process-isolated chunk work and requires \code{marshalling = "arrow_ipc"}.
-When \code{ipc_endpoints} is \code{NULL}, Rducks starts local worker loops with
-mirai daemons; otherwise the endpoint URLs are passed through unchanged.}
-
-\item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{Arrow IPC worker options.
+\item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{IPC worker options.
 By default (\code{ipc_globals = "auto"}), Rducks discovers scalar-UDF globals
 once at registration-wrapper creation and broadcasts them to each NNG worker
 when the scalar UDF is registered with the shared provider pool. Automatic capture
@@ -68,7 +59,7 @@ serialization, which can turn large atomic vectors, lists, and data frames
 into same-host shared-memory references. This requires the optional mori
 package and workers on the same machine.}
 
-\item{ipc_provider}{Worker provider for \code{arrow_ipc + multiprocess_parallel}.
+\item{ipc_provider}{Worker provider for \code{transport = "ipc"}.
 Only \code{"nng"} is supported. The NNG provider broadcasts each registered scalar UDF
 closure plus discovered globals/packages to every worker in the shared
 database-runtime provider pool, so avoid capturing large objects in UDF
@@ -87,25 +78,27 @@ before a callback enters the native request path.}
 An object of class \code{rducks_execution_plan}.
 }
 \description{
-An execution plan describes how Rducks should marshal DuckDB chunks and what
-concurrency model is allowed. When stored on a connection it is the default
-for future \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
+An execution plan describes where Rducks evaluates registered scalar-UDF
+chunks: in the current R process (\code{transport = "inproc"}) or in persistent
+worker R processes (\code{transport = "ipc"}). When stored on a connection it is
+the default for future
+\code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
 calls and updates the native runtime backend used for matching concurrent
-execution; the selected evaluator/marshalling is frozen into each registered
+execution; the resolved transport metadata is frozen into each registered
 scalar UDF's database-catalog metadata. It is separate from DuckDB function
 kind and from scalar-UDF registration semantics such as Rducks evaluation
 mode (\code{"scalar"} row calls versus \code{"vectorized"} chunk calls),
 argument/return types, NULL handling, error handling, and side effects.
 }
 \details{
-\code{arrow_r + serial} is the reference implementation used for conformance.
-Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently switch from one plan to another.
-\code{arrow_ipc + multiprocess_parallel} uses the native NNG path with vendored
-nanoarrow C/IPC encoding. Each valid pair maps to a concrete internal \code{engine_id} such as
-\code{"arrow_c_direct_serial"} or \code{"ipc_nng_pool"}.
+\code{"inproc"} keeps all R API work serialized on the recorded main R thread
+while allowing DuckDB callback concurrency; DuckDB vectors are materialized
+to SEXPs directly in extension C with no intermediate columnar format.
+\code{"ipc"} uses persistent NNG/nanonext workers and Rducks Quack-style binary
+chunk payloads (DuckDB BinarySerializer subset) for process-isolated chunk
+work. Each transport maps to a concrete internal \code{engine_id} such as
+\code{"direct_main_queue"} or \code{"ipc_nng_pool"}.
 }
 \examples{
-rducks_execution_plan("arrow_r", "serial")
-rducks_execution_plan("arrow_c", "inproc_concurrent")
+rducks_execution_plan("inproc")
 }

@@ -202,7 +202,7 @@ rducks_quack_columns_to_values <- function(arg_types, decoded) {
 
 # Dematerialize one result column to a single-column wire payload.
 rducks_quack_results_payload <- function(return_type, results, rows) {
-  array <- rducks_native_array_from_values(return_type, results, rows)
+  array <- rducks_native_array_from_values(return_type, results)
   column <- rducks_quack_storage_from_array(array)
   rducks_quack_encode_columns(list(return_type), list(column), rows)
 }

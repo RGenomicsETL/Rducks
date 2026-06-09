@@ -50,7 +50,7 @@ jobs:
           mkdir -p /root/R-libs
           echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
           R -q -e '
-            pkgs <- c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7",
+            pkgs <- c("DBI", "duckdb", "mirai", "nanonext", "S7",
                       "bench", "dplyr", "duckplyr", "globals", "knitr",
                       "mori", "rmarkdown", "tinytest")
             pak::pkg_install(pkgs, lib = "/root/R-libs", ask = FALSE)

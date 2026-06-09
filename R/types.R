@@ -938,7 +938,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
 #' function call. It is used by scalar-UDF registration checks and the
-#' nanoarrow scalar-UDF marshalling adapter.
+#' direct native marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
 #' to a SQL `NULL` result and the R function is not called. The
@@ -950,7 +950,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' where the child type has an R `NA` representation; nested composite `NULL`
 #' values are represented as R `NULL`.
 #'
-#' The default table contains all scalar descriptors supported by the nanoarrow
+#' The default table contains all scalar descriptors supported by the direct
 #' scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R function
 #' shapes.

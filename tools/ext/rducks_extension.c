@@ -32,8 +32,6 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include <nanoarrow/r.h>
-
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -45,6 +43,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Minimal Arrow C Data array layout retained only as an internal owned-buffer
+ * carrier for queued direct-result writeback. No Arrow library or nanoarrow
+ * headers are used in the no-Arrow build.
+ */
+struct ArrowArray {
+    int64_t length;
+    int64_t null_count;
+    int64_t offset;
+    int64_t n_buffers;
+    int64_t n_children;
+    const void **buffers;
+    struct ArrowArray **children;
+    struct ArrowArray *dictionary;
+    void (*release)(struct ArrowArray *array);
+    void *private_data;
+};
 
 #ifdef _WIN32
 #include <windows.h>
@@ -555,19 +570,15 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
-#include "src/rducks_vendor_nanoarrow.c"
-#include "src/rducks_vendor_ipc_helpers.h"
 #include "src/rducks_threads.c"
 #include "src/rducks_util.c"
 #include "src/rducks_types.c"
 #include "src/rducks_runtime.c"
 #include "src/rducks_nng.c"
-#include "src/rducks_arrow.c"
-#include "src/rducks_query_stream.c"
+#include "src/rducks_noarrow.c"
 #include "src/rducks_rc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
-#include "src/rducks_table.c"
 #include "src/rducks_aggregate.c"
 #include "src/rducks_surfaces.c"

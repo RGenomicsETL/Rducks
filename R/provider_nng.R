@@ -749,7 +749,7 @@ rducks_ipc_workers_from_store <- function(runtime_token = NULL, ping = FALSE, ti
 #' List Rducks-managed IPC workers
 #'
 #' Lists the local Rducks NNG providers currently known to this R process. These
-#' are the managed workers used by `arrow_ipc + multiprocess_parallel` scalar-UDF
+#' are the managed workers used by `transport = "ipc"` scalar-UDF
 #' execution plans when `ipc_endpoints` is not supplied. Caller-supplied external
 #' endpoints are shown as external providers.
 #'
@@ -994,7 +994,7 @@ rducks_next_nng_udf_id <- function() {
   paste("rducks-nng-udf", Sys.getpid(), rducks_nng_counter_label(counter), sep = "-")
 }
 
-rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exception_handling,
+rducks_make_wire_ipc_nng_wrapper_impl <- function(fun, spec, null_handling, exception_handling,
                                               mode = c("scalar", "vectorized"),
                                               plan = rducks_execution_plan(),
                                               runtime_token = NULL) {
@@ -1038,7 +1038,7 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
 
   configure <- function(output_schema) {
     # Quack payloads are self-describing; carry the declared return type token
-    # for validation instead of an Arrow schema spec.
+    # for validation instead of an declared return type token.
     output_schema_spec <- rducks_type_token(engine$return_type)
     ensure_provider_started()
     if (!isTRUE(provider_registered)) {
@@ -1074,13 +1074,13 @@ rducks_make_arrow_ipc_nng_wrapper <- function(fun, spec, null_handling, exceptio
 rducks_make_wire_ipc_nng_scalar_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                      plan = rducks_execution_plan(),
                                                      runtime_token = NULL) {
-  rducks_make_arrow_ipc_nng_wrapper(fun, spec, null_handling, exception_handling,
+  rducks_make_wire_ipc_nng_wrapper_impl(fun, spec, null_handling, exception_handling,
                                     mode = "scalar", plan = plan, runtime_token = runtime_token)
 }
 
 rducks_make_wire_ipc_nng_vectorized_wrapper <- function(fun, spec, null_handling, exception_handling,
                                                          plan = rducks_execution_plan(),
                                                          runtime_token = NULL) {
-  rducks_make_arrow_ipc_nng_wrapper(fun, spec, null_handling, exception_handling,
+  rducks_make_wire_ipc_nng_wrapper_impl(fun, spec, null_handling, exception_handling,
                                     mode = "vectorized", plan = plan, runtime_token = runtime_token)
 }

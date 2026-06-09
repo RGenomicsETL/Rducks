@@ -7,17 +7,15 @@ Authors@R: c(
     person(given = "Staysail Systems, Inc. and Capitar IT Group BV",
     role = c("cph"),
     comment = "NNG copyright holders for bundled vendored NNG"),
-    person(given = "The Apache Software Foundation", role = c("cph"),
-    person(given = "Mikkel F. Jørgensen", role = c("cph"),
     person(given = "The Mbed TLS Contributors", role = c("cph"),
     comment = "Mbed TLS copyright holders for bundled vendored Mbed TLS")
   )
 Description: R package and 'DuckDB' extension bridge for registering R
     functions as 'DuckDB' user-defined functions (UDFs). The package is
     designed around a loaded 'DuckDB' extension, declarative type descriptors,
-    execution discipline for safe interaction with R from 'DuckDB' execution.
-    Arrow IPC (inter-process communication) worker transport uses vendored 'NNG'
-    (nanomsg next generation) for worker-process communication.
+    direct native vector marshalling, and explicit execution discipline for safe
+    interaction with R from 'DuckDB' execution. The inter-process worker
+    transport uses vendored 'NNG' (nanomsg next generation).
 License: GPL (>= 3)
 Copyright: See inst/LICENSE.note for bundled third-party copyright and
     licensing details.
@@ -35,7 +33,6 @@ Imports:
     mirai,
     nanonext,
     S7
-LinkingTo:
 Suggests:
     bench,
     dplyr,
@@ -45,6 +42,5 @@ Suggests:
     mori,
     rmarkdown,
     tinytest
-VignetteBuilder: knitr
 URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
 BugReports: https://github.com/sounkou-bioinfo/Rducks/issues

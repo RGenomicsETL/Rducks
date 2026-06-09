@@ -142,7 +142,7 @@ SEXP RDUCKS_arrow_pack_bits(SEXP values_sexp) {
         protect_values = 1;
     }
     R_xlen_t n = XLENGTH(values);
-    R_xlen_t nbytes = rducks_bytes_for_bits(n, "Arrow boolean");
+    R_xlen_t nbytes = rducks_bytes_for_bits(n, "packed boolean");
     SEXP out = PROTECT(Rf_allocVector(RAWSXP, nbytes));
     memset(RAW(out), 0, (size_t)nbytes);
     const int *logical = LOGICAL(values);
@@ -213,11 +213,11 @@ static SEXP rducks_bits_named3(SEXP valid, SEXP offsets, SEXP data) {
 }
 
 static SEXP rducks_bits_make_object_from_payload(const Rbyte *payload, int len) {
-    if (len < 2) Rf_error("invalid nanoarrow BIT payload");
+    if (len < 2) Rf_error("invalid BIT payload");
     int padding = (int)payload[0];
-    if (padding < 0 || padding > 7) Rf_error("invalid nanoarrow BIT padding");
+    if (padding < 0 || padding > 7) Rf_error("invalid BIT padding");
     R_xlen_t raw_bits = ((R_xlen_t)len - 1) * 8 - padding;
-    if (raw_bits <= 0 || raw_bits > INT_MAX) Rf_error("invalid nanoarrow BIT payload");
+    if (raw_bits <= 0 || raw_bits > INT_MAX) Rf_error("invalid BIT payload");
     int bit_length = (int)raw_bits;
     R_xlen_t nbytes = rducks_bytes_for_bits((R_xlen_t)bit_length, "BIT");
     SEXP data = PROTECT(Rf_allocVector(RAWSXP, nbytes));
@@ -253,8 +253,8 @@ SEXP RDUCKS_bit_payloads_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP valid
     if (TYPEOF(valid_sexp) != LGLSXP) Rf_error("valid must be logical");
     int offset = Rf_asInteger(offset_sexp);
     int n = Rf_asInteger(n_sexp);
-    if (offset < 0 || n < 0) Rf_error("invalid BIT Arrow parameters");
-    rducks_require_len(offsets_sexp, rducks_xlen_add(rducks_xlen_add((R_xlen_t)offset, (R_xlen_t)n, "BIT Arrow"), 1, "BIT Arrow"), "offsets");
+    if (offset < 0 || n < 0) Rf_error("invalid BIT parameters");
+    rducks_require_len(offsets_sexp, rducks_xlen_add(rducks_xlen_add((R_xlen_t)offset, (R_xlen_t)n, "BIT"), 1, "BIT"), "offsets");
     rducks_require_len(valid_sexp, (R_xlen_t)n, "valid");
     SEXP out = PROTECT(Rf_allocVector(VECSXP, n));
     const Rbyte *data = RAW(data_sexp);
@@ -267,7 +267,7 @@ SEXP RDUCKS_bit_payloads_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP valid
         R_xlen_t idx = (R_xlen_t)offset + i;
         int start = INTEGER(offsets_sexp)[idx];
         int end = INTEGER(offsets_sexp)[idx + 1];
-        if (start < 0 || end < start || end > data_len) Rf_error("invalid BIT Arrow offsets");
+        if (start < 0 || end < start || end > data_len) Rf_error("invalid BIT offsets");
         SEXP one = PROTECT(rducks_bits_make_object_from_payload(data + start, end - start));
         SET_VECTOR_ELT(out, i, one);
         UNPROTECT(1);
@@ -279,7 +279,7 @@ SEXP RDUCKS_bit_payloads_to_values(SEXP data_sexp, SEXP offsets_sexp, SEXP valid
 SEXP RDUCKS_bit_values_to_payloads(SEXP values) {
     if (TYPEOF(values) != VECSXP) Rf_error("values must be a list");
     R_xlen_t n = XLENGTH(values);
-    if (n > INT_MAX - 1) Rf_error("too many BIT values for Arrow buffer");
+    if (n > INT_MAX - 1) Rf_error("too many BIT values for packed buffer");
     SEXP valid = PROTECT(Rf_allocVector(LGLSXP, n));
     SEXP offsets = PROTECT(Rf_allocVector(INTSXP, n + 1));
     INTEGER(offsets)[0] = 0;
@@ -293,8 +293,8 @@ SEXP RDUCKS_bit_values_to_payloads(SEXP values) {
             int bit_length = Rf_asInteger(VECTOR_ELT(value, 1));
             if (bit_length <= 0) Rf_error("BIT values must contain at least one bit");
             LOGICAL(valid)[i] = TRUE;
-            total = rducks_xlen_add(total, 1 + rducks_bytes_for_bits((R_xlen_t)bit_length, "BIT Arrow buffer"), "BIT Arrow buffer");
-            if (total > INT_MAX) Rf_error("BIT Arrow buffer exceeds integer offset range");
+            total = rducks_xlen_add(total, 1 + rducks_bytes_for_bits((R_xlen_t)bit_length, "BIT buffer"), "BIT buffer");
+            if (total > INT_MAX) Rf_error("BIT buffer exceeds integer offset range");
         }
         INTEGER(offsets)[i + 1] = (int)total;
     }
@@ -309,7 +309,7 @@ SEXP RDUCKS_bit_values_to_payloads(SEXP values) {
         if (TYPEOF(bits) != RAWSXP) Rf_error("BIT value has invalid storage");
         rducks_require_bit_span(bits, 0, (R_xlen_t)bit_length, "BIT value");
         int padding = (8 - (bit_length % 8)) % 8;
-        int len = 1 + (int)rducks_bytes_for_bits((R_xlen_t)bit_length, "BIT Arrow buffer");
+        int len = 1 + (int)rducks_bytes_for_bits((R_xlen_t)bit_length, "BIT buffer");
         Rbyte *payload = RAW(data) + pos;
         payload[0] = (Rbyte)padding;
         for (int bit_idx = 0; bit_idx < padding; bit_idx++) {

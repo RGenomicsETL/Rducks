@@ -38,7 +38,7 @@ if (length(missing)) {
 }
 abi_type <- opts[["abi-type"]] %||% "C_STRUCT_UNSTABLE"
 if (!identical(abi_type, "C_STRUCT_UNSTABLE")) {
-  stop("Rducks uses DuckDB Arrow C APIs; extension metadata ABI must be C_STRUCT_UNSTABLE, not ", abi_type, call. = FALSE)
+  stop("Rducks extension metadata ABI must be C_STRUCT_UNSTABLE, not ", abi_type, call. = FALSE)
 }
 out_tmp <- paste0(opts[["out-file"]], ".tmp")
 invisible(file.copy(opts[["library-file"]], out_tmp, overwrite = TRUE))

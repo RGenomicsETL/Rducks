@@ -21,7 +21,7 @@ A data frame with one row per configured worker endpoint.
 }
 \description{
 Lists the local Rducks NNG providers currently known to this R process. These
-are the managed workers used by \code{arrow_ipc + multiprocess_parallel} scalar-UDF
+are the managed workers used by \code{transport = "ipc"} scalar-UDF
 execution plans when \code{ipc_endpoints} is not supplied. Caller-supplied external
 endpoints are shown as external providers.
 }

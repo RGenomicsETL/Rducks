@@ -122,9 +122,8 @@ rducks_assert_marshalling_supported <- function(spec) {
 #' not durable schema objects: they are visible to sibling connections while the
 #' same DuckDB database runtime remains open, but a file-backed database must be
 #' enabled and registered again after it is fully closed and reopened. For
-#' `arrow_ipc` plans, the UDF closure and discovered globals are copied once to
-#' each NNG worker in the shared provider pool and retained for that pool's
-#' lifetime.
+#' IPC worker execution is not part of the no-Arrow build; the native Quack
+#' codec is retained as the future wire-format foundation.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -133,13 +132,11 @@ rducks_assert_marshalling_supported <- function(spec) {
 #'   a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
 #'   argument logical types at bind time, and Rducks materializes those inputs
 #'   with the same typed semantics used for an explicit `args = ...` signature
-#'   across scalar/vectorized evaluation and supported `arrow_r`, `arrow_c`, and
-#'   `arrow_ipc` execution plans. Use explicit `NULL` for a zero-argument scalar
+#'   across scalar/vectorized direct evaluation. Use explicit `NULL` for a zero-argument scalar
 #'   UDF. Otherwise use exported DuckDB-style type descriptors such as `INTEGER`,
 #'   `DOUBLE`, `GEOMETRY`, `VARIANT`, `INTEGER[]`, `INTEGER[3]`,
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures
-#'   require a DuckDB runtime whose C API exposes VARIANT logical types, and are
-#'   not supported by the direct `arrow_c` marshalling path yet.
+#'   require a DuckDB runtime whose C API exposes VARIANT logical types.
 #' @param returns Return type specification.
 #' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
 #'   calls the R function once per DuckDB row. `"vectorized"` calls the R
@@ -314,8 +311,7 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
 #' finite table without materializing all rows during DuckDB bind. The
 #' \code{prototype} supplies the output column names and types. During scan,
 #' Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
-#' frame, named list, \code{nanoarrow_array}, or one-batch
-#' \code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
+#' frame or named list. Return \code{NULL} from \code{next_batch()} to
 #' signal end-of-stream.
 #'
 #' \code{close}, when supplied, is called at most once when the stream reaches
@@ -442,10 +438,6 @@ rducks_table_stream_column_signature <- function(x) {
 }
 
 rducks_table_stream_validate_batch <- function(stream, batch) {
-  if (inherits(batch, c("nanoarrow_array", "nanoarrow_array_stream"))) {
-    stop("Rducks table streams no longer accept Arrow batches; return a data frame or named list",
-         call. = FALSE)
-  }
   batch <- rducks_table_result_as_data_frame(batch)
   expected <- names(stream$prototype)
   actual <- names(batch)
@@ -503,14 +495,14 @@ rducks_table_result_as_data_frame <- function(result) {
 
 rducks_table_prototype_types <- function(prototype) {
   lapply(prototype, function(column) {
-    if (is.logical(column)) return(BOOLEAN())
+    if (is.logical(column)) return(rducks_type_object("bool"))
     if (is.factor(column)) return(ENUM(levels(column)))
-    if (inherits(column, "Date")) return(DATE())
-    if (inherits(column, "POSIXct")) return(TIMESTAMP())
-    if (is.integer(column)) return(INTEGER())
-    if (is.numeric(column)) return(DOUBLE())
-    if (is.character(column)) return(VARCHAR())
-    if (is.list(column)) return(BLOB())
+    if (inherits(column, "Date")) return(rducks_type_object("date"))
+    if (inherits(column, "POSIXct")) return(rducks_type_object("timestamp"))
+    if (is.integer(column)) return(rducks_type_object("i32"))
+    if (is.numeric(column)) return(rducks_type_object("f64"))
+    if (is.character(column)) return(rducks_type_object("varchar"))
+    if (is.list(column)) return(rducks_type_object("blob"))
     stop("Rducks table stream column type is unsupported", call. = FALSE)
   })
 }

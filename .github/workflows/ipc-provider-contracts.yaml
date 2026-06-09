@@ -43,7 +43,7 @@ jobs:
 
       - name: Install R dependencies
         run: |
-          install.packages(c("DBI", "duckdb", "globals", "mirai", "mori", "nanoarrow", "nanonext", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "globals", "mirai", "mori", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks

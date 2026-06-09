@@ -2597,8 +2597,8 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
  * envelope: a one-column record-batch struct whose child owns validity and
  * value buffers. The recorded main R thread fills those buffers from checked R
  * return values; the waiting DuckDB worker reads the buffers directly into the
- * callback-owned output vector without calling the R API, nanoarrow R bindings,
- * or DuckDB connection-level Arrow import helpers on the worker thread.
+ * callback-owned output vector without calling the R API or DuckDB connection
+ * helpers on the worker thread.
  */
 typedef struct rducks_rc_owned_result_payload {
     rducks_type_desc_t *desc;
@@ -2606,7 +2606,6 @@ typedef struct rducks_rc_owned_result_payload {
     size_t element_size;
     size_t variable_size;
     size_t variable_capacity;
-    struct ArrowSchema schema;
     struct ArrowArray array;
 } rducks_rc_owned_result_payload_t;
 
@@ -2703,8 +2702,7 @@ static void rducks_rc_owned_arrow_parent_release(struct ArrowArray *array) {
 
 static void rducks_rc_owned_result_payload_free(rducks_rc_owned_result_payload_t *payload) {
     if (!payload) return;
-    rducks_release_arrow_array_if_set(&payload->array);
-    rducks_release_arrow_schema_if_set(&payload->schema);
+    if (payload->array.release) payload->array.release(&payload->array);
     free(payload);
 }
 
@@ -2730,11 +2728,7 @@ static rducks_rc_owned_result_payload_t *rducks_rc_owned_result_payload_new(rduc
     payload->desc = meta->return_desc;
     payload->n = n;
     payload->element_size = rducks_rc_owned_result_element_size(meta->return_desc);
-
-    if (!rducks_fill_output_arrow_schema_native(runtime, &payload->schema, meta, err_msg, err_cap)) {
-        rducks_rc_owned_result_payload_free(payload);
-        return NULL;
-    }
+    (void)runtime;
 
     payload->array.length = (int64_t)n;
     payload->array.null_count = 0;

@@ -36,8 +36,7 @@ Return this object from a function registered with
 finite table without materializing all rows during DuckDB bind. The
 \code{prototype} supplies the output column names and types. During scan,
 Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
-frame, named list, \code{nanoarrow_array}, or one-batch
-\code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
+frame or named list. Return \code{NULL} from \code{next_batch()} to
 signal end-of-stream.
 }
 \details{

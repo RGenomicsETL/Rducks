@@ -7,7 +7,7 @@ rducks_plan_marshalling <- function(x) {
 }
 
 rducks_plan_transport <- function(x) {
-  match.arg(x, c("inproc", "ipc"))
+  match.arg(x, "inproc")
 }
 
 rducks_plan_concurrency <- function(x) {
@@ -89,9 +89,8 @@ rducks_plan_engine_id <- function(marshalling, concurrency, ipc_provider = "nng"
 }
 
 rducks_plan_implemented <- function(marshalling, concurrency) {
-  (identical(marshalling, "direct") &&
-    concurrency %in% c("serial", "inproc_concurrent")) ||
-    (identical(marshalling, "wire") && identical(concurrency, "multiprocess_parallel"))
+  identical(marshalling, "direct") &&
+    concurrency %in% c("serial", "inproc_concurrent")
 }
 
 rducks_plan_supported_call_shapes <- function(marshalling, concurrency) {
@@ -217,9 +216,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' @return An object of class `rducks_execution_plan`.
 #' @examples
 #' rducks_execution_plan("inproc")
-#' rducks_execution_plan("ipc", ipc_workers = 2L)
 #' @export
-rducks_execution_plan <- function(transport = c("inproc", "ipc"),
+rducks_execution_plan <- function(transport = "inproc",
                                   ipc_globals = "auto",
                                   ipc_packages = NULL,
                                   ipc_timeout = NULL,

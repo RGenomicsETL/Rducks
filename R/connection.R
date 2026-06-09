@@ -19,13 +19,9 @@ rducks_extension_path <- function() {
 #' Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
 #' requires R API work to happen on the recorded main R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
-#' explicitly. `rducks_enable()` also sets DuckDB's
-#' `arrow_lossless_conversion=true` option on the user connection; the extension
-#' applies the same setting to its internal connections so DuckDB-specific Arrow
-#' metadata is preserved for typed scalar-UDF, table, and query-stream
-#' marshalling. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
-#' before scalar-UDF registration to select a non-reference marshalling or
-#' concurrency plan.
+#' explicitly. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+#' before scalar-UDF registration to select direct serial or queued in-process
+#' execution.
 #'
 #' @param con A `duckdb_connection`.
 #' @param extension_path Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.
@@ -46,7 +42,6 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
 
   path_sql <- rducks_sql_string(normalizePath(extension_path, mustWork = TRUE))
   DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
-  DBI::dbExecute(con, "SET arrow_lossless_conversion=true")
 
   main_thread_token <- rducks_main_thread_token()
   if (nzchar(main_thread_token)) {
@@ -86,8 +81,8 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #' work. This is a same-process scheduling mode, not a performance promise; R
 #' function calls are still serialized on the main R thread.
 #'
-#' This is a compatibility helper for the direct in-process queue.
-#' New code can call \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+#' This is a helper for the direct in-process queue. New code can call
+#' \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
 #' directly with `rducks_execution_plan("inproc")`. Select the plan
 #' before registering scalar UDFs whose reported execution plan should be the
 #' queued in-process path.
@@ -145,11 +140,7 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' native-owned R closures that are still referenced by database-scoped catalog
 #' metadata. If sibling DBI connections are attached to the same DuckDB database
 #' runtime, their database-scoped Rducks registration metadata remains visible.
-#' For `arrow_ipc + multiprocess_parallel`, releasing the last Rducks attachment
-#' to a runtime also closes native client pools for Rducks-launched local workers
-#' and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
-#' those URLs name user-owned worker processes; Rducks does not send stop
-#' requests to them during release. For file-backed databases, releasing the
+#' For file-backed databases, releasing the
 #' last attachment also closes Rducks' extension-owned DuckDB connections, which
 #' lets the DuckDB file be closed and reopened in the same R process on
 #' platforms with strict file locking.
@@ -233,8 +224,8 @@ rducks_detach <- function(con) {
 #' callback-frame input/output storage, so running-timeout cancellation is
 #' intentionally not supported and is reported via
 #' `running_timeout_supported = FALSE`. This is a runtime queue summary; for
-#' per-scalar-UDF execution detail such as selected evaluator, Arrow IPC waves, direct
-#' `arrow_c` input snapshots, and owned result-chunk counters, use
+#' per-scalar-UDF execution detail such as selected evaluator and direct
+#' input/result counters, use
 #' \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
 #'
 #' @param con A `duckdb_connection`.

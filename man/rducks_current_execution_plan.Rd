@@ -14,7 +14,7 @@ An object of class \code{rducks_execution_plan}.
 }
 \description{
 Returns the R-side execution plan recorded for a DuckDB connection. If no plan
-has been recorded yet, this returns the reference plan \code{arrow_r + serial}.
+has been recorded yet, this returns the reference plan \code{direct + serial}.
 }
 \examples{
 \donttest{

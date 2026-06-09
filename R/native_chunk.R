@@ -212,7 +212,7 @@ rducks_native_array_from_struct <- function(type, values) {
   if (is.data.frame(values)) {
     n <- nrow(values)
     valid <- rep(TRUE, n)
-    fields <- setNames(vector("list", length(children)), child_names)
+    fields <- stats::setNames(vector("list", length(children)), child_names)
     for (i in seq_along(children)) {
       field <- child_names[[i]]
       if (!field %in% names(values)) stop("STRUCT field missing from data frame: ", field, call. = FALSE)
@@ -223,7 +223,7 @@ rducks_native_array_from_struct <- function(type, values) {
   if (!is.list(values)) stop("STRUCT values must be a data frame or list of rows", call. = FALSE)
   n <- length(values)
   valid <- !vapply(values, is.null, logical(1))
-  fields <- setNames(vector("list", length(children)), child_names)
+  fields <- stats::setNames(vector("list", length(children)), child_names)
   for (i in seq_along(children)) {
     field <- child_names[[i]]
     vals <- lapply(values, function(x) if (is.null(x)) NULL else x[[field]])
@@ -280,7 +280,7 @@ rducks_native_array_from_union <- function(type, values) {
     tags[[i]] <- tag_index
     child_values[[tag_index]][i] <- list(value$value)
   }
-  members <- setNames(vector("list", length(children)), child_names)
+  members <- stats::setNames(vector("list", length(children)), child_names)
   for (j in seq_along(children)) {
     members[[j]] <- rducks_native_array_from_values(children[[j]], child_values[[j]])
   }
@@ -338,7 +338,7 @@ rducks_native_array_to_values <- function(array) {
     out <- vector("list", n)
     for (i in seq_len(n)) {
       if (!isTRUE(array$valid[[i]])) next
-      row <- setNames(vector("list", length(child_names)), child_names)
+      row <- stats::setNames(vector("list", length(child_names)), child_names)
       for (j in seq_along(child_names)) row[[j]] <- rducks_native_sequence_value_at(rducks_type_children(type)[[j]], field_values[[j]], i)
       out[[i]] <- row
     }

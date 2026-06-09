@@ -11,7 +11,7 @@ on:
         required: false
         default: "0"
       include_ipc:
-        description: "Also include arrow_ipc + multiprocess_parallel generated cases"
+        description: "Also include generated IPC wire cases when available"
         required: false
         default: "false"
       ipc_workers:
@@ -53,7 +53,7 @@ jobs:
         env:
           GITHUB_PAT: ${{ github.token }}
         run: |
-          install.packages(c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "mirai", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks
