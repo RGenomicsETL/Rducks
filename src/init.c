@@ -55,6 +55,8 @@ SEXP RDUCKS_arrow_binary_payload_array(SEXP payloads);
 SEXP RDUCKS_arrow_i64_micros_to_seconds(SEXP bytes_sexp, SEXP valid_sexp, SEXP offset_sexp, SEXP n_sexp);
 SEXP RDUCKS_arrow_i64_storage_from_numeric(SEXP values_sexp);
 SEXP RDUCKS_arrow_ipc_encode_array(SEXP array_xptr);
+SEXP RDUCKS_quack_encode_chunk(SEXP rows, SEXP types, SEXP columns);
+SEXP RDUCKS_quack_decode_chunk(SEXP payload);
 SEXP RDUCKS_query_stream_wrap_cdata(SEXP handle_sexp);
 SEXP RDUCKS_type_inherits_names(SEXP x, SEXP names);
 SEXP RDUCKS_vectorized_fast_scalar_rows(SEXP type, SEXP value, SEXP n_sexp);
@@ -136,6 +138,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_arrow_i64_micros_to_seconds", (DL_FUNC) &RDUCKS_arrow_i64_micros_to_seconds, 4},
     {"RDUCKS_arrow_i64_storage_from_numeric", (DL_FUNC) &RDUCKS_arrow_i64_storage_from_numeric, 1},
     {"RDUCKS_arrow_ipc_encode_array", (DL_FUNC) &RDUCKS_arrow_ipc_encode_array, 1},
+    {"RDUCKS_quack_encode_chunk", (DL_FUNC) &RDUCKS_quack_encode_chunk, 3},
+    {"RDUCKS_quack_decode_chunk", (DL_FUNC) &RDUCKS_quack_decode_chunk, 1},
     {"RDUCKS_query_stream_wrap_cdata", (DL_FUNC) &RDUCKS_query_stream_wrap_cdata, 1},
     {"RDUCKS_type_inherits_names", (DL_FUNC) &RDUCKS_type_inherits_names, 2},
     {"RDUCKS_vectorized_fast_scalar_rows", (DL_FUNC) &RDUCKS_vectorized_fast_scalar_rows, 3},
