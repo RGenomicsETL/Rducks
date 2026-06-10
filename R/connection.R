@@ -360,7 +360,7 @@ rducks_runtime_stats <- function(con) {
 #' @param n Number of queue round trips to run.
 #' @return Integer-like numeric scalar: number of requests completed.
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #' rducks_enable(db)

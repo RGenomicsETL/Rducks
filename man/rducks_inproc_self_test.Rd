@@ -22,7 +22,7 @@ UDF. This diagnostic SQL surface is dev/test-only; set
 \code{RDUCKS_DEV_SURFACES=true} before \code{rducks_enable()} if you need it.
 }
 \examples{
-\donttest{
+\dontrun{
 # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)

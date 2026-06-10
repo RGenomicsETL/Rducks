@@ -514,31 +514,14 @@ rducks_table_result_payload <- function(result, column_types) {
 
 #' Register an R table function in DuckDB
 #'
-#' Registers an R-backed DuckDB table function. The registered SQL
-#' table function infers its positional SQL argument count from `formals(fun)`
-#' and registers those arguments with DuckDB's dynamic `ANY` type. During
-#' DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-#' scalars/lists and calls `fun(...)` on the recorded calling R thread. `fun()`
-#' may return either a finite data frame/named list or a
-#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
+#' R-backed table functions are disabled in the no-Arrow build. The previous
+#' implementation imported finite and streamed table batches through the removed
+#' Arrow/nanoarrow bridge; a replacement direct DuckDB-vector table writer has
+#' not been enabled yet. Calling this function now fails with a clear error.
 #'
-#' For finite results, Rducks imports the full result into one DuckDB data chunk
-#' during bind and then emits row batches during scan. For streaming results,
-#' bind uses only the stream prototype to define the DuckDB schema; scan calls
-#' `next_batch()` repeatedly and imports one returned batch at a time. Both
-#' paths honor DuckDB projection pushdown, so unreferenced columns are not copied
-#' from imported chunks into DuckDB output chunks.
-#'
-#' This is intentionally separate from DuckDB scalar-UDF registration through
-#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
-#' functions have their own bind/init/scan state, bind-time dynamic schemas, and
-#' positional SQL arguments fixed by the R function's finite formal argument
-#' count. Variadic `...` arguments are not supported. If you already have a
-#' static R data frame to expose as a virtual table, prefer
+#' If you already have a static R data frame to expose as a virtual table, prefer
 #' `duckdb::duckdb_register()`; DuckDB's R package routes that through its native
-#' data-frame scan path. Use `rducks_enable(con, threads = "single")` or
-#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before registration
-#' and execution; worker-thread calls into R are rejected.
+#' data-frame scan path.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.
@@ -552,17 +535,12 @@ rducks_table_result_payload <- function(result, column_types) {
 #' @return Object of class `rducks_table_registration` containing the
 #'   connection and normalized table signature. The table function remains
 #'   registered in DuckDB even if this object is discarded.
-#' @examples
-#' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db, threads = "single")
-#' rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
-#' DBI::dbGetQuery(db, "SELECT * FROM my_table()")
-#' rducks_release(db)
-#' DBI::dbDisconnect(db)
-#' }
 #' @export
 rducks_register_table <- function(con, name, fun, chunk_size = 1024L) {
+  stop(
+    "rducks_register_table() is disabled in the no-Arrow build pending direct DuckDB-vector table writers",
+    call. = FALSE
+  )
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }
