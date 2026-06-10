@@ -24,7 +24,10 @@ jobs:
         config:
           - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
+          # R-devel coverage lives in fedora-cran-check.yaml, where pak can use
+          # the CRAN-like Fedora/R-devel binary resolver for heavy dependencies
+          # such as duckdb. Ubuntu R-devel builds duckdb from source and times
+          # out before package checking starts.
           - {os: ubuntu-latest,   r: 'release'}
           - {os: ubuntu-latest,   r: '4.3'}
 
