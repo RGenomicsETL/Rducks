@@ -4,7 +4,7 @@
 * nanoarrow is removed from Imports/LinkingTo; the vendored nanoarrow/flatcc trees are deleted from the extension.
 * The reserved worker-process data plane uses the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
 * `rducks_with_duckplyr()` (duckplyr bridge) and `rducks_register_table()` (table functions, finite and streaming) are restored on the direct DuckDB-vector path. In-process table scans fill DuckDB output vectors directly from the returned R columns, with no Arrow/nanoarrow intermediary and no wire serialization.
-* The nanoarrow query-stream surface is removed pending reimplementation as direct data-frame batches.
+* `rducks_query_stream()` is restored on the direct path: native DuckDB streaming results are materialized to data-frame batches directly from DuckDB vectors, with no Arrow/nanoarrow intermediary. The previous nanoarrow `format = "record_batch"` output is dropped with nanoarrow.
 * Internal: queued/concurrent scalar-UDF results are now written through an owned `duckdb_data_chunk` for every supported return type, and the vestigial `struct ArrowArray` owned-result buffer (the last Arrow-shaped construct) is deleted.
 * Internal: dropped the unused per-call `connection_id` capture, removing four DuckDB client-context entries from the unstable C API surface (no behavior change).
 

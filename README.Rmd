@@ -333,6 +333,21 @@ stream_rows_table <- rducks_register_table(
 dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
 ```
 
+## Query streams
+
+`rducks_query_stream()` returns a query's rows in DuckDB-sized batches as data
+frames, instead of an eager `DBI::dbGetQuery()` result. Each batch is
+materialized directly from DuckDB vectors to R values on the recorded R thread,
+with no Arrow/nanoarrow intermediary. `next_batch()` returns the next data frame
+or `NULL` at end of stream.
+
+```{r query-stream}
+stream <- rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")
+stream$next_batch()
+stream$next_batch()
+stream$close()
+```
+
 ## Execution plans
 
 Execution plans are fixed at scalar-UDF registration time and select the

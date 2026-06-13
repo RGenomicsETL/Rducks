@@ -2,10 +2,6 @@
  * No-Arrow native dispatch and disabled legacy surfaces.
  */
 
-struct rducks_query_stream_entry {
-    struct rducks_query_stream_entry *next;
-};
-
 static void rducks_noarrow_error(char *err_msg, size_t err_cap, const char *msg) {
     rducks_format_error_message(err_msg, err_cap, "%s", msg);
 }
@@ -155,78 +151,3 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 }
 
-static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, const char *sql,
-                                           const char **token_out, char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)sql;
-    if (token_out) *token_out = NULL;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_schema_native(rducks_runtime_entry_t *runtime, const char *token,
-                                             char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)token;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, const char *token,
-                                           int *has_batch_out, char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)token;
-    if (has_batch_out) *has_batch_out = 0;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_metadata_native(rducks_runtime_entry_t *runtime, const char *token,
-                                               char **metadata_out,
-                                               char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)token;
-    if (metadata_out) *metadata_out = NULL;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_schema_handle_native(rducks_runtime_entry_t *runtime, const char *token,
-                                                    char **handle_out,
-                                                    char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)token;
-    if (handle_out) *handle_out = NULL;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_next_handle_native(rducks_runtime_entry_t *runtime, const char *token,
-                                                  int *has_batch_out,
-                                                  char **handle_out,
-                                                  char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)token;
-    if (has_batch_out) *has_batch_out = 0;
-    if (handle_out) *handle_out = NULL;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks query streams were removed from the no-Arrow build");
-    return 0;
-}
-
-static int rducks_query_stream_close_native(rducks_runtime_entry_t *runtime, const char *token,
-                                            int *closed_out) {
-    (void)runtime;
-    (void)token;
-    if (closed_out) *closed_out = 0;
-    return 1;
-}
-
-static void rducks_query_stream_destroy_detached_list(rducks_query_stream_entry_t *entry) {
-    (void)entry;
-}

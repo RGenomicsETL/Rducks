@@ -363,6 +363,28 @@ dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
 #> 1    15
 ```
 
+## Query streams
+
+`rducks_query_stream()` returns a query’s rows in DuckDB-sized batches
+as data frames, instead of an eager `DBI::dbGetQuery()` result. Each
+batch is materialized directly from DuckDB vectors to R values on the
+recorded R thread, with no Arrow/nanoarrow intermediary. `next_batch()`
+returns the next data frame or `NULL` at end of stream.
+
+``` r
+stream <- rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")
+stream$next_batch()
+#>   i
+#> 1 1
+#> 2 2
+#> 3 3
+#> 4 4
+#> 5 5
+stream$next_batch()
+#> NULL
+stream$close()
+```
+
 ## Execution plans
 
 Execution plans are fixed at scalar-UDF registration time and select the
@@ -490,6 +512,7 @@ inspection, and selection-vector helpers. This table is generated from
 
 | ABI group                                      | Functions used                                                                                                                                                                                                                                                                                              | Count |
 |------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
+| `unstable_deprecated`                          | `duckdb_pending_prepared_streaming`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                                              |     3 |
 | `unstable_new_expression_functions`            | `duckdb_destroy_expression`, `duckdb_expression_return_type`                                                                                                                                                                                                                                                |     2 |
 | `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` |     7 |
 | `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init`                                                          |     6 |
