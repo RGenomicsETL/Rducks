@@ -363,7 +363,10 @@ static int rducks_query_stream_store_chunk(rducks_query_stream_entry_t *entry,
     ns = PROTECT(R_FindNamespace(pkg)); nprot++;
     fun = PROTECT(Rf_findFun(Rf_install("rducks_query_stream_store_native_batch"), ns)); nprot++;
     tok = PROTECT(Rf_mkString(entry->token)); nprot++;
-    call = PROTECT(Rf_lang4(fun, tok, df, Rf_ScalarReal((double)n))); nprot++;
+    {
+        SEXP nrows = PROTECT(Rf_ScalarReal((double)n)); nprot++;
+        call = PROTECT(Rf_lang4(fun, tok, df, nrows)); nprot++;
+    }
     R_tryEvalSilent(call, R_GlobalEnv, &r_err);
     UNPROTECT(nprot);
     if (r_err) {
@@ -381,6 +384,11 @@ static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, cons
     if (has_batch_out) *has_batch_out = 0;
     if (!runtime || !token || !token[0]) {
         rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream token");
+        return 0;
+    }
+    /* Materializing a batch allocates SEXPs and calls back into R, so it must run
+     * on the recorded R thread. Reject off-main DuckDB worker threads. */
+    if (!rducks_allow_calling_thread_r_execution(runtime, err_msg, err_cap)) {
         return 0;
     }
 
