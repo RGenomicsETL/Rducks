@@ -18,12 +18,12 @@ rducks_execution_plan(
 )
 }
 \arguments{
-\item{transport}{Placement/transport. Only \code{"inproc"} (evaluate in the
-current R process with the in-process queued backend) is currently
-supported. \code{"ipc"} is reserved for a future worker-process transport and
-errors today.}
+\item{transport}{Placement/transport. \code{"inproc"} evaluates in the current R
+process with the in-process queued backend. \code{"ipc"} evaluates in persistent
+worker R processes over NNG; when \code{ipc_endpoints} is \code{NULL}, Rducks starts
+local worker loops with mirai daemons.}
 
-\item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{Reserved IPC worker options (no effect until the \code{"ipc"} transport is enabled).
+\item{ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport}{IPC worker options (used when \code{transport = "ipc"}).
 By default (\code{ipc_globals = "auto"}), Rducks discovers scalar-UDF globals
 once at registration-wrapper creation and broadcasts them to each NNG worker
 when the scalar UDF is registered with the shared provider pool. Automatic capture
@@ -78,9 +78,9 @@ An object of class \code{rducks_execution_plan}.
 }
 \description{
 An execution plan describes where Rducks evaluates registered scalar-UDF
-chunks. The only transport currently available is \code{"inproc"}: evaluation in
-the current R process. When stored on a connection it is the default for
-future
+chunks: in the current R process (\code{transport = "inproc"}) or in persistent
+worker R processes (\code{transport = "ipc"}). When stored on a connection it is
+the default for future
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
 calls and updates the native runtime backend used for matching concurrent
 execution; the resolved transport metadata is frozen into each registered
@@ -95,13 +95,13 @@ while allowing DuckDB callback concurrency; DuckDB vectors are materialized
 to SEXPs directly in extension C with no intermediate columnar format. It
 maps to the internal \code{"direct_main_queue"} engine.
 
-A worker-process \code{"ipc"} transport (persistent NNG/nanonext workers exchanging
-Quack-style binary chunk payloads, a DuckDB BinarySerializer subset) is
-reserved but \strong{not yet available}: this build removed the Arrow data plane,
-and the native DuckDB-vector wire adapter that would back it is not
-implemented. Passing \code{transport = "ipc"} currently errors. The \verb{ipc_*}
-arguments below are accepted for forward compatibility and only take effect
-once that transport is enabled.
+\code{"ipc"} uses persistent NNG/nanonext worker R processes that exchange
+Quack-style binary chunk payloads (a DuckDB BinarySerializer subset): the
+extension encodes each input chunk to wire bytes, the worker decodes them,
+runs the R function, and returns wire-encoded results that the extension
+writes back to DuckDB. Worker-process types are currently limited to
+fixed-width scalars, decimals, and varchar/blob. It maps to the internal
+\code{"ipc_nng_pool"} engine.
 }
 \examples{
 rducks_execution_plan("inproc")

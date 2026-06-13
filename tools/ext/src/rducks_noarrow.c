@@ -38,34 +38,6 @@ static SEXP rducks_dynamic_arg_tokens_sexp(rducks_r_scalar_meta_t *meta) {
     return out;
 }
 
-static int rducks_ripc_bundle_valid(SEXP eval_ref) {
-    return Rf_isNewList(eval_ref);
-}
-
-static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime,
-                                              rducks_r_scalar_meta_t *meta,
-                                              SEXP eval_ref,
-                                              char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)meta;
-    (void)eval_ref;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks IPC wire execution needs the native Quack adapter and is not enabled in the no-Arrow build");
-    return 0;
-}
-
-static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
-                               duckdb_data_chunk input, duckdb_vector output,
-                               char *err_msg, size_t err_cap) {
-    (void)runtime;
-    (void)meta;
-    (void)input;
-    (void)output;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "Rducks IPC wire execution needs the native Quack adapter and is not enabled in the no-Arrow build");
-    return 0;
-}
-
 static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                    duckdb_data_chunk input, duckdb_vector output,
                                    char *err_msg, size_t err_cap) {
@@ -107,6 +79,17 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     if (!runtime) {
         duckdb_scalar_function_set_error(info, "Rducks scalar UDF is missing per-connection runtime state");
+        return;
+    }
+
+    /* Wire (RIPC) UDFs marshal each chunk to a worker process. Encode/decode and
+     * the NNG roundtrip are pure C, so this runs directly on the calling DuckDB
+     * thread (off-main is fine and enables worker parallelism). */
+    if (exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), rducks_is_main_thread(runtime) ? 0 : 1);
+        if (!rducks_ripc_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
+            duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RIPC scalar UDF failed");
+        }
         return;
     }
 

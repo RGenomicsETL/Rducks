@@ -355,12 +355,24 @@ placement/concurrency backend for the recorded R thread.
 
 | Plan | Engine | Scalar mode | Vectorized mode | Notes |
 | --- | --- | --- | --- | --- |
-| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes | yes | the public plan; DuckDB workers enqueue callbacks and R work drains on the recorded R thread |
-| reserved `wire + multiprocess_parallel` | `ipc_nng_pool` | (reserved) | (reserved) | native NNG plus owned Quack wire bytes and R worker processes; not yet enabled |
+| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes | yes | DuckDB workers enqueue callbacks and R work drains on the recorded R thread |
+| `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | yes | yes | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, decimals, and varchar/blob |
 
 `rducks_enable(con)` selects the in-process backend; `rducks_enable_inproc(con,
 threads = 4, external_threads = 1)` keeps R work on the recorded R thread while
 DuckDB workers run concurrently and queue their callbacks to it.
+
+For `transport = "ipc"`, register single-threaded under the plan (this starts the
+worker processes and broadcasts the UDF), then raise DuckDB threads so off-main
+callbacks fan out to the workers:
+
+``` r
+plan <- rducks_execution_plan("ipc", ipc_workers = 2L)
+rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+rducks_register_scalar_udf(con, "r_par", function(x) x + 1L, args = INTEGER, returns = INTEGER)
+rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+dbGetQuery(con, "SELECT sum(r_par((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
+```
 
 ```{r execution-plan}
 plan <- rducks_execution_plan("inproc")

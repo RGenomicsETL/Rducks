@@ -549,8 +549,15 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 #include "src/rducks_types.c"
 #include "src/rducks_runtime.c"
 #include "src/rducks_nng.c"
+/* Defined in src/rducks_ripc.c (included after rducks_rc.c); forward-declared so
+ * the scalar dispatch in rducks_noarrow.c can route wire (RIPC) UDFs to it. */
+static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                               duckdb_data_chunk input, duckdb_vector output,
+                               char *err_msg, size_t err_cap);
 #include "src/rducks_noarrow.c"
 #include "src/rducks_rc.c"
+#include "src/quack_core.c"
+#include "src/rducks_ripc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
