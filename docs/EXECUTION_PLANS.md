@@ -25,9 +25,11 @@ These are scalar-UDF registration semantics and belong to
 
 These are execution-plan choices for scalar UDFs:
 
-- marshalling: `arrow_r`, `arrow_c`, or `arrow_ipc`
-- concurrency: `serial`, `inproc_concurrent`, or `multiprocess_parallel`
-- IPC worker options for `arrow_ipc + multiprocess_parallel`
+- marshalling: `direct` (the only enabled marshalling) or the reserved `wire`
+  worker-process codec
+- concurrency: `serial` or `inproc_concurrent` for `direct`; the reserved `wire`
+  path pairs with `multiprocess_parallel`
+- IPC worker options for the reserved `wire + multiprocess_parallel` transport
 
 The plan active at registration time selects the evaluator and marshalling
 metadata stored with that registered DuckDB scalar UDF. Changing a connection's
@@ -47,12 +49,13 @@ Table functions registered with `rducks_register_table()` are separate from this
 scalar-UDF evaluation-mode/execution-plan matrix. Rducks infers the positional
 SQL argument count from the R function formals, registers those input slots as
 DuckDB `ANY`, converts the actual SQL bind values to R values, and calls the R
-function during bind on the recorded calling R thread. The R function may return
-a finite data-frame/list/nanoarrow result or a `rducks_table_stream()` object.
-Finite results are imported once during bind through nanoarrow Arrow C Data;
-streaming results use only the prototype at bind time and call `next_batch()`
-during scan to import successive batches. Worker-thread calls into R are
-rejected; use `rducks_enable(con, threads = "single")` for this path.
+function during bind on the recorded calling R thread.
+
+`rducks_register_table()` is currently **disabled**: its previous implementation
+imported batches through the removed Arrow/nanoarrow bridge, and the replacement
+direct DuckDB-vector table writer is not yet enabled. The function errors with a
+clear message. For a static R data frame as a virtual table, use
+`duckdb::duckdb_register()`.
 
 DuckDB table functions are more general than the current Rducks table API, but
 this document describes only the implemented Rducks surface: dynamic output
@@ -76,63 +79,52 @@ metadata being exercised.
 
 Unsupported combinations must fail. They must not silently switch:
 
-- from `arrow_c` to `arrow_r`
-- from `arrow_ipc` to R serialization or same-process execution
+- from `direct` to the reserved `wire` path or vice versa
 - from vectorized chunk calls to scalar row calls
-- from direct native conversion to an Arrow helper path
+- from direct native conversion to any other helper path
 
 ## Marshalling choices
 
-- `arrow_r`: reference path through DuckDB Arrow C Data and nanoarrow/R
-  materialization.
-- `arrow_c`: direct DuckDB-vector materialization for signatures accepted by the
-  direct support predicate. Unsupported signatures fail validation.
-- `arrow_ipc`: owned Arrow IPC request/result bytes. This is only valid with
-  `multiprocess_parallel`. The current NNG provider is one request to exactly
-  one result record batch; multi-batch or streaming results are rejected rather
-  than concatenated implicitly. Selected scalar-UDF globals may be serialized
-  normally or, with `ipc_globals_share = "mori"`, sent as same-host mori
-  shared-memory references for large read-only R objects.
+- `direct`: direct DuckDB-vector materialization to/from R values for signatures
+  accepted by the direct support predicate. Unsupported signatures fail
+  validation. This is the only enabled marshalling.
+- `wire` (reserved, not yet enabled): owned Quack wire request/result bytes
+  (DuckDB BinarySerializer subset). Only valid with `multiprocess_parallel`.
+  Selected scalar-UDF globals may be serialized normally or, with
+  `ipc_globals_share = "mori"`, sent as same-host mori shared-memory references
+  for large read-only R objects.
 
 ## Concurrency choices
 
 - `serial`: DuckDB invokes the callback on the recorded R thread, one callback at
-  a time for Rducks purposes.
+  a time for Rducks purposes. Internal reference plan only.
 - `inproc_concurrent`: DuckDB may invoke callbacks from worker threads. Off-main
   callbacks queue synchronous requests to the recorded R thread. R API work and
-  user R function evaluation remain serialized on that thread.
-- `multiprocess_parallel`: chunk work is sent to persistent worker processes over
-  the selected IPC provider. The current provider is `ipc_nng_pool`.
+  user R function evaluation remain serialized on that thread. This backs the
+  public `transport = "inproc"` plan.
+- `multiprocess_parallel` (reserved): chunk work is sent to persistent worker
+  processes over the NNG provider (`ipc_nng_pool`). Not yet enabled.
 
-## Implemented scalar-UDF engines
+## Scalar-UDF engines
 
-| Engine ID | Public plan | Scalar evaluation mode | Vectorized evaluation mode | Notes |
-| --- | --- | --- | --- | --- |
-| `arrow_r_serial` | `arrow_r + serial` | yes | yes | Reference path. |
-| `arrow_r_main_queue` | `arrow_r + inproc_concurrent` | yes | yes | Same-process queue; R work runs on the recorded R thread. |
-| `arrow_c_direct_serial` | `arrow_c + serial` | yes | yes | Direct native marshalling for supported signatures. |
-| `arrow_c_direct_main_queue` | `arrow_c + inproc_concurrent` | yes | yes | Queued direct marshalling; inputs/results use owned state before crossing threads. |
-| `ipc_nng_pool` | `arrow_ipc + multiprocess_parallel` | yes | yes | Native NNG request/reply with owned Arrow IPC bytes and persistent workers. |
+| Engine ID | Plan (marshalling + concurrency) | Status | Notes |
+| --- | --- | --- | --- |
+| `direct_serial` | `direct + serial` | internal reference | Reference path; constructed internally for conformance, not exposed publicly. |
+| `direct_main_queue` | `direct + inproc_concurrent` | enabled (public `inproc`) | Queued direct marshalling; inputs/results use owned state before crossing threads. R work runs on the recorded R thread. |
+| `ipc_nng_pool` | `wire + multiprocess_parallel` | reserved | Native NNG request/reply with owned Quack wire bytes and persistent workers. Not yet enabled. |
 
-## Arrow IPC enum storage
+## Enum storage (reserved wire path)
 
 Declared `ENUM(...)` levels are part of the Rducks registration type descriptor.
-For `arrow_ipc`, Rducks transports enum columns as their underlying DuckDB enum
-index storage, with Arrow dictionaries removed at the IPC boundary. The worker
-reconstructs `rducks_enum` values from the declared levels and storage indexes.
+On the reserved `wire` path, Rducks transports enum columns as their underlying
+DuckDB enum index storage; the worker reconstructs `rducks_enum` values from the
+declared levels and storage indexes.
 
 ## Current validation coverage
 
-The test suite exercises the reference `arrow_r + serial` path, supported
-`arrow_c` direct paths, same-process queue paths, and the NNG-backed
-`arrow_ipc + multiprocess_parallel` path. Coverage includes scalar and
-vectorized calls, default and special NULL handling, `exception_handling =
-"return_null"` on non-reference plans, unsupported signature validation, native
-counter checks for selected engines, IPC codec validation, provider startup
-retry behavior, and generated/dynamic marshalling matrices for declared and
-bind-time argument types.
-
-The generated marshalling matrix remains the broadest conformance check. Narrow
-unit tests cover helper contracts such as execution-plan shortcut resolution,
-mode/value semantic tables, query-stream type reconstruction, and IPC worker
-introspection.
+The test suite exercises the `direct` paths (internal `direct + serial`
+reference and the public `direct + inproc_concurrent` queue). Coverage includes
+scalar and vectorized calls, default and special NULL handling,
+`exception_handling = "return_null"`, unsupported signature validation, native
+counter checks for selected engines, and the standalone Quack wire codec
+round-trip tests that back the reserved worker-process path.

@@ -629,7 +629,6 @@ static void *rducks_r_scalar_bind_state_copy(void *ptr) {
     dst = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*dst));
     if (!dst) return NULL;
     dst->runtime = src->runtime;
-    dst->connection_id = src->connection_id;
     dst->arity = src->arity;
     if (src->arity) {
         dst->args = rducks_type_desc_array_clone(src->args, src->arity);
@@ -646,11 +645,6 @@ static void rducks_r_scalar_local_state_destroy(void *ptr) {
     if (!state) return;
     rducks_type_desc_array_destroy(state->args, state->arity);
     free(state);
-}
-
-static idx_t rducks_client_context_connection_id(duckdb_client_context context) {
-    if (!context) return 0;
-    return duckdb_client_context_get_connection_id(context);
 }
 
 static int rducks_r_scalar_resolve_dynamic_bind_args(duckdb_bind_info info,
@@ -705,7 +699,6 @@ static void rducks_effective_meta_for_state(rducks_r_scalar_meta_t *meta,
 static void rducks_r_scalar_bind(duckdb_bind_info info) {
     rducks_r_scalar_meta_t *meta;
     rducks_r_scalar_bind_state_t *state;
-    duckdb_client_context context = NULL;
 
     if (!info) return;
     meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_bind_get_extra_info(info);
@@ -720,12 +713,6 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
         return;
     }
     state->runtime = meta->runtime;
-
-    duckdb_scalar_function_get_client_context(info, &context);
-    if (context) {
-        state->connection_id = rducks_client_context_connection_id(context);
-        duckdb_destroy_client_context(&context);
-    }
 
     if (meta->dynamic_args) {
         char err_msg[RDUCKS_ERROR_BUFFER_SIZE];
@@ -745,7 +732,6 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
     rducks_r_scalar_meta_t *meta;
     rducks_r_scalar_bind_state_t *bind_state;
     rducks_r_scalar_local_state_t *state;
-    duckdb_client_context context = NULL;
 
     if (!info) return;
     meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_init_get_extra_info(info);
@@ -761,13 +747,6 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
         free(state);
         duckdb_scalar_function_init_set_error(info, "Rducks scalar worker-local state is missing runtime state");
         return;
-    }
-    state->connection_id = bind_state ? bind_state->connection_id : 0;
-
-    duckdb_scalar_function_init_get_client_context(info, &context);
-    if (context) {
-        state->connection_id = rducks_client_context_connection_id(context);
-        duckdb_destroy_client_context(&context);
     }
     if (bind_state && bind_state->arity) {
         state->arity = bind_state->arity;

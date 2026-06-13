@@ -14,8 +14,8 @@ DuckDB extension from the local filesystem.
 - `.github/workflows/webr-smoke.yaml` runs that harness with Chromium/Playwright.
 - Passing package-load checks are not the same as DuckDB extension support.
 - Same-process queued execution depends on native threading/blocking primitives.
-- `arrow_ipc + multiprocess_parallel` depends on worker processes and NNG; do
-  not assume it works in browser/webR runtimes.
+- The reserved worker-process `ipc` transport depends on worker processes and
+  NNG; do not assume it would work in browser/webR runtimes.
 
 ## Local smoke
 

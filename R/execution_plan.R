@@ -143,9 +143,9 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' Define an Rducks execution plan
 #'
 #' An execution plan describes where Rducks evaluates registered scalar-UDF
-#' chunks: in the current R process (`transport = "inproc"`) or in persistent
-#' worker R processes (`transport = "ipc"`). When stored on a connection it is
-#' the default for future
+#' chunks. The only transport currently available is `"inproc"`: evaluation in
+#' the current R process. When stored on a connection it is the default for
+#' future
 #' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
 #' calls and updates the native runtime backend used for matching concurrent
 #' execution; the resolved transport metadata is frozen into each registered
@@ -156,18 +156,22 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #'
 #' `"inproc"` keeps all R API work serialized on the recorded main R thread
 #' while allowing DuckDB callback concurrency; DuckDB vectors are materialized
-#' to SEXPs directly in extension C with no intermediate columnar format.
-#' `"ipc"` uses persistent NNG/nanonext workers and Rducks Quack-style binary
-#' chunk payloads (DuckDB BinarySerializer subset) for process-isolated chunk
-#' work. Each transport maps to a concrete internal `engine_id` such as
-#' `"direct_main_queue"` or `"ipc_nng_pool"`.
+#' to SEXPs directly in extension C with no intermediate columnar format. It
+#' maps to the internal `"direct_main_queue"` engine.
 #'
-#' @param transport Placement/transport. `"inproc"` evaluates in the current R
-#'   process with the in-process queued backend. `"ipc"` evaluates in worker R
-#'   processes over NNG; when `ipc_endpoints` is `NULL`, Rducks starts local
-#'   worker loops with mirai daemons, otherwise the endpoint URLs are passed
-#'   through unchanged.
-#' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport IPC worker options.
+#' A worker-process `"ipc"` transport (persistent NNG/nanonext workers exchanging
+#' Quack-style binary chunk payloads, a DuckDB BinarySerializer subset) is
+#' reserved but **not yet available**: this build removed the Arrow data plane,
+#' and the native DuckDB-vector wire adapter that would back it is not
+#' implemented. Passing `transport = "ipc"` currently errors. The `ipc_*`
+#' arguments below are accepted for forward compatibility and only take effect
+#' once that transport is enabled.
+#'
+#' @param transport Placement/transport. Only `"inproc"` (evaluate in the
+#'   current R process with the in-process queued backend) is currently
+#'   supported. `"ipc"` is reserved for a future worker-process transport and
+#'   errors today.
+#' @param ipc_globals,ipc_packages,ipc_timeout,ipc_endpoints,ipc_transport Reserved IPC worker options (no effect until the `"ipc"` transport is enabled).
 #'   By default (`ipc_globals = "auto"`), Rducks discovers scalar-UDF globals
 #'   once at registration-wrapper creation and broadcasts them to each NNG worker
 #'   when the scalar UDF is registered with the shared provider pool. Automatic capture
@@ -227,14 +231,11 @@ rducks_execution_plan <- function(transport = "inproc",
                                   ipc_provider = "nng",
                                   ipc_workers = 1L,
                                   ipc_max_pending = 64L) {
+  # rducks_plan_transport() currently only accepts "inproc"; "ipc" errors there
+  # until the native DuckDB-vector wire adapter lands.
   transport <- rducks_plan_transport(transport)
-  if (identical(transport, "ipc")) {
-    marshalling <- "wire"
-    concurrency <- "multiprocess_parallel"
-  } else {
-    marshalling <- "direct"
-    concurrency <- "inproc_concurrent"
-  }
+  marshalling <- "direct"
+  concurrency <- "inproc_concurrent"
   rducks_execution_plan_internal(
     marshalling, concurrency,
     ipc_globals = ipc_globals,

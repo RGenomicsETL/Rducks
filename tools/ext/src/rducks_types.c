@@ -1,7 +1,7 @@
 /* Included by ../rducks_extension.c. */
 
-/* Registration-time scalar token parser.  Execution marshalling goes through
- * DuckDB Arrow C Data + nanoarrow, not this token switch.
+/* Registration-time scalar token parser.  Execution marshalling materializes
+ * DuckDB vectors directly to SEXPs, not through this token switch.
  */
 static rducks_type_id_t rducks_scalar_type_id_from_token(const char *raw_token) {
     char token[64];

@@ -1,10 +1,11 @@
 # Rducks (development): Arrow removal
 
-* BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")` only; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
+* BREAKING: `rducks_execution_plan()` now takes only `transport = "inproc"`; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone. A worker-process `"ipc"` transport is reserved but not yet available and currently errors.
 * nanoarrow is removed from Imports/LinkingTo; the vendored nanoarrow/flatcc trees are deleted from the extension.
-* The IPC data plane and the in-process slow path use the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
+* The reserved worker-process data plane uses the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
 * The nanoarrow query-stream and duckplyr surface is removed pending reimplementation over the wire codec.
-* Remaining extension port (direct evaluator internals and RIPC encode in tools/ext/src) is tracked in tools/ext/src/WIRE_PORT.md.
+* Internal: queued/concurrent scalar-UDF results are now written through an owned `duckdb_data_chunk` for every supported return type, and the vestigial `struct ArrowArray` owned-result buffer (the last Arrow-shaped construct) is deleted.
+* Internal: dropped the unused per-call `connection_id` capture, removing four DuckDB client-context entries from the unstable C API surface (no behavior change).
 
 # Rducks 0.1.1
 

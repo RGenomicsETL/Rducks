@@ -44,23 +44,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Minimal Arrow C Data array layout retained only as an internal owned-buffer
- * carrier for queued direct-result writeback. No Arrow library or nanoarrow
- * headers are used in the no-Arrow build.
- */
-struct ArrowArray {
-    int64_t length;
-    int64_t null_count;
-    int64_t offset;
-    int64_t n_buffers;
-    int64_t n_children;
-    const void **buffers;
-    struct ArrowArray **children;
-    struct ArrowArray *dictionary;
-    void (*release)(struct ArrowArray *array);
-    void *private_data;
-};
-
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -246,14 +229,12 @@ struct rducks_r_scalar_meta {
 
 typedef struct rducks_r_scalar_bind_state {
     rducks_runtime_entry_t *runtime;
-    idx_t connection_id;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_bind_state_t;
 
 typedef struct rducks_r_scalar_local_state {
     rducks_runtime_entry_t *runtime;
-    idx_t connection_id;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_local_state_t;
@@ -408,19 +389,12 @@ static void rducks_runtime_queue_destroy_entry(rducks_runtime_entry_t *entry) {
 }
 
 static int rducks_runtime_configure_connection(duckdb_connection connection, char *err, size_t err_cap) {
-    duckdb_result result;
-    memset(&result, 0, sizeof(result));
+    /* Hook for extension-owned connection setup. The no-Arrow build needs no
+     * DuckDB session settings for its direct DuckDB-vector marshalling. */
     if (!connection) {
         snprintf(err, err_cap, "Rducks runtime connection is missing");
         return 0;
     }
-    if (duckdb_query(connection, "SET arrow_lossless_conversion=true", &result) == DuckDBError) {
-        const char *msg = duckdb_result_error(&result);
-        rducks_copy_error_message(err, err_cap, msg, "failed to configure Rducks extension connection");
-        duckdb_destroy_result(&result);
-        return 0;
-    }
-    duckdb_destroy_result(&result);
     return 1;
 }
 

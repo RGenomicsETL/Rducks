@@ -8,8 +8,7 @@ extension artifact is loaded by `rducks_enable()`.
 - `tools/ext/rducks_extension.c`
 - native sources under `tools/ext/src/`
 - vendored DuckDB C API headers under `tools/ext/duckdb_capi/`
-- vendored NNG, Mbed TLS, nanoarrow C/IPC, and flatcc sources under
-  `tools/ext/third_party/`
+- vendored NNG and Mbed TLS sources under `tools/ext/third_party/`
 - `tools/fetch_duckdb_headers.R`
 - `tools/append_extension_metadata.R`
 
@@ -26,16 +25,6 @@ Refresh bundled NNG/Mbed TLS with:
 ```sh
 Rscript tools/vendor_nng_mbedtls.R --force
 ```
-
-Refresh bundled nanoarrow C/IPC plus the flatcc runtime subset with:
-
-```sh
-Rscript tools/vendor_nanoarrow.R --force
-```
-
-Nanoarrow is stored under `tools/ext/third_party/na`; the short
-basename keeps build source paths portable while still keeping third-party code
-out of the extension source directory.
 
 ## Header vendoring
 
@@ -76,9 +65,9 @@ deleting the source tree required for later source-package builds.
 ## DuckDB C extension ABI
 
 Rducks uses DuckDB C extension API entries that are outside DuckDB's stable C
-extension struct, including Arrow C Data conversion functions and scalar-function
-state hooks. Configure therefore builds with the unstable C API enabled and the
-extension footer advertises an unstable C struct:
+extension struct (scalar-function metadata and data-chunk/vector helpers).
+Configure therefore builds with the unstable C API enabled and the extension
+footer advertises an unstable C struct:
 
 ```sh
 USE_UNSTABLE_C_API=1
