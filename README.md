@@ -1,30 +1,43 @@
 
+<!-- README.md is generated from README.Rmd. Please edit that file and run `make rdm`. -->
+
 # Rducks
 
 Rducks is an R package plus DuckDB extension for registering R functions
-as DuckDB scalar UDFs.
-
-This branch removes the Arrow/nanoarrow data plane. The package now
-builds without `nanoarrow`, without vendored nanoarrow/flatcc sources,
-and without the old Arrow IPC/query-stream/duckplyr execution surfaces.
-The remaining supported execution path is direct in-process marshalling
-from DuckDB vectors to R values on the recorded R thread.
+as DuckDB scalar UDFs. DuckDB vectors are materialized directly to R
+values on the recorded R thread, with no Arrow/nanoarrow intermediary.
 
 ## Quick example
 
 ``` r
+library(Rducks)
+
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db, threads = "single")
+
 rducks_register_scalar_udf(
   db, "plus_one", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER
 )
+#> <rducks_scalar_udf_registration>
+#>   registered:      yes
+#>   name:            plus_one
+#>   evaluation_mode: scalar
+#>   plan:            direct+serial
+#>   signature:       plus_one(INTEGER) -> INTEGER
+
 DBI::dbGetQuery(db, "SELECT plus_one(41::INTEGER) AS x")
+#>    x
+#> 1 42
+
 rducks_release(db)
 DBI::dbDisconnect(db, shutdown = TRUE)
 ```
 
-The experimental Quack codec lives in `src/quack_core.c` and the R glue
-in `src/quack_codec.c`; it is covered by tinytests as the replacement
-wire-format foundation, but IPC worker execution is intentionally not
-advertised until the native DuckDB-vector adapter is implemented.
+## Status
+
+The supported execution path is direct in-process marshalling. The
+experimental Quack wire codec (`src/quack_core.c`, `src/quack_codec.c`)
+is covered by tinytests as the replacement wire-format foundation, but
+the worker-process IPC transport is intentionally not advertised until
+its native DuckDB-vector adapter is implemented.
