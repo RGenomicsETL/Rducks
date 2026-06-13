@@ -465,9 +465,12 @@ rducks_table_stream_next_array <- function(stream, n) {
     rducks_table_stream_close(stream)
     return(NULL)
   }
-  batch <- rducks_table_stream_validate_batch(stream, batch)
-  # Self-describing quack payload; the extension fills DuckDB vectors from it.
-  rducks_table_result_payload(batch, rducks_table_prototype_types(stream$prototype))
+  # In-process table scans share the address space with DuckDB, so hand the
+  # validated data frame straight to the extension and let it fill DuckDB output
+  # vectors directly. Serializing to a Quack wire payload here would add 2-3 full
+  # copies for no benefit; the wire codec is reserved for the cross-process ipc
+  # transport where data must actually leave the process.
+  rducks_table_stream_validate_batch(stream, batch)
 }
 
 rducks_table_result_as_data_frame <- function(result) {
@@ -492,36 +495,16 @@ rducks_table_result_as_data_frame <- function(result) {
   structure(result, names = column_names, class = "data.frame", row.names = .set_row_names(lengths[[1L]]))
 }
 
-
-rducks_table_prototype_types <- function(prototype) {
-  lapply(prototype, function(column) {
-    if (is.logical(column)) return(rducks_type_object("bool"))
-    if (is.factor(column)) return(ENUM(levels(column)))
-    if (inherits(column, "Date")) return(rducks_type_object("date"))
-    if (inherits(column, "POSIXct")) return(rducks_type_object("timestamp"))
-    if (is.integer(column)) return(rducks_type_object("i32"))
-    if (is.numeric(column)) return(rducks_type_object("f64"))
-    if (is.character(column)) return(rducks_type_object("varchar"))
-    if (is.list(column)) return(rducks_type_object("blob"))
-    stop("Rducks table stream column type is unsupported", call. = FALSE)
-  })
-}
-
-rducks_table_result_payload <- function(result, column_types) {
-  df <- rducks_table_result_as_data_frame(result)
-  rducks_wire_encode_values(column_types, as.list(df), nrow(df))
-}
-
 #' Register an R table function in DuckDB
 #'
-#' R-backed table functions are disabled in the no-Arrow build. The previous
-#' implementation imported finite and streamed table batches through the removed
-#' Arrow/nanoarrow bridge; a replacement direct DuckDB-vector table writer has
-#' not been enabled yet. Calling this function now fails with a clear error.
-#'
-#' If you already have a static R data frame to expose as a virtual table, prefer
-#' `duckdb::duckdb_register()`; DuckDB's R package routes that through its native
-#' data-frame scan path.
+#' Registers an R function as a DuckDB table function. The R function is called on
+#' the recorded R thread to produce either a finite result (a data frame or named
+#' list of equal-length columns) or a
+#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} producer for
+#' scan-time batches. Column types are inferred from the returned columns, and the
+#' extension fills DuckDB output vectors directly from the R columns -- there is
+#' no Arrow/nanoarrow intermediary and no wire serialization for the in-process
+#' scan.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.
@@ -537,10 +520,6 @@ rducks_table_result_payload <- function(result, column_types) {
 #'   registered in DuckDB even if this object is discarded.
 #' @export
 rducks_register_table <- function(con, name, fun, chunk_size = 1024L) {
-  stop(
-    "rducks_register_table() is disabled in the no-Arrow build pending direct DuckDB-vector table writers",
-    call. = FALSE
-  )
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
   }

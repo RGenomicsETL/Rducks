@@ -26,13 +26,12 @@ connection and normalized table signature. The table function remains
 registered in DuckDB even if this object is discarded.
 }
 \description{
-R-backed table functions are disabled in the no-Arrow build. The previous
-implementation imported finite and streamed table batches through the removed
-Arrow/nanoarrow bridge; a replacement direct DuckDB-vector table writer has
-not been enabled yet. Calling this function now fails with a clear error.
-}
-\details{
-If you already have a static R data frame to expose as a virtual table, prefer
-\code{duckdb::duckdb_register()}; DuckDB's R package routes that through its native
-data-frame scan path.
+Registers an R function as a DuckDB table function. The R function is called on
+the recorded R thread to produce either a finite result (a data frame or named
+list of equal-length columns) or a
+\code{\link[=rducks_table_stream]{rducks_table_stream()}} producer for
+scan-time batches. Column types are inferred from the returned columns, and the
+extension fills DuckDB output vectors directly from the R columns -- there is
+no Arrow/nanoarrow intermediary and no wire serialization for the in-process
+scan.
 }

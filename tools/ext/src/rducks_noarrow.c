@@ -155,13 +155,6 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     }
 }
 
-static void rducks_register_table_scalar(duckdb_function_info info, duckdb_data_chunk input, duckdb_vector output) {
-    (void)input;
-    (void)output;
-    duckdb_scalar_function_set_error(info,
-        "Rducks table functions were removed from the no-Arrow build pending direct DuckDB-vector table writers");
-}
-
 static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, const char *sql,
                                            const char **token_out, char *err_msg, size_t err_cap) {
     (void)runtime;

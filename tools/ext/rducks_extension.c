@@ -555,4 +555,5 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 #include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
 #include "src/rducks_aggregate.c"
+#include "src/rducks_table.c"
 #include "src/rducks_surfaces.c"
