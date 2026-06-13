@@ -84,10 +84,12 @@ rducks_native_scalar_normalize <- function(type, values) {
     return(as.Date(values, origin = "1970-01-01"))
   }
   if (rducks_type_inherits(type, "rducks_time_type")) {
-    return(as.numeric(values))
+    # wire/C storage is microseconds-of-day; canonical TIME is seconds-of-day.
+    return(as.numeric(values) / 1e6)
   }
   if (rducks_type_inherits(type, "rducks_timestamp_type")) {
-    return(as.POSIXct(values, origin = "1970-01-01", tz = "UTC"))
+    # wire/C storage is microseconds since epoch; canonical is POSIXct seconds.
+    return(as.POSIXct(as.numeric(values) / 1e6, origin = "1970-01-01", tz = "UTC"))
   }
   if (rducks_type_inherits(type, "rducks_i64_type")) return(rducks_bigint(values))
   if (rducks_type_inherits(type, "rducks_u64_type")) return(rducks_ubigint(values))
@@ -124,11 +126,56 @@ rducks_native_scalar_normalize <- function(type, values) {
   values
 }
 
+# Inverse of rducks_native_scalar_normalize: canonical R values -> the C/wire
+# storage form the Quack codec (src/quack_codec.c) reads (integer days for DATE,
+# double microseconds for TIME/TIMESTAMP, character for 64-bit/128-bit ints/UUID,
+# months/days/micros list for INTERVAL, list-of-raw for BLOB/GEOMETRY/BIT).
+rducks_native_scalar_to_storage <- function(type, values) {
+  if (rducks_type_inherits(type, "rducks_bool_type")) return(as.logical(values))
+  if (rducks_type_inherits(type, c("rducks_i8_type", "rducks_u8_type", "rducks_i16_type", "rducks_u16_type", "rducks_i32_type", "rducks_r_integer_scalar_type"))) {
+    return(as.integer(values))
+  }
+  if (rducks_type_inherits(type, "rducks_u32_type")) return(as.numeric(values))
+  if (rducks_type_inherits(type, c("rducks_f32_type", "rducks_f64_type"))) return(as.numeric(values))
+  if (rducks_type_inherits(type, "rducks_varchar_type")) return(as.character(values))
+  if (rducks_type_inherits(type, "rducks_date_type")) return(as.integer(as.numeric(values)))
+  if (rducks_type_inherits(type, "rducks_time_type")) return(as.numeric(values) * 1e6)
+  if (rducks_type_inherits(type, "rducks_timestamp_type")) return(as.numeric(values) * 1e6)
+  if (rducks_type_inherits(type, c("rducks_i64_type", "rducks_u64_type", "rducks_hugeint_type", "rducks_uhugeint_type", "rducks_uuid_type"))) {
+    return(as.character(values))
+  }
+  if (rducks_type_inherits(type, "rducks_interval_type")) {
+    if (!inherits(values, "rducks_interval")) values <- rducks_native_scalar_normalize(type, values)
+    return(list(months = as.integer(values$months), days = as.integer(values$days), micros = as.numeric(values$micros)))
+  }
+  if (rducks_type_inherits(type, "rducks_bit_type")) {
+    if (inherits(values, "rducks_bits")) return(list(values))
+    if (is.list(values)) return(values)
+    return(list(values))
+  }
+  if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type"))) {
+    if (is.raw(values)) return(list(values))
+    return(values)
+  }
+  if (rducks_type_inherits(type, "rducks_variant_type")) {
+    if (is.list(values) && !inherits(values, "rducks_variant")) return(values)
+    return(list(values))
+  }
+  values
+}
+
 rducks_native_array_from_scalar <- function(type, values) {
-  values <- rducks_native_scalar_normalize(type, values)
   n <- length(values)
   valid <- rducks_native_scalar_nulls(type, values)
-  rducks_native_array(type, n, valid, list(kind = "scalar", values = values))
+  storage_vals <- rducks_native_scalar_to_storage(type, values)
+  storage <- if (rducks_type_inherits(type, "rducks_interval_type")) {
+    list(kind = "interval", months = storage_vals$months, days = storage_vals$days, micros = storage_vals$micros)
+  } else if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_bit_type"))) {
+    list(kind = "blob", payloads = storage_vals)
+  } else {
+    list(kind = "scalar", values = storage_vals)
+  }
+  rducks_native_array(type, n, valid, storage)
 }
 
 rducks_native_array_from_decimal <- function(type, values) {
@@ -137,13 +184,15 @@ rducks_native_array_from_decimal <- function(type, values) {
   if (!identical(as.integer(values$width), as.integer(params$width)) || !identical(as.integer(values$scale), as.integer(params$scale))) {
     values <- rducks_decimal(as.character(values), params$width, params$scale)
   }
-  rducks_native_array(type, length(values), !is.na(as.character(values)), list(kind = "decimal", values = values))
+  storage <- rducks_decimal_scaled_integer(values)
+  rducks_native_array(type, length(values), !is.na(storage), list(kind = "decimal", values = storage))
 }
 
 rducks_native_array_from_enum <- function(type, values) {
   levels <- rducks_type_parameters(type)$levels
   values <- if (inherits(values, "rducks_enum")) rducks_enum(as.character(values), levels = levels) else rducks_enum(values, levels = levels)
-  rducks_native_array(type, length(values), !is.na(as.character(values)), list(kind = "enum", values = values, levels = levels))
+  codes <- match(as.character(values), levels)
+  rducks_native_array(type, length(values), !is.na(codes), list(kind = "enum", values = codes, levels = levels))
 }
 
 rducks_native_sequence_value_at <- function(type, value, i) {
@@ -306,8 +355,24 @@ rducks_native_array_to_values <- function(array) {
   type <- array$type
   n <- array$length
   storage <- array$storage
-  if (rducks_type_inherits(type, "rducks_scalar_type") || rducks_type_inherits(type, c("rducks_decimal_type", "rducks_enum_type"))) {
-    return(storage$values)
+  if (rducks_type_inherits(type, "rducks_interval_type")) {
+    return(rducks_native_scalar_normalize(type, list(months = storage$months, days = storage$days, micros = storage$micros)))
+  }
+  if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_bit_type"))) {
+    return(rducks_native_scalar_normalize(type, storage$payloads))
+  }
+  if (rducks_type_inherits(type, "rducks_scalar_type")) {
+    return(rducks_native_scalar_normalize(type, storage$values))
+  }
+  if (rducks_type_inherits(type, "rducks_decimal_type")) {
+    params <- rducks_type_parameters(type)
+    return(rducks_decimal_from_scaled_integer(storage$values, params$width, params$scale))
+  }
+  if (rducks_type_inherits(type, "rducks_enum_type")) {
+    levels <- rducks_type_parameters(type)$levels
+    codes <- storage$values
+    labels <- ifelse(is.na(codes), NA_character_, levels[codes])
+    return(rducks_enum(labels, levels = levels))
   }
   if (rducks_type_inherits(type, "rducks_list_type")) {
     child_values <- rducks_native_array_to_values(storage$child)
