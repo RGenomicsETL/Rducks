@@ -589,8 +589,7 @@ static rducks_type_desc_t *rducks_r_table_infer_column_desc(SEXP column, const c
 /* Direct: build an owned DuckDB data chunk from an R data frame (a VECSXP of
  * equal-length columns) using the already-inferred column descriptors. Reuses
  * the same direct DuckDB-vector writers used by scalar-UDF result writeback, so
- * there is no Arrow/nanoarrow intermediary and no wire serialization for the
- * in-process scan. */
+ * there is no wire serialization for the in-process scan. */
 static int rducks_r_table_chunk_from_df(rducks_r_table_bind_t *bind, SEXP df, idx_t rows,
                                         duckdb_data_chunk *chunk_out, char *err, size_t err_cap) {
     duckdb_logical_type *types = NULL;

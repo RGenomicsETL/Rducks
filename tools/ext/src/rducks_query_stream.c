@@ -326,7 +326,7 @@ static int rducks_query_stream_schema_native(rducks_runtime_entry_t *runtime, co
 /* Materialize a fetched DuckDB chunk directly into an R data frame (one column
  * per result column via the same DuckDB-vector -> SEXP readers used for scalar
  * UDF inputs) and hand it to the R side. In-process streaming shares the address
- * space with DuckDB, so there is no Arrow/nanoarrow export and no wire codec. */
+ * space with DuckDB, so there is no wire codec. */
 static int rducks_query_stream_store_chunk(rducks_query_stream_entry_t *entry,
                                             duckdb_data_chunk chunk, char *err_msg, size_t err_cap) {
     idx_t n = duckdb_data_chunk_get_size(chunk);

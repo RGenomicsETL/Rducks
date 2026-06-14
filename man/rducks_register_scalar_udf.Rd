@@ -83,9 +83,7 @@ selected evaluator/marshalling metadata is then stored with the native catalog
 entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
 not durable schema objects: they are visible to sibling connections while the
 same DuckDB database runtime remains open, but a file-backed database must be
-enabled and registered again after it is fully closed and reopened. For
-IPC worker execution is not part of the no-Arrow build; the native Quack
-codec is retained as the future wire-format foundation.
+enabled and registered again after it is fully closed and reopened.
 }
 \examples{
 \donttest{

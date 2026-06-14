@@ -13,48 +13,46 @@ package-managed [DuckDB C
 extension](https://duckdb.org/docs/stable/extensions/overview). The
 extension records the DuckDB database instance at load time and keeps
 extension-owned connections for native registration callbacks. It is
-built around explicit type descriptors, direct DuckDB-vector marshalling
-with no Arrow/nanoarrow intermediary, and a strict rule that R object
-work runs on the recorded R thread.
+built around explicit type descriptors, direct DuckDB-vector
+marshalling, and a strict rule that R object work runs on the recorded R
+thread.
 
 Rducks is organized around DuckDB function kind, scalar-UDF evaluation
 mode, and execution plan. Scalar UDFs are registered with
 `rducks_register_scalar_udf()` and choose `mode = "scalar"` for one R
 call per row or `mode = "vectorized"` for one R call per DuckDB chunk.
-The only execution transport available today is in-process
-(`transport = "inproc"`); a worker-process `"ipc"` transport (native
+Two execution transports are available: in-process
+(`transport = "inproc"`) and worker-process (`transport = "ipc"`, native
 [NNG](https://nng.nanomsg.org/) request/reply, default local workers
 launched by [mirai](https://mirai.r-lib.org/), optional
-[mori](https://shikokuchuo.net/mori/) sharing for selected globals) is
-reserved but not yet enabled. Aggregates use
-`rducks_register_aggregate()`.
+[mori](https://shikokuchuo.net/mori/) sharing for selected globals).
+Aggregates use `rducks_register_aggregate()`.
 
 ## How it works
 
 Rducks loads a small DuckDB extension that records the database instance
 and keeps extension-owned connections for registration callbacks. R
 closures are preserved while DuckDB catalog metadata can call them, and
-scalar calls run on the recorded R thread; a worker-process transport is
-reserved but not yet enabled.
+scalar calls run on the recorded R thread or, under `transport = "ipc"`,
+in worker R processes.
 
-Marshalling is direct. DuckDB produces vectors in standard chunks;
-Rducks materializes typed R inputs directly from those vectors in
-extension C, calls the R function, and writes typed results back into
-DuckDB output vectors. There is no Arrow C Data or nanoarrow
-intermediary. When a callback arrives off the recorded R thread under
-the in-process concurrent backend, the input chunk and the result are
-carried as owned DuckDB data chunks across the queue boundary. Dynamic
-omitted-`args` UDFs still bind concrete DuckDB types at the SQL call
-site before this marshalling begins.
+In-process marshalling is direct: DuckDB produces vectors in standard
+chunks; Rducks materializes typed R inputs directly from those vectors
+in extension C, calls the R function, and writes typed results back into
+DuckDB output vectors. When a callback arrives off the recorded R thread
+under the in-process concurrent backend, the input chunk and the result
+are carried as owned DuckDB data chunks across the queue boundary.
+Dynamic omitted-`args` UDFs still bind concrete DuckDB types at the SQL
+call site before this marshalling begins.
 
-The reserved worker transport uses a [Quack-style
+The worker-process transport uses a [Quack-style
 format](https://github.com/duckdb/duckdb-quack): DuckDB
 `BinarySerializer` messages carrying logical types and `DataChunk`
-payloads, aligned with DuckDB’s native chunk model rather than Arrow IPC
-bytes. The codec lives in `src/quack_core.c` with R glue in
-`src/quack_codec.c` and is covered by tinytests, but the worker-process
-transport that would use it is intentionally not advertised until its
-native DuckDB-vector adapter is implemented.
+payloads, aligned with DuckDB’s native chunk model. The codec lives in
+`src/quack_core.c` with R glue in `src/quack_codec.c`. The worker path
+currently marshals fixed-width scalars plus `VARCHAR`/`BLOB`; other
+types are rejected at registration on the `ipc` plan until the native
+bridge covers them.
 
 ## Quick start
 
@@ -321,8 +319,7 @@ function formals and registers those inputs as DuckDB `ANY`. The result
 can be a data frame, a named list of columns, or `rducks_table_stream()`
 for scan-time batches. Column types are inferred from the returned
 columns, and the extension fills DuckDB output vectors directly from the
-R columns – there is no Arrow/nanoarrow intermediary and no wire
-serialization for the in-process scan.
+R columns, with no wire serialization for the in-process scan.
 
 ``` r
 rows_table <- rducks_register_table(
@@ -368,8 +365,8 @@ dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
 `rducks_query_stream()` returns a query’s rows in DuckDB-sized batches
 as data frames, instead of an eager `DBI::dbGetQuery()` result. Each
 batch is materialized directly from DuckDB vectors to R values on the
-recorded R thread, with no Arrow/nanoarrow intermediary. `next_batch()`
-returns the next data frame or `NULL` at end of stream.
+recorded R thread. `next_batch()` returns the next data frame or `NULL`
+at end of stream.
 
 ``` r
 stream <- rducks_query_stream(con, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")

@@ -121,9 +121,7 @@ rducks_assert_marshalling_supported <- function(spec) {
 #' entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
 #' not durable schema objects: they are visible to sibling connections while the
 #' same DuckDB database runtime remains open, but a file-backed database must be
-#' enabled and registered again after it is fully closed and reopened. For
-#' IPC worker execution is not part of the no-Arrow build; the native Quack
-#' codec is retained as the future wire-format foundation.
+#' enabled and registered again after it is fully closed and reopened.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -502,9 +500,8 @@ rducks_table_result_as_data_frame <- function(result) {
 #' list of equal-length columns) or a
 #' \code{\link[=rducks_table_stream]{rducks_table_stream()}} producer for
 #' scan-time batches. Column types are inferred from the returned columns, and the
-#' extension fills DuckDB output vectors directly from the R columns -- there is
-#' no Arrow/nanoarrow intermediary and no wire serialization for the in-process
-#' scan.
+#' extension fills DuckDB output vectors directly from the R columns, with no
+#' wire serialization for the in-process scan.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.

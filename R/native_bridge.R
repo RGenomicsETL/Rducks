@@ -36,8 +36,8 @@ rducks_make_vectorized_engine <- function(fun, spec, null_handling, exception_ha
 
 # Direct-evaluator bundle, consumed by the extension by index (see
 # RDUCKS_RC_BUNDLE_* in the extension sources). The slow path hands the
-# recorded R thread a self-describing quack payload instead of Arrow C Data
-# pointers; the fast path keeps building SEXP columns directly in C.
+# recorded R thread a self-describing quack payload; the fast path keeps
+# building SEXP columns directly in C.
 rducks_rc_prepare_inputs <- rducks_wire_prepared_inputs
 
 rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, plan, engine, eval_rows) {
@@ -49,7 +49,6 @@ rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, 
     check_return = rducks_check_scalar_udf_return,
     result_array = rducks_scalar_results_to_wire,
     eval_rows = eval_rows,
-    results_to_arrow = rducks_scalar_results_to_wire,
     engine = engine,
     plan = plan,
     null_handling = null_handling,

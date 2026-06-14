@@ -25,11 +25,9 @@ These are scalar-UDF registration semantics and belong to
 
 These are execution-plan choices for scalar UDFs:
 
-- marshalling: `direct` (the only enabled marshalling) or the reserved `wire`
-  worker-process codec
-- concurrency: `serial` or `inproc_concurrent` for `direct`; the reserved `wire`
-  path pairs with `multiprocess_parallel`
-- IPC worker options for the reserved `wire + multiprocess_parallel` transport
+- marshalling: `direct` (in-process) or `wire` (worker-process Quack codec)
+- concurrency: `serial` or `inproc_concurrent` for `direct`; `wire` pairs with `multiprocess_parallel`
+- IPC worker options for the `wire + multiprocess_parallel` transport
 
 The plan active at registration time selects the evaluator and marshalling
 metadata stored with that registered DuckDB scalar UDF. Changing a connection's
@@ -51,11 +49,10 @@ SQL argument count from the R function formals, registers those input slots as
 DuckDB `ANY`, converts the actual SQL bind values to R values, and calls the R
 function during bind on the recorded calling R thread.
 
-`rducks_register_table()` is currently **disabled**: its previous implementation
-imported batches through the removed Arrow/nanoarrow bridge, and the replacement
-direct DuckDB-vector table writer is not yet enabled. The function errors with a
-clear message. For a static R data frame as a virtual table, use
-`duckdb::duckdb_register()`.
+`rducks_register_table()` fills DuckDB output vectors directly from the R
+function's returned columns (data frame, named list, or `rducks_table_stream()`
+producer); column types are inferred from the returned columns. Finite results
+are imported once during bind; stream results import batches as DuckDB scans.
 
 DuckDB table functions are more general than the current Rducks table API, but
 this document describes only the implemented Rducks surface: dynamic output
@@ -79,17 +76,18 @@ metadata being exercised.
 
 Unsupported combinations must fail. They must not silently switch:
 
-- from `direct` to the reserved `wire` path or vice versa
+- from `direct` to the `wire` path or vice versa
 - from vectorized chunk calls to scalar row calls
 - from direct native conversion to any other helper path
 
 ## Marshalling choices
 
 - `direct`: direct DuckDB-vector materialization to/from R values for signatures
-  accepted by the direct support predicate. Unsupported signatures fail
-  validation. This is the only enabled marshalling.
-- `wire` (reserved, not yet enabled): owned Quack wire request/result bytes
-  (DuckDB BinarySerializer subset). Only valid with `multiprocess_parallel`.
+  accepted by the direct support predicate. Unsupported signatures fail validation.
+- `wire`: owned Quack wire request/result bytes (DuckDB BinarySerializer subset),
+  marshalled to worker R processes. Only valid with `multiprocess_parallel`. The
+  worker path currently covers fixed-width scalars plus VARCHAR/BLOB; other types
+  are rejected at registration until the native bridge covers them.
   Selected scalar-UDF globals may be serialized normally or, with
   `ipc_globals_share = "mori"`, sent as same-host mori shared-memory references
   for large read-only R objects.
@@ -102,8 +100,9 @@ Unsupported combinations must fail. They must not silently switch:
   callbacks queue synchronous requests to the recorded R thread. R API work and
   user R function evaluation remain serialized on that thread. This backs the
   public `transport = "inproc"` plan.
-- `multiprocess_parallel` (reserved): chunk work is sent to persistent worker
-  processes over the NNG provider (`ipc_nng_pool`). Not yet enabled.
+- `multiprocess_parallel`: chunk work is sent to persistent worker processes
+  over the NNG provider (`ipc_nng_pool`). Backs the public `transport = "ipc"`
+  plan for the supported wire types.
 
 ## Scalar-UDF engines
 
@@ -111,14 +110,15 @@ Unsupported combinations must fail. They must not silently switch:
 | --- | --- | --- | --- |
 | `direct_serial` | `direct + serial` | internal reference | Reference path; constructed internally for conformance, not exposed publicly. |
 | `direct_main_queue` | `direct + inproc_concurrent` | enabled (public `inproc`) | Queued direct marshalling; inputs/results use owned state before crossing threads. R work runs on the recorded R thread. |
-| `ipc_nng_pool` | `wire + multiprocess_parallel` | reserved | Native NNG request/reply with owned Quack wire bytes and persistent workers. Not yet enabled. |
+| `ipc_nng_pool` | `wire + multiprocess_parallel` | enabled (public `ipc`) | Native NNG request/reply with owned Quack wire bytes and persistent workers. Covers fixed-width scalars plus VARCHAR/BLOB; other types are rejected at registration. |
 
-## Enum storage (reserved wire path)
+## Enum storage (wire path)
 
 Declared `ENUM(...)` levels are part of the Rducks registration type descriptor.
-On the reserved `wire` path, Rducks transports enum columns as their underlying
-DuckDB enum index storage; the worker reconstructs `rducks_enum` values from the
-declared levels and storage indexes.
+On the `wire` path, Rducks transports enum columns as their underlying DuckDB
+enum index storage; the worker reconstructs `rducks_enum` values from the
+declared levels and storage indexes. ENUM is not yet covered by the worker
+bridge and is rejected at registration on `transport = "ipc"`.
 
 ## Current validation coverage
 
@@ -127,4 +127,4 @@ reference and the public `direct + inproc_concurrent` queue). Coverage includes
 scalar and vectorized calls, default and special NULL handling,
 `exception_handling = "return_null"`, unsupported signature validation, native
 counter checks for selected engines, and the standalone Quack wire codec
-round-trip tests that back the reserved worker-process path.
+round-trip tests that back the worker-process path.

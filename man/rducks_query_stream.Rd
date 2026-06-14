@@ -21,8 +21,8 @@ The stream closes on \verb{$close()} or \code{rducks_release(con)}.
 Opens a native DuckDB streaming result through the Rducks extension and
 returns the rows in DuckDB-sized batches as data frames, instead of an eager
 \code{DBI::dbGetQuery()} result. Each batch is materialized directly from DuckDB
-vectors to R values on the recorded R thread, with no Arrow/nanoarrow
-intermediary. The stream uses the extension's database-scoped connection, so
+vectors to R values on the recorded R thread. The stream uses the extension's
+database-scoped connection, so
 it cannot see caller-connection temporary tables or views.
 }
 \examples{

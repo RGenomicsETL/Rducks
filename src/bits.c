@@ -134,30 +134,6 @@ SEXP RDUCKS_bits_not_raw(SEXP data_sexp, SEXP bit_length_sexp) {
     return out;
 }
 
-SEXP RDUCKS_arrow_pack_bits(SEXP values_sexp) {
-    SEXP values = values_sexp;
-    int protect_values = 0;
-    if (TYPEOF(values) != LGLSXP) {
-        values = PROTECT(Rf_coerceVector(values_sexp, LGLSXP));
-        protect_values = 1;
-    }
-    R_xlen_t n = XLENGTH(values);
-    R_xlen_t nbytes = rducks_bytes_for_bits(n, "packed boolean");
-    SEXP out = PROTECT(Rf_allocVector(RAWSXP, nbytes));
-    memset(RAW(out), 0, (size_t)nbytes);
-    const int *logical = LOGICAL(values);
-    for (R_xlen_t i = 0; i < n; i++) {
-        if (logical[i] == TRUE) {
-            R_xlen_t byte = i / 8;
-            int shift = (int)(i % 8);
-            RAW(out)[byte] = (Rbyte)(RAW(out)[byte] | (Rbyte)(1U << shift));
-        }
-    }
-    UNPROTECT(1);
-    if (protect_values) UNPROTECT(1);
-    return out;
-}
-
 SEXP RDUCKS_bits_from_character(SEXP x_sexp) {
     if (TYPEOF(x_sexp) != STRSXP || XLENGTH(x_sexp) != 1 || STRING_ELT(x_sexp, 0) == NA_STRING) {
         Rf_error("character BIT input must be a single non-NA string");

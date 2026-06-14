@@ -14,20 +14,20 @@ Load the bundled Rducks DuckDB extension and record the calling R thread for dir
 
 Notes:
 
-- The no-Arrow build does not require nanoarrow or vendored flatcc sources.
+- The bundled extension links no Arrow or columnar interchange library.
 
 ## `rducks_execution_plan`
 
 - Kind: `R function`
 - Category: `execution`
-- Signature: `rducks_execution_plan(transport = 'inproc', ...)`
+- Signature: `rducks_execution_plan(transport = c('inproc', 'ipc'), ...)`
 - Returns: `rducks_execution_plan`
 
-Create the direct in-process execution plan. IPC wire execution is not advertised until the native Quack adapter is implemented.
+Create an execution plan: the direct in-process plan ('inproc') or the worker-process Quack wire plan ('ipc').
 
 Notes:
 
-- The public plan surface intentionally has no Arrow marshalling axis.
+- The 'ipc' plan covers fixed-width scalars plus VARCHAR/BLOB; other types are rejected at registration.
 
 ## `rducks_register_scalar_udf`
 
@@ -40,7 +40,7 @@ Register an R function as a DuckDB scalar UDF using direct native DuckDB-vector 
 
 Notes:
 
-- Unsupported type/mode combinations fail explicitly instead of falling back to a removed bridge.
+- Unsupported type/mode/plan combinations fail explicitly instead of falling back to another engine.
 
 ## `rducks_quack_codec`
 
@@ -49,9 +49,9 @@ Notes:
 - Signature: `RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload)`
 - Returns: `raw payload or decoded chunk`
 
-Thread-safe Quack/BinarySerializer DataChunk subset used as the future no-Arrow IPC wire-format foundation.
+Thread-safe Quack/BinarySerializer DataChunk subset used as the worker-process IPC wire format.
 
 Notes:
 
-- The current branch tests codec round-trips but does not advertise worker execution over it yet.
+- Backs the 'ipc' transport; the standalone codec round-trips are exercised in the test suite.
 

@@ -6,16 +6,16 @@
     "signature": "rducks_enable(con, extension_path = rducks_extension_path(), threads = c('unchanged', 'single'))",
     "returns": "duckdb_connection (invisibly)",
     "description": "Load the bundled Rducks DuckDB extension and record the calling R thread for direct native UDF evaluation.",
-    "notes": ["The no-Arrow build does not require nanoarrow or vendored flatcc sources."]
+    "notes": ["The bundled extension links no Arrow or columnar interchange library."]
   },
   {
     "name": "rducks_execution_plan",
     "kind": "R function",
     "category": "execution",
-    "signature": "rducks_execution_plan(transport = 'inproc', ...)",
+    "signature": "rducks_execution_plan(transport = c('inproc', 'ipc'), ...)",
     "returns": "rducks_execution_plan",
-    "description": "Create the direct in-process execution plan. IPC wire execution is not advertised until the native Quack adapter is implemented.",
-    "notes": ["The public plan surface intentionally has no Arrow marshalling axis."]
+    "description": "Create an execution plan: the direct in-process plan ('inproc') or the worker-process Quack wire plan ('ipc').",
+    "notes": ["The 'ipc' plan covers fixed-width scalars plus VARCHAR/BLOB; other types are rejected at registration."]
   },
   {
     "name": "rducks_register_scalar_udf",
@@ -24,7 +24,7 @@
     "signature": "rducks_register_scalar_udf(con, name, fun, args, returns, mode = c('scalar', 'vectorized'), ...)",
     "returns": "rducks_scalar_udf_registration",
     "description": "Register an R function as a DuckDB scalar UDF using direct native DuckDB-vector marshalling.",
-    "notes": ["Unsupported type/mode combinations fail explicitly instead of falling back to a removed bridge."]
+    "notes": ["Unsupported type/mode/plan combinations fail explicitly instead of falling back to another engine."]
   },
   {
     "name": "rducks_quack_codec",
@@ -32,7 +32,7 @@
     "category": "wire format",
     "signature": "RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload)",
     "returns": "raw payload or decoded chunk",
-    "description": "Thread-safe Quack/BinarySerializer DataChunk subset used as the future no-Arrow IPC wire-format foundation.",
-    "notes": ["The current branch tests codec round-trips but does not advertise worker execution over it yet."]
+    "description": "Thread-safe Quack/BinarySerializer DataChunk subset used as the worker-process IPC wire format.",
+    "notes": ["Backs the 'ipc' transport; the standalone codec round-trips are exercised in the test suite."]
   }
 ]

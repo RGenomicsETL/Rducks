@@ -165,6 +165,26 @@ rducks_native_scalar_to_storage <- function(type, values) {
 }
 
 rducks_native_array_from_scalar <- function(type, values) {
+  if (rducks_type_inherits(type, "rducks_interval_type") && is.list(values) && !inherits(values, "rducks_interval")) {
+    # Row-wise scalar evaluation yields a list of per-row rducks_interval objects;
+    # combine into a single rducks_interval vector (NULL -> NA).
+    months <- vapply(values, function(x) if (is.null(x)) NA_integer_ else as.integer(x$months), integer(1))
+    days <- vapply(values, function(x) if (is.null(x)) NA_integer_ else as.integer(x$days), integer(1))
+    micros <- vapply(values, function(x) if (is.null(x)) NA_real_ else as.numeric(x$micros), numeric(1))
+    values <- rducks_interval(months, days, micros)
+  } else if (is.list(values) &&
+             !rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type",
+                                           "rducks_bit_type", "rducks_variant_type"))) {
+    # Row-wise scalar evaluation of an atomic scalar type yields a list of per-row
+    # length-1 results, with NULL where a row was skipped (default NULL handling).
+    # Flatten to an atomic vector (NULL/empty -> NA) so the downstream as.*
+    # coercions do not choke on an embedded NULL. BLOB/GEOMETRY/BIT/VARIANT keep
+    # their list-of-payloads shape and are excluded above.
+    values <- unlist(
+      lapply(values, function(x) if (is.null(x) || length(x) == 0L) NA else x),
+      use.names = FALSE
+    )
+  }
   n <- length(values)
   valid <- rducks_native_scalar_nulls(type, values)
   storage_vals <- rducks_native_scalar_to_storage(type, values)
@@ -180,6 +200,11 @@ rducks_native_array_from_scalar <- function(type, values) {
 
 rducks_native_array_from_decimal <- function(type, values) {
   params <- rducks_type_parameters(type)
+  if (is.list(values) && !inherits(values, "rducks_decimal")) {
+    # Row-wise scalar evaluation yields a list of per-row (1-element) values;
+    # flatten to a character vector (NULL -> NA) before constructing the column.
+    values <- vapply(values, function(x) if (is.null(x)) NA_character_ else as.character(x), character(1))
+  }
   if (!inherits(values, "rducks_decimal")) values <- rducks_decimal(values, params$width, params$scale)
   if (!identical(as.integer(values$width), as.integer(params$width)) || !identical(as.integer(values$scale), as.integer(params$scale))) {
     values <- rducks_decimal(as.character(values), params$width, params$scale)

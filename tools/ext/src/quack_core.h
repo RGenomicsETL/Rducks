@@ -8,7 +8,7 @@
  *   - the Rducks R package shared object (main-thread SEXP adapters live in
  *     quack_codec.c);
  *   - the Rducks DuckDB extension (DuckDB-vector adapters live in
- *     tools/ext/src/rducks_wire.c), where encode/decode may run on DuckDB
+ *     tools/ext/src/rducks_ripc.c), where encode/decode may run on DuckDB
  *     execution threads because nothing here touches the R API.
  *
  * Wire grammar (DuckDB BinarySerializer, serialization_compatibility v7):

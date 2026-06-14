@@ -15,7 +15,7 @@ evaluation modes for the scalar UDF, not separate DuckDB function kinds.
 | --- | --- | --- | --- | --- |
 | internal `direct + serial` | `direct_serial` | supported | supported | Reference path; constructed internally, not exposed publicly. |
 | `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | supported | supported | Direct DuckDB-vector marshalling with owned queued input/result state; R work stays on the recorded R thread. The only public plan. |
-| reserved `wire + multiprocess_parallel` | `ipc_nng_pool` | (reserved) | (reserved) | Persistent worker processes, native NNG request/reply, owned Quack wire bytes. Not yet enabled. |
+| `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | supported | supported | Persistent worker processes, native NNG request/reply, owned Quack wire bytes. Covers the wire-supported scalar types (see below); other signatures are rejected at registration. |
 
 Invalid marshalling/concurrency pairs fail validation.
 
@@ -33,26 +33,33 @@ are rejected.
 
 ## Streaming queries
 
-The `rducks_query_stream()` surface was removed with the Arrow data plane and is
-pending reimplementation over the Quack wire codec. There is no streaming-query
-API in this build.
+`rducks_query_stream()` opens a native DuckDB streaming result and returns rows
+in DuckDB-sized batches as data frames. Each batch is materialized directly from
+DuckDB vectors to R values on the recorded R thread. The stream uses the
+extension's database-scoped connection, so it cannot see caller-connection
+temporary tables or views.
 
 ## Type-family support
 
-The `direct` column is the only enabled marshalling. The `wire` column is the
-reserved worker-process codec and is not yet enabled.
+The `direct` column covers the in-process `inproc` plan. The `wire` column
+covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
+bridge currently covers only fixed-width scalars plus `VARCHAR`/`BLOB`; richer
+types are rejected at registration on `transport = "ipc"` until the native
+bridge covers them.
 
-| Type family | Examples | `direct` | `wire` (reserved) | Notes |
+| Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
 | --- | --- | --- | --- | --- |
 | Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | Values are materialized/copied as R values or vectors. Validity bitmaps remain authoritative for NULLs. |
-| String/binary/geometry/bit | `VARCHAR`, `BLOB`, `GEOMETRY`, `BIT` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. `GEOMETRY` crosses the R boundary as WKB `raw` bytes. |
-| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | yes where DuckDB's C API exposes `VARIANT` logical types | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
-| Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
+| String/binary | `VARCHAR`, `BLOB` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. |
+| Geometry/bit | `GEOMETRY`, `BIT` | yes | rejected | `GEOMETRY` crosses the R boundary as WKB `raw` bytes. Not yet in the worker bridge. |
+| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | rejected | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
+| Temporal | `DATE`, `TIME`, `TIMESTAMP` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
+| Interval | `INTERVAL` | yes | rejected | `rducks_interval` value class. Not yet in the worker bridge. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
-| Decimal | `DECIMAL(width, scale)` | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. |
-| Enum | `ENUM(c("a", "b"))` | yes | yes | The reserved wire path uses declared levels plus underlying enum index storage. |
-| Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes where direct predicate accepts child | yes | Child descriptors are validated recursively. |
-| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes where direct predicate accepts children | yes | Direct support depends on native DuckDB-vector handling for the child types. The direct UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled. |
+| Decimal | `DECIMAL(width, scale)` | yes | rejected | Use the `DECIMAL()` constructor, not a quoted SQL type string. Not yet in the worker bridge. |
+| Enum | `ENUM(c("a", "b"))` | yes | rejected | Direct uses declared levels plus underlying enum index storage. Not yet in the worker bridge. |
+| Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes where direct predicate accepts child | rejected | Child descriptors are validated recursively. |
+| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes where direct predicate accepts children | rejected | Direct support depends on native DuckDB-vector handling for the child types. The direct UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled. |
 
 ## NULL and error semantics
 
@@ -78,7 +85,7 @@ reserved worker-process codec and is not yet enabled.
   before crossing to the recorded R thread.
 - Queued results are written into owned result state before a waiting worker
   writes callback output.
-- Quack wire request/result payloads (reserved path) are owned raw bytes and
+- Quack wire request/result payloads (`ipc` path) are owned raw bytes and
   must not hide R `serialize()` payloads or process-local pointers.
 - Same-host `ipc_globals_share = "mori"` is only a long-lived global-sharing
   path. Built-in IPC backends currently report `supports_chunk_shared_memory_handles = FALSE`;

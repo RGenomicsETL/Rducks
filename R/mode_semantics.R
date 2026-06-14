@@ -9,8 +9,8 @@ rducks_mode_semantics_rows <- list(
     length_semantics = "one output value per R function call",
     error_semantics = "R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
     threading = "direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread",
-    copy_semantics = "DuckDB vectors are materialized directly to R values with no Arrow/nanoarrow intermediary",
-    notes = "IPC wire execution is not advertised until the native Quack DuckDB-vector adapter is implemented"
+    copy_semantics = "DuckDB vectors are materialized directly to R values",
+    notes = "the ipc (wire) transport covers fixed-width scalars plus VARCHAR/BLOB; other types are rejected at registration until the native bridge covers them"
   ),
   vectorized = list(
     mode = "vectorized",
@@ -22,7 +22,7 @@ rducks_mode_semantics_rows <- list(
     length_semantics = "return length must equal the number of evaluated rows in the chunk",
     error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
     threading = "direct vectorized work runs on the recorded main R thread; queued in-process calls are drained by that thread",
-    copy_semantics = "DuckDB vectors are materialized directly to R vectors/list-columns with no Arrow/nanoarrow intermediary",
+    copy_semantics = "DuckDB vectors are materialized directly to R vectors/list-columns",
     notes = "batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet"
   )
 )

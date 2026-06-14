@@ -588,19 +588,20 @@ rducks_assert_execution_plan_implemented <- function(plan) {
   invisible(TRUE)
 }
 
+# Scalar types the native wire/RIPC bridge (tools/ext/src/rducks_ripc.c) encodes
+# and decodes end-to-end. Decimal, enum, interval, bit/geometry/variant, and
+# nested types are not yet wired through the native bridge, so they are rejected
+# at registration (strict-plan rule: no register-then-fail-at-execution).
+rducks_wire_supported_scalar_types <- function() {
+  c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
+    "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid")
+}
+
 rducks_wire_unsupported_types <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(rducks_type_normalize(type))
   kind <- rducks_type_kind(type)
-  if (identical(kind, "scalar")) {
-    return(if (rducks_type_token(type) %in% rducks_all_scalar_type_names()) character() else rducks_type_duckdb_sql(type))
-  }
-  if (identical(kind, "decimal") || identical(kind, "enum")) {
+  if (identical(kind, "scalar") && rducks_type_token(type) %in% rducks_wire_supported_scalar_types()) {
     return(character())
-  }
-  if (kind %in% c("list", "array", "struct", "map", "union")) {
-    children <- rducks_type_children(type)
-    out <- unlist(lapply(children, rducks_wire_unsupported_types), use.names = FALSE)
-    return(if (is.null(out)) character() else unique(out))
   }
   rducks_type_duckdb_sql(type)
 }

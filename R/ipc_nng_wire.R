@@ -83,7 +83,7 @@ rducks_nng_wire_decode_dynamic_payload <- function(payload) {
   }
   pos <- 5L
   count <- rducks_nng_wire_read_u32(payload, pos); pos <- count$pos
-  arrow_len <- rducks_nng_wire_read_u64(payload, pos); pos <- arrow_len$pos
+  wire_len <- rducks_nng_wire_read_u64(payload, pos); pos <- wire_len$pos
   if (count$value > rducks_nng_dynamic_arg_count_limit) {
     stop("Rducks dynamic NNG payload has too many argument types", call. = FALSE)
   }
@@ -95,12 +95,12 @@ rducks_nng_wire_decode_dynamic_payload <- function(payload) {
     pos <- rducks_nng_wire_check_pos(pos + len$value)
     if (pos > length(payload) + 1L) stop("truncated Rducks dynamic NNG payload", call. = FALSE)
   }
-  arrow_payload <- rducks_nng_wire_slice(payload, pos, arrow_len$value, "Rducks dynamic NNG payload")
-  pos <- rducks_nng_wire_check_pos(pos + arrow_len$value)
+  wire_payload <- rducks_nng_wire_slice(payload, pos, wire_len$value, "Rducks dynamic NNG payload")
+  pos <- rducks_nng_wire_check_pos(pos + wire_len$value)
   if (pos != length(payload) + 1L) {
     stop("truncated Rducks dynamic NNG payload", call. = FALSE)
   }
-  list(payload = arrow_payload, dynamic_arg_tokens = tokens)
+  list(payload = wire_payload, dynamic_arg_tokens = tokens)
 }
 
 rducks_nng_wire_encode_request <- function(type, udf_id = "", row_count = 0, payload = raw()) {

@@ -13,8 +13,7 @@ execution.
 - builds normalized type descriptors and registration specs
 - records connection-local default plans and R-side diagnostics
 - prepares R wrapper functions used by the native evaluators
-- (reserved) starts/stops local NNG worker providers for the forthcoming
-  worker-process `ipc` transport
+- starts/stops local NNG worker providers for the worker-process `ipc` transport
 
 ### DuckDB extension layer
 
@@ -25,16 +24,17 @@ execution.
 - runs direct DuckDB-vector materialization where the support predicate allows
 - owns the in-process queue used when DuckDB callbacks arrive off the recorded R
   thread
-- (reserved) owns native NNG client pools for the worker-process `ipc` transport
+- owns native NNG client pools for the worker-process `ipc` transport
 
 ### Marshalling layer
 
 - `direct`: direct DuckDB-vector reads/writes to/from R values for supported
   scalar and vectorized signatures, on the recorded R thread, with no
   intermediate columnar format
-- `wire` (reserved): DuckDB chunk -> owned Quack wire bytes (DuckDB
+- `wire` (`ipc`): DuckDB chunk -> owned Quack wire bytes (DuckDB
   BinarySerializer subset) -> worker process -> owned Quack result bytes ->
-  DuckDB output. Not yet enabled.
+  DuckDB output. Enabled for fixed-width scalars plus VARCHAR/BLOB; other types
+  are rejected at registration until the native bridge covers them.
 
 ## DuckDB function kind, evaluation mode, and execution plan
 
@@ -49,10 +49,10 @@ with R vectors or list-columns. This Rducks evaluation mode is user semantics
 and is independent of the execution plan.
 
 An execution plan chooses marshalling and concurrency (`direct` with
-`inproc_concurrent` today; the `wire` + `multiprocess_parallel` worker-process
-path is reserved) for future scalar-UDF registrations and updates the native
-runtime backend used for matching concurrent execution. It must not redefine
-DuckDB SQL type, NULL, or result semantics.
+`inproc_concurrent`, or `wire` with `multiprocess_parallel` for the
+worker-process `ipc` transport) for future scalar-UDF registrations and updates
+the native runtime backend used for matching concurrent execution. It must not
+redefine DuckDB SQL type, NULL, or result semantics.
 
 ## Thread boundary
 
@@ -96,7 +96,7 @@ is the narrative source for how those scopes interact.
 
 `rducks_release(con)` clears connection-local Rducks state. It is not an
 unregister operation and must not drop database-catalog functions that sibling
-connections can still call. For the reserved worker-process `ipc` transport,
+connections can still call. For the worker-process `ipc` transport,
 releasing the last Rducks attachment to a runtime also closes native client
 pools for Rducks-launched local workers and stops those local mirai/NNG
 workers. If

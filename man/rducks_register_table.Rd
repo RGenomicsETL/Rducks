@@ -31,7 +31,6 @@ the recorded R thread to produce either a finite result (a data frame or named
 list of equal-length columns) or a
 \code{\link[=rducks_table_stream]{rducks_table_stream()}} producer for
 scan-time batches. Column types are inferred from the returned columns, and the
-extension fills DuckDB output vectors directly from the R columns -- there is
-no Arrow/nanoarrow intermediary and no wire serialization for the in-process
-scan.
+extension fills DuckDB output vectors directly from the R columns, with no
+wire serialization for the in-process scan.
 }

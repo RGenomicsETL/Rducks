@@ -14,7 +14,7 @@ consequences.
   catalog.
 - Release clears connection-local default plans, finalizer bookkeeping, and the
   R-side registry view for that attachment.
-- For the reserved worker-process `ipc` transport, releasing the last Rducks
+- For the worker-process `ipc` transport, releasing the last Rducks
   attachment to a runtime also closes native client pools for Rducks-launched local workers
   and stops those local mirai/NNG workers. If `ipc_endpoints` was supplied,
   those URLs name user-owned worker processes; Rducks does not send stop

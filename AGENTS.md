@@ -13,7 +13,7 @@ This repo owns:
 - scalar and vectorized R UDF marshalling
 - type descriptors, value classes, NULL/error semantics, and diagnostics
 - native NNG worker transport and the Rducks Quack wire codec (DuckDB
-  BinarySerializer subset) reserved for the worker-process data plane
+  BinarySerializer subset) for the worker-process data plane
 
 ## Rules
 
@@ -26,8 +26,8 @@ This repo owns:
 - Do not silently change execution plans. Unsupported plan/type/mode
   combinations must fail instead of falling back to another engine.
 - Marshal in-process by materializing DuckDB vectors to SEXPs directly in
-  extension C; there is no Arrow/nanoarrow intermediary. Reserve the Quack wire
-  codec for bytes that intentionally cross a process/transport boundary.
+  extension C. Use the Quack wire codec only for bytes that intentionally cross
+  a process/transport boundary.
 - Treat R function lifetime explicitly. Preserve objects while native metadata
   can call them; release only through paths that are safe for the R thread.
 - Keep docs factual. Mark unsupported and experimental behavior plainly; remove

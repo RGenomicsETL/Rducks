@@ -585,6 +585,19 @@ static int rducks_quack_decode_result_to_vector(rducks_runtime_entry_t *runtime,
         rducks_format_error_message(err, cap, "RIPC result shape does not match the expected output");
         goto done;
     }
+    {
+        /* Validate the worker's returned wire type against the declared return
+         * type before writing bytes into DuckDB, so a mismatched/buggy worker
+         * cannot drive the varlen write path with the wrong vector layout. */
+        rdx_qk_type *expected = rducks_quack_build_type(return_desc);
+        int type_ok = expected && chunk->columns[0] &&
+                      rdx_qk_type_equal(expected, chunk->columns[0]->type);
+        if (expected) rdx_qk_type_free(expected);
+        if (!type_ok) {
+            rducks_format_error_message(err, cap, "RIPC worker returned a wire type that does not match the declared return type");
+            goto done;
+        }
+    }
     if (!rducks_quack_write_vector_to_duckdb(chunk->columns[0], return_desc, output, n, err, cap)) goto done;
     ok = 1;
 done:

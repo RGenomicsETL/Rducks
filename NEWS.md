@@ -1,11 +1,11 @@
 # Rducks (development): Arrow removal
 
 * BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")`; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
-* `transport = "ipc"` (worker-process execution) is restored over the Quack wire codec: the extension encodes each input chunk to wire bytes in pure C, ships it to a worker R process over NNG, and decodes the wire-encoded result back into DuckDB. Worker-process types currently cover fixed-width scalars, decimals, and varchar/blob.
+* `transport = "ipc"` (worker-process execution) is restored over the Quack wire codec: the extension encodes each input chunk to wire bytes in pure C, ships it to a worker R process over NNG, and decodes the wire-encoded result back into DuckDB. Worker-process types currently cover fixed-width scalars plus VARCHAR/BLOB; richer types are rejected at registration until the native bridge covers them.
 * nanoarrow is removed from Imports/LinkingTo; the vendored nanoarrow/flatcc trees are deleted from the extension.
-* The reserved worker-process data plane uses the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
-* `rducks_with_duckplyr()` (duckplyr bridge) and `rducks_register_table()` (table functions, finite and streaming) are restored on the direct DuckDB-vector path. In-process table scans fill DuckDB output vectors directly from the returned R columns, with no Arrow/nanoarrow intermediary and no wire serialization.
-* `rducks_query_stream()` is restored on the direct path: native DuckDB streaming results are materialized to data-frame batches directly from DuckDB vectors, with no Arrow/nanoarrow intermediary. The previous nanoarrow `format = "record_batch"` output is dropped with nanoarrow.
+* The worker-process data plane uses the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
+* `rducks_with_duckplyr()` (duckplyr bridge) and `rducks_register_table()` (table functions, finite and streaming) are restored on the direct DuckDB-vector path. In-process table scans fill DuckDB output vectors directly from the returned R columns, with no wire serialization.
+* `rducks_query_stream()` is restored on the direct path: native DuckDB streaming results are materialized to data-frame batches directly from DuckDB vectors. The previous nanoarrow `format = "record_batch"` output is dropped with nanoarrow.
 * Internal: queued/concurrent scalar-UDF results are now written through an owned `duckdb_data_chunk` for every supported return type, and the vestigial `struct ArrowArray` owned-result buffer (the last Arrow-shaped construct) is deleted.
 * Internal: dropped the unused per-call `connection_id` capture, removing four DuckDB client-context entries from the unstable C API surface (no behavior change).
 

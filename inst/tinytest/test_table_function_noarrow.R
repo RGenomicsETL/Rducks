@@ -9,7 +9,7 @@ local({
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
 
-  # Finite multi-column table: direct DuckDB-vector writes, no Arrow.
+  # Finite multi-column table: direct DuckDB-vector writes.
   rducks_register_table(
     con, "r_rows",
     function(n) data.frame(
