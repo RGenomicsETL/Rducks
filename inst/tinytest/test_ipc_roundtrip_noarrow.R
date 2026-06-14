@@ -101,7 +101,13 @@ local({
     # Non-NULL struct row whose nested field is NULL: the field must survive the
     # round-trip rather than be dropped from the row.
     list(name = "n_snull",  type = STRUCT(a = LIST(INTEGER), b = VARCHAR), nullable = TRUE,
-         expr = "{a: CASE WHEN mod(i, 3) = 0 THEN NULL ELSE [i::INTEGER, mod(i, 5)::INTEGER] END, b: ('x' || i)}")
+         expr = "{a: CASE WHEN mod(i, 3) = 0 THEN NULL ELSE [i::INTEGER, mod(i, 5)::INTEGER] END, b: ('x' || i)}"),
+    list(name = "n_map",    type = MAP(INTEGER, VARCHAR), nullable = TRUE,
+         expr = "MAP{i::INTEGER: ('v' || i), (i + 1)::INTEGER: 'w'}"),
+    list(name = "n_lmap",   type = LIST(MAP(INTEGER, INTEGER)), nullable = TRUE,
+         expr = "[MAP{i::INTEGER: mod(i, 9)::INTEGER}, MAP{(i + 1)::INTEGER: 0}]"),
+    list(name = "n_mstruct", type = MAP(VARCHAR, STRUCT(a = INTEGER)), nullable = TRUE,
+         expr = "MAP{('k' || i): {a: i::INTEGER}}")
   )
   for (case in nested_cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,
@@ -180,9 +186,8 @@ local({
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   rejected <- list(
     list(name = "rej_variant",  type = VARIANT),
-    list(name = "rej_map",      type = MAP(INTEGER, INTEGER)),
     list(name = "rej_union",    type = UNION(a = INTEGER, b = VARCHAR)),
-    list(name = "rej_list_map", type = LIST(MAP(INTEGER, INTEGER)))
+    list(name = "rej_list_var", type = LIST(VARIANT))
   )
   for (case in rejected) {
     expect_error(

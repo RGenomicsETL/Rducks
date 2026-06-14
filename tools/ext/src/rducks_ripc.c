@@ -360,6 +360,32 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
         }
         return t;
     }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        /* MAP rides the wire as LIST(STRUCT(key, value)), matching DuckDB's
+         * physical layout. The single list child is the key/value entry struct. */
+        rdx_qk_type *t = rdx_qk_type_new(RDX_QK_LTYPE_MAP);
+        rdx_qk_type *entry, *kt, *vt;
+        if (!t) return NULL;
+        entry = rdx_qk_type_new(RDX_QK_LTYPE_STRUCT);
+        if (!entry) { rdx_qk_type_free(t); return NULL; }
+        kt = rducks_quack_build_type(desc->key);
+        if (!kt || !rdx_qk_type_add_child(entry, kt, "key")) {
+            if (kt) rdx_qk_type_free(kt);
+            rdx_qk_type_free(entry); rdx_qk_type_free(t);
+            return NULL;
+        }
+        vt = rducks_quack_build_type(desc->value);
+        if (!vt || !rdx_qk_type_add_child(entry, vt, "value")) {
+            if (vt) rdx_qk_type_free(vt);
+            rdx_qk_type_free(entry); rdx_qk_type_free(t);
+            return NULL;
+        }
+        if (!rdx_qk_type_add_child(t, entry, "child")) {
+            rdx_qk_type_free(entry); rdx_qk_type_free(t);
+            return NULL;
+        }
+        return t;
+    }
     if (desc->kind != RDUCKS_KIND_SCALAR) return NULL;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL: id = RDX_QK_LTYPE_BOOLEAN; break;
@@ -489,6 +515,78 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
             rdx_qk_vector_free(v);
             return NULL;
         }
+        return v;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        /* DuckDB MAP is physically LIST(STRUCT(key, value)). Marshal it as a list
+         * whose single child is the key/value entry struct. */
+        duckdb_list_entry *entries = (duckdb_list_entry *)duckdb_vector_get_data(vec);
+        idx_t full_size = duckdb_list_vector_get_size(vec);
+        duckdb_vector struct_child = duckdb_list_vector_get_child(vec);
+        const rdx_qk_type *entry_type = t->children[0];
+        uint64_t max_extent = 0;
+        idx_t r;
+        rdx_qk_vector *entry;
+        uint64_t *struct_validity;
+        for (r = 0; r < rows; r++) {
+            if (validity && !duckdb_validity_row_is_valid(validity, r)) continue;
+            uint64_t end = entries[r].offset + entries[r].length;
+            if (end > max_extent) max_extent = end;
+        }
+        if (max_extent > (uint64_t)full_size) max_extent = (uint64_t)full_size;
+        if (!rdx_qk_vector_alloc_list(v, max_extent)) {
+            rdx_qk_vector_free(v);
+            rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map offsets");
+            return NULL;
+        }
+        for (r = 0; r < rows; r++) {
+            if (validity && !duckdb_validity_row_is_valid(validity, r)) {
+                v->list_offsets[r] = 0;
+                v->list_lengths[r] = 0;
+            } else {
+                v->list_offsets[r] = entries[r].offset;
+                v->list_lengths[r] = entries[r].length;
+            }
+        }
+        entry = rdx_qk_vector_new(entry_type, max_extent);
+        if (!entry) {
+            rdx_qk_vector_free(v);
+            rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map entry");
+            return NULL;
+        }
+        struct_validity = duckdb_vector_get_validity(struct_child);
+        if (struct_validity && max_extent > 0) {
+            size_t mask_bytes = (size_t)((max_extent + 63) / 64) * 8U;
+            if (!rdx_qk_vector_alloc_validity(entry)) {
+                rdx_qk_vector_free(entry); rdx_qk_vector_free(v);
+                rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map entry validity");
+                return NULL;
+            }
+            memcpy(entry->validity, struct_validity, mask_bytes);
+        }
+        entry->nchildren = 2;
+        entry->children = (rdx_qk_vector **)calloc(2, sizeof(*entry->children));
+        if (!entry->children) {
+            rdx_qk_vector_free(entry); rdx_qk_vector_free(v);
+            rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map entry children");
+            return NULL;
+        }
+        entry->children[0] = rducks_quack_vector_from_duckdb(entry_type->children[0], desc->key,
+                                                            duckdb_struct_vector_get_child(struct_child, 0),
+                                                            (idx_t)max_extent, err, cap);
+        if (!entry->children[0]) { rdx_qk_vector_free(entry); rdx_qk_vector_free(v); return NULL; }
+        entry->children[1] = rducks_quack_vector_from_duckdb(entry_type->children[1], desc->value,
+                                                            duckdb_struct_vector_get_child(struct_child, 1),
+                                                            (idx_t)max_extent, err, cap);
+        if (!entry->children[1]) { rdx_qk_vector_free(entry); rdx_qk_vector_free(v); return NULL; }
+        v->nchildren = 1;
+        v->children = (rdx_qk_vector **)calloc(1, sizeof(*v->children));
+        if (!v->children) {
+            rdx_qk_vector_free(entry); rdx_qk_vector_free(v);
+            rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map child");
+            return NULL;
+        }
+        v->children[0] = entry;
         return v;
     }
     if (rducks_quack_is_varlen(desc)) {
@@ -648,6 +746,44 @@ static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rdu
             cv = duckdb_array_vector_get_child(out);
         }
         return rducks_quack_write_vector_to_duckdb(v->children[0], desc->child, cv, total, err, cap);
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        /* Write back as LIST(STRUCT(key, value)): size the entry struct child,
+         * write the per-row entries, then the key and value member vectors. */
+        rdx_qk_vector *entry;
+        duckdb_vector struct_child;
+        duckdb_list_entry *entries;
+        idx_t total, r;
+        if (v->nchildren != 1 || !v->children || !v->children[0] ||
+            v->children[0]->nchildren != 2 || !v->children[0]->children ||
+            !v->children[0]->children[0] || !v->children[0]->children[1]) {
+            rducks_format_error_message(err, cap, "Rducks wire map result is missing its key/value child");
+            return 0;
+        }
+        entry = v->children[0];
+        total = (idx_t)entry->rows;
+        rducks_quack_copy_validity_out(v, out, n);
+        if (duckdb_list_vector_reserve(out, total) != DuckDBSuccess ||
+            duckdb_list_vector_set_size(out, total) != DuckDBSuccess) {
+            rducks_format_error_message(err, cap, "Rducks wire map result could not size the entry vector");
+            return 0;
+        }
+        entries = (duckdb_list_entry *)duckdb_vector_get_data(out);
+        for (r = 0; r < n; r++) {
+            entries[r].offset = v->list_offsets ? v->list_offsets[r] : 0;
+            entries[r].length = v->list_lengths ? v->list_lengths[r] : 0;
+        }
+        struct_child = duckdb_list_vector_get_child(out);
+        if (entry->has_validity) rducks_quack_copy_validity_out(entry, struct_child, total);
+        if (!rducks_quack_write_vector_to_duckdb(entry->children[0], desc->key,
+                                                 duckdb_struct_vector_get_child(struct_child, 0), total, err, cap)) {
+            return 0;
+        }
+        if (!rducks_quack_write_vector_to_duckdb(entry->children[1], desc->value,
+                                                 duckdb_struct_vector_get_child(struct_child, 1), total, err, cap)) {
+            return 0;
+        }
+        return 1;
     }
     if (rducks_quack_is_varlen(desc)) {
         uint64_t *out_validity = NULL;

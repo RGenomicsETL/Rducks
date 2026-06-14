@@ -72,9 +72,9 @@ rducks_quack_enum_labels <- function(type) {
 
 rducks_quack_spec <- function(type) {
   kind <- rducks_quack_kind(type)
-  # MAP/UNION/VARIANT are not on the wire yet; reject up front so no half-built
-  # spec is constructed for them (registration already blocks these types).
-  if (kind %in% c("map", "union", "variant")) {
+  # UNION/VARIANT are not on the wire yet; reject up front so no half-built spec
+  # is constructed for them (registration already blocks these types).
+  if (kind %in% c("union", "variant")) {
     stop("Rducks quack bridge: ", toupper(kind),
          " is not on the Rducks wire yet", call. = FALSE)
   }
@@ -85,6 +85,16 @@ rducks_quack_spec <- function(type) {
   }
   if (kind == "enum") {
     return(rducks_quack_spec_node(id, enum_labels = rducks_quack_enum_labels(type)))
+  }
+  if (kind == "map") {
+    # MAP rides the wire as LIST(STRUCT(key, value)).
+    children <- rducks_type_children(type)
+    specs <- lapply(children, rducks_quack_spec)
+    entry <- rducks_quack_spec_node(
+      rducks_quack_ltype_ids[["struct"]],
+      children = stats::setNames(specs[seq_len(2L)], c("key", "value"))
+    )
+    return(rducks_quack_spec_node(id, children = stats::setNames(list(entry), "child")))
   }
   if (kind %in% c("list", "array", "struct")) {
     children <- rducks_type_children(type)
@@ -125,10 +135,18 @@ rducks_quack_storage_from_array <- function(array) {
     interval = list(months = st$months, days = st$days, micros = st$micros),
     list = list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths),
                 child = rducks_quack_column_from_array(st$child)),
-    # MAP/UNION are not on the wire yet (rejected at registration). The wire MAP
-    # model is LIST(STRUCT(key, value)); wiring it needs the entry-struct shape,
-    # so fail loudly rather than reference a half-built storage layout.
-    map = stop("Rducks quack bridge: MAP is not supported on the wire yet", call. = FALSE),
+    # MAP rides as LIST(STRUCT(key, value)): combine the separate key/value child
+    # arrays into a single struct entry column for the wire.
+    map = {
+      entry <- list(
+        valid = NULL,
+        data = stats::setNames(
+          list(rducks_quack_column_from_array(st$keys), rducks_quack_column_from_array(st$values)),
+          c("key", "value")
+        )
+      )
+      list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths), child = entry)
+    },
     array = list(child = rducks_quack_column_from_array(st$child)),
     struct = lapply(st$fields, rducks_quack_column_from_array),
     stop("Rducks quack bridge: storage mapping for ", kind, " is not implemented", call. = FALSE)
@@ -165,6 +183,19 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
       child_rows <- as.integer(data$child$rows %||% 0)
       list(offsets = data$offsets, lengths = data$lengths,
            child = rducks_quack_array_from_storage(children[[1]], data$child, child_rows))
+    },
+    map = {
+      children <- rducks_type_children(type)
+      # The entry child is a struct(key, value) column; split it back into the
+      # separate key/value child arrays the native map storage uses.
+      entry_rows <- as.integer(data$child$rows %||% 0)
+      key_col <- data$child$data[[1L]]
+      value_col <- data$child$data[[2L]]
+      list(offsets = data$offsets, lengths = data$lengths,
+           keys = rducks_quack_array_from_storage(children[[1L]], key_col,
+                                                  as.integer(key_col$rows %||% entry_rows)),
+           values = rducks_quack_array_from_storage(children[[2L]], value_col,
+                                                    as.integer(value_col$rows %||% entry_rows)))
     },
     array = {
       children <- rducks_type_children(type)

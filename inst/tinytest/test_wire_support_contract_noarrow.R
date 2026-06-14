@@ -13,7 +13,8 @@ supported <- list(
   ENUM(c("a", "b")), ENUM(sprintf("e%04d", seq_len(300))), BIT, GEOMETRY,
   LIST(INTEGER), ARRAY(DOUBLE, 3), STRUCT(a = INTEGER, b = VARCHAR),
   LIST(LIST(INTEGER)), STRUCT(id = INTEGER, tags = LIST(VARCHAR)),
-  ARRAY(STRUCT(x = INTEGER), 2), LIST(GEOMETRY)
+  ARRAY(STRUCT(x = INTEGER), 2), LIST(GEOMETRY),
+  MAP(INTEGER, VARCHAR), LIST(MAP(INTEGER, INTEGER)), MAP(VARCHAR, STRUCT(a = INTEGER))
 )
 for (type in supported) {
   expect_true(
@@ -25,10 +26,10 @@ for (type in supported) {
 # Types the native worker bridge does not cover yet must report as unsupported
 # so registration under the ipc plan rejects them instead of failing in a worker.
 unsupported <- list(
-  VARIANT, MAP(INTEGER, INTEGER), UNION(a = INTEGER, b = VARCHAR),
+  VARIANT, UNION(a = INTEGER, b = VARCHAR),
   # A supported container with an unsupported child is itself unsupported.
-  LIST(MAP(INTEGER, INTEGER)), STRUCT(m = MAP(INTEGER, INTEGER)),
-  ARRAY(VARIANT, 2)
+  LIST(VARIANT), STRUCT(u = UNION(a = INTEGER)), ARRAY(VARIANT, 2),
+  MAP(INTEGER, VARIANT), MAP(INTEGER, UNION(a = INTEGER))
 )
 for (type in unsupported) {
   expect_false(

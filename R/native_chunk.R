@@ -327,7 +327,9 @@ rducks_native_array_from_map <- function(type, values) {
     if (length(x$keys) != length(x$values)) stop("MAP keys and values must have equal length", call. = FALSE)
     length(x$keys)
   }, integer(1))
-  offsets <- c(0L, cumsum(lengths))
+  # Per-row start offsets into the flattened entries (wire MAP is per-row
+  # offset + length, like LIST; not a cumulative n+1 array).
+  offsets <- c(0L, cumsum(lengths))[seq_len(n)]
   flat_keys <- vector("list", sum(lengths))
   flat_values <- vector("list", sum(lengths))
   pos <- 1L
@@ -452,9 +454,9 @@ rducks_native_array_to_values <- function(array) {
     out <- vector("list", n)
     for (i in seq_len(n)) {
       if (!isTRUE(array$valid[[i]])) next
+      len <- storage$lengths[[i]]
       start <- storage$offsets[[i]] + 1L
-      end <- storage$offsets[[i + 1L]]
-      rows <- if (end >= start) start:end else integer()
+      rows <- if (len > 0) start:(storage$offsets[[i]] + len) else integer()
       out[[i]] <- list(keys = keys[rows], values = values[rows])
     }
     return(out)
