@@ -617,9 +617,21 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
     const uint8_t *ptr;
     uint64_t len;
     uint64_t i, count;
+    uint32_t seen = 0; /* reject duplicate type-info fields */
     for (;;) {
         if (!rdx_qk_read_field(r, &field, err)) return 0;
         if (field == RDX_QK_OBJECT_END) return 1;
+        /* A duplicate field 200/201 would re-add children or overwrite the enum
+         * label / decimal-width allocation without freeing the first (a C heap
+         * leak), or mutate a width/scale; reject duplicates. */
+        if (field == 100 || field == 101 || field == 103 || field == 200 || field == 201) {
+            uint32_t bit = field < 200 ? (1u << (field - 100)) : (1u << (field - 200 + 5));
+            if (seen & bit) {
+                rdx_qk_set_error(err, "duplicate field in type info object");
+                return 0;
+            }
+            seen |= bit;
+        }
         switch (field) {
         case 100: /* extra info kind: validated against the logical id */
             if (!rdx_qk_read_uleb(r, &value, err)) return 0;
@@ -755,6 +767,7 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
     uint16_t field;
     uint64_t value;
     int seen_id = 0;
+    int seen_info = 0;
     if (depth > RDX_QK_MAX_NESTING) {
         rdx_qk_set_error(err, "quack wire logical type exceeds nesting limit");
         return 0;
@@ -769,6 +782,10 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
         if (field == RDX_QK_OBJECT_END) break;
         switch (field) {
         case 100:
+            if (seen_id) {
+                rdx_qk_set_error(err, "duplicate type id in logical type object");
+                goto fail;
+            }
             if (!rdx_qk_read_uleb(r, &value, err)) goto fail;
             t->id = (uint32_t)value;
             seen_id = 1;
@@ -779,6 +796,11 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
                 rdx_qk_set_error(err, "logical type info precedes its type id");
                 goto fail;
             }
+            if (seen_info) {
+                rdx_qk_set_error(err, "duplicate type info in logical type object");
+                goto fail;
+            }
+            seen_info = 1;
             if (!rdx_qk_read_u8(r, &present, err)) goto fail;
             if (present) {
                 if (!rdx_qk_type_info_decode(r, t, depth, err)) goto fail;
@@ -1078,12 +1100,17 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             }
             for (i = 0; i < count; i++) {
                 uint16_t efield;
+                int seen_off = 0, seen_len = 0;
                 for (;;) {
                     if (!rdx_qk_read_field(r, &efield, err)) goto fail;
                     if (efield == RDX_QK_OBJECT_END) break;
                     if (efield == 100) {
+                        if (seen_off) { rdx_qk_set_error(err, "duplicate offset in list entry object"); goto fail; }
+                        seen_off = 1;
                         if (!rdx_qk_read_uleb(r, &v->list_offsets[i], err)) goto fail;
                     } else if (efield == 101) {
+                        if (seen_len) { rdx_qk_set_error(err, "duplicate length in list entry object"); goto fail; }
+                        seen_len = 1;
                         if (!rdx_qk_read_uleb(r, &v->list_lengths[i], err)) goto fail;
                     } else {
                         rdx_qk_set_error(err, "unknown field in list entry object");

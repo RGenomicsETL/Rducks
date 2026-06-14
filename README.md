@@ -126,14 +126,15 @@ inputs, and aggregate inputs/returns. They include DuckDB scalar types,
 exact value classes such as `UUID`, `HUGEINT`, `DECIMAL(width, scale)`,
 `INTERVAL`, `BIT`, `GEOMETRY`, `VARIANT`, `ENUM(levels)`, and composite
 descriptors such as `LIST(TYPE)`, `ARRAY(TYPE, n)`, `STRUCT(...)`,
-`MAP(key, value)`, and `UNION(...)`. `GEOMETRY` values cross as WKB
-`raw` bytes; `VARIANT` values cross as DuckDB’s typed storage struct
-wrapped by `rducks_variant`. VARIANT scalar-UDF signatures require a
-DuckDB runtime whose C API exposes VARIANT logical types and are not
-supported by direct marshalling yet. Direct UNION support follows
-DuckDB’s native UNION vector tag/child layout; it is tested for
-supported DuckDB builds but is intentionally treated as a
-version-coupled native adapter rather than a stable interchange format.
+`MAP(key, value)`, and `UNION(...)`. `GEOMETRY` values cross as their
+opaque physical `raw` bytes (WKB for a real geometry); `VARIANT` values
+cross as DuckDB’s typed storage struct wrapped by `rducks_variant`.
+VARIANT scalar-UDF signatures require a DuckDB runtime whose C API
+exposes VARIANT logical types and are not supported by direct
+marshalling yet. Direct UNION support follows DuckDB’s native UNION
+vector tag/child layout; it is tested for supported DuckDB builds but is
+intentionally treated as a version-coupled native adapter rather than a
+stable interchange format.
 
 ``` r
 nested_type <- STRUCT(
