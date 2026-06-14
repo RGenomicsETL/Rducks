@@ -128,9 +128,9 @@ rducks_quack_storage_from_array <- function(array) {
     blob = ,
     bit = st$payloads,
     interval = list(months = st$months, days = st$days, micros = st$micros),
-    list = list(offsets = st$offsets, lengths = st$lengths,
+    list = list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths),
                 child = rducks_quack_column_from_array(st$child)),
-    map = list(offsets = st$offsets, lengths = st$lengths,
+    map = list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths),
                child = rducks_quack_column_from_array(st$entries)),
     array = list(child = rducks_quack_column_from_array(st$child)),
     struct = lapply(st$fields, rducks_quack_column_from_array),
@@ -161,19 +161,23 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
     interval = list(months = data$months, days = data$days, micros = data$micros),
     list = {
       children <- rducks_type_children(type)
+      # The child's decoded row count is carried on the child column (the C
+      # decoder records it), which is robust for nested children whose extent
+      # cannot be read off a flat data length.
+      child_rows <- as.integer(data$child$rows %||% 0)
       list(offsets = data$offsets, lengths = data$lengths,
-           child = rducks_quack_array_from_storage(children[[1]], data$child,
-                                                   length(data$child$valid %||% data$child$data)))
+           child = rducks_quack_array_from_storage(children[[1]], data$child, child_rows))
     },
     array = {
       children <- rducks_type_children(type)
-      n_child <- rows * rducks_quack_array_size(type)
-      list(child = rducks_quack_array_from_storage(children[[1]], data$child, n_child))
+      child_rows <- as.integer(data$child$rows %||% (rows * rducks_quack_array_size(type)))
+      list(size = rducks_quack_array_size(type),
+           child = rducks_quack_array_from_storage(children[[1]], data$child, child_rows))
     },
     struct = {
       children <- rducks_type_children(type)
       fields <- Map(function(child_type, child_col) {
-        rducks_quack_array_from_storage(child_type, child_col, rows)
+        rducks_quack_array_from_storage(child_type, child_col, as.integer(child_col$rows %||% rows))
       }, children, data)
       list(fields = fields)
     },

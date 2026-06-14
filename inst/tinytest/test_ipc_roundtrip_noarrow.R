@@ -80,6 +80,30 @@ local({
   rducks_register_scalar_udf(con, "e_big", function(x) x,
                              args = list(ENUM(big_levels)), returns = ENUM(big_levels))
 
+  # Nested containers, marshalled recursively. `nullable` is FALSE for ARRAY
+  # because DuckDB cannot put a fixed-size array through a CASE expression; inner
+  # element NULLs still exercise the child null path. Registered before the bump.
+  nested_cases <- list(
+    list(name = "n_list",   type = LIST(INTEGER), nullable = TRUE,
+         expr = "[mod(i, 5)::INTEGER, i::INTEGER, NULL, (i + 1)::INTEGER]"),
+    list(name = "n_lstr",   type = LIST(VARCHAR), nullable = TRUE,
+         expr = "['a', NULL, ('v' || i)]"),
+    list(name = "n_arr",    type = ARRAY(DOUBLE, 3), nullable = FALSE,
+         expr = "[i * 1.0, i * 2.0, i * 0.5]::DOUBLE[3]"),
+    list(name = "n_struct", type = STRUCT(a = INTEGER, b = VARCHAR), nullable = TRUE,
+         expr = "{a: i::INTEGER, b: ('x' || i)}"),
+    list(name = "n_slist",  type = STRUCT(id = INTEGER, tags = LIST(VARCHAR)), nullable = TRUE,
+         expr = "{id: i::INTEGER, tags: ['a', ('t' || i)]}"),
+    list(name = "n_llist",  type = LIST(LIST(INTEGER)), nullable = TRUE,
+         expr = "[[i::INTEGER, NULL], [mod(i, 3)::INTEGER]]"),
+    list(name = "n_astruct", type = ARRAY(STRUCT(x = INTEGER), 2), nullable = FALSE,
+         expr = "[{x: i::INTEGER}, {x: mod(i, 4)::INTEGER}]::STRUCT(x INTEGER)[2]")
+  )
+  for (case in nested_cases) {
+    rducks_register_scalar_udf(con, case$name, function(x) x,
+                               args = list(case$type), returns = case$type)
+  }
+
   # Bump DuckDB threads for concurrent off-main execution -> NNG worker roundtrip.
   rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
 
@@ -114,13 +138,28 @@ local({
     expect_equal(as.integer(mismatch), 0L, info = paste0("ipc roundtrip: ", case$name))
   }
 
+  for (case in nested_cases) {
+    valexpr <- if (isTRUE(case$nullable)) {
+      sprintf("CASE WHEN mod(i, 7) = 0 THEN NULL ELSE %s END", case$expr)
+    } else {
+      case$expr
+    }
+    sql <- sprintf(
+      "SELECT count(*) c FROM (SELECT %s v FROM range(4000) t(i)) s WHERE %s(v) IS DISTINCT FROM v",
+      valexpr, case$name
+    )
+    mismatch <- DBI::dbGetQuery(con, sql)$c
+    expect_equal(as.integer(mismatch), 0L, info = paste0("ipc roundtrip: ", case$name))
+  }
+
   # Gated types must be rejected at registration under the ipc plan, not fail
   # later in a worker. The native bridge does not cover them yet.
   rejected <- list(
     list(name = "rej_geometry", type = GEOMETRY),
     list(name = "rej_variant",  type = VARIANT),
-    list(name = "rej_list",     type = LIST(INTEGER)),
-    list(name = "rej_struct",   type = STRUCT(a = INTEGER))
+    list(name = "rej_map",      type = MAP(INTEGER, INTEGER)),
+    list(name = "rej_union",    type = UNION(a = INTEGER, b = VARCHAR)),
+    list(name = "rej_list_map", type = LIST(MAP(INTEGER, INTEGER)))
   )
   for (case in rejected) {
     expect_error(

@@ -244,7 +244,9 @@ rducks_native_array_from_list <- function(type, values) {
   n <- length(values)
   valid <- !vapply(values, is.null, logical(1))
   lengths <- vapply(values, function(x) if (is.null(x)) 0L else length(x), integer(1))
-  offsets <- c(0L, cumsum(lengths))
+  # Per-row start offsets into the flattened child (the wire LIST model is
+  # per-row offset + length, matching DuckDB; not a cumulative n+1 offset array).
+  offsets <- c(0L, cumsum(lengths))[seq_len(n)]
   flat <- vector("list", sum(lengths))
   pos <- 1L
   for (value in values) {
@@ -410,9 +412,9 @@ rducks_native_array_to_values <- function(array) {
     out <- vector("list", n)
     for (i in seq_len(n)) {
       if (!isTRUE(array$valid[[i]])) next
+      len <- storage$lengths[[i]]
       start <- storage$offsets[[i]] + 1L
-      end <- storage$offsets[[i + 1L]]
-      rows <- if (end >= start) start:end else integer()
+      rows <- if (len > 0) start:(storage$offsets[[i]] + len) else integer()
       out[[i]] <- child_values[rows]
     }
     return(out)

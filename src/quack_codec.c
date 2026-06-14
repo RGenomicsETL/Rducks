@@ -1284,10 +1284,13 @@ static SEXP rdx_qkr_data_from_vector(const rdx_qk_vector *v, unsigned depth) {
 }
 
 static SEXP rdx_qkr_column_from_vector(const rdx_qk_vector *v, unsigned depth) {
-    static const char *fields[] = {"valid", "data"};
-    SEXP column = PROTECT(rdx_qkr_named_list(2, fields));
+    static const char *fields[] = {"valid", "data", "rows"};
+    SEXP column = PROTECT(rdx_qkr_named_list(3, fields));
     SET_VECTOR_ELT(column, 0, rdx_qkr_valid_from_vector(v));
     SET_VECTOR_ELT(column, 1, rdx_qkr_data_from_vector(v, depth));
+    /* The decoded row count, used by the bridge to size nested children whose
+     * extent cannot be derived from a flat data length (e.g. list-of-list). */
+    SET_VECTOR_ELT(column, 2, Rf_ScalarReal((double)v->rows));
     UNPROTECT(1);
     return column;
 }
