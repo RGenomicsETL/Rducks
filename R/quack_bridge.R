@@ -72,6 +72,12 @@ rducks_quack_enum_labels <- function(type) {
 
 rducks_quack_spec <- function(type) {
   kind <- rducks_quack_kind(type)
+  # MAP/UNION/VARIANT are not on the wire yet; reject up front so no half-built
+  # spec is constructed for them (registration already blocks these types).
+  if (kind %in% c("map", "union", "variant")) {
+    stop("Rducks quack bridge: ", toupper(kind),
+         " is not on the Rducks wire yet", call. = FALSE)
+  }
   id <- rducks_quack_ltype_ids[[kind]]
   if (kind == "decimal") {
     p <- rducks_quack_decimal_params(type)
@@ -80,19 +86,11 @@ rducks_quack_spec <- function(type) {
   if (kind == "enum") {
     return(rducks_quack_spec_node(id, enum_labels = rducks_quack_enum_labels(type)))
   }
-  if (kind %in% c("list", "array", "struct", "map", "union")) {
+  if (kind %in% c("list", "array", "struct")) {
     children <- rducks_type_children(type)
     child_names <- names(children) %||% rep("", length(children))
     specs <- lapply(children, rducks_quack_spec)
     names(specs) <- child_names
-    if (kind == "map") {
-      # MAP rides the wire as LIST(STRUCT(key, value)).
-      entry <- rducks_quack_spec_node(
-        rducks_quack_ltype_ids[["struct"]],
-        children = stats::setNames(specs[seq_len(2L)], c("key", "value"))
-      )
-      return(rducks_quack_spec_node(id, children = list(child = entry)))
-    }
     if (kind == "array") {
       return(rducks_quack_spec_node(id, array_size = rducks_quack_array_size(type),
                                     children = stats::setNames(specs[1L], "child")))
@@ -101,10 +99,6 @@ rducks_quack_spec <- function(type) {
       return(rducks_quack_spec_node(id, children = stats::setNames(specs[1L], "child")))
     }
     return(rducks_quack_spec_node(id, children = specs))
-  }
-  if (kind %in% c("union", "variant")) {
-    stop("Rducks quack bridge: ", toupper(kind),
-         " is not on the Rducks wire yet", call. = FALSE)
   }
   rducks_quack_spec_node(id)
 }

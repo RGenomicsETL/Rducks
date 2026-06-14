@@ -97,7 +97,11 @@ local({
     list(name = "n_llist",  type = LIST(LIST(INTEGER)), nullable = TRUE,
          expr = "[[i::INTEGER, NULL], [mod(i, 3)::INTEGER]]"),
     list(name = "n_astruct", type = ARRAY(STRUCT(x = INTEGER), 2), nullable = FALSE,
-         expr = "[{x: i::INTEGER}, {x: mod(i, 4)::INTEGER}]::STRUCT(x INTEGER)[2]")
+         expr = "[{x: i::INTEGER}, {x: mod(i, 4)::INTEGER}]::STRUCT(x INTEGER)[2]"),
+    # Non-NULL struct row whose nested field is NULL: the field must survive the
+    # round-trip rather than be dropped from the row.
+    list(name = "n_snull",  type = STRUCT(a = LIST(INTEGER), b = VARCHAR), nullable = TRUE,
+         expr = "{a: CASE WHEN mod(i, 3) = 0 THEN NULL ELSE [i::INTEGER, mod(i, 5)::INTEGER] END, b: ('x' || i)}")
   )
   for (case in nested_cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,

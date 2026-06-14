@@ -388,10 +388,10 @@ stream$close()
 Execution plans are fixed at scalar-UDF registration time and select the
 placement/concurrency backend for the recorded R thread.
 
-| Plan                                    | Engine              | Scalar mode | Vectorized mode | Notes                                                                                                                                                       |
-|-----------------------------------------|---------------------|-------------|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes         | yes             | DuckDB workers enqueue callbacks and R work drains on the recorded R thread                                                                                 |
-| `ipc` (`wire + multiprocess_parallel`)  | `ipc_nng_pool`      | yes         | yes             | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, and enum |
+| Plan                                    | Engine              | Scalar mode | Vectorized mode | Notes                                                                                                                                                                                                  |
+|-----------------------------------------|---------------------|-------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes         | yes             | DuckDB workers enqueue callbacks and R work drains on the recorded R thread                                                                                                                            |
+| `ipc` (`wire + multiprocess_parallel`)  | `ipc_nng_pool`      | yes         | yes             | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, enum, bit, and list/array/struct of supported types |
 
 `rducks_enable(con)` selects the in-process backend;
 `rducks_enable_inproc(con, threads = 4, external_threads = 1)` keeps R

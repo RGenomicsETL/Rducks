@@ -1103,6 +1103,20 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             goto fail;
         }
     }
+    /* Bounds-check decoded LIST/MAP entries against the child extent so a
+     * malformed payload (e.g. from an external ipc endpoint) cannot drive an
+     * out-of-range read when the entries are written back into a DuckDB vector. */
+    if ((t->id == RDX_QK_LTYPE_LIST || t->id == RDX_QK_LTYPE_MAP) && v->list_offsets) {
+        uint64_t i;
+        for (i = 0; i < v->rows; i++) {
+            uint64_t off = v->list_offsets[i];
+            uint64_t len = v->list_lengths[i];
+            if (off > v->list_child_rows || len > v->list_child_rows - off) {
+                rdx_qk_set_error(err, "list entry references rows beyond the child vector");
+                goto fail;
+            }
+        }
+    }
     *out = v;
     return 1;
 fail:

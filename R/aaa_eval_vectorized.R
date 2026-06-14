@@ -35,7 +35,9 @@ rducks_vectorized_return_value_at <- function(type, value, i) {
       child <- children[[field_index]]
       if ((!rducks_type_inherits(child, "rducks_scalar_type") || rducks_type_inherits(child, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) &&
           is.list(row[[field]]) && length(row[[field]]) == 1L) {
-        row[[field]] <- row[[field]][[1L]]
+        # Single-bracket assignment so unwrapping a length-1 list whose element is
+        # NULL keeps the field rather than deleting it from the row.
+        row[field] <- row[[field]][1L]
       }
     }
     return(row)

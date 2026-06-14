@@ -1297,15 +1297,57 @@ static SEXP rdx_qkr_column_from_vector(const rdx_qk_vector *v, unsigned depth) {
 
 /* ---------------- entry points ---------------- */
 
-SEXP RDUCKS_quack_encode_chunk(SEXP rows_sexp, SEXP types_spec, SEXP columns) {
+/* Building the chunk from R columns and encoding it can Rf_error() (longjmp)
+ * deep in the helpers, so the chunk and the detached writer buffer are tracked
+ * in a context and freed by an R_UnwindProtect cleanup that runs on both normal
+ * return and unwinding. Worker processes are long-lived; an error path must not
+ * leak the chunk. */
+typedef struct {
+    rdx_qk_chunk *chunk;   /* freed by cleanup */
+    uint8_t *bytes;        /* detached writer buffer, freed by cleanup */
     uint64_t rows;
-    R_xlen_t ncolumns, i;
-    rdx_qk_chunk *chunk = NULL;
+    SEXP types_spec;
+    SEXP columns;
+} rdx_qkr_encode_ctx;
+
+static void rdx_qkr_encode_cleanup(void *data, Rboolean jump) {
+    rdx_qkr_encode_ctx *ctx = (rdx_qkr_encode_ctx *)data;
+    (void)jump;
+    if (ctx->chunk) { rdx_qk_chunk_free(ctx->chunk); ctx->chunk = NULL; }
+    if (ctx->bytes) { free(ctx->bytes); ctx->bytes = NULL; }
+}
+
+static SEXP rdx_qkr_encode_body(void *data) {
+    rdx_qkr_encode_ctx *ctx = (rdx_qkr_encode_ctx *)data;
+    rdx_qk_chunk *chunk = ctx->chunk;
     rdx_qk_writer w;
     rdx_qk_error err = {{0}};
     SEXP out;
-    uint8_t *bytes;
     size_t nbytes;
+    R_xlen_t i, ncolumns = Rf_xlength(ctx->columns);
+    for (i = 0; i < ncolumns; i++) {
+        chunk->types[i] = rdx_qkr_type_from_spec(VECTOR_ELT(ctx->types_spec, i), 0);
+    }
+    for (i = 0; i < ncolumns; i++) {
+        chunk->columns[i] = rdx_qkr_vector_from_column(chunk->types[i], VECTOR_ELT(ctx->columns, i), ctx->rows, 0);
+    }
+    rdx_qk_writer_init(&w);
+    if (!rdx_qk_chunk_encode(&w, chunk, &err)) {
+        rdx_qk_writer_destroy(&w);
+        rdx_qkr_fail(&err, "encode failed");
+    }
+    ctx->bytes = rdx_qk_writer_detach(&w, &nbytes);
+    if (!ctx->bytes) Rf_error("Rducks quack codec: out of memory encoding chunk");
+    out = Rf_allocVector(RAWSXP, (R_xlen_t)nbytes);
+    memcpy(RAW(out), ctx->bytes, nbytes);
+    return out;
+}
+
+SEXP RDUCKS_quack_encode_chunk(SEXP rows_sexp, SEXP types_spec, SEXP columns) {
+    rdx_qkr_encode_ctx ctx = {0};
+    R_xlen_t ncolumns;
+    uint64_t rows;
+    SEXP cont, res;
 
     if (TYPEOF(types_spec) != VECSXP || TYPEOF(columns) != VECSXP) {
         Rf_error("Rducks quack codec: types and columns must be lists");
@@ -1321,46 +1363,36 @@ SEXP RDUCKS_quack_encode_chunk(SEXP rows_sexp, SEXP types_spec, SEXP columns) {
         }
         rows = (uint64_t)r;
     }
-    chunk = rdx_qk_chunk_new(rows, (uint32_t)ncolumns);
-    if (!chunk) Rf_error("Rducks quack codec: out of memory building chunk");
-    for (i = 0; i < ncolumns; i++) {
-        chunk->types[i] = rdx_qkr_type_from_spec(VECTOR_ELT(types_spec, i), 0);
-    }
-    for (i = 0; i < ncolumns; i++) {
-        chunk->columns[i] = rdx_qkr_vector_from_column(chunk->types[i], VECTOR_ELT(columns, i), rows, 0);
-    }
-    rdx_qk_writer_init(&w);
-    if (!rdx_qk_chunk_encode(&w, chunk, &err)) {
-        rdx_qk_writer_destroy(&w);
-        rdx_qk_chunk_free(chunk);
-        rdx_qkr_fail(&err, "encode failed");
-    }
-    rdx_qk_chunk_free(chunk);
-    bytes = rdx_qk_writer_detach(&w, &nbytes);
-    if (!bytes) Rf_error("Rducks quack codec: out of memory encoding chunk");
-    out = Rf_allocVector(RAWSXP, (R_xlen_t)nbytes);
-    memcpy(RAW(out), bytes, nbytes);
-    free(bytes);
-    return out;
+    ctx.chunk = rdx_qk_chunk_new(rows, (uint32_t)ncolumns);
+    if (!ctx.chunk) Rf_error("Rducks quack codec: out of memory building chunk");
+    ctx.rows = rows;
+    ctx.types_spec = types_spec;
+    ctx.columns = columns;
+    cont = PROTECT(R_MakeUnwindCont());
+    res = R_UnwindProtect(rdx_qkr_encode_body, &ctx, rdx_qkr_encode_cleanup, &ctx, cont);
+    UNPROTECT(1);
+    return res;
 }
 
-SEXP RDUCKS_quack_decode_chunk(SEXP payload) {
-    rdx_qk_reader r;
-    rdx_qk_error err = {{0}};
-    rdx_qk_chunk *chunk = NULL;
+/* Materializing R columns from the decoded chunk can Rf_error() (allocation,
+ * malformed storage), so the chunk is freed by an R_UnwindProtect cleanup that
+ * runs on both normal return and unwinding. */
+typedef struct {
+    rdx_qk_chunk *chunk;   /* freed by cleanup */
+} rdx_qkr_decode_ctx;
+
+static void rdx_qkr_decode_cleanup(void *data, Rboolean jump) {
+    rdx_qkr_decode_ctx *ctx = (rdx_qkr_decode_ctx *)data;
+    (void)jump;
+    if (ctx->chunk) { rdx_qk_chunk_free(ctx->chunk); ctx->chunk = NULL; }
+}
+
+static SEXP rdx_qkr_decode_body(void *data) {
+    rdx_qkr_decode_ctx *ctx = (rdx_qkr_decode_ctx *)data;
+    rdx_qk_chunk *chunk = ctx->chunk;
     SEXP out, types, columns;
     static const char *fields[] = {"rows", "types", "columns"};
     uint32_t i;
-
-    if (TYPEOF(payload) != RAWSXP) Rf_error("Rducks quack codec: payload must be a raw vector");
-    rdx_qk_reader_init(&r, RAW(payload), (size_t)Rf_xlength(payload));
-    if (!rdx_qk_chunk_decode(&r, &chunk, &err)) {
-        rdx_qkr_fail(&err, "decode failed");
-    }
-    if (r.pos != r.size) {
-        rdx_qk_chunk_free(chunk);
-        Rf_error("Rducks quack codec: %zu trailing bytes after the chunk payload", r.size - r.pos);
-    }
     out = PROTECT(rdx_qkr_named_list(3, fields));
     SET_VECTOR_ELT(out, 0, Rf_ScalarReal((double)chunk->rows));
     types = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)chunk->ncolumns));
@@ -1371,7 +1403,27 @@ SEXP RDUCKS_quack_decode_chunk(SEXP payload) {
     }
     SET_VECTOR_ELT(out, 1, types);
     SET_VECTOR_ELT(out, 2, columns);
-    rdx_qk_chunk_free(chunk);
     UNPROTECT(3);
     return out;
+}
+
+SEXP RDUCKS_quack_decode_chunk(SEXP payload) {
+    rdx_qk_reader r;
+    rdx_qk_error err = {{0}};
+    rdx_qkr_decode_ctx ctx = {0};
+    SEXP cont, res;
+
+    if (TYPEOF(payload) != RAWSXP) Rf_error("Rducks quack codec: payload must be a raw vector");
+    rdx_qk_reader_init(&r, RAW(payload), (size_t)Rf_xlength(payload));
+    if (!rdx_qk_chunk_decode(&r, &ctx.chunk, &err)) {
+        rdx_qkr_fail(&err, "decode failed");
+    }
+    if (r.pos != r.size) {
+        rdx_qk_chunk_free(ctx.chunk);
+        Rf_error("Rducks quack codec: %zu trailing bytes after the chunk payload", r.size - r.pos);
+    }
+    cont = PROTECT(R_MakeUnwindCont());
+    res = R_UnwindProtect(rdx_qkr_decode_body, &ctx, rdx_qkr_decode_cleanup, &ctx, cont);
+    UNPROTECT(1);
+    return res;
 }

@@ -714,6 +714,17 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
     }
     state->runtime = meta->runtime;
 
+    if (meta->dynamic_args && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        /* The R wrapper already rejects dynamic (omitted-args) UDFs under the
+         * wire plan, but guard the native bind too: the Quack wire codec does not
+         * carry dynamic arguments, and bind-time resolved types would not have
+         * gone through wire-support validation. */
+        rducks_r_scalar_bind_state_destroy(state);
+        duckdb_scalar_function_bind_set_error(info,
+            "Rducks ipc (wire) transport does not support dynamic (omitted-args) scalar UDFs");
+        return;
+    }
+
     if (meta->dynamic_args) {
         char err_msg[RDUCKS_ERROR_BUFFER_SIZE];
         err_msg[0] = '\0';

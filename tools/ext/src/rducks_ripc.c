@@ -328,9 +328,14 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
     error_len = rducks_wire_get_u32(p); p += 4;
     reserved = rducks_wire_get_u32(p); p += 4;
     payload_len = rducks_wire_get_u64(p); p += 8;
-    (void)reserved;
     if (version != 1U || type != 100U) {
         rducks_format_error_message(err_msg, err_cap, "unsupported RIPC response frame");
+        return 0;
+    }
+    /* Match the R-side frame validation: status is a 0/1 flag and reserved must
+     * be zero. Reject anything else rather than treating it loosely. */
+    if (reserved != 0U || status > 1U) {
+        rducks_format_error_message(err_msg, err_cap, "malformed RIPC response frame header");
         return 0;
     }
     if (payload_len > (uint64_t)SIZE_MAX || (size_t)payload_len > SIZE_MAX - 32U - (size_t)error_len) {

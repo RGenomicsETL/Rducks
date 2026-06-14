@@ -437,7 +437,11 @@ rducks_native_array_to_values <- function(array) {
     for (i in seq_len(n)) {
       if (!isTRUE(array$valid[[i]])) next
       row <- stats::setNames(vector("list", length(child_names)), child_names)
-      for (j in seq_along(child_names)) row[[j]] <- rducks_native_sequence_value_at(rducks_type_children(type)[[j]], field_values[[j]], i)
+      # Single-bracket list assignment so a NULL field value (e.g. a NULL nested
+      # column entry) keeps the field instead of deleting it from the row.
+      for (j in seq_along(child_names)) {
+        row[j] <- list(rducks_native_sequence_value_at(rducks_type_children(type)[[j]], field_values[[j]], i))
+      }
       out[[i]] <- row
     }
     return(out)
