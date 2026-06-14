@@ -578,8 +578,31 @@ static void rdx_qkr_fill_double_family(rdx_qk_vector *v, const rdx_qk_type *t, S
     }
 }
 
-static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP column,
-                                                 uint64_t rows, unsigned depth) {
+/* Constructing a vector from an R column can Rf_error() (longjmp) deep in a fill
+ * helper or a recursive child build, after `v` and its buffers are allocated.
+ * The body runs under R_UnwindProtect so the in-flight vector is freed on any
+ * unwind; the self-free-before-error sites were removed in favour of this single
+ * cleanup path. Recursive child builds nest their own protection, so each level
+ * frees exactly its own vector. */
+typedef struct {
+    const rdx_qk_type *t;
+    SEXP column;
+    uint64_t rows;
+    unsigned depth;
+    rdx_qk_vector *v;
+} rdx_qkr_vfc_ctx;
+
+static void rdx_qkr_vfc_cleanup(void *vctx, Rboolean jump) {
+    rdx_qkr_vfc_ctx *c = (rdx_qkr_vfc_ctx *)vctx;
+    if (jump && c->v) { rdx_qk_vector_free(c->v); c->v = NULL; }
+}
+
+static SEXP rdx_qkr_vfc_body(void *vctx) {
+    rdx_qkr_vfc_ctx *ctx = (rdx_qkr_vfc_ctx *)vctx;
+    const rdx_qk_type *t = ctx->t;
+    SEXP column = ctx->column;
+    uint64_t rows = ctx->rows;
+    unsigned depth = ctx->depth;
     rdx_qk_vector *v;
     SEXP valid, data;
     uint64_t i;
@@ -590,12 +613,12 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     if (data == R_NilValue) Rf_error("Rducks quack codec: column is missing its data");
     v = rdx_qk_vector_new(t, rows);
     if (!v) Rf_error("Rducks quack codec: out of memory building vector");
+    ctx->v = v; /* register for cleanup before any further error can fire */
 
     switch (t->id) {
     case RDX_QK_LTYPE_VARCHAR: {
         size_t pool = 0, fill = 0;
         if (TYPEOF(data) != STRSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected character storage for VARCHAR");
         }
         rdx_qkr_expect_length(data, rows, "varchar");
@@ -604,7 +627,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
             if (elt != NA_STRING) pool += strlen(Rf_translateCharUTF8(elt));
         }
         if (!rdx_qk_vector_alloc_strings(v, pool)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building string vector");
         }
         for (i = 0; i < rows; i++) {
@@ -626,7 +648,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_BIT: {
         size_t pool = 0, fill = 0;
         if (TYPEOF(data) != VECSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected list-of-rducks_bits storage for BIT");
         }
         rdx_qkr_expect_length(data, rows, "bit");
@@ -635,19 +656,16 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
             if (elt != R_NilValue) {
                 int bit_length;
                 if (TYPEOF(elt) != VECSXP || XLENGTH(elt) < 2) {
-                    rdx_qk_vector_free(v);
                     Rf_error("Rducks quack codec: BIT rows must be rducks_bits objects or NULL");
                 }
                 bit_length = Rf_asInteger(VECTOR_ELT(elt, 1));
                 if (bit_length <= 0) {
-                    rdx_qk_vector_free(v);
                     Rf_error("Rducks quack codec: rducks_bits object has invalid length");
                 }
                 pool += rdx_qkr_bit_physical_len(bit_length);
             }
         }
         if (!rdx_qk_vector_alloc_strings(v, pool)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building bit vector");
         }
         for (i = 0; i < rows; i++) {
@@ -666,7 +684,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_BLOB: {
         size_t pool = 0, fill = 0;
         if (TYPEOF(data) != VECSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected list-of-raw storage for BLOB");
         }
         rdx_qkr_expect_length(data, rows, "blob");
@@ -674,14 +691,12 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
             SEXP elt = VECTOR_ELT(data, i);
             if (elt != R_NilValue) {
                 if (TYPEOF(elt) != RAWSXP) {
-                    rdx_qk_vector_free(v);
                     Rf_error("Rducks quack codec: BLOB rows must be raw vectors or NULL");
                 }
                 pool += (size_t)Rf_xlength(elt);
             }
         }
         if (!rdx_qk_vector_alloc_strings(v, pool)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building blob vector");
         }
         for (i = 0; i < rows; i++) {
@@ -702,12 +717,10 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_STRUCT:
     case RDX_QK_LTYPE_UNION: {
         if ((uint64_t)Rf_xlength(data) != t->nchildren) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: struct column member count disagrees with its type");
         }
         v->children = (rdx_qk_vector **)calloc(t->nchildren ? t->nchildren : 1, sizeof(*v->children));
         if (!v->children) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building struct children");
         }
         for (i = 0; i < t->nchildren; i++) {
@@ -724,7 +737,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
         SEXP child = rdx_qkr_list_elt(data, "child");
         uint64_t child_rows = 0;
         if (TYPEOF(offsets) != REALSXP || TYPEOF(lengths) != REALSXP || child == R_NilValue) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: LIST storage requires offsets, lengths and child");
         }
         rdx_qkr_expect_length(offsets, rows, "list offsets");
@@ -738,13 +750,11 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
             (void)cd;
         }
         if (!rdx_qk_vector_alloc_list(v, 0)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building list vector");
         }
         for (i = 0; i < rows; i++) {
             double off = REAL(offsets)[i], len = REAL(lengths)[i];
             if (off < 0 || len < 0 || off + len > 9007199254740992.0) {
-                rdx_qk_vector_free(v);
                 Rf_error("Rducks quack codec: invalid list entry bounds");
             }
             v->list_offsets[i] = (uint64_t)off;
@@ -752,7 +762,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
         }
         v->children = (rdx_qk_vector **)calloc(1, sizeof(*v->children));
         if (!v->children) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building list child");
         }
         {
@@ -774,7 +783,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
                 declared = (uint64_t)Rf_xlength(child_data);
             }
             if (declared < child_rows) {
-                rdx_qk_vector_free(v);
                 Rf_error("Rducks quack codec: list entries reference rows beyond the child column");
             }
             v->list_child_rows = declared;
@@ -787,12 +795,10 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
         SEXP child = rdx_qkr_list_elt(data, "child");
         uint64_t child_rows = rows * (uint64_t)t->array_size;
         if (child == R_NilValue || t->nchildren != 1) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: ARRAY storage requires a child column");
         }
         v->children = (rdx_qk_vector **)calloc(1, sizeof(*v->children));
         if (!v->children) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building array child");
         }
         v->children[0] = rdx_qkr_vector_from_column(t->children[0], child, child_rows, depth + 1);
@@ -804,14 +810,12 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
         SEXP days = rdx_qkr_list_elt(data, "days");
         SEXP micros = rdx_qkr_list_elt(data, "micros");
         if (TYPEOF(months) != INTSXP || TYPEOF(days) != INTSXP || TYPEOF(micros) != REALSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: INTERVAL storage requires months, days, micros");
         }
         rdx_qkr_expect_length(months, rows, "interval months");
         rdx_qkr_expect_length(days, rows, "interval days");
         rdx_qkr_expect_length(micros, rows, "interval micros");
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building interval vector");
         }
         for (i = 0; i < rows; i++) {
@@ -825,7 +829,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
                 usd = 0;
             }
             if (usd > 9007199254740992.0 || usd < -9007199254740992.0) {
-                rdx_qk_vector_free(v);
                 Rf_error("Rducks quack codec: interval micros exceed the exact double range");
             }
             us = (int64_t)usd;
@@ -837,12 +840,10 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     }
     case RDX_QK_LTYPE_UUID: {
         if (TYPEOF(data) != STRSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected character storage for UUID");
         }
         rdx_qkr_expect_length(data, rows, "uuid");
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building uuid vector");
         }
         for (i = 0; i < rows; i++) {
@@ -851,7 +852,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
                 rdx_qk_vector_set_null(v, i);
                 memset(v->data + 16 * i, 0, 16);
             } else if (!rdx_qkr_uuid_to_bytes(CHAR(elt), v->data + 16 * i)) {
-                rdx_qk_vector_free(v);
                 Rf_error("Rducks quack codec: invalid UUID string");
             }
         }
@@ -860,12 +860,10 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_ENUM: {
         size_t width = rdx_qk_type_fixed_width(t);
         if (TYPEOF(data) != INTSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected integer codes for ENUM");
         }
         rdx_qkr_expect_length(data, rows, "enum");
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building enum vector");
         }
         for (i = 0; i < rows; i++) {
@@ -875,7 +873,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
                 rdx_qk_vector_set_null(v, i);
                 physical = 0;
             } else if (code < 1 || (uint32_t)code > t->enum_count) {
-                rdx_qk_vector_free(v);
                 Rf_error("Rducks quack codec: enum code out of range");
             } else {
                 physical = (uint32_t)(code - 1);
@@ -893,12 +890,10 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     }
     case RDX_QK_LTYPE_BOOLEAN: {
         if (TYPEOF(data) != LGLSXP) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: expected logical storage for BOOLEAN");
         }
         rdx_qkr_expect_length(data, rows, "boolean");
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building boolean vector");
         }
         for (i = 0; i < rows; i++) {
@@ -918,7 +913,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_USMALLINT:
     case RDX_QK_LTYPE_DATE:
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building integer vector");
         }
         rdx_qkr_fill_fixed_from_int(v, data, rows, rdx_qk_type_fixed_width(t),
@@ -930,7 +924,6 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_UHUGEINT:
     case RDX_QK_LTYPE_DECIMAL:
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building integer vector");
         }
         rdx_qkr_fill_i64_family(v, t, data, rows);
@@ -946,18 +939,31 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
     case RDX_QK_LTYPE_TIMESTAMP_NS:
     case RDX_QK_LTYPE_TIMESTAMP_TZ:
         if (!rdx_qk_vector_alloc_fixed(v)) {
-            rdx_qk_vector_free(v);
             Rf_error("Rducks quack codec: out of memory building double-backed vector");
         }
         rdx_qkr_fill_double_family(v, t, data, rows);
         break;
     default:
-        rdx_qk_vector_free(v);
         Rf_error("Rducks quack codec: logical type id %u is not on the Rducks wire yet",
                  (unsigned)t->id);
     }
     rdx_qkr_apply_valid(v, valid, rows);
-    return v;
+    return R_NilValue;
+}
+
+static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP column,
+                                                 uint64_t rows, unsigned depth) {
+    rdx_qkr_vfc_ctx ctx;
+    SEXP cont;
+    ctx.t = t;
+    ctx.column = column;
+    ctx.rows = rows;
+    ctx.depth = depth;
+    ctx.v = NULL;
+    cont = PROTECT(R_MakeUnwindCont());
+    R_UnwindProtect(rdx_qkr_vfc_body, &ctx, rdx_qkr_vfc_cleanup, &ctx, cont);
+    UNPROTECT(1);
+    return ctx.v;
 }
 
 /* ---------------- rdx_qk_vector -> column storage ---------------- */

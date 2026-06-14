@@ -25,6 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Quack codec sources stay in sync
+        if: runner.os == 'Linux'
+        run: |
+          cmp src/quack_core.c tools/ext/src/quack_core.c
+          cmp src/quack_core.h tools/ext/src/quack_core.h
+        shell: bash
+
       - name: Restore script execute bits on Windows
         if: runner.os == 'Windows'
         run: chmod +x configure cleanup configure.win cleanup.win
@@ -59,7 +66,8 @@ jobs:
             "inst/tinytest/test_execution_plan_noarrow.R",
             "inst/tinytest/test_quack_codec_roundtrip.R",
             "inst/tinytest/test_direct_scalar_noarrow.R",
-            "inst/tinytest/test_wire_support_contract_noarrow.R"
+            "inst/tinytest/test_wire_support_contract_noarrow.R",
+            "inst/tinytest/test_quack_malformed_noarrow.R"
           )
           ok <- TRUE
           for (f in files) {

@@ -1103,11 +1103,33 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             goto fail;
         }
     }
-    /* Bounds-check decoded LIST/MAP entries against the child extent so a
-     * malformed payload (e.g. from an external ipc endpoint) cannot drive an
-     * out-of-range read when the entries are written back into a DuckDB vector. */
-    if ((t->id == RDX_QK_LTYPE_LIST || t->id == RDX_QK_LTYPE_MAP) && v->list_offsets) {
+    /* Reject incomplete vector objects before publishing them. A malformed
+     * payload (e.g. from an external ipc endpoint) may omit the payload field for
+     * the vector's logical type, leaving the buffers NULL; R materialization and
+     * the native writeback would then dereference NULL or read past the child.
+     * Validate per-type completeness and the LIST/MAP child bounds here. */
+    if (t->id == RDX_QK_LTYPE_STRUCT || t->id == RDX_QK_LTYPE_UNION) {
+        uint32_t i;
+        if (v->nchildren != t->nchildren || (t->nchildren && !v->children)) {
+            rdx_qk_set_error(err, "struct/union vector is missing child columns");
+            goto fail;
+        }
+        for (i = 0; i < v->nchildren; i++) {
+            if (!v->children[i]) {
+                rdx_qk_set_error(err, "struct/union vector has a missing child column");
+                goto fail;
+            }
+        }
+    } else if (t->id == RDX_QK_LTYPE_LIST || t->id == RDX_QK_LTYPE_MAP) {
         uint64_t i;
+        if (v->nchildren != 1 || !v->children || !v->children[0]) {
+            rdx_qk_set_error(err, "list/map vector is missing its child column");
+            goto fail;
+        }
+        if (v->rows > 0 && (!v->list_offsets || !v->list_lengths)) {
+            rdx_qk_set_error(err, "list/map vector is missing offsets or lengths");
+            goto fail;
+        }
         for (i = 0; i < v->rows; i++) {
             uint64_t off = v->list_offsets[i];
             uint64_t len = v->list_lengths[i];
@@ -1115,6 +1137,26 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
                 rdx_qk_set_error(err, "list entry references rows beyond the child vector");
                 goto fail;
             }
+        }
+    } else if (t->id == RDX_QK_LTYPE_ARRAY) {
+        if (v->nchildren != 1 || !v->children || !v->children[0]) {
+            rdx_qk_set_error(err, "array vector is missing its child column");
+            goto fail;
+        }
+    } else if (rdx_qk_vector_is_varlen(t)) {
+        if (v->rows > 0 && !v->str_offsets) {
+            rdx_qk_set_error(err, "varlen vector is missing its string offsets");
+            goto fail;
+        }
+    } else {
+        size_t width = rdx_qk_type_fixed_width(t);
+        if (width == 0) {
+            rdx_qk_set_error(err, "vector has an unsupported logical type");
+            goto fail;
+        }
+        if (v->rows > 0 && (!v->data || v->data_size != width * (size_t)v->rows)) {
+            rdx_qk_set_error(err, "fixed-width vector is missing or wrong-sized data");
+            goto fail;
         }
     }
     *out = v;

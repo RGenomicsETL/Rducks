@@ -53,12 +53,18 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     int r_err = 0;
     R_xlen_t endpoint_count = 0;
 
-    if (!runtime || !meta || !rducks_ripc_bundle_valid(bundle)) {
+    if (!runtime || !meta) {
         rducks_format_error_message(err_msg, err_cap, "RIPC metadata is invalid");
         return 0;
     }
+    /* Check the recorded main R thread before rducks_ripc_bundle_valid(), which
+     * inspects the SEXP bundle and must not touch the R API off-thread. */
     if (!rducks_is_main_thread(runtime)) {
         rducks_format_error_message(err_msg, err_cap, "RIPC configure() must run on the recorded main R thread");
+        return 0;
+    }
+    if (!rducks_ripc_bundle_valid(bundle)) {
+        rducks_format_error_message(err_msg, err_cap, "RIPC metadata is invalid");
         return 0;
     }
 
@@ -191,71 +197,6 @@ static uint64_t rducks_wire_get_u64(const uint8_t *p) {
     return ((uint64_t)rducks_wire_get_u32(p)) | ((uint64_t)rducks_wire_get_u32(p + 4) << 32);
 }
 
-static int rducks_ripc_wrap_dynamic_payload(rducks_r_scalar_meta_t *meta,
-                                             const uint8_t *payload, size_t payload_size,
-                                             rducks_owned_bytes_t *wrapped,
-                                             char *err_msg, size_t err_cap) {
-    size_t token_bytes = 0;
-    size_t total;
-    uint8_t *p;
-    char **tokens = NULL;
-    if (!meta || !wrapped || payload_size > (size_t)UINT64_MAX) {
-        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload metadata is missing");
-        return 0;
-    }
-    if (meta->arity > UINT32_MAX || meta->arity > SIZE_MAX / sizeof(*tokens)) {
-        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload has too many argument types");
-        return 0;
-    }
-    tokens = (char **)rducks_calloc_array(meta->arity ? meta->arity : 1U, sizeof(*tokens));
-    if (!tokens) {
-        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic type tokens");
-        return 0;
-    }
-    for (size_t i = 0; i < meta->arity; i++) {
-        size_t len;
-        tokens[i] = rducks_type_desc_token(meta->args[i]);
-        if (!tokens[i]) {
-            rducks_format_error_message(err_msg, err_cap, "failed to format RIPC dynamic argument type");
-            goto fail;
-        }
-        len = strlen(tokens[i]);
-        if (len > UINT32_MAX || token_bytes > SIZE_MAX - 4U - len) {
-            rducks_format_error_message(err_msg, err_cap, "RIPC dynamic argument type token is too large");
-            goto fail;
-        }
-        token_bytes += 4U + len;
-    }
-    if (payload_size > SIZE_MAX - 16U || token_bytes > SIZE_MAX - 16U - payload_size) {
-        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload is too large");
-        goto fail;
-    }
-    total = 16U + token_bytes + payload_size;
-    wrapped->data = (uint8_t *)malloc(total ? total : 1U);
-    if (!wrapped->data) {
-        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
-        goto fail;
-    }
-    wrapped->size = total;
-    p = wrapped->data;
-    memcpy(p, "RDT1", 4); p += 4;
-    rducks_wire_put_u32(p, (uint32_t)meta->arity); p += 4;
-    rducks_wire_put_u64(p, (uint64_t)payload_size); p += 8;
-    for (size_t i = 0; i < meta->arity; i++) {
-        size_t len = strlen(tokens[i]);
-        rducks_wire_put_u32(p, (uint32_t)len); p += 4;
-        if (len) { memcpy(p, tokens[i], len); p += len; }
-    }
-    if (payload_size) memcpy(p, payload, payload_size);
-    for (size_t i = 0; i < meta->arity; i++) free(tokens[i]);
-    free(tokens);
-    return 1;
-fail:
-    for (size_t i = 0; i < meta->arity; i++) free(tokens[i]);
-    free(tokens);
-    return 0;
-}
-
 static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t row_count,
                                              const uint8_t *payload, size_t payload_size,
                                              rducks_owned_bytes_t *request,
@@ -263,33 +204,22 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     size_t udf_len;
     size_t total;
     uint8_t *p;
-    const uint8_t *wire_payload = payload;
-    size_t wire_payload_size = payload_size;
-    uint32_t reserved = 0U;
-    rducks_owned_bytes_t wrapped_payload = {0};
+    /* Dynamic (omitted-args) UDFs are rejected for the wire plan at both the R
+     * wrapper and the native bind, so the request payload is always a static
+     * declared-type chunk and the reserved frame field stays zero. */
     if (!meta || !meta->ripc_udf_id || !payload || !request) {
         rducks_format_error_message(err_msg, err_cap, "RIPC request metadata is missing");
         return 0;
     }
-    if (meta->dynamic_args) {
-        if (!rducks_ripc_wrap_dynamic_payload(meta, payload, payload_size, &wrapped_payload, err_msg, err_cap)) {
-            return 0;
-        }
-        wire_payload = wrapped_payload.data;
-        wire_payload_size = wrapped_payload.size;
-        reserved = 1U;
-    }
     udf_len = strlen(meta->ripc_udf_id);
-    if (udf_len > UINT32_MAX || row_count > (idx_t)UINT64_MAX || wire_payload_size > (size_t)UINT64_MAX ||
-        wire_payload_size > SIZE_MAX - 36U - udf_len) {
-        rducks_owned_bytes_reset(&wrapped_payload);
+    if (udf_len > UINT32_MAX || row_count > (idx_t)UINT64_MAX || payload_size > (size_t)UINT64_MAX ||
+        payload_size > SIZE_MAX - 36U - udf_len) {
         rducks_format_error_message(err_msg, err_cap, "RIPC request is too large");
         return 0;
     }
-    total = 36U + udf_len + wire_payload_size;
+    total = 36U + udf_len + payload_size;
     request->data = (uint8_t *)malloc(total ? total : 1U);
     if (!request->data) {
-        rducks_owned_bytes_reset(&wrapped_payload);
         rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC request");
         return 0;
     }
@@ -299,12 +229,11 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, (uint32_t)udf_len); p += 4;
-    rducks_wire_put_u32(p, reserved); p += 4;
+    rducks_wire_put_u32(p, 0U); p += 4;
     rducks_wire_put_u64(p, (uint64_t)row_count); p += 8;
-    rducks_wire_put_u64(p, (uint64_t)wire_payload_size); p += 8;
+    rducks_wire_put_u64(p, (uint64_t)payload_size); p += 8;
     if (udf_len) { memcpy(p, meta->ripc_udf_id, udf_len); p += udf_len; }
-    if (wire_payload_size) memcpy(p, wire_payload, wire_payload_size);
-    rducks_owned_bytes_reset(&wrapped_payload);
+    if (payload_size) memcpy(p, payload, payload_size);
     return 1;
 }
 

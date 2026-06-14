@@ -682,7 +682,10 @@ static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_
     if (desc->kind == RDUCKS_KIND_ARRAY) {
         duckdb_logical_type child = rducks_create_logical_type_for_desc(desc->child);
         duckdb_logical_type out;
-        if (!child || desc->array_size == 0) return NULL;
+        if (!child || desc->array_size == 0) {
+            if (child) duckdb_destroy_logical_type(&child);
+            return NULL;
+        }
         out = duckdb_create_array_type(child, desc->array_size);
         duckdb_destroy_logical_type(&child);
         return out;
