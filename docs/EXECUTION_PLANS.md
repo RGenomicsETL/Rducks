@@ -88,7 +88,7 @@ Unsupported combinations must fail. They must not silently switch:
   marshalled to worker R processes. Only valid with `multiprocess_parallel`. The
   worker path currently covers fixed-width scalars, VARCHAR/BLOB, DECIMAL,
   INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at
-  registration until the native bridge covers them.
+  registration until the native bridge covers it.
   Selected scalar-UDF globals may be serialized normally or, with
   `ipc_globals_share = "mori"`, sent as same-host mori shared-memory references
   for large read-only R objects.

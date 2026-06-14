@@ -47,11 +47,20 @@ fake_worker <- function(ep) {
 }
 
 local({
-  ep <- sprintf("ipc:///tmp/rducks_fake_%s.sock", paste(sample(c(0:9, letters), 8, TRUE), collapse = ""))
+  sock_path <- tempfile("rducks_fake_", fileext = ".sock")
+  ep <- paste0("ipc://", sock_path)
+  on.exit(try(unlink(sock_path, force = TRUE), silent = TRUE), add = TRUE)
   mirai::daemons(1L)
   on.exit(try(mirai::daemons(0L), silent = TRUE), add = TRUE)
   mirai::mirai(fake_worker(ep), fake_worker = fake_worker, ep = ep)  # async; runs in the daemon
-  Sys.sleep(1)
+  # Wait until the worker has created its listening socket (readiness), rather
+  # than sleeping a fixed interval.
+  ready <- FALSE
+  for (i in seq_len(200L)) {
+    if (file.exists(sock_path)) { ready <- TRUE; break }
+    Sys.sleep(0.05)
+  }
+  expect_true(ready, info = "fake ipc endpoint became ready")
 
   con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
   on.exit(try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)

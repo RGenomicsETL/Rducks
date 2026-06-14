@@ -40,33 +40,47 @@ ok <- Rducks:::rducks_wire_decode_values(list(INTEGER, VARCHAR), valid)
 expect_equal(ok$values[[1]], c(1L, NA, 3L))
 expect_equal(ok$values[[2]], c("a", "b", NA))
 
-# Malformed nested (LIST) payloads must also error, not silently corrupt. A
-# reordered LIST vector whose child (field 106) precedes its cardinality (field
+# Malformed nested (LIST) payloads must also error, not silently corrupt. The
+# crafted payloads below depend on the exact wire byte layout, so each asserts
+# its layout precondition explicitly (rather than silently skipping if a future
+# encoder change shifts the bytes).
+
+# A reordered LIST vector whose child (field 106) precedes its cardinality (field
 # 104), combined with an entry that references rows the (empty) child does not
 # hold, would decode to NA without the child-row-count vs cardinality check.
 list_valid <- Rducks:::rducks_wire_encode_values(list(LIST(INTEGER)), list(list(integer(0))), 1L)
-if (length(list_valid) == 60L) {
-  attack <- list_valid
-  attack[44] <- as.raw(2L)                          # entry length 0 -> 2 (phantom rows)
-  size <- attack[33:35]; size[3] <- as.raw(2L)      # list cardinality 0 -> 2
-  attack <- c(attack[1:32], attack[36:56], size, attack[57:60])  # child before size
-  expect_error(
-    Rducks:::rducks_wire_decode_values(list(LIST(INTEGER)), attack),
-    pattern = "child row count disagrees with the declared cardinality",
-    info = "reordered LIST with phantom child references must error, not return NA"
-  )
-}
+expect_equal(length(list_valid), 60L, info = "empty-LIST payload layout precondition")
+attack <- list_valid
+attack[44] <- as.raw(2L)                          # entry length 0 -> 2 (phantom rows)
+size <- attack[33:35]; size[3] <- as.raw(2L)      # list cardinality 0 -> 2
+attack <- c(attack[1:32], attack[36:56], size, attack[57:60])  # child before size
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(LIST(INTEGER)), attack),
+  pattern = "child row count disagrees with the declared cardinality",
+  info = "reordered LIST with phantom child references must error, not return NA"
+)
 
 # A reordered LIST whose child carries data inconsistent with the late
 # cardinality must also error (caught by the child payload-size check).
 list_data <- Rducks:::rducks_wire_encode_values(list(LIST(INTEGER)), list(list(c(10L, 20L))), 1L)
-if (length(list_data) == 68L) {
-  reordered <- c(list_data[1:32], list_data[36:64], list_data[33:35], list_data[65:68])
-  expect_error(
-    Rducks:::rducks_wire_decode_values(list(LIST(INTEGER)), reordered),
-    info = "reordered LIST(INTEGER) with mismatched child must error"
-  )
-}
+expect_equal(length(list_data), 68L, info = "LIST(INTEGER) payload layout precondition")
+reordered <- c(list_data[1:32], list_data[36:64], list_data[33:35], list_data[65:68])
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(LIST(INTEGER)), reordered),
+  info = "reordered LIST(INTEGER) with mismatched child must error"
+)
+
+# A list entry missing its length field must error (it would otherwise default to
+# zero and silently drop rows). list_data's entry object is bytes 36..46
+# (105 count1 | offset field100=0 | length field101=2 | end); drop the length.
+expect_equal(as.integer(list_data[42:44]), c(0x65L, 0x00L, 0x02L),
+             info = "list entry length field is where the layout precondition expects")
+no_len <- c(list_data[1:41], list_data[45:68])
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(LIST(INTEGER)), no_len),
+  pattern = "list entry object is missing its offset or length",
+  info = "list entry missing its length must error, not drop rows"
+)
 
 # Truncation fuzz over a nested LIST payload: no prefix may crash the process.
 for (n in seq_len(length(list_data) - 1L)) {
@@ -83,15 +97,14 @@ one_int <- Rducks:::rducks_wire_encode_values(list(INTEGER), list(42L), 1L)
 data_pat <- c(0x66L, 0x00L, 0x04L)  # field 102, length 4
 di <- which(vapply(seq_len(length(one_int) - 2L),
                    function(i) all(as.integer(one_int[i:(i + 2L)]) == data_pat), logical(1)))
-if (length(di) == 1L) {
-  block <- one_int[di:(di + 6L)]  # the 7-byte field-102 block (header + 4 data bytes)
-  dup <- c(one_int[seq_len(di + 6L)], block, one_int[(di + 7L):length(one_int)])
-  expect_error(
-    Rducks:::rducks_wire_decode_values(list(INTEGER), dup),
-    pattern = "duplicate field",
-    info = "duplicate vector payload field must be rejected"
-  )
-}
+expect_equal(length(di), 1L, info = "single field-102 block present in the INTEGER payload")
+block <- one_int[di:(di + 6L)]  # the 7-byte field-102 block (header + 4 data bytes)
+dup <- c(one_int[seq_len(di + 6L)], block, one_int[(di + 7L):length(one_int)])
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(INTEGER), dup),
+  pattern = "duplicate field",
+  info = "duplicate vector payload field must be rejected"
+)
 
 # A UNION result whose tag references a non-existent member must be rejected,
 # never indexed out of range (defends the worker/external-response boundary).
@@ -100,12 +113,11 @@ union_p <- Rducks:::rducks_wire_encode_values(list(union_t), list(list(rducks_un
 tag_pat <- c(0x67L, 0x00L, 0x03L, 0x64L, 0x00L, 0x00L, 0x66L, 0x00L, 0x01L)  # struct children -> tag child data
 ti <- which(vapply(seq_len(length(union_p) - length(tag_pat)),
                    function(i) all(as.integer(union_p[i:(i + length(tag_pat) - 1L)]) == tag_pat), logical(1)))
-if (length(ti) == 1L) {
-  attack <- union_p
-  attack[ti + length(tag_pat)] <- as.raw(255L)  # tag 255 for a 2-member union
-  expect_error(
-    Rducks:::rducks_wire_decode_values(list(union_t), attack),
-    pattern = "union tag references a non-existent member",
-    info = "out-of-range union tag must be rejected"
-  )
-}
+expect_equal(length(ti), 1L, info = "union tag child data block present in the payload")
+attack2 <- union_p
+attack2[ti + length(tag_pat)] <- as.raw(255L)  # tag 255 for a 2-member union
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(union_t), attack2),
+  pattern = "union tag references a non-existent member",
+  info = "out-of-range union tag must be rejected"
+)

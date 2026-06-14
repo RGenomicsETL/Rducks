@@ -102,7 +102,7 @@ runs the R function, and returns wire-encoded results that the extension
 writes back to DuckDB. Worker-process types currently cover fixed-width
 scalars, \code{VARCHAR}/\code{BLOB}, \code{DECIMAL}, \code{INTERVAL}, \code{ENUM}, \code{BIT}, \code{GEOMETRY}, \code{MAP}, \code{UNION}, and
 \code{LIST}/\code{ARRAY}/\code{STRUCT} of supported types; \code{VARIANT} is rejected at registration until the
-native bridge covers them. It maps to the internal \code{"ipc_nng_pool"} engine.
+native bridge covers it. It maps to the internal \code{"ipc_nng_pool"} engine.
 }
 \examples{
 rducks_execution_plan("inproc")

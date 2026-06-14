@@ -35,7 +35,7 @@ execution.
   BinarySerializer subset) -> worker process -> owned Quack result bytes ->
   DuckDB output. Enabled for fixed-width scalars, VARCHAR/BLOB, DECIMAL,
   INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at
-  registration until the native bridge covers them.
+  registration until the native bridge covers it.
 
 ## DuckDB function kind, evaluation mode, and execution plan
 

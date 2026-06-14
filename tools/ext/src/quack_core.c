@@ -1117,6 +1117,12 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
                         goto fail;
                     }
                 }
+                /* An entry missing offset or length would silently default to
+                 * zero, dropping rows; require both. */
+                if (!seen_off || !seen_len) {
+                    rdx_qk_set_error(err, "list entry object is missing its offset or length");
+                    goto fail;
+                }
             }
             break;
         }

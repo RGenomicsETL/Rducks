@@ -166,7 +166,7 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' writes back to DuckDB. Worker-process types currently cover fixed-width
 #' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
 #' `LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at registration until the
-#' native bridge covers them. It maps to the internal `"ipc_nng_pool"` engine.
+#' native bridge covers it. It maps to the internal `"ipc_nng_pool"` engine.
 #'
 #' @param transport Placement/transport. `"inproc"` evaluates in the current R
 #'   process with the in-process queued backend. `"ipc"` evaluates in persistent
