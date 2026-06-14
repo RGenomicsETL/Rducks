@@ -361,9 +361,11 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
 
 /* ---- DuckDB <-> Quack-IR bridge for the RIPC worker boundary ----
  * Pure C (runs off the recorded R thread). Handles fixed-width scalars, decimal
- * storage, and varchar/blob; enum and nested types are not yet supported on the
- * wire path and fail cleanly. The Quack IR is a DuckDB DataChunk subset, so the
- * fixed-width and validity copies are direct. */
+ * and enum storage, varchar/blob/bit, and the LIST/ARRAY/STRUCT containers
+ * (recursively, over supported leaf types). MAP, UNION, geometry, and variant
+ * are not yet supported on the wire path and fail cleanly via build_type. The
+ * Quack IR is a DuckDB DataChunk subset, so the fixed-width and validity copies
+ * are direct. */
 
 static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
     uint32_t id = 0U;
@@ -393,9 +395,8 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
         }
         return t;
     }
-    if (desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_UNION) {
-        rdx_qk_type *t = rdx_qk_type_new(desc->kind == RDUCKS_KIND_STRUCT
-                                             ? RDX_QK_LTYPE_STRUCT : RDX_QK_LTYPE_UNION);
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        rdx_qk_type *t = rdx_qk_type_new(RDX_QK_LTYPE_STRUCT);
         size_t f;
         if (!t) return NULL;
         for (f = 0; f < desc->field_count; f++) {
@@ -477,7 +478,7 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
         }
         memcpy(v->validity, validity, mask_bytes);
     }
-    if (desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_UNION) {
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
         size_t f;
         v->nchildren = (uint32_t)desc->field_count;
         v->children = (rdx_qk_vector **)calloc(desc->field_count ? desc->field_count : 1,
@@ -512,8 +513,16 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
                 return NULL;
             }
             for (r = 0; r < rows; r++) {
-                v->list_offsets[r] = entries[r].offset;
-                v->list_lengths[r] = entries[r].length;
+                /* Zero the offset/length of invalid (NULL) list rows: DuckDB may
+                 * leave arbitrary values there, and a downstream consumer that
+                 * sizes the child from offset+length must not see garbage. */
+                if (validity && !duckdb_validity_row_is_valid(validity, r)) {
+                    v->list_offsets[r] = 0;
+                    v->list_lengths[r] = 0;
+                } else {
+                    v->list_offsets[r] = entries[r].offset;
+                    v->list_lengths[r] = entries[r].length;
+                }
             }
         } else {
             cv = duckdb_array_vector_get_child(vec);
@@ -644,7 +653,7 @@ static void rducks_quack_copy_validity_out(const rdx_qk_vector *v, duckdb_vector
 
 static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rducks_type_desc_t *desc,
                                                duckdb_vector out, idx_t n, char *err, size_t cap) {
-    if (desc->kind == RDUCKS_KIND_STRUCT || desc->kind == RDUCKS_KIND_UNION) {
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
         size_t f;
         if (v->nchildren != (uint32_t)desc->field_count) {
             rducks_format_error_message(err, cap, "Rducks wire struct result has the wrong field count");

@@ -14,7 +14,7 @@ evaluation modes for the scalar UDF, not separate DuckDB function kinds.
 | Public plan | Engine ID | Scalar evaluation mode | Vectorized evaluation mode | Notes |
 | --- | --- | --- | --- | --- |
 | internal `direct + serial` | `direct_serial` | supported | supported | Reference path; constructed internally, not exposed publicly. |
-| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | supported | supported | Direct DuckDB-vector marshalling with owned queued input/result state; R work stays on the recorded R thread. The only public plan. |
+| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | supported | supported | Direct DuckDB-vector marshalling with owned queued input/result state; R work stays on the recorded R thread. |
 | `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | supported | supported | Persistent worker processes, native NNG request/reply, owned Quack wire bytes. Covers the wire-supported scalar types (see below); other signatures are rejected at registration. |
 
 Invalid marshalling/concurrency pairs fail validation.

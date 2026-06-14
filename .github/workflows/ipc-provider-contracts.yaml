@@ -52,11 +52,22 @@ jobs:
 
       - name: Run focused no-Arrow provider contract tests
         run: |
-          tinytest::run_test_file("inst/tinytest/test_noarrow_dependency.R")
-          tinytest::run_test_file("inst/tinytest/test_execution_plan_noarrow.R")
-          tinytest::run_test_file("inst/tinytest/test_quack_codec_roundtrip.R")
-          tinytest::run_test_file("inst/tinytest/test_direct_scalar_noarrow.R")
-          tinytest::run_test_file("inst/tinytest/test_wire_support_contract_noarrow.R")
+          # run_test_file() prints failures but still returns normally, so the
+          # results must be inspected explicitly or a failing test would pass CI.
+          files <- c(
+            "inst/tinytest/test_noarrow_dependency.R",
+            "inst/tinytest/test_execution_plan_noarrow.R",
+            "inst/tinytest/test_quack_codec_roundtrip.R",
+            "inst/tinytest/test_direct_scalar_noarrow.R",
+            "inst/tinytest/test_wire_support_contract_noarrow.R"
+          )
+          ok <- TRUE
+          for (f in files) {
+            res <- tinytest::run_test_file(f)
+            print(res)
+            if (!all(vapply(res, isTRUE, logical(1)))) ok <- FALSE
+          }
+          if (!ok) stop("focused no-Arrow contract tests failed")
         shell: Rscript {0}
 
       - name: Run worker-process ipc roundtrip matrix (all advertised wire types)

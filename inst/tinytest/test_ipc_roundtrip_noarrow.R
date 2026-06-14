@@ -153,7 +153,11 @@ local({
   }
 
   # Gated types must be rejected at registration under the ipc plan, not fail
-  # later in a worker. The native bridge does not cover them yet.
+  # later in a worker. The native bridge does not cover them yet. Reset to
+  # single-thread first: registration requires single-thread mode, so without
+  # this reset expect_error() could pass on the thread-state error instead of the
+  # wire-support rejection. The error-text assertion pins the real reason.
+  rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   rejected <- list(
     list(name = "rej_geometry", type = GEOMETRY),
     list(name = "rej_variant",  type = VARIANT),
@@ -165,7 +169,16 @@ local({
     expect_error(
       rducks_register_scalar_udf(con, case$name, function(x) x,
                                  args = list(case$type), returns = case$type),
+      pattern = "cannot use the Quack wire marshalling",
       info = paste0("ipc registration must reject: ", case$name)
     )
   }
+
+  # Dynamic (omitted-args) UDFs are not on the wire and must be rejected at
+  # registration, not deferred to a worker failure.
+  expect_error(
+    rducks_register_scalar_udf(con, "rej_dynamic", function(...) 1L, returns = INTEGER),
+    pattern = "does not support dynamic",
+    info = "ipc registration must reject dynamic varargs"
+  )
 })

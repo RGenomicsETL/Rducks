@@ -651,6 +651,17 @@ rducks_validate_execution_plan_for_registration <- function(plan, spec) {
     }
   }
   if (identical(plan$marshalling, "wire")) {
+    # Dynamic varargs resolve their concrete argument types at DuckDB bind time,
+    # after the wire-support check below has already run, so they would bypass it
+    # and only fail in a worker. The wire codec does not carry dynamic arguments;
+    # reject them at registration (strict-plan rule).
+    if (isTRUE(spec$dynamic_args)) {
+      stop(
+        "Rducks execution plan ", plan$plan_id,
+        " does not support dynamic (omitted-args) scalar UDFs; declare args for transport = 'ipc'",
+        call. = FALSE
+      )
+    }
     unsupported <- unique(unlist(lapply(c(spec$arg_types %||% list(), list(spec$return_type)), rducks_wire_unsupported_types), use.names = FALSE))
     unsupported <- unsupported[nzchar(unsupported)]
     if (length(unsupported)) {

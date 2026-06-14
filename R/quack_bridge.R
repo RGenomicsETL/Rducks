@@ -130,8 +130,10 @@ rducks_quack_storage_from_array <- function(array) {
     interval = list(months = st$months, days = st$days, micros = st$micros),
     list = list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths),
                 child = rducks_quack_column_from_array(st$child)),
-    map = list(offsets = as.numeric(st$offsets), lengths = as.numeric(st$lengths),
-               child = rducks_quack_column_from_array(st$entries)),
+    # MAP/UNION are not on the wire yet (rejected at registration). The wire MAP
+    # model is LIST(STRUCT(key, value)); wiring it needs the entry-struct shape,
+    # so fail loudly rather than reference a half-built storage layout.
+    map = stop("Rducks quack bridge: MAP is not supported on the wire yet", call. = FALSE),
     array = list(child = rducks_quack_column_from_array(st$child)),
     struct = lapply(st$fields, rducks_quack_column_from_array),
     stop("Rducks quack bridge: storage mapping for ", kind, " is not implemented", call. = FALSE)
