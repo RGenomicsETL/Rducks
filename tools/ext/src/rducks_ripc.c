@@ -295,11 +295,12 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
 
 /* ---- DuckDB <-> Quack-IR bridge for the RIPC worker boundary ----
  * Pure C (runs off the recorded R thread). Handles fixed-width scalars, decimal
- * and enum storage, varchar/blob/bit, and the LIST/ARRAY/STRUCT containers
- * (recursively, over supported leaf types). MAP, UNION, geometry, and variant
- * are not yet supported on the wire path and fail cleanly via build_type. The
- * Quack IR is a DuckDB DataChunk subset, so the fixed-width and validity copies
- * are direct. */
+ * and enum storage, varchar/blob/bit, GEOMETRY (as opaque physical bytes via a
+ * BLOB column), and the LIST/ARRAY/STRUCT/MAP/UNION containers (recursively, over
+ * supported leaf types; MAP as LIST(STRUCT(key,value)), UNION as the physical
+ * STRUCT(tag,members)). VARIANT is not yet supported on the wire path and fails
+ * cleanly via build_type. The Quack IR is a DuckDB DataChunk subset, so the
+ * fixed-width and validity copies are direct. */
 
 static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
     uint32_t id = 0U;
@@ -498,14 +499,20 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
             cv = duckdb_list_vector_get_child(vec);
             /* Only marshal the child rows actually referenced by valid entries
              * (max offset+length), not the full child vector, which may carry
-             * trailing slack. Offsets stay valid since they are all below the
-             * computed extent. */
+             * trailing slack. Reject (do not clamp) any entry whose range falls
+             * outside the child vector; the bound is overflow-safe. */
             for (r = 0; r < rows; r++) {
+                uint64_t off, len;
                 if (validity && !duckdb_validity_row_is_valid(validity, r)) continue;
-                uint64_t end = entries[r].offset + entries[r].length;
-                if (end > max_extent) max_extent = end;
+                off = entries[r].offset;
+                len = entries[r].length;
+                if (off > (uint64_t)full_size || len > (uint64_t)full_size - off) {
+                    rdx_qk_vector_free(v);
+                    rducks_format_error_message(err, cap, "DuckDB list entry references rows beyond the child vector");
+                    return NULL;
+                }
+                if (off + len > max_extent) max_extent = off + len;
             }
-            if (max_extent > (uint64_t)full_size) max_extent = (uint64_t)full_size;
             child_rows = (idx_t)max_extent;
             if (!rdx_qk_vector_alloc_list(v, max_extent)) {
                 rdx_qk_vector_free(v);
@@ -554,11 +561,17 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
         rdx_qk_vector *entry;
         uint64_t *struct_validity;
         for (r = 0; r < rows; r++) {
+            uint64_t off, len;
             if (validity && !duckdb_validity_row_is_valid(validity, r)) continue;
-            uint64_t end = entries[r].offset + entries[r].length;
-            if (end > max_extent) max_extent = end;
+            off = entries[r].offset;
+            len = entries[r].length;
+            if (off > (uint64_t)full_size || len > (uint64_t)full_size - off) {
+                rdx_qk_vector_free(v);
+                rducks_format_error_message(err, cap, "DuckDB map entry references rows beyond the child vector");
+                return NULL;
+            }
+            if (off + len > max_extent) max_extent = off + len;
         }
-        if (max_extent > (uint64_t)full_size) max_extent = (uint64_t)full_size;
         if (!rdx_qk_vector_alloc_list(v, max_extent)) {
             rdx_qk_vector_free(v);
             rducks_format_error_message(err, cap, "out of memory allocating Rducks wire map offsets");

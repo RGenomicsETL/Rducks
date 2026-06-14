@@ -114,10 +114,12 @@ local({
                                args = list(case$type), returns = case$type)
   }
 
-  # GEOMETRY (WKB raw bytes) cannot be produced inline in core DuckDB SQL, so it
-  # is exercised by composing a maker (INTEGER -> GEOMETRY, builds bytes in R)
-  # with an identity and an inspector (GEOMETRY -> VARCHAR). This covers geometry
-  # both as a wire result (maker) and a wire input (identity/inspector).
+  # GEOMETRY crosses the boundary as its opaque physical bytes (WKB for a real
+  # geometry); the wire transports those bytes verbatim, so the test uses
+  # arbitrary byte payloads rather than valid WKB. Core DuckDB SQL cannot produce
+  # a GEOMETRY inline, so it is exercised by composing a maker (INTEGER ->
+  # GEOMETRY, builds bytes in R) with an identity and an inspector (GEOMETRY ->
+  # VARCHAR), covering geometry both as a wire result and a wire input.
   rducks_register_scalar_udf(con, "g_make", function(x) as.raw(c(x %% 256L, (x + 1L) %% 256L, 7L)),
                              args = list(INTEGER), returns = GEOMETRY)
   rducks_register_scalar_udf(con, "g_id", function(x) x, args = list(GEOMETRY), returns = GEOMETRY)

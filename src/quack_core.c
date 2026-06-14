@@ -1126,6 +1126,15 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             rdx_qk_set_error(err, "list/map vector is missing its child column");
             goto fail;
         }
+        /* The child must have been decoded with exactly the declared cardinality.
+         * If the child-size and child-vector fields arrive out of order (or a
+         * field is duplicated to mutate the cardinality after the child decode),
+         * these disagree and the entry bounds would reference rows the child does
+         * not actually hold. */
+        if (v->children[0]->rows != v->list_child_rows) {
+            rdx_qk_set_error(err, "list/map child row count disagrees with the declared cardinality");
+            goto fail;
+        }
         if (v->rows > 0 && (!v->list_offsets || !v->list_lengths)) {
             rdx_qk_set_error(err, "list/map vector is missing offsets or lengths");
             goto fail;

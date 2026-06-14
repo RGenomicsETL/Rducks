@@ -315,7 +315,27 @@ static void rdx_qkr_uuid_from_bytes(const uint8_t *src, char out[37]) {
 
 /* ---------------- spec <-> rdx_qk_type ---------------- */
 
-static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth) {
+/* Building a type from a spec recurses into children and can Rf_error()
+ * (nesting limit, OOM) after the parent type is allocated. The body runs under
+ * R_UnwindProtect so the in-flight type is freed on any unwind; recursive child
+ * builds nest their own protection, so each level frees exactly its own type. */
+static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth);
+
+typedef struct {
+    SEXP spec;
+    unsigned depth;
+    rdx_qk_type *t;
+} rdx_qkr_tfs_ctx;
+
+static void rdx_qkr_tfs_cleanup(void *vctx, Rboolean jump) {
+    rdx_qkr_tfs_ctx *c = (rdx_qkr_tfs_ctx *)vctx;
+    if (jump && c->t) { rdx_qk_type_free(c->t); c->t = NULL; }
+}
+
+static SEXP rdx_qkr_tfs_body(void *vctx) {
+    rdx_qkr_tfs_ctx *ctx = (rdx_qkr_tfs_ctx *)vctx;
+    SEXP spec = ctx->spec;
+    unsigned depth = ctx->depth;
     rdx_qk_type *t;
     SEXP children, labels;
     R_xlen_t i;
@@ -323,6 +343,7 @@ static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth) {
     if (TYPEOF(spec) != VECSXP) Rf_error("Rducks quack codec: type spec must be a list");
     t = rdx_qk_type_new((uint32_t)rdx_qkr_int_field(spec, "id", 0));
     if (!t) Rf_error("Rducks quack codec: out of memory building type");
+    ctx->t = t; /* register for cleanup before any further error can fire */
     t->width = (uint8_t)rdx_qkr_int_field(spec, "width", 0);
     t->scale = (uint8_t)rdx_qkr_int_field(spec, "scale", 0);
     t->array_size = (uint32_t)rdx_qkr_int_field(spec, "array_size", 0);
@@ -335,8 +356,7 @@ static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth) {
                                    : "";
             rdx_qk_type *child = rdx_qkr_type_from_spec(VECTOR_ELT(children, i), depth + 1);
             if (!rdx_qk_type_add_child(t, child, name)) {
-                rdx_qk_type_free(child);
-                rdx_qk_type_free(t);
+                rdx_qk_type_free(child); /* orphan: not attached to t */
                 Rf_error("Rducks quack codec: out of memory building type children");
             }
         }
@@ -347,11 +367,22 @@ static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth) {
         const char **tmp = (const char **)R_alloc((size_t)n, sizeof(char *));
         for (i = 0; i < n; i++) tmp[i] = CHAR(STRING_ELT(labels, i));
         if (!rdx_qk_type_set_enum_labels(t, tmp, (uint32_t)n)) {
-            rdx_qk_type_free(t);
             Rf_error("Rducks quack codec: out of memory building enum labels");
         }
     }
-    return t;
+    return R_NilValue;
+}
+
+static rdx_qk_type *rdx_qkr_type_from_spec(SEXP spec, unsigned depth) {
+    rdx_qkr_tfs_ctx ctx;
+    SEXP cont;
+    ctx.spec = spec;
+    ctx.depth = depth;
+    ctx.t = NULL;
+    cont = PROTECT(R_MakeUnwindCont());
+    R_UnwindProtect(rdx_qkr_tfs_body, &ctx, rdx_qkr_tfs_cleanup, &ctx, cont);
+    UNPROTECT(1);
+    return ctx.t;
 }
 
 static SEXP rdx_qkr_spec_from_type(const rdx_qk_type *t) {

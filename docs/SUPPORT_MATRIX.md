@@ -53,7 +53,7 @@ registration on `transport = "ipc"` until the native bridge covers it.
 | Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | Values are materialized/copied as R values or vectors. Validity bitmaps remain authoritative for NULLs. |
 | String/binary | `VARCHAR`, `BLOB` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. |
 | Bit | `BIT` | yes | yes | `rducks_bits` (packed bits + length); transported as DuckDB's physical bit storage (padding-header byte + MSB-first bits). |
-| Geometry | `GEOMETRY` | yes | yes | `GEOMETRY` crosses the R boundary as WKB `raw` bytes; it is physically a varlen blob and rides the wire as a BLOB column, reconstructed from its declared type. |
+| Geometry | `GEOMETRY` | yes | yes | `GEOMETRY` crosses the R boundary as its opaque physical `raw` bytes (WKB for a real geometry); it is physically a varlen blob and rides the wire as a BLOB column, reconstructed from its declared type. The bytes are transported verbatim, not parsed. |
 | Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | rejected | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
 | Temporal | `DATE`, `TIME`, `TIMESTAMP` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
 | Interval | `INTERVAL` | yes | yes | `rducks_interval` value class; transported as the 16-byte months/days/micros storage. |
