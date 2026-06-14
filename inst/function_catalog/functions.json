@@ -15,7 +15,7 @@
     "signature": "rducks_execution_plan(transport = c('inproc', 'ipc'), ...)",
     "returns": "rducks_execution_plan",
     "description": "Create an execution plan: the direct in-process plan ('inproc') or the worker-process Quack wire plan ('ipc').",
-    "notes": ["The 'ipc' plan covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, and LIST/ARRAY/STRUCT of supported types; UNION and variant are rejected at registration."]
+    "notes": ["The 'ipc' plan covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration."]
   },
   {
     "name": "rducks_register_scalar_udf",

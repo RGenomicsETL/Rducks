@@ -72,11 +72,22 @@ rducks_quack_enum_labels <- function(type) {
 
 rducks_quack_spec <- function(type) {
   kind <- rducks_quack_kind(type)
-  # UNION/VARIANT are not on the wire yet; reject up front so no half-built spec
-  # is constructed for them (registration already blocks these types).
-  if (kind %in% c("union", "variant")) {
-    stop("Rducks quack bridge: ", toupper(kind),
-         " is not on the Rducks wire yet", call. = FALSE)
+  # VARIANT is not on the wire yet; reject up front so no half-built spec is
+  # constructed for it (registration already blocks it).
+  if (kind == "variant") {
+    stop("Rducks quack bridge: VARIANT is not on the Rducks wire yet", call. = FALSE)
+  }
+  if (kind == "union") {
+    # UNION rides the wire as DuckDB's physical STRUCT(tag UTINYINT, members...);
+    # the explicit tag avoids the active-but-NULL member ambiguity.
+    children <- rducks_type_children(type)
+    member_names <- rducks_type_child_names(type)
+    specs <- c(
+      list(rducks_quack_spec_node(rducks_quack_ltype_ids[["u8"]])),
+      lapply(children, rducks_quack_spec)
+    )
+    names(specs) <- c("", member_names)
+    return(rducks_quack_spec_node(rducks_quack_ltype_ids[["struct"]], children = specs))
   }
   id <- rducks_quack_ltype_ids[[kind]]
   if (kind == "decimal") {
@@ -149,6 +160,13 @@ rducks_quack_storage_from_array <- function(array) {
     },
     array = list(child = rducks_quack_column_from_array(st$child)),
     struct = lapply(st$fields, rducks_quack_column_from_array),
+    # UNION rides as STRUCT(tag UTINYINT, members...): child 0 is the 0-based tag
+    # (native tags are 1-based; NULL union rows carry NA, marked null by the tag
+    # column and the union-level validity), children 1..n are the member columns.
+    union = c(
+      list(list(valid = NULL, data = as.integer(st$tags - 1L))),
+      lapply(st$members, rducks_quack_column_from_array)
+    ),
     stop("Rducks quack bridge: storage mapping for ", kind, " is not implemented", call. = FALSE)
   )
   list(valid = valid, data = data)
@@ -209,6 +227,22 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
         rducks_quack_array_from_storage(child_type, child_col, as.integer(child_col$rows %||% rows))
       }, children, data)
       list(fields = fields)
+    },
+    # UNION arrives as STRUCT(tag, members...): child 0 is the 0-based tag,
+    # children 1..n are the members. Rebuild 1-based tags and member arrays.
+    union = {
+      children <- rducks_type_children(type)
+      tag_col <- data[[1L]]
+      tag_vals <- rducks_native_array_to_values(
+        rducks_quack_array_from_storage(rducks_as_type(UTINYINT), tag_col,
+                                        as.integer(tag_col$rows %||% rows))
+      )
+      tags <- ifelse(is.na(tag_vals), NA_integer_, as.integer(tag_vals) + 1L)
+      members <- lapply(seq_along(children), function(j) {
+        mc <- data[[j + 1L]]
+        rducks_quack_array_from_storage(children[[j]], mc, as.integer(mc$rows %||% rows))
+      })
+      list(tags = tags, members = members)
     },
     stop("Rducks quack bridge: storage mapping for ", kind, " is not implemented", call. = FALSE)
   )

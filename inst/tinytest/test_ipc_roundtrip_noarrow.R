@@ -124,6 +124,13 @@ local({
   rducks_register_scalar_udf(con, "g_show", function(x) paste(as.integer(x), collapse = ","),
                              args = list(GEOMETRY), returns = VARCHAR)
 
+  # UNION cannot be projected to R by the DuckDB client on this build, so it is
+  # exercised with an identity UDF and union_extract inside SQL. The maker is
+  # registered under threads=1 with the others.
+  rducks_register_scalar_udf(con, "u_id", function(x) x,
+                             args = list(UNION(a = INTEGER, b = VARCHAR)),
+                             returns = UNION(a = INTEGER, b = VARCHAR))
+
   # Bump DuckDB threads for concurrent off-main execution -> NNG worker roundtrip.
   rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
 
@@ -132,6 +139,18 @@ local({
     "WHERE g_show(g_id(g_make(j))) <> (mod(j, 256) || ',' || mod(j + 1, 256) || ',7')"
   ))$c
   expect_equal(as.integer(geom_mismatch), 0L, info = "ipc roundtrip: geometry (maker/id/show)")
+
+  # UNION roundtrip: alternating tags, plus an active-but-NULL member (tag 'a',
+  # value NULL) which must keep its tag — the explicit-tag wire encoding has no
+  # active-vs-inactive ambiguity. mod 3 == 2 selects the NULL-valued 'a' case.
+  union_mismatch <- DBI::dbGetQuery(con, paste0(
+    "SELECT count(*) c FROM (SELECT i::INTEGER j FROM range(4000) t(i)) s WHERE CASE ",
+    "WHEN mod(j, 3) = 0 THEN union_extract(u_id(union_value(a := j)), 'a') IS DISTINCT FROM j ",
+    "WHEN mod(j, 3) = 1 THEN union_extract(u_id(union_value(b := 'v' || j)), 'b') IS DISTINCT FROM ('v' || j) ",
+    "ELSE union_extract(u_id(union_value(a := NULL::INTEGER)), 'a') IS DISTINCT FROM NULL::INTEGER ",
+    "OR union_tag(u_id(union_value(a := NULL::INTEGER))) IS DISTINCT FROM 'a' END"
+  ))$c
+  expect_equal(as.integer(union_mismatch), 0L, info = "ipc roundtrip: union (tags + active-null member)")
 
   for (case in cases) {
     # Mix a NULL into the column so each query exercises value + NULL paths.
@@ -186,8 +205,8 @@ local({
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   rejected <- list(
     list(name = "rej_variant",  type = VARIANT),
-    list(name = "rej_union",    type = UNION(a = INTEGER, b = VARCHAR)),
-    list(name = "rej_list_var", type = LIST(VARIANT))
+    list(name = "rej_list_var", type = LIST(VARIANT)),
+    list(name = "rej_union_var", type = UNION(a = VARIANT))
   )
   for (case in rejected) {
     expect_error(

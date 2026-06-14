@@ -164,8 +164,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' extension encodes each input chunk to wire bytes, the worker decodes them,
 #' runs the R function, and returns wire-encoded results that the extension
 #' writes back to DuckDB. Worker-process types currently cover fixed-width
-#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, and `LIST`/`ARRAY`/`STRUCT` of
-#' supported types; `UNION` and variant are rejected at registration until the
+#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
+#' `LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at registration until the
 #' native bridge covers them. It maps to the internal `"ipc_nng_pool"` engine.
 #'
 #' @param transport Placement/transport. `"inproc"` evaluates in the current R
@@ -593,9 +593,10 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 # and decodes end-to-end, including BIT (transported as DuckDB's physical bit
 # storage; DECIMAL and ENUM are handled separately below, and LIST/ARRAY/STRUCT
 # recurse on their children; GEOMETRY rides as a BLOB column; MAP rides as
-# LIST(STRUCT(key, value))). UNION and variant are not yet wired through the
-# native bridge, so they are rejected at registration (strict-plan rule: no
-# register-then-fail-at-execution).
+# LIST(STRUCT(key, value)); UNION rides as the physical STRUCT(tag, members)).
+# VARIANT is not yet wired through the native bridge (and is unsupported on the
+# direct path of this DuckDB build), so it is rejected at registration
+# (strict-plan rule: no register-then-fail-at-execution).
 rducks_wire_supported_scalar_types <- function() {
   c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
     "varchar", "blob", "bit", "geometry", "date", "time", "timestamp", "hugeint",
@@ -614,9 +615,9 @@ rducks_wire_unsupported_types <- function(type) {
   if (identical(kind, "decimal") || identical(kind, "enum")) {
     return(character())
   }
-  # LIST/ARRAY/STRUCT/MAP are marshalled recursively by the native bridge; they
-  # are supported as long as every child type is. UNION is not wired yet.
-  if (kind %in% c("list", "array", "struct", "map")) {
+  # LIST/ARRAY/STRUCT/MAP/UNION are marshalled recursively by the native bridge;
+  # they are supported as long as every child (member) type is.
+  if (kind %in% c("list", "array", "struct", "map", "union")) {
     children <- rducks_type_children(type)
     unsupported <- unlist(lapply(children, rducks_wire_unsupported_types), use.names = FALSE)
     return(if (length(unsupported)) unique(unsupported) else character())

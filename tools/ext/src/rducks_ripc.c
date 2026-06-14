@@ -386,6 +386,31 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
         }
         return t;
     }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        /* DuckDB stores UNION physically as STRUCT(tag UTINYINT, member0, ...).
+         * Transport it as that struct so the active member tag is explicit and an
+         * active-but-NULL member is not confused with an inactive one. */
+        rdx_qk_type *t = rdx_qk_type_new(RDX_QK_LTYPE_STRUCT);
+        rdx_qk_type *tag;
+        size_t f;
+        if (!t) return NULL;
+        tag = rdx_qk_type_new(RDX_QK_LTYPE_UTINYINT);
+        if (!tag || !rdx_qk_type_add_child(t, tag, "")) {
+            if (tag) rdx_qk_type_free(tag);
+            rdx_qk_type_free(t);
+            return NULL;
+        }
+        for (f = 0; f < desc->field_count; f++) {
+            rdx_qk_type *m = rducks_quack_build_type(desc->field_types[f]);
+            const char *mn = desc->field_names ? desc->field_names[f] : NULL;
+            if (!m || !rdx_qk_type_add_child(t, m, mn)) {
+                if (m) rdx_qk_type_free(m);
+                rdx_qk_type_free(t);
+                return NULL;
+            }
+        }
+        return t;
+    }
     if (desc->kind != RDUCKS_KIND_SCALAR) return NULL;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL: id = RDX_QK_LTYPE_BOOLEAN; break;
@@ -589,6 +614,32 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
         v->children[0] = entry;
         return v;
     }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        /* DuckDB UNION is physically STRUCT(tag, member0, ...). Read it as that
+         * struct: child 0 is the UTINYINT tag, children 1..n are the members. */
+        rducks_type_desc_t tag_desc;
+        size_t f;
+        memset(&tag_desc, 0, sizeof(tag_desc));
+        tag_desc.kind = RDUCKS_KIND_SCALAR;
+        tag_desc.scalar = RDUCKS_TYPE_U8;
+        v->nchildren = (uint32_t)(desc->field_count + 1U);
+        v->children = (rdx_qk_vector **)calloc(desc->field_count + 1U, sizeof(*v->children));
+        if (!v->children) {
+            rdx_qk_vector_free(v);
+            rducks_format_error_message(err, cap, "out of memory allocating Rducks wire union children");
+            return NULL;
+        }
+        v->children[0] = rducks_quack_vector_from_duckdb(t->children[0], &tag_desc,
+                                                        duckdb_struct_vector_get_child(vec, 0), rows, err, cap);
+        if (!v->children[0]) { rdx_qk_vector_free(v); return NULL; }
+        for (f = 0; f < desc->field_count; f++) {
+            v->children[f + 1U] = rducks_quack_vector_from_duckdb(t->children[f + 1U], desc->field_types[f],
+                                                                 duckdb_struct_vector_get_child(vec, (idx_t)(f + 1U)),
+                                                                 rows, err, cap);
+            if (!v->children[f + 1U]) { rdx_qk_vector_free(v); return NULL; }
+        }
+        return v;
+    }
     if (rducks_quack_is_varlen(desc)) {
         duckdb_string_t *strs = (duckdb_string_t *)duckdb_vector_get_data(vec);
         size_t pool = 0U;
@@ -782,6 +833,30 @@ static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rdu
         if (!rducks_quack_write_vector_to_duckdb(entry->children[1], desc->value,
                                                  duckdb_struct_vector_get_child(struct_child, 1), total, err, cap)) {
             return 0;
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        /* Write back to the physical STRUCT(tag, member0, ...) union layout. */
+        rducks_type_desc_t tag_desc;
+        size_t f;
+        if (v->nchildren != (uint32_t)(desc->field_count + 1U)) {
+            rducks_format_error_message(err, cap, "Rducks wire union result has the wrong member count");
+            return 0;
+        }
+        memset(&tag_desc, 0, sizeof(tag_desc));
+        tag_desc.kind = RDUCKS_KIND_SCALAR;
+        tag_desc.scalar = RDUCKS_TYPE_U8;
+        rducks_quack_copy_validity_out(v, out, n);
+        if (!rducks_quack_write_vector_to_duckdb(v->children[0], &tag_desc,
+                                                 duckdb_struct_vector_get_child(out, 0), n, err, cap)) {
+            return 0;
+        }
+        for (f = 0; f < desc->field_count; f++) {
+            if (!rducks_quack_write_vector_to_duckdb(v->children[f + 1U], desc->field_types[f],
+                                                     duckdb_struct_vector_get_child(out, (idx_t)(f + 1U)), n, err, cap)) {
+                return 0;
+            }
         }
         return 1;
     }

@@ -44,9 +44,9 @@ temporary tables or views.
 The `direct` column covers the in-process `inproc` plan. The `wire` column
 covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
 bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
-`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, and `LIST`/`ARRAY`/`STRUCT` of
-supported types; `UNION` and variant are rejected at registration on
-`transport = "ipc"` until the native bridge covers them.
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at
+registration on `transport = "ipc"` until the native bridge covers it.
 
 | Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
 | --- | --- | --- | --- | --- |
@@ -63,7 +63,7 @@ supported types; `UNION` and variant are rejected at registration on
 | Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes where the child is supported | yes where the child is supported | Child descriptors are validated recursively; the wire bridge marshals offsets/lengths and the child vector. |
 | Struct | `STRUCT(...)` | yes where children are supported | yes where children are supported | The wire bridge marshals each member vector recursively; arbitrary nesting (struct of list, list of struct, etc.) is covered. |
 | Map | `MAP(...)` | yes where children are supported | yes where children are supported | Transported as `LIST(STRUCT(key, value))`, matching DuckDB's physical layout; key/value child types are validated recursively. |
-| Union | `UNION(...)` | yes where children are supported | rejected | The direct UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled. Not yet in the worker bridge. |
+| Union | `UNION(...)` | yes where children are supported | yes where members are supported | Transported as DuckDB's physical `STRUCT(tag, members...)`, so the active member tag is explicit (an active-but-NULL member is distinct from an inactive one). Member types are validated recursively. |
 
 ## NULL and error semantics
 

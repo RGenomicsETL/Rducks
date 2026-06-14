@@ -34,7 +34,7 @@ execution.
 - `wire` (`ipc`): DuckDB chunk -> owned Quack wire bytes (DuckDB
   BinarySerializer subset) -> worker process -> owned Quack result bytes ->
   DuckDB output. Enabled for fixed-width scalars, VARCHAR/BLOB, DECIMAL,
-  INTERVAL, ENUM, BIT, GEOMETRY, MAP, and LIST/ARRAY/STRUCT of supported types; UNION and variant are rejected at
+  INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at
   registration until the native bridge covers them.
 
 ## DuckDB function kind, evaluation mode, and execution plan
