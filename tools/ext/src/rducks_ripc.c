@@ -860,6 +860,24 @@ static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rdu
         memset(&tag_desc, 0, sizeof(tag_desc));
         tag_desc.kind = RDUCKS_KIND_SCALAR;
         tag_desc.scalar = RDUCKS_TYPE_U8;
+        /* Validate every active tag is an existing member before writing into the
+         * DuckDB union. A buggy or external worker could return a tag past the
+         * member count (type equality alone cannot catch it: the tag column is
+         * just UTINYINT), which would index a non-existent union member. */
+        {
+            const rdx_qk_vector *tag = v->children[0];
+            idx_t r;
+            if (tag->type && rdx_qk_type_fixed_width(tag->type) == 1U && tag->data) {
+                const uint8_t *codes = (const uint8_t *)tag->data;
+                for (r = 0; r < n; r++) {
+                    if (tag->has_validity && !rdx_qk_vector_row_is_valid(tag, r)) continue;
+                    if ((size_t)codes[r] >= desc->field_count) {
+                        rducks_format_error_message(err, cap, "RIPC union result tag is out of range");
+                        return 0;
+                    }
+                }
+            }
+        }
         rducks_quack_copy_validity_out(v, out, n);
         if (!rducks_quack_write_vector_to_duckdb(v->children[0], &tag_desc,
                                                  duckdb_struct_vector_get_child(out, 0), n, err, cap)) {

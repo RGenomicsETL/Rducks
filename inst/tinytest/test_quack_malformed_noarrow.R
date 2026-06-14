@@ -76,3 +76,36 @@ for (n in seq_len(length(list_data) - 1L)) {
   )
 }
 expect_true(TRUE, info = "nested truncation fuzz completed without crashing")
+
+# A duplicate payload field in a vector object must be rejected (it would
+# otherwise overwrite an allocated buffer, leaking C heap).
+one_int <- Rducks:::rducks_wire_encode_values(list(INTEGER), list(42L), 1L)
+data_pat <- c(0x66L, 0x00L, 0x04L)  # field 102, length 4
+di <- which(vapply(seq_len(length(one_int) - 2L),
+                   function(i) all(as.integer(one_int[i:(i + 2L)]) == data_pat), logical(1)))
+if (length(di) == 1L) {
+  block <- one_int[di:(di + 6L)]  # the 7-byte field-102 block (header + 4 data bytes)
+  dup <- c(one_int[seq_len(di + 6L)], block, one_int[(di + 7L):length(one_int)])
+  expect_error(
+    Rducks:::rducks_wire_decode_values(list(INTEGER), dup),
+    pattern = "duplicate field",
+    info = "duplicate vector payload field must be rejected"
+  )
+}
+
+# A UNION result whose tag references a non-existent member must be rejected,
+# never indexed out of range (defends the worker/external-response boundary).
+union_t <- UNION(a = INTEGER, b = VARCHAR)
+union_p <- Rducks:::rducks_wire_encode_values(list(union_t), list(list(rducks_union("a", 7L))), 1L)
+tag_pat <- c(0x67L, 0x00L, 0x03L, 0x64L, 0x00L, 0x00L, 0x66L, 0x00L, 0x01L)  # struct children -> tag child data
+ti <- which(vapply(seq_len(length(union_p) - length(tag_pat)),
+                   function(i) all(as.integer(union_p[i:(i + length(tag_pat) - 1L)]) == tag_pat), logical(1)))
+if (length(ti) == 1L) {
+  attack <- union_p
+  attack[ti + length(tag_pat)] <- as.raw(255L)  # tag 255 for a 2-member union
+  expect_error(
+    Rducks:::rducks_wire_decode_values(list(union_t), attack),
+    pattern = "union tag references a non-existent member",
+    info = "out-of-range union tag must be rejected"
+  )
+}

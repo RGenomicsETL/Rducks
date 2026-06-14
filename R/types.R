@@ -542,6 +542,9 @@ UNION <- function(...) {
   if (anyDuplicated(member_names)) {
     stop("UNION member names must be unique", call. = FALSE)
   }
+  if (length(members) > 255L) {
+    stop("UNION supports at most 255 members (DuckDB limit)", call. = FALSE)
+  }
   members <- lapply(members, function(member) if (rducks_type_inherits(member, "rducks_type")) member else rducks_type_object(member))
   rducks_type_construct_s7(
     token = sprintf(

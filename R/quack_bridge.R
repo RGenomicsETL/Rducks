@@ -238,6 +238,9 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
                                         as.integer(tag_col$rows %||% rows))
       )
       tags <- ifelse(is.na(tag_vals), NA_integer_, as.integer(tag_vals) + 1L)
+      if (any(!is.na(tags) & (tags < 1L | tags > length(children)))) {
+        stop("Rducks quack bridge: union tag references a non-existent member", call. = FALSE)
+      }
       members <- lapply(seq_along(children), function(j) {
         mc <- data[[j + 1L]]
         rducks_quack_array_from_storage(children[[j]], mc, as.integer(mc$rows %||% rows))

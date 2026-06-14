@@ -906,6 +906,7 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
     uint64_t value, row;
     const uint8_t *ptr;
     uint64_t len;
+    uint32_t seen_fields = 0; /* bit (field - 90) set once a payload field is read */
     if (depth > RDX_QK_MAX_NESTING) {
         rdx_qk_set_error(err, "quack wire vector exceeds nesting limit");
         return 0;
@@ -918,6 +919,18 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
     for (;;) {
         if (!rdx_qk_read_field(r, &field, err)) goto fail;
         if (field == RDX_QK_OBJECT_END) break;
+        /* Each payload field may appear at most once per vector object. A
+         * duplicate would overwrite an already-allocated buffer/child pointer
+         * (a C heap leak) and could mutate cardinality after dependent fields
+         * were decoded; reject malformed payloads instead. */
+        if (field >= 90 && field <= 106) {
+            uint32_t bit = 1u << (field - 90);
+            if (seen_fields & bit) {
+                rdx_qk_set_error(err, "duplicate field in quack vector object");
+                goto fail;
+            }
+            seen_fields |= bit;
+        }
         switch (field) {
         case 90: /* vector_type */
             if (!rdx_qk_read_uleb(r, &value, err)) goto fail;
