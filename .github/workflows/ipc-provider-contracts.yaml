@@ -56,4 +56,15 @@ jobs:
           tinytest::run_test_file("inst/tinytest/test_execution_plan_noarrow.R")
           tinytest::run_test_file("inst/tinytest/test_quack_codec_roundtrip.R")
           tinytest::run_test_file("inst/tinytest/test_direct_scalar_noarrow.R")
+          tinytest::run_test_file("inst/tinytest/test_wire_support_contract_noarrow.R")
+        shell: Rscript {0}
+
+      - name: Run worker-process ipc roundtrip matrix (all advertised wire types)
+        if: runner.os == 'Linux'
+        env:
+          RDUCKS_RUN_IPC_TESTS: "true"
+        run: |
+          res <- tinytest::run_test_file("inst/tinytest/test_ipc_roundtrip_noarrow.R")
+          print(res)
+          if (!all(vapply(res, isTRUE, logical(1)))) stop("ipc roundtrip matrix failed")
         shell: Rscript {0}
