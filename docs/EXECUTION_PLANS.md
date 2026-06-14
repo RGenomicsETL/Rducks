@@ -86,8 +86,9 @@ Unsupported combinations must fail. They must not silently switch:
   accepted by the direct support predicate. Unsupported signatures fail validation.
 - `wire`: owned Quack wire request/result bytes (DuckDB BinarySerializer subset),
   marshalled to worker R processes. Only valid with `multiprocess_parallel`. The
-  worker path currently covers fixed-width scalars plus VARCHAR/BLOB; other types
-  are rejected at registration until the native bridge covers them.
+  worker path currently covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, and
+  INTERVAL; ENUM, bit/geometry/variant, and nested types are rejected at
+  registration until the native bridge covers them.
   Selected scalar-UDF globals may be serialized normally or, with
   `ipc_globals_share = "mori"`, sent as same-host mori shared-memory references
   for large read-only R objects.
@@ -110,7 +111,7 @@ Unsupported combinations must fail. They must not silently switch:
 | --- | --- | --- | --- |
 | `direct_serial` | `direct + serial` | internal reference | Reference path; constructed internally for conformance, not exposed publicly. |
 | `direct_main_queue` | `direct + inproc_concurrent` | enabled (public `inproc`) | Queued direct marshalling; inputs/results use owned state before crossing threads. R work runs on the recorded R thread. |
-| `ipc_nng_pool` | `wire + multiprocess_parallel` | enabled (public `ipc`) | Native NNG request/reply with owned Quack wire bytes and persistent workers. Covers fixed-width scalars plus VARCHAR/BLOB; other types are rejected at registration. |
+| `ipc_nng_pool` | `wire + multiprocess_parallel` | enabled (public `ipc`) | Native NNG request/reply with owned Quack wire bytes and persistent workers. Covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, and INTERVAL; ENUM, bit/geometry/variant, and nested types are rejected at registration. |
 
 ## Enum storage (wire path)
 

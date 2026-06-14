@@ -99,9 +99,10 @@ maps to the internal \code{"direct_main_queue"} engine.
 Quack-style binary chunk payloads (a DuckDB BinarySerializer subset): the
 extension encodes each input chunk to wire bytes, the worker decodes them,
 runs the R function, and returns wire-encoded results that the extension
-writes back to DuckDB. Worker-process types are currently limited to
-fixed-width scalars, decimals, and varchar/blob. It maps to the internal
-\code{"ipc_nng_pool"} engine.
+writes back to DuckDB. Worker-process types currently cover fixed-width
+scalars, \code{VARCHAR}/\code{BLOB}, \code{DECIMAL}, and \code{INTERVAL}; \code{ENUM},
+bit/geometry/variant, and nested types are rejected at registration until the
+native bridge covers them. It maps to the internal \code{"ipc_nng_pool"} engine.
 }
 \examples{
 rducks_execution_plan("inproc")

@@ -8,7 +8,8 @@ library(Rducks)
 supported <- list(
   BOOLEAN, TINYINT, UTINYINT, SMALLINT, USMALLINT, INTEGER, UINTEGER,
   BIGINT, UBIGINT, FLOAT, DOUBLE, VARCHAR, BLOB, DATE, TIME, TIMESTAMP,
-  HUGEINT, UHUGEINT, UUID
+  HUGEINT, UHUGEINT, UUID, INTERVAL,
+  DECIMAL(4, 2), DECIMAL(9, 3), DECIMAL(18, 4), DECIMAL(30, 5)
 )
 for (type in supported) {
   expect_true(
@@ -20,7 +21,7 @@ for (type in supported) {
 # Types the native worker bridge does not cover yet must report as unsupported
 # so registration under the ipc plan rejects them instead of failing in a worker.
 unsupported <- list(
-  DECIMAL(10, 2), INTERVAL, ENUM(c("a", "b")), GEOMETRY, BIT, VARIANT,
+  ENUM(c("a", "b")), GEOMETRY, BIT, VARIANT,
   LIST(INTEGER), ARRAY(INTEGER, 3), STRUCT(a = INTEGER), MAP(INTEGER, INTEGER)
 )
 for (type in unsupported) {

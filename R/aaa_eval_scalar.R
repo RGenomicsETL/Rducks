@@ -14,6 +14,15 @@ rducks_native_prepared_inputs <- function(arg_types, values, n, nulls = NULL) {
         return(rep(FALSE, n))
       }
       column <- columns[[i]]
+      # Scalar/value-class columns get type-aware missing detection. This is
+      # required for the value classes that are themselves classed lists
+      # (rducks_decimal, rducks_interval): a generic is.list() check would
+      # inspect their fields rather than their rows. rducks_native_scalar_nulls
+      # returns per-row validity, so the row nulls are its negation.
+      if (!is.null(type) &&
+          rducks_type_inherits(type, c("rducks_scalar_type", "rducks_decimal_type", "rducks_enum_type"))) {
+        return(!rducks_native_scalar_nulls(type, column))
+      }
       if (is.data.frame(column)) {
         rep(FALSE, n)
       } else if (is.list(column) && !inherits(column, c("Date", "POSIXct", "POSIXlt", "difftime"))) {

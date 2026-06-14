@@ -48,7 +48,18 @@ local({
     list(name = "id_hugeint",  type = HUGEINT,  expr = "((i)::HUGEINT * 1000000000000000000)"),
     list(name = "id_uhugeint", type = UHUGEINT, expr = "((i)::UHUGEINT * 1000000000000000000)"),
     list(name = "id_uuid",   type = UUID,
-         expr = "('00000000-0000-0000-0000-' || lpad(i::VARCHAR, 12, '0'))::UUID")
+         expr = "('00000000-0000-0000-0000-' || lpad(i::VARCHAR, 12, '0'))::UUID"),
+    # DECIMAL across all four physical storage widths (2/4/8/16 bytes).
+    list(name = "id_dec2",   type = DECIMAL(4, 2),
+         expr = "((mod(i, 199) - 99)::DECIMAL(4, 2))"),
+    list(name = "id_dec4",   type = DECIMAL(9, 3),
+         expr = "((mod(i, 999999) - 500000)::DECIMAL(9, 3))"),
+    list(name = "id_dec8",   type = DECIMAL(12, 3),
+         expr = "(mod(i, 1000000)::DECIMAL(12, 3))"),
+    list(name = "id_dec16",  type = DECIMAL(30, 5),
+         expr = "(i::DECIMAL(30, 5) * 100000)"),
+    list(name = "id_int",    type = INTERVAL,
+         expr = "(to_seconds(mod(i, 1000)) + to_days(mod(i, 30)::INTEGER) + to_months(mod(i, 12)::INTEGER))")
   )
   for (case in cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,
@@ -72,8 +83,6 @@ local({
   # Gated types must be rejected at registration under the ipc plan, not fail
   # later in a worker. The native bridge does not cover them yet.
   rejected <- list(
-    list(name = "rej_decimal",  type = DECIMAL(10, 2)),
-    list(name = "rej_interval", type = INTERVAL),
     list(name = "rej_enum",     type = ENUM(c("a", "b"))),
     list(name = "rej_geometry", type = GEOMETRY),
     list(name = "rej_bit",      type = BIT),
