@@ -10,7 +10,7 @@ supported <- list(
   BIGINT, UBIGINT, FLOAT, DOUBLE, VARCHAR, BLOB, DATE, TIME, TIMESTAMP,
   HUGEINT, UHUGEINT, UUID, INTERVAL,
   DECIMAL(4, 2), DECIMAL(9, 3), DECIMAL(18, 4), DECIMAL(30, 5),
-  ENUM(c("a", "b")), ENUM(sprintf("e%04d", seq_len(300)))
+  ENUM(c("a", "b")), ENUM(sprintf("e%04d", seq_len(300))), BIT
 )
 for (type in supported) {
   expect_true(
@@ -22,7 +22,7 @@ for (type in supported) {
 # Types the native worker bridge does not cover yet must report as unsupported
 # so registration under the ipc plan rejects them instead of failing in a worker.
 unsupported <- list(
-  GEOMETRY, BIT, VARIANT,
+  GEOMETRY, VARIANT,
   LIST(INTEGER), ARRAY(INTEGER, 3), STRUCT(a = INTEGER), MAP(INTEGER, INTEGER)
 )
 for (type in unsupported) {

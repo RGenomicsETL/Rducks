@@ -12,7 +12,7 @@ rducks_quack_ltype_ids <- c(
   timestamp = 19L, timestamp_ns = 20L, decimal = 21L,
   f32 = 22L, f64 = 23L, varchar = 25L, blob = 26L, interval = 27L,
   u8 = 28L, u16 = 29L, u32 = 30L, u64 = 31L,
-  timestamp_tz = 32L, time_tz = 34L,
+  timestamp_tz = 32L, time_tz = 34L, bit = 36L,
   uhugeint = 49L, hugeint = 50L, uuid = 54L,
   struct = 100L, list = 101L, map = 102L, enum = 104L,
   union = 107L, array = 108L, variant = 109L
@@ -125,7 +125,8 @@ rducks_quack_storage_from_array <- function(array) {
     varchar = , uuid = ,
     i64 = , u64 = , hugeint = , uhugeint = , decimal = ,
     enum = st$values,
-    blob = st$payloads,
+    blob = ,
+    bit = st$payloads,
     interval = list(months = st$months, days = st$days, micros = st$micros),
     list = list(offsets = st$offsets, lengths = st$lengths,
                 child = rducks_quack_column_from_array(st$child)),
@@ -155,7 +156,8 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
     varchar = , uuid = ,
     i64 = , u64 = , hugeint = , uhugeint = , decimal = ,
     enum = list(values = data),
-    blob = list(payloads = data),
+    blob = ,
+    bit = list(payloads = data),
     interval = list(months = data$months, days = data$days, micros = data$micros),
     list = {
       children <- rducks_type_children(type)

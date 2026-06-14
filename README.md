@@ -51,7 +51,7 @@ format](https://github.com/duckdb/duckdb-quack): DuckDB
 payloads, aligned with DuckDB’s native chunk model. The codec lives in
 `src/quack_core.c` with R glue in `src/quack_codec.c`. The worker path
 currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
-`INTERVAL`, and `ENUM`; bit/geometry/variant and nested types are
+`INTERVAL`, `ENUM`, and `BIT`; geometry/variant and nested types are
 rejected at registration on the `ipc` plan until the native bridge
 covers them.
 

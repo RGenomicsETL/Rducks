@@ -164,8 +164,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' extension encodes each input chunk to wire bytes, the worker decodes them,
 #' runs the R function, and returns wire-encoded results that the extension
 #' writes back to DuckDB. Worker-process types currently cover fixed-width
-#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, and `ENUM`;
-#' bit/geometry/variant and nested types are rejected at registration until the
+#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, and `BIT`;
+#' geometry/variant and nested types are rejected at registration until the
 #' native bridge covers them. It maps to the internal `"ipc_nng_pool"` engine.
 #'
 #' @param transport Placement/transport. `"inproc"` evaluates in the current R
@@ -590,14 +590,14 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 }
 
 # Scalar types the native wire/RIPC bridge (tools/ext/src/rducks_ripc.c) encodes
-# and decodes end-to-end (DECIMAL and ENUM are handled separately below).
-# bit/geometry/variant and nested types are not yet wired through the native
-# bridge, so they are rejected at registration (strict-plan rule: no
-# register-then-fail-at-execution).
+# and decodes end-to-end, including BIT (transported as DuckDB's physical bit
+# storage; DECIMAL and ENUM are handled separately below). geometry/variant and
+# nested types are not yet wired through the native bridge, so they are rejected
+# at registration (strict-plan rule: no register-then-fail-at-execution).
 rducks_wire_supported_scalar_types <- function() {
   c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
-    "varchar", "blob", "date", "time", "timestamp", "hugeint", "uhugeint", "uuid",
-    "interval")
+    "varchar", "blob", "bit", "date", "time", "timestamp", "hugeint", "uhugeint",
+    "uuid", "interval")
 }
 
 rducks_wire_unsupported_types <- function(type) {

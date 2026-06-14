@@ -10,7 +10,7 @@ rducks_mode_semantics_rows <- list(
     error_semantics = "R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
     threading = "direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread",
     copy_semantics = "DuckDB vectors are materialized directly to R values",
-    notes = "the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, and ENUM; bit/geometry/variant and nested types are rejected at registration until the native bridge covers them"
+    notes = "the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, and BIT; geometry/variant and nested types are rejected at registration until the native bridge covers them"
   ),
   vectorized = list(
     mode = "vectorized",

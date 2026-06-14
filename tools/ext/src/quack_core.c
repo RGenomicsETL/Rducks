@@ -811,7 +811,8 @@ static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
                                       unsigned depth, rdx_qk_error *err);
 
 static int rdx_qk_vector_is_varlen(const rdx_qk_type *t) {
-    return t->id == RDX_QK_LTYPE_VARCHAR || t->id == RDX_QK_LTYPE_BLOB;
+    return t->id == RDX_QK_LTYPE_VARCHAR || t->id == RDX_QK_LTYPE_BLOB ||
+           t->id == RDX_QK_LTYPE_BIT;
 }
 
 static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,

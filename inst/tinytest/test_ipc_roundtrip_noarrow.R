@@ -59,7 +59,10 @@ local({
     list(name = "id_dec16",  type = DECIMAL(30, 5),
          expr = "(i::DECIMAL(30, 5) * 100000)"),
     list(name = "id_int",    type = INTERVAL,
-         expr = "(to_seconds(mod(i, 1000)) + to_days(mod(i, 30)::INTEGER) + to_months(mod(i, 12)::INTEGER))")
+         expr = "(to_seconds(mod(i, 1000)) + to_days(mod(i, 30)::INTEGER) + to_months(mod(i, 12)::INTEGER))"),
+    # BIT with bit-string lengths 1..24 so padding crosses byte boundaries.
+    list(name = "id_bit",    type = BIT,
+         expr = "(substr((mod(i, 255) + 1)::BIT::VARCHAR, 1, mod(i, 24) + 1))::BIT")
   )
   for (case in cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,
@@ -115,7 +118,7 @@ local({
   # later in a worker. The native bridge does not cover them yet.
   rejected <- list(
     list(name = "rej_geometry", type = GEOMETRY),
-    list(name = "rej_bit",      type = BIT),
+    list(name = "rej_variant",  type = VARIANT),
     list(name = "rej_list",     type = LIST(INTEGER)),
     list(name = "rej_struct",   type = STRUCT(a = INTEGER))
   )

@@ -66,6 +66,88 @@ static int rdx_qkr_int_field(SEXP spec, const char *name, int fallback) {
     return fallback;
 }
 
+/* ---------------- BIT physical <-> rducks_bits ----------------
+ * DuckDB stores BIT as a varlen blob whose first byte is the number of unused
+ * padding bits in the most significant position, followed by MSB-first bit data.
+ * The wire transports that physical form unchanged; the helpers below convert it
+ * to/from the rducks_bits object (list(data = packed raw, length = bit count)),
+ * matching the direct-path conversion in tools/ext/src/rducks_rc.c. */
+
+/* Physical byte length needed for a bit string of bit_length bits. */
+static size_t rdx_qkr_bit_physical_len(int bit_length) {
+    return (size_t)(1 + (bit_length + 7) / 8);
+}
+
+/* rducks_bits SEXP -> DuckDB physical bytes written at dst (must hold
+ * rdx_qkr_bit_physical_len). Returns the number of bytes written. */
+static size_t rdx_qkr_bit_to_physical(SEXP value, unsigned char *dst) {
+    SEXP data;
+    int bit_length, padding, i;
+    size_t len;
+    if (TYPEOF(value) != VECSXP || XLENGTH(value) < 2) {
+        Rf_error("Rducks quack codec: BIT rows must be rducks_bits objects or NULL");
+    }
+    data = VECTOR_ELT(value, 0);
+    bit_length = Rf_asInteger(VECTOR_ELT(value, 1));
+    if (TYPEOF(data) != RAWSXP || bit_length <= 0 || (R_xlen_t)bit_length > XLENGTH(data) * 8) {
+        Rf_error("Rducks quack codec: rducks_bits object has invalid storage");
+    }
+    padding = (8 - (bit_length % 8)) % 8;
+    len = rdx_qkr_bit_physical_len(bit_length);
+    memset(dst, 0, len);
+    dst[0] = (unsigned char)padding;
+    for (i = 0; i < padding; i++) {
+        dst[1] = (unsigned char)(dst[1] | (unsigned char)(1U << (7 - i)));
+    }
+    for (i = 0; i < bit_length; i++) {
+        int src_byte = i / 8;
+        int src_bit = i % 8;
+        if ((RAW(data)[src_byte] >> (7 - src_bit)) & 1U) {
+            int storage_bit = padding + i;
+            int dst_byte = 1 + storage_bit / 8;
+            int dst_bit = storage_bit % 8;
+            dst[dst_byte] = (unsigned char)(dst[dst_byte] | (unsigned char)(1U << (7 - dst_bit)));
+        }
+    }
+    return len;
+}
+
+/* DuckDB physical bytes -> rducks_bits SEXP (or R_NilValue for malformed). */
+static SEXP rdx_qkr_bit_from_physical(const unsigned char *payload, size_t len) {
+    int padding, bit_length, i;
+    R_xlen_t nbytes;
+    SEXP data, out, names, cls;
+    if (len < 2) return R_NilValue;
+    padding = payload[0];
+    if (padding < 0 || padding > 7) return R_NilValue;
+    bit_length = (int)((len - 1U) * 8U) - padding;
+    if (bit_length <= 0) return R_NilValue;
+    nbytes = (bit_length + 7) / 8;
+    data = PROTECT(Rf_allocVector(RAWSXP, nbytes));
+    memset(RAW(data), 0, (size_t)nbytes);
+    for (i = 0; i < bit_length; i++) {
+        int storage_bit = padding + i;
+        int src_byte = 1 + storage_bit / 8;
+        int src_bit = storage_bit % 8;
+        if ((payload[src_byte] >> (7 - src_bit)) & 1U) {
+            int dst_byte = i / 8;
+            int dst_bit = i % 8;
+            RAW(data)[dst_byte] = (Rbyte)(RAW(data)[dst_byte] | (Rbyte)(1U << (7 - dst_bit)));
+        }
+    }
+    out = PROTECT(Rf_allocVector(VECSXP, 2));
+    names = PROTECT(Rf_allocVector(STRSXP, 2));
+    cls = PROTECT(Rf_mkString("rducks_bits"));
+    SET_VECTOR_ELT(out, 0, data);
+    SET_VECTOR_ELT(out, 1, Rf_ScalarInteger(bit_length));
+    SET_STRING_ELT(names, 0, Rf_mkChar("data"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("length"));
+    Rf_setAttrib(out, R_NamesSymbol, names);
+    Rf_setAttrib(out, R_ClassSymbol, cls);
+    UNPROTECT(4);
+    return out;
+}
+
 /* ---------------- 64/128-bit decimal strings ---------------- */
 
 typedef struct rdx_qkr_u128 {
@@ -541,6 +623,46 @@ static rdx_qk_vector *rdx_qkr_vector_from_column(const rdx_qk_type *t, SEXP colu
         v->str_pool_size = fill;
         break;
     }
+    case RDX_QK_LTYPE_BIT: {
+        size_t pool = 0, fill = 0;
+        if (TYPEOF(data) != VECSXP) {
+            rdx_qk_vector_free(v);
+            Rf_error("Rducks quack codec: expected list-of-rducks_bits storage for BIT");
+        }
+        rdx_qkr_expect_length(data, rows, "bit");
+        for (i = 0; i < rows; i++) {
+            SEXP elt = VECTOR_ELT(data, i);
+            if (elt != R_NilValue) {
+                int bit_length;
+                if (TYPEOF(elt) != VECSXP || XLENGTH(elt) < 2) {
+                    rdx_qk_vector_free(v);
+                    Rf_error("Rducks quack codec: BIT rows must be rducks_bits objects or NULL");
+                }
+                bit_length = Rf_asInteger(VECTOR_ELT(elt, 1));
+                if (bit_length <= 0) {
+                    rdx_qk_vector_free(v);
+                    Rf_error("Rducks quack codec: rducks_bits object has invalid length");
+                }
+                pool += rdx_qkr_bit_physical_len(bit_length);
+            }
+        }
+        if (!rdx_qk_vector_alloc_strings(v, pool)) {
+            rdx_qk_vector_free(v);
+            Rf_error("Rducks quack codec: out of memory building bit vector");
+        }
+        for (i = 0; i < rows; i++) {
+            SEXP elt = VECTOR_ELT(data, i);
+            v->str_offsets[i] = fill;
+            if (elt == R_NilValue) {
+                rdx_qk_vector_set_null(v, i);
+            } else {
+                fill += rdx_qkr_bit_to_physical(elt, v->str_pool + fill);
+            }
+        }
+        v->str_offsets[rows] = fill;
+        v->str_pool_size = fill;
+        break;
+    }
     case RDX_QK_LTYPE_BLOB: {
         size_t pool = 0, fill = 0;
         if (TYPEOF(data) != VECSXP) {
@@ -879,6 +1001,19 @@ static SEXP rdx_qkr_data_from_vector(const rdx_qk_vector *v, unsigned depth) {
                 uint64_t a = v->str_offsets[i], b = v->str_offsets[i + 1];
                 SET_STRING_ELT(data, (R_xlen_t)i,
                                Rf_mkCharLenCE((const char *)(v->str_pool + a), (int)(b - a), CE_UTF8));
+            }
+        }
+        break;
+    }
+    case RDX_QK_LTYPE_BIT: {
+        data = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)rows));
+        for (i = 0; i < rows; i++) {
+            if (!rdx_qk_vector_row_is_valid(v, i)) {
+                SET_VECTOR_ELT(data, (R_xlen_t)i, R_NilValue);
+            } else {
+                uint64_t a = v->str_offsets[i], b = v->str_offsets[i + 1];
+                SEXP bits = rdx_qkr_bit_from_physical(v->str_pool + a, (size_t)(b - a));
+                SET_VECTOR_ELT(data, (R_xlen_t)i, bits);
             }
         }
         break;

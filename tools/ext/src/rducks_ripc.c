@@ -415,6 +415,7 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_INTERVAL: id = RDX_QK_LTYPE_INTERVAL; break;
     case RDUCKS_TYPE_VARCHAR: id = RDX_QK_LTYPE_VARCHAR; break;
     case RDUCKS_TYPE_BLOB: id = RDX_QK_LTYPE_BLOB; break;
+    case RDUCKS_TYPE_BIT: id = RDX_QK_LTYPE_BIT; break;
     default: return NULL;
     }
     return rdx_qk_type_new(id);
@@ -422,7 +423,8 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
 
 static int rducks_quack_is_varlen(const rducks_type_desc_t *desc) {
     return desc && desc->kind == RDUCKS_KIND_SCALAR &&
-           (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_BLOB);
+           (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_BLOB ||
+            desc->scalar == RDUCKS_TYPE_BIT);
 }
 
 static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, const rducks_type_desc_t *desc,
