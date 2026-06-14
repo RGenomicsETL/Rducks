@@ -215,6 +215,12 @@ rducks_native_array_from_decimal <- function(type, values) {
 
 rducks_native_array_from_enum <- function(type, values) {
   levels <- rducks_type_parameters(type)$levels
+  if (is.list(values) && !inherits(values, "rducks_enum")) {
+    # Row-wise scalar evaluation yields a list of per-row enum scalars, with NULL
+    # for skipped rows; flatten to a character label vector (NULL -> NA) before
+    # constructing the enum column.
+    values <- vapply(values, function(x) if (is.null(x)) NA_character_ else as.character(x), character(1))
+  }
   values <- if (inherits(values, "rducks_enum")) rducks_enum(as.character(values), levels = levels) else rducks_enum(values, levels = levels)
   codes <- match(as.character(values), levels)
   rducks_native_array(type, length(values), !is.na(codes), list(kind = "enum", values = codes, levels = levels))

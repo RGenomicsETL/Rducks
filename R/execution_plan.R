@@ -164,8 +164,8 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' extension encodes each input chunk to wire bytes, the worker decodes them,
 #' runs the R function, and returns wire-encoded results that the extension
 #' writes back to DuckDB. Worker-process types currently cover fixed-width
-#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, and `INTERVAL`; `ENUM`,
-#' bit/geometry/variant, and nested types are rejected at registration until the
+#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, and `ENUM`;
+#' bit/geometry/variant and nested types are rejected at registration until the
 #' native bridge covers them. It maps to the internal `"ipc_nng_pool"` engine.
 #'
 #' @param transport Placement/transport. `"inproc"` evaluates in the current R
@@ -590,8 +590,8 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 }
 
 # Scalar types the native wire/RIPC bridge (tools/ext/src/rducks_ripc.c) encodes
-# and decodes end-to-end (DECIMAL is handled separately below). Enum,
-# bit/geometry/variant, and nested types are not yet wired through the native
+# and decodes end-to-end (DECIMAL and ENUM are handled separately below).
+# bit/geometry/variant and nested types are not yet wired through the native
 # bridge, so they are rejected at registration (strict-plan rule: no
 # register-then-fail-at-execution).
 rducks_wire_supported_scalar_types <- function() {
@@ -606,9 +606,10 @@ rducks_wire_unsupported_types <- function(type) {
   if (identical(kind, "scalar") && rducks_type_token(type) %in% rducks_wire_supported_scalar_types()) {
     return(character())
   }
-  # DECIMAL is its own kind but the native bridge encodes it as a fixed-width
-  # scaled-integer wire column, so it round-trips end-to-end.
-  if (identical(kind, "decimal")) {
+  # DECIMAL and ENUM are their own kinds but the native bridge encodes them as
+  # fixed-width wire columns (scaled integer for DECIMAL, 0-based dictionary
+  # index for ENUM), so they round-trip end-to-end.
+  if (identical(kind, "decimal") || identical(kind, "enum")) {
     return(character())
   }
   rducks_type_duckdb_sql(type)

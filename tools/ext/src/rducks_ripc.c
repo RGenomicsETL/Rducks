@@ -376,6 +376,23 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
         }
         return t;
     }
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        /* The enum dictionary is carried in the desc as field_names; build a
+         * wire ENUM type with the same labels so the worker reconstructs
+         * rducks_enum values. The physical index (0-based, width chosen from the
+         * dictionary size) matches DuckDB's enum internal storage, so the
+         * fixed-width copy path transports it. */
+        rdx_qk_type *t = rdx_qk_type_new(RDX_QK_LTYPE_ENUM);
+        if (!t) return NULL;
+        if (desc->field_count > 0) {
+            if (!rdx_qk_type_set_enum_labels(t, (const char *const *)desc->field_names,
+                                             (uint32_t)desc->field_count)) {
+                rdx_qk_type_free(t);
+                return NULL;
+            }
+        }
+        return t;
+    }
     if (desc->kind != RDUCKS_KIND_SCALAR) return NULL;
     switch (desc->scalar) {
     case RDUCKS_TYPE_BOOL: id = RDX_QK_LTYPE_BOOLEAN; break;

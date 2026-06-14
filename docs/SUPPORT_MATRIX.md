@@ -43,8 +43,8 @@ temporary tables or views.
 
 The `direct` column covers the in-process `inproc` plan. The `wire` column
 covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
-bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, and
-`INTERVAL`; `ENUM`, bit/geometry/variant, and nested types are rejected at
+bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
+`INTERVAL`, and `ENUM`; bit/geometry/variant and nested types are rejected at
 registration on `transport = "ipc"` until the native bridge covers them.
 
 | Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
@@ -57,7 +57,7 @@ registration on `transport = "ipc"` until the native bridge covers them.
 | Interval | `INTERVAL` | yes | yes | `rducks_interval` value class; transported as the 16-byte months/days/micros storage. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
 | Decimal | `DECIMAL(width, scale)` | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. Transported as the scaled-integer storage across all four physical widths (2/4/8/16 bytes). |
-| Enum | `ENUM(c("a", "b"))` | yes | rejected | Direct uses declared levels plus underlying enum index storage. Not yet in the worker bridge. |
+| Enum | `ENUM(c("a", "b"))` | yes | yes | Declared levels plus the underlying 0-based dictionary index storage; the worker reconstructs `rducks_enum` from the levels. |
 | Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes where direct predicate accepts child | rejected | Child descriptors are validated recursively. |
 | Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes where direct predicate accepts children | rejected | Direct support depends on native DuckDB-vector handling for the child types. The direct UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled. |
 

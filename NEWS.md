@@ -1,7 +1,7 @@
 # Rducks (development): Arrow removal
 
 * BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")`; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
-* `transport = "ipc"` (worker-process execution) is restored over the Quack wire codec: the extension encodes each input chunk to wire bytes in pure C, ships it to a worker R process over NNG, and decodes the wire-encoded result back into DuckDB. Worker-process types currently cover fixed-width scalars, VARCHAR/BLOB, DECIMAL, and INTERVAL; ENUM, bit/geometry/variant, and nested types are rejected at registration until the native bridge covers them.
+* `transport = "ipc"` (worker-process execution) is restored over the Quack wire codec: the extension encodes each input chunk to wire bytes in pure C, ships it to a worker R process over NNG, and decodes the wire-encoded result back into DuckDB. Worker-process types currently cover fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, and ENUM; bit/geometry/variant and nested types are rejected at registration until the native bridge covers them.
 * nanoarrow is removed from Imports/LinkingTo; the vendored nanoarrow/flatcc trees are deleted from the extension.
 * The worker-process data plane uses the Rducks Quack wire codec (DuckDB BinarySerializer DataChunk subset) with self-describing payloads.
 * `rducks_with_duckplyr()` (duckplyr bridge) and `rducks_register_table()` (table functions, finite and streaming) are restored on the direct DuckDB-vector path. In-process table scans fill DuckDB output vectors directly from the returned R columns, with no wire serialization.

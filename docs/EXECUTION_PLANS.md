@@ -87,7 +87,7 @@ Unsupported combinations must fail. They must not silently switch:
 - `wire`: owned Quack wire request/result bytes (DuckDB BinarySerializer subset),
   marshalled to worker R processes. Only valid with `multiprocess_parallel`. The
   worker path currently covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, and
-  INTERVAL; ENUM, bit/geometry/variant, and nested types are rejected at
+  INTERVAL, and ENUM; bit/geometry/variant and nested types are rejected at
   registration until the native bridge covers them.
   Selected scalar-UDF globals may be serialized normally or, with
   `ipc_globals_share = "mori"`, sent as same-host mori shared-memory references
@@ -111,15 +111,15 @@ Unsupported combinations must fail. They must not silently switch:
 | --- | --- | --- | --- |
 | `direct_serial` | `direct + serial` | internal reference | Reference path; constructed internally for conformance, not exposed publicly. |
 | `direct_main_queue` | `direct + inproc_concurrent` | enabled (public `inproc`) | Queued direct marshalling; inputs/results use owned state before crossing threads. R work runs on the recorded R thread. |
-| `ipc_nng_pool` | `wire + multiprocess_parallel` | enabled (public `ipc`) | Native NNG request/reply with owned Quack wire bytes and persistent workers. Covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, and INTERVAL; ENUM, bit/geometry/variant, and nested types are rejected at registration. |
+| `ipc_nng_pool` | `wire + multiprocess_parallel` | enabled (public `ipc`) | Native NNG request/reply with owned Quack wire bytes and persistent workers. Covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, and ENUM; bit/geometry/variant and nested types are rejected at registration. |
 
 ## Enum storage (wire path)
 
 Declared `ENUM(...)` levels are part of the Rducks registration type descriptor.
 On the `wire` path, Rducks transports enum columns as their underlying DuckDB
-enum index storage; the worker reconstructs `rducks_enum` values from the
-declared levels and storage indexes. ENUM is not yet covered by the worker
-bridge and is rejected at registration on `transport = "ipc"`.
+0-based dictionary-index storage (1/2/4 bytes by dictionary size); the dictionary
+travels with the wire type and the worker reconstructs `rducks_enum` values from
+the declared levels and storage indexes.
 
 ## Current validation coverage
 

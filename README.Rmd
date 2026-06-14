@@ -58,9 +58,9 @@ The worker-process transport uses a
 `BinarySerializer` messages carrying logical types and `DataChunk` payloads,
 aligned with DuckDB's native chunk model. The codec
 lives in `src/quack_core.c` with R glue in `src/quack_codec.c`. The worker path
-currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, and
-`INTERVAL`; `ENUM`, bit/geometry/variant, and nested types are rejected at
-registration on the `ipc` plan until the native bridge covers them.
+currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`,
+and `ENUM`; bit/geometry/variant and nested types are rejected at registration
+on the `ipc` plan until the native bridge covers them.
 
 ## Quick start
 
@@ -353,7 +353,7 @@ placement/concurrency backend for the recorded R thread.
 | Plan | Engine | Scalar mode | Vectorized mode | Notes |
 | --- | --- | --- | --- | --- |
 | `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | yes | yes | DuckDB workers enqueue callbacks and R work drains on the recorded R thread |
-| `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | yes | yes | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, and interval |
+| `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | yes | yes | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, and enum |
 
 `rducks_enable(con)` selects the in-process backend; `rducks_enable_inproc(con,
 threads = 4, external_threads = 1)` keeps R work on the recorded R thread while

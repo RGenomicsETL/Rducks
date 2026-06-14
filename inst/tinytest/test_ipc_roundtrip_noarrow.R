@@ -66,6 +66,17 @@ local({
                                args = list(case$type), returns = case$type)
   }
 
+  # ENUM needs a declared DuckDB type, so it is exercised separately from the
+  # inline range() cases. Cover a small dictionary (1-byte index storage) and a
+  # large one (>255 labels -> 2-byte index storage), both with NULLs. Register
+  # under threads=1 with the other UDFs before the concurrency bump.
+  small_levels <- c("alpha", "beta", "gamma", "delta")
+  big_levels <- sprintf("e%04d", seq_len(300))
+  rducks_register_scalar_udf(con, "e_small", function(x) x,
+                             args = list(ENUM(small_levels)), returns = ENUM(small_levels))
+  rducks_register_scalar_udf(con, "e_big", function(x) x,
+                             args = list(ENUM(big_levels)), returns = ENUM(big_levels))
+
   # Bump DuckDB threads for concurrent off-main execution -> NNG worker roundtrip.
   rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
 
@@ -80,10 +91,29 @@ local({
     expect_equal(as.integer(mismatch), 0L, info = paste0("ipc roundtrip: ", case$name))
   }
 
+  DBI::dbExecute(con, sprintf("CREATE TYPE rdk_mood AS ENUM (%s)",
+                              paste0("'", small_levels, "'", collapse = ",")))
+  DBI::dbExecute(con, sprintf("CREATE TYPE rdk_big AS ENUM (%s)",
+                              paste0("'", big_levels, "'", collapse = ",")))
+  enum_cases <- list(
+    list(name = "e_small",
+         expr = "((ARRAY['alpha','beta','gamma','delta'])[mod(i, 4) + 1]::rdk_mood)"),
+    list(name = "e_big",
+         expr = "(('e' || lpad((mod(i, 300) + 1)::VARCHAR, 4, '0'))::rdk_big)")
+  )
+  for (case in enum_cases) {
+    valexpr <- sprintf("CASE WHEN mod(i, 7) = 0 THEN NULL ELSE %s END", case$expr)
+    sql <- sprintf(
+      "SELECT count(*) c FROM (SELECT %s v FROM range(4000) t(i)) s WHERE %s(v) IS DISTINCT FROM v",
+      valexpr, case$name
+    )
+    mismatch <- DBI::dbGetQuery(con, sql)$c
+    expect_equal(as.integer(mismatch), 0L, info = paste0("ipc roundtrip: ", case$name))
+  }
+
   # Gated types must be rejected at registration under the ipc plan, not fail
   # later in a worker. The native bridge does not cover them yet.
   rejected <- list(
-    list(name = "rej_enum",     type = ENUM(c("a", "b"))),
     list(name = "rej_geometry", type = GEOMETRY),
     list(name = "rej_bit",      type = BIT),
     list(name = "rej_list",     type = LIST(INTEGER)),
