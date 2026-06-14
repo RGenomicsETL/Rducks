@@ -383,6 +383,9 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_VARCHAR: id = RDX_QK_LTYPE_VARCHAR; break;
     case RDUCKS_TYPE_BLOB: id = RDX_QK_LTYPE_BLOB; break;
     case RDUCKS_TYPE_BIT: id = RDX_QK_LTYPE_BIT; break;
+    /* GEOMETRY is physically a varlen blob (WKB bytes). It rides the wire as a
+     * BLOB column; the worker reconstructs geometry from its declared type. */
+    case RDUCKS_TYPE_GEOMETRY: id = RDX_QK_LTYPE_BLOB; break;
     default: return NULL;
     }
     return rdx_qk_type_new(id);
@@ -391,7 +394,7 @@ static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
 static int rducks_quack_is_varlen(const rducks_type_desc_t *desc) {
     return desc && desc->kind == RDUCKS_KIND_SCALAR &&
            (desc->scalar == RDUCKS_TYPE_VARCHAR || desc->scalar == RDUCKS_TYPE_BLOB ||
-            desc->scalar == RDUCKS_TYPE_BIT);
+            desc->scalar == RDUCKS_TYPE_BIT || desc->scalar == RDUCKS_TYPE_GEOMETRY);
 }
 
 static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, const rducks_type_desc_t *desc,
@@ -438,10 +441,22 @@ static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, cons
         idx_t child_rows;
         if (desc->kind == RDUCKS_KIND_LIST) {
             duckdb_list_entry *entries = (duckdb_list_entry *)duckdb_vector_get_data(vec);
+            idx_t full_size = duckdb_list_vector_get_size(vec);
+            uint64_t max_extent = 0;
             idx_t r;
             cv = duckdb_list_vector_get_child(vec);
-            child_rows = duckdb_list_vector_get_size(vec);
-            if (!rdx_qk_vector_alloc_list(v, (uint64_t)child_rows)) {
+            /* Only marshal the child rows actually referenced by valid entries
+             * (max offset+length), not the full child vector, which may carry
+             * trailing slack. Offsets stay valid since they are all below the
+             * computed extent. */
+            for (r = 0; r < rows; r++) {
+                if (validity && !duckdb_validity_row_is_valid(validity, r)) continue;
+                uint64_t end = entries[r].offset + entries[r].length;
+                if (end > max_extent) max_extent = end;
+            }
+            if (max_extent > (uint64_t)full_size) max_extent = (uint64_t)full_size;
+            child_rows = (idx_t)max_extent;
+            if (!rdx_qk_vector_alloc_list(v, max_extent)) {
                 rdx_qk_vector_free(v);
                 rducks_format_error_message(err, cap, "out of memory allocating Rducks wire list offsets");
                 return NULL;

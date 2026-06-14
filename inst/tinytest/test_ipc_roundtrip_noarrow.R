@@ -108,8 +108,24 @@ local({
                                args = list(case$type), returns = case$type)
   }
 
+  # GEOMETRY (WKB raw bytes) cannot be produced inline in core DuckDB SQL, so it
+  # is exercised by composing a maker (INTEGER -> GEOMETRY, builds bytes in R)
+  # with an identity and an inspector (GEOMETRY -> VARCHAR). This covers geometry
+  # both as a wire result (maker) and a wire input (identity/inspector).
+  rducks_register_scalar_udf(con, "g_make", function(x) as.raw(c(x %% 256L, (x + 1L) %% 256L, 7L)),
+                             args = list(INTEGER), returns = GEOMETRY)
+  rducks_register_scalar_udf(con, "g_id", function(x) x, args = list(GEOMETRY), returns = GEOMETRY)
+  rducks_register_scalar_udf(con, "g_show", function(x) paste(as.integer(x), collapse = ","),
+                             args = list(GEOMETRY), returns = VARCHAR)
+
   # Bump DuckDB threads for concurrent off-main execution -> NNG worker roundtrip.
   rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+
+  geom_mismatch <- DBI::dbGetQuery(con, paste0(
+    "SELECT count(*) c FROM (SELECT i::INTEGER j FROM range(4000) t(i)) s ",
+    "WHERE g_show(g_id(g_make(j))) <> (mod(j, 256) || ',' || mod(j + 1, 256) || ',7')"
+  ))$c
+  expect_equal(as.integer(geom_mismatch), 0L, info = "ipc roundtrip: geometry (maker/id/show)")
 
   for (case in cases) {
     # Mix a NULL into the column so each query exercises value + NULL paths.
@@ -163,7 +179,6 @@ local({
   # wire-support rejection. The error-text assertion pins the real reason.
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   rejected <- list(
-    list(name = "rej_geometry", type = GEOMETRY),
     list(name = "rej_variant",  type = VARIANT),
     list(name = "rej_map",      type = MAP(INTEGER, INTEGER)),
     list(name = "rej_union",    type = UNION(a = INTEGER, b = VARCHAR)),

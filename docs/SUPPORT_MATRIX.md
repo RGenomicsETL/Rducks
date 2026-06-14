@@ -44,8 +44,8 @@ temporary tables or views.
 The `direct` column covers the in-process `inproc` plan. The `wire` column
 covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
 bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
-`INTERVAL`, `ENUM`, `BIT`, and `LIST`/`ARRAY`/`STRUCT` of supported types; `MAP`,
-`UNION`, geometry, and variant are rejected at registration on
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, and `LIST`/`ARRAY`/`STRUCT` of supported
+types; `MAP`, `UNION`, and variant are rejected at registration on
 `transport = "ipc"` until the native bridge covers them.
 
 | Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
@@ -53,7 +53,7 @@ bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
 | Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | Values are materialized/copied as R values or vectors. Validity bitmaps remain authoritative for NULLs. |
 | String/binary | `VARCHAR`, `BLOB` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. |
 | Bit | `BIT` | yes | yes | `rducks_bits` (packed bits + length); transported as DuckDB's physical bit storage (padding-header byte + MSB-first bits). |
-| Geometry | `GEOMETRY` | yes | rejected | `GEOMETRY` crosses the R boundary as WKB `raw` bytes. Not yet in the worker bridge. |
+| Geometry | `GEOMETRY` | yes | yes | `GEOMETRY` crosses the R boundary as WKB `raw` bytes; it is physically a varlen blob and rides the wire as a BLOB column, reconstructed from its declared type. |
 | Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | rejected | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
 | Temporal | `DATE`, `TIME`, `TIMESTAMP` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
 | Interval | `INTERVAL` | yes | yes | `rducks_interval` value class; transported as the 16-byte months/days/micros storage. |
