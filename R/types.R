@@ -806,6 +806,29 @@ rducks_direct_sequence_child_supported <- function(type) {
   )
 }
 
+# Runtime capability cache. VARIANT support is conditional: the loaded DuckDB
+# build must expose a creatable VARIANT logical type in its C API, and the
+# extension must implement VARIANT materialization. The extension reports the
+# combined capability via the native rducks_variant_supported() surface; Rducks
+# caches it at rducks_enable() and the type gates below consult it. A session
+# links one DuckDB build, so a single process-level flag is sufficient. The
+# default (unset -> FALSE) keeps VARIANT rejected when capability is unknown, so
+# standalone gate calls and runtimes without VARIANT (e.g. 1.5.2) stay safe.
+rducks_runtime_caps <- new.env(parent = emptyenv())
+
+rducks_cache_variant_runtime_support <- function(con) {
+  supported <- tryCatch(
+    isTRUE(DBI::dbGetQuery(con, "SELECT rducks_variant_supported() AS ok")$ok[[1L]]),
+    error = function(e) FALSE
+  )
+  rducks_runtime_caps$variant <- supported
+  invisible(supported)
+}
+
+rducks_variant_runtime_supported <- function() {
+  isTRUE(rducks_runtime_caps$variant)
+}
+
 rducks_direct_mapping_supported <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
@@ -813,7 +836,9 @@ rducks_direct_mapping_supported <- function(type) {
     return(TRUE)
   }
   if (identical(kind, "scalar")) {
-    return(rducks_type_token(type) %in% setdiff(rducks_all_scalar_type_names(), "variant"))
+    names <- rducks_all_scalar_type_names()
+    if (!rducks_variant_runtime_supported()) names <- setdiff(names, "variant")
+    return(rducks_type_token(type) %in% names)
   }
   if (kind %in% c("list", "array")) {
     return(rducks_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))

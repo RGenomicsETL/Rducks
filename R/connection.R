@@ -43,6 +43,10 @@ rducks_enable <- function(con, extension_path = rducks_extension_path(),
   path_sql <- rducks_sql_string(normalizePath(extension_path, mustWork = TRUE))
   DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
 
+  # Record whether this DuckDB build + extension can carry VARIANT end-to-end;
+  # the type gates consult the cached value.
+  rducks_cache_variant_runtime_support(con)
+
   main_thread_token <- rducks_main_thread_token()
   if (nzchar(main_thread_token)) {
     ok <- DBI::dbGetQuery(

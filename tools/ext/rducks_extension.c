@@ -16,6 +16,20 @@
 #define RDUCKS_DUCKDB_TYPE_VARIANT_ID 41
 #define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)RDUCKS_DUCKDB_TYPE_VARIANT_ID)
 
+/* End-to-end VARIANT support has two halves: (1) this extension implementing
+ * VARIANT value materialization, and (2) the loaded DuckDB runtime C API
+ * exposing a creatable VARIANT logical type. RDUCKS_VARIANT_MATERIALIZATION is
+ * the compile-time half; the runtime half is probed at load time
+ * (rducks_runtime_variant_supported). Both must hold before Rducks accepts a
+ * VARIANT-typed scalar UDF, so on runtimes whose C API predates VARIANT (e.g.
+ * 1.5.2) VARIANT stays rejected at registration regardless of this flag. Rducks
+ * materializes VARIANT through its physical storage STRUCT (keys/children/
+ * values/data); that routing is exercised end-to-end only on a VARIANT-capable
+ * runtime. */
+#ifndef RDUCKS_VARIANT_MATERIALIZATION
+#define RDUCKS_VARIANT_MATERIALIZATION 0
+#endif
+
 #if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
 #error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
 #endif
