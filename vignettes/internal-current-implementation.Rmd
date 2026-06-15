@@ -1,0 +1,182 @@
+---
+title: "Internal Current Implementation Details"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Internal Current Implementation Details}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE
+)
+```
+
+This article describes how Rducks works today. It is not the stable API
+contract. The package deliberately keeps several internal details visible here so
+that design discussions, tests, and performance work stay aligned with the
+actual implementation.
+
+## Source and installed layout
+
+The R package installs one runtime extension artifact:
+
+```text
+rducks_extension/build/rducks.duckdb_extension
+```
+
+The source and vendored dependency inputs live in the source checkout under
+`tools/ext`, not under `inst/rducks_extension`:
+
+```text
+tools/ext/rducks_extension.c
+tools/ext/src/*.c
+tools/ext/duckdb_capi/*.h
+tools/ext/third_party/*
+```
+
+`configure` and `configure.win` build the extension from `tools/ext` and copy
+only the runtime artifact into the installed package footprint.
+
+## Package and extension split
+
+Rducks is split across R code and a loaded DuckDB extension:
+
+- R code validates descriptors, records connection-local defaults, preserves R
+  closures, starts managed IPC workers, and exposes diagnostics.
+- The DuckDB extension registers SQL functions, stores native catalog metadata,
+  owns extension-side connections, handles DuckDB callbacks, and moves data
+  through DuckDB vectors directly or through Quack wire-codec byte payloads.
+
+DuckDB function kind, Rducks scalar-UDF evaluation mode, and scalar-UDF execution
+plan are separate axes. Aggregates and table functions do not run through the
+scalar-UDF execution-plan matrix.
+
+## Runtime scopes
+
+There are three important scopes:
+
+- **R process/package scope**: recorded R-thread token, process-local provider
+  store, release queues, weak-reference finalizers, and diagnostic helpers.
+- **DuckDB database runtime/catalog scope**: SQL functions, evaluator handles,
+  preserved closures, scalar-UDF evaluator/transport metadata, native runtime
+  backend, and counters.
+- **DBI connection attachment scope**: default execution plan for future
+  registrations, finalizer bookkeeping, and the R-side registry view.
+
+`rducks_release(con)` releases the connection attachment. It is not an SQL
+unregister operation.
+
+## R-thread discipline
+
+DuckDB worker threads must not call the R API. Rducks records the calling R
+thread when the extension is enabled. Paths that need R evaluation either run on
+that recorded thread or use an explicit cross-process worker plan.
+
+For in-process concurrent scalar-UDF execution, DuckDB worker callbacks submit
+synchronous requests to an extension-owned queue. The recorded R thread drains
+that queue, performs all R API work, and hands owned result data back to the
+waiting worker-side callback. This is a safety and liveness mechanism, not
+parallel R execution.
+
+Native destructors that discover preserved R objects on the wrong thread queue
+release work. Safe drain points include enable/release calls, registration,
+scalar-UDF execution, and metadata/stat queries.
+
+## Scalar UDF registration and execution
+
+`rducks_register_scalar_udf()` creates DuckDB scalar UDF catalog entries and
+stores native metadata for the selected transport. Declared `args` pin the SQL
+input signature. Omitted `args` registers a DuckDB varargs `ANY` function; during
+DuckDB bind, Rducks records the concrete logical argument types for that call and
+uses those effective types during execution.
+
+The current scalar-UDF data paths are:
+
+```text
+inproc (direct):
+  DuckDB chunk -> native C materialization to SEXP -> R closure
+  -> native C result conversion -> DuckDB output
+
+ipc (wire):
+  DuckDB chunk -> Quack wire bytes -> NNG worker process
+  -> R closure in worker -> Quack wire result bytes -> DuckDB output
+```
+
+The in-process `direct` path is the reference implementation. The `ipc` path
+must match its SQL type, NULL, error, and result semantics; unsupported
+combinations fail instead of falling back. Before any worker result is written
+back, the wire decoder validates the decoded column count and per-column types
+against the declared signature.
+
+## Aggregates
+
+`rducks_register_aggregate()` registers DuckDB aggregate functions. Aggregate
+state is an R object preserved by the extension, not an untyped pointer to R
+memory inside DuckDB. Row-wise callbacks use `update(state, ...)`,
+`combine(left, right)`, and `finalize(state)`. Chunk callbacks are available for
+batch-oriented state updates.
+
+Aggregate callbacks require the recorded R thread. They are intentionally not
+controlled by scalar-UDF execution plans.
+
+## Table functions
+
+`rducks_register_table()` infers the SQL argument count from the R function's
+formals, registers those inputs as DuckDB `ANY`, converts actual SQL bind values
+to R values, and calls the R function during DuckDB bind on the recorded R
+thread.
+
+A finite result is materialized once during bind by filling DuckDB output
+vectors directly from the returned R columns. A `rducks_table_stream()` result
+uses a bind-time prototype for schema and a scan-time `next_batch(batch_size)`
+callback for successive batches. Projection-aware copying writes only requested
+columns into DuckDB output chunks.
+
+## Query streams
+
+`rducks_query_stream()` is an R-side consumer API, not a table function. It uses
+DuckDB's native streaming-result/data-chunk APIs through a dedicated
+extension-owned query-stream connection. That dedicated connection keeps query
+streaming separate from the runtime connection used for dynamic scalar, table,
+and aggregate registration.
+
+A query stream fetches DuckDB chunks and materializes each one into a data-frame
+batch directly from DuckDB vectors. The current implementation supports one
+active native query stream per caller/runtime connection.
+
+## IPC provider lifecycle
+
+The native IPC provider uses NNG for request/reply and local mirai processes for
+the default managed worker lifecycle. During `ipc` registration, Rducks starts
+workers, launches the worker loop, pings endpoints, and registers the UDF payload
+with each worker.
+
+Client pools are native extension objects; worker lifecycle is R-side provider
+state. `rducks_release(con)` closes local client pools when the last attachment
+to a runtime is released, then stops Rducks-managed local workers and removes the
+provider. Caller-supplied external endpoints are not stopped by Rducks.
+
+Rducks does not call NNG's global `nng_fini()` during ordinary runtime cleanup.
+Socket and pool shutdown are the quiesce points so an R session can release one
+connection and later register more IPC UDFs.
+
+## Ownership and copying model
+
+The implementation favors explicit ownership boundaries:
+
+- Borrowed DuckDB vectors and chunks are used only inside the callback frame
+  that supplied them.
+- Quack wire payloads are owned byte buffers and are used for process/transport
+  boundaries.
+- R closures are preserved while native metadata can call them.
+- Same-host mori sharing is available only for selected long-lived globals, not
+  for SQL chunk data.
+- Output vectors and chunks are copied into owned R or DuckDB containers
+  before the borrowed source lifetime ends.
+
+These rules are part of the package semantics. Changes that add allocations,
+thread hops, or zero-copy paths need a protection and lifetime audit.

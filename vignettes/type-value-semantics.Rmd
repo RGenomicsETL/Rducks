@@ -1,0 +1,154 @@
+---
+title: "Type and Value Semantics"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Type and Value Semantics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE
+)
+```
+
+Rducks keeps SQL type semantics explicit. DuckDB owns binding and execution;
+Rducks maps DuckDB values into R values, calls the R function, and writes values
+back to DuckDB with the declared result type.
+
+## Function kind, scalar-UDF mode, and execution plan
+
+Three concepts are intentionally separate:
+
+- **DuckDB function kind**: scalar UDF, aggregate function, or table function.
+- **Scalar-UDF evaluation mode**: `mode = "scalar"` calls R once per row;
+  `mode = "vectorized"` calls R once per DuckDB chunk.
+- **Scalar-UDF execution plan**: in-process (`transport = "inproc"`) or
+  worker-process (`transport = "ipc"`) evaluation.
+
+Changing a connection's default execution plan affects future scalar-UDF
+registrations and the matching native runtime backend; it does not rewrite an
+existing scalar UDF to a different transport.
+
+```{r setup-connection}
+library(DBI)
+library(duckdb)
+library(Rducks)
+
+con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+rducks_enable(con, threads = "single")
+```
+
+## Declared descriptors
+
+Rducks descriptors describe DuckDB logical types, including primitive, exact, and
+composite values.
+
+```{r descriptors}
+primitive <- list(INTEGER, DOUBLE, BOOLEAN, VARCHAR)
+exact <- list(UUID, HUGEINT, DECIMAL(18, 4), INTERVAL, BIT)
+semi_structured <- list(GEOMETRY, VARIANT)
+composite <- list(
+  INTEGER[],
+  ARRAY(DOUBLE, 3),
+  STRUCT(id = INTEGER, label = VARCHAR),
+  MAP(VARCHAR, DOUBLE),
+  UNION(i = INTEGER, s = VARCHAR)
+)
+```
+
+Declared scalar-UDF arguments pin the SQL signature:
+
+```{r explicit-signature}
+rducks_register_scalar_udf(
+  con,
+  name = "r_add_one",
+  fun = function(x) x + 1L,
+  args = INTEGER,
+  returns = INTEGER
+)
+```
+
+Omitting `args` registers a dynamic DuckDB varargs function. At bind time,
+DuckDB supplies the concrete logical types for the SQL call, and Rducks uses
+those bound types for the same input materialization it would use for explicit
+`args`.
+
+```{r dynamic-signature}
+rducks_register_scalar_udf(
+  con,
+  name = "r_payload_label",
+  fun = function(payload) paste(payload$label, payload$x, sep = ":"),
+  returns = VARCHAR
+)
+
+DBI::dbGetQuery(con, "
+  SELECT r_payload_label(struct_pack(x := 3::INTEGER, label := 'a')) AS label
+")
+```
+
+Use `args = NULL` for a true zero-argument UDF.
+
+## NULL handling
+
+`null_handling = "default"` follows DuckDB's default scalar-UDF contract: if a
+top-level input is SQL `NULL`, DuckDB produces SQL `NULL` without calling R.
+
+`null_handling = "special"` passes top-level SQL `NULL` inputs through to R as
+type-specific missing values so the R function can decide what to return.
+
+```{r null-special}
+rducks_register_scalar_udf(
+  con,
+  name = "r_null_special",
+  fun = function(x) if (is.na(x)) 5L else x,
+  args = INTEGER,
+  returns = INTEGER,
+  null_handling = "special"
+)
+
+DBI::dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")
+```
+
+Nested NULLs are part of the nested value. Scalar children usually become typed
+`NA` values, while nested composite NULLs become `NULL`.
+
+## Error handling and side effects
+
+`exception_handling = "rethrow"` makes R errors fail the SQL query. Other error
+handling modes are explicit choices and should be tested with the declared
+return type.
+
+Mark functions with `side_effects = TRUE` when they depend on counters,
+randomness, time, I/O, mutation, sleeps, external state, or diagnostics. Without
+that flag, DuckDB may treat a scalar UDF as pure enough for ordinary SQL
+optimization.
+
+## Runtime reference tables
+
+The package exports compact reference tables so tests and documentation can stay
+aligned with the implemented semantics.
+
+```{r reference-tables}
+rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
+
+rducks_value_semantics()[
+  rducks_value_semantics()$duckdb_type %in% c("INTEGER", "VARCHAR", "GEOMETRY", "VARIANT", "STRUCT"),
+  c("duckdb_type", "r_value_class", "special_null_argument")
+]
+
+rducks_argument_type_mapping(list(
+  INTEGER,
+  UUID,
+  DECIMAL(10, 2),
+  STRUCT(a = INTEGER[])
+))
+```
+
+```{r cleanup, include=FALSE}
+rducks_release(con)
+DBI::dbDisconnect(con, shutdown = TRUE)
+```
