@@ -19,3 +19,5 @@ pkgdown-site/
 bench-results/
 tools/bench-results/
 tools/benchmark-results/
+/NA12878.low_coverage.bam
+/duckhts.duckdb_extension

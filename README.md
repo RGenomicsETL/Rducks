@@ -413,28 +413,44 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            169         250
+#> 1 8e+06            168         249
 ```
 
 The same streaming holds over arbitrary scans, including external
-table-function extensions. Streaming a 15 GB BAM through a `read_bam()`
-scanner (the [duckhts](https://github.com/RGenomicsETL/duckhts)
-extension) keeps the R process at roughly 240 MB resident across 40
-million reads:
+table-function extensions. The chunk below streams a 15 GB BAM through a
+`read_bam()` scanner (the
+[duckhts](https://github.com/RGenomicsETL/duckhts) extension), capped at
+~30 seconds of pulling; resident memory stays a few hundred MB no matter
+how many reads are pulled. It runs only when the BAM is present locally.
 
 ``` r
-DBI::dbExecute(con, "LOAD 'duckhts'")
+DBI::dbExecute(con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
+#> [1] 0
+
 stream <- rducks_query_stream(
   con,
   "SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
      FROM read_bam('NA12878.low_coverage.bam')"   # 15 GB on disk
 )
+bam_open <- rss_mb()
+reads <- 0
+peak <- bam_open
+deadline <- Sys.time() + 30
 repeat {
   batch <- stream$next_batch()
-  if (is.null(batch)) break
-  # process one chunk at a time; resident memory stays ~240 MB
+  if (is.null(batch) || Sys.time() > deadline) break
+  reads <- reads + nrow(batch)          # one chunk at a time, then GC'd
+  peak <- max(peak, rss_mb())
 }
 stream$close()
+data.frame(
+  bam_gb = round(file.size("NA12878.low_coverage.bam") / 1024^3, 1),
+  reads_streamed = reads,
+  rss_at_open_mb = bam_open,
+  peak_rss_mb = peak
+)
+#>   bam_gb reads_streamed rss_at_open_mb peak_rss_mb
+#> 1   15.1       11646976            254         286
 ```
 
 ## Execution plans
@@ -593,9 +609,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.358
-#> 2          ipc (2 workers) 65961344       1.968
-#> 3   ipc + mori (2 workers) 65961344       1.928
+#> 1 inproc (single R thread) 65961344       3.371
+#> 2          ipc (2 workers) 65961344       1.939
+#> 3   ipc + mori (2 workers) 65961344       1.929
 ```
 
 ## duckplyr integration

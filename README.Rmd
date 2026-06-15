@@ -377,23 +377,36 @@ data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 ```
 
 The same streaming holds over arbitrary scans, including external table-function
-extensions. Streaming a 15 GB BAM through a `read_bam()` scanner (the
-[duckhts](https://github.com/RGenomicsETL/duckhts) extension) keeps the R
-process at roughly 240 MB resident across 40 million reads:
+extensions. The chunk below streams a 15 GB BAM through a `read_bam()` scanner
+(the [duckhts](https://github.com/RGenomicsETL/duckhts) extension), capped at ~30
+seconds of pulling; resident memory stays a few hundred MB no matter how many
+reads are pulled. It runs only when the BAM is present locally.
 
-```{r bam-stream, eval = FALSE}
-DBI::dbExecute(con, "LOAD 'duckhts'")
+```{r bam-stream, eval = file.exists("NA12878.low_coverage.bam")}
+DBI::dbExecute(con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
+
 stream <- rducks_query_stream(
   con,
   "SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
      FROM read_bam('NA12878.low_coverage.bam')"   # 15 GB on disk
 )
+bam_open <- rss_mb()
+reads <- 0
+peak <- bam_open
+deadline <- Sys.time() + 30
 repeat {
   batch <- stream$next_batch()
-  if (is.null(batch)) break
-  # process one chunk at a time; resident memory stays ~240 MB
+  if (is.null(batch) || Sys.time() > deadline) break
+  reads <- reads + nrow(batch)          # one chunk at a time, then GC'd
+  peak <- max(peak, rss_mb())
 }
 stream$close()
+data.frame(
+  bam_gb = round(file.size("NA12878.low_coverage.bam") / 1024^3, 1),
+  reads_streamed = reads,
+  rss_at_open_mb = bam_open,
+  peak_rss_mb = peak
+)
 ```
 
 ## Execution plans
