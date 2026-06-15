@@ -891,6 +891,28 @@ static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rdu
         }
         return 1;
     }
+    if (desc->kind == RDUCKS_KIND_ENUM) {
+        /* Validate every active enum index is within the declared dictionary
+         * before the fixed-width copy below writes it into the DuckDB enum
+         * vector. Like the union tag, type equality cannot catch this (the codes
+         * ride as a plain unsigned integer), and an out-of-range index would make
+         * DuckDB read past its enum dictionary. */
+        size_t w = v->type ? rdx_qk_type_fixed_width(v->type) : 0U;
+        if (w && v->data) {
+            idx_t r;
+            for (r = 0; r < n; r++) {
+                uint32_t code;
+                if (v->has_validity && !rdx_qk_vector_row_is_valid(v, r)) continue;
+                if (w == 1U) code = ((const uint8_t *)v->data)[r];
+                else if (w == 2U) { uint16_t c16; memcpy(&c16, (const uint8_t *)v->data + 2U * r, 2); code = c16; }
+                else { uint32_t c32; memcpy(&c32, (const uint8_t *)v->data + 4U * r, 4); code = c32; }
+                if ((size_t)code >= desc->field_count) {
+                    rducks_format_error_message(err, cap, "RIPC enum result index is out of range");
+                    return 0;
+                }
+            }
+        }
+    }
     if (rducks_quack_is_varlen(desc)) {
         uint64_t *out_validity = NULL;
         idx_t r;

@@ -136,6 +136,20 @@ expect_error(
   info = "duplicate chunk types field must be rejected"
 )
 
+# A struct member pair carrying a duplicate name field must be rejected (it would
+# otherwise free-then-overwrite the first name, silently mutating the type). The
+# member pair in STRUCT(a=INTEGER) is `00 00 | 01 61` (field 0 name "a"); inject a
+# second copy of that 4-byte name field inside the same pair.
+struct_p <- Rducks:::rducks_wire_encode_values(list(STRUCT(a = INTEGER)), list(list(list(a = 1L))), 1L)
+expect_equal(as.integer(struct_p[19:22]), c(0x00L, 0x00L, 0x01L, 0x61L),
+             info = "struct member-pair name field is where the layout precondition expects")
+dup_name <- c(struct_p[1:22], struct_p[19:22], struct_p[23:length(struct_p)])
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(STRUCT(a = INTEGER)), dup_name),
+  pattern = "duplicate name in struct member pair",
+  info = "duplicate struct member-pair name must be rejected"
+)
+
 # A vector advertising validity (field 100 flag = 1) but omitting the mask
 # (field 101) must error rather than leave a NULL mask. The vector's has-validity
 # flag value byte is at index 17 of this payload.

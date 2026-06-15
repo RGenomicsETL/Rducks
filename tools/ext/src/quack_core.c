@@ -569,6 +569,7 @@ static int rdx_qk_child_pair_decode(rdx_qk_reader *r, char **name_out, rdx_qk_ty
     uint16_t field;
     const uint8_t *ptr;
     uint64_t len;
+    int seen_name = 0, seen_type = 0;
     *name_out = NULL;
     *type_out = NULL;
     for (;;) {
@@ -576,8 +577,12 @@ static int rdx_qk_child_pair_decode(rdx_qk_reader *r, char **name_out, rdx_qk_ty
         if (field == RDX_QK_OBJECT_END) break;
         switch (field) {
         case 0:
+            if (seen_name) {
+                rdx_qk_set_error(err, "duplicate name in struct member pair");
+                goto fail;
+            }
+            seen_name = 1;
             if (!rdx_qk_read_string(r, &ptr, &len, err)) goto fail;
-            free(*name_out);
             *name_out = rdx_qk_strdup_n((const char *)ptr, (size_t)len);
             if (!*name_out) {
                 rdx_qk_set_error(err, "out of memory decoding struct member name");
@@ -585,7 +590,11 @@ static int rdx_qk_child_pair_decode(rdx_qk_reader *r, char **name_out, rdx_qk_ty
             }
             break;
         case 1:
-            if (*type_out) rdx_qk_type_free(*type_out);
+            if (seen_type) {
+                rdx_qk_set_error(err, "duplicate type in struct member pair");
+                goto fail;
+            }
+            seen_type = 1;
             if (!rdx_qk_type_decode_depth(r, type_out, depth, err)) goto fail;
             break;
         default:
