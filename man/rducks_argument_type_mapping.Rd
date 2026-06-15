@@ -20,7 +20,7 @@ A data frame with one row per requested type descriptor.
 \code{rducks_argument_type_mapping()} is the package-level source of truth for the
 R value shape used when DuckDB argument values are marshalled into an R
 function call. It is used by scalar-UDF registration checks and the
-nanoarrow scalar-UDF marshalling adapter.
+direct native marshalling adapter.
 }
 \details{
 With \code{null_handling = "default"}, top-level SQL \code{NULL} inputs short-circuit
@@ -33,7 +33,7 @@ scalar lists/arrays, SQL \code{NULL} elements are represented as typed \code{NA}
 where the child type has an R \code{NA} representation; nested composite \code{NULL}
 values are represented as R \code{NULL}.
 
-The default table contains all scalar descriptors supported by the nanoarrow
+The default table contains all scalar descriptors supported by the direct
 scalar-UDF marshalling adapter. \code{DECIMAL}, \code{ENUM}, \code{UNION}, and composite
 descriptors can be requested explicitly to inspect their recursive R function
 shapes.

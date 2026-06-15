@@ -361,11 +361,11 @@ static void rducks_udf_stats_init(rducks_r_scalar_meta_t *meta) {
     atomic_init(&meta->queued_chunks, 0U);
     atomic_init(&meta->queue_pending_current, 0U);
     atomic_init(&meta->queue_pending_max, 0U);
-    atomic_init(&meta->arrow_r_chunks, 0U);
-    atomic_init(&meta->arrow_c_chunks, 0U);
-    atomic_init(&meta->arrow_c_input_snapshot_chunks, 0U);
-    atomic_init(&meta->arrow_c_owned_result_chunk_chunks, 0U);
-    atomic_init(&meta->arrow_ipc_chunks, 0U);
+    atomic_init(&meta->sexp_chunks, 0U);
+    atomic_init(&meta->direct_eval_chunks, 0U);
+    atomic_init(&meta->direct_input_snapshot_chunks, 0U);
+    atomic_init(&meta->direct_owned_result_chunk_chunks, 0U);
+    atomic_init(&meta->wire_chunks, 0U);
     atomic_init(&meta->ripc_collect_batches, 0U);
     atomic_init(&meta->ripc_collect_requests, 0U);
     atomic_init(&meta->ripc_collect_max_batch, 0U);
@@ -390,24 +390,24 @@ static void rducks_udf_record_evaluator(rducks_r_scalar_meta_t *meta, idx_t rows
     (void)rows;
     if (!meta || !meta->runtime) return;
     if (meta->eval_mode == RDUCKS_EVAL_R) {
-        rducks_udf_counter_add(&meta->arrow_r_chunks, 1U);
+        rducks_udf_counter_add(&meta->sexp_chunks, 1U);
     } else if (meta->eval_mode == RDUCKS_EVAL_RIPC) {
-        rducks_udf_counter_add(&meta->arrow_ipc_chunks, 1U);
+        rducks_udf_counter_add(&meta->wire_chunks, 1U);
     } else {
-        rducks_udf_counter_add(&meta->arrow_c_chunks, 1U);
+        rducks_udf_counter_add(&meta->direct_eval_chunks, 1U);
     }
 }
 
-static void rducks_udf_record_arrow_c_input_snapshot(rducks_r_scalar_meta_t *meta) {
+static void rducks_udf_record_direct_input_snapshot(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
     if (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV) return;
-    rducks_udf_counter_add(&meta->arrow_c_input_snapshot_chunks, 1U);
+    rducks_udf_counter_add(&meta->direct_input_snapshot_chunks, 1U);
 }
 
-static void rducks_udf_record_arrow_c_owned_result_chunk(rducks_r_scalar_meta_t *meta) {
+static void rducks_udf_record_direct_owned_result_chunk(rducks_r_scalar_meta_t *meta) {
     if (!meta || !meta->runtime) return;
     if (meta->eval_mode != RDUCKS_EVAL_RC && meta->eval_mode != RDUCKS_EVAL_RCV) return;
-    rducks_udf_counter_add(&meta->arrow_c_owned_result_chunk_chunks, 1U);
+    rducks_udf_counter_add(&meta->direct_owned_result_chunk_chunks, 1U);
 }
 
 static void rducks_udf_record_queue_pending_add(rducks_r_scalar_meta_t *meta) {
@@ -461,11 +461,11 @@ static const char *rducks_udf_stat_fields_text(void) {
            "queued_chunks\n"
            "queue_pending_current\n"
            "queue_pending_max\n"
-           "arrow_r_chunks\n"
-           "arrow_c_chunks\n"
-           "arrow_c_input_snapshot_chunks\n"
-           "arrow_c_owned_result_chunk_chunks\n"
-           "arrow_ipc_chunks\n"
+           "sexp_chunks\n"
+           "direct_eval_chunks\n"
+           "direct_input_snapshot_chunks\n"
+           "direct_owned_result_chunk_chunks\n"
+           "wire_chunks\n"
            "ripc_collect_batches\n"
            "ripc_collect_requests\n"
            "ripc_collect_max_batch\n"
@@ -489,11 +489,11 @@ static const rducks_udf_counter_stat_t rducks_udf_counter_stats[] = {
     RDUCKS_UDF_COUNTER_STAT("queued_chunks", queued_chunks),
     RDUCKS_UDF_COUNTER_STAT("queue_pending_current", queue_pending_current),
     RDUCKS_UDF_COUNTER_STAT("queue_pending_max", queue_pending_max),
-    RDUCKS_UDF_COUNTER_STAT("arrow_r_chunks", arrow_r_chunks),
-    RDUCKS_UDF_COUNTER_STAT("arrow_c_chunks", arrow_c_chunks),
-    RDUCKS_UDF_COUNTER_STAT("arrow_c_input_snapshot_chunks", arrow_c_input_snapshot_chunks),
-    RDUCKS_UDF_COUNTER_STAT("arrow_c_owned_result_chunk_chunks", arrow_c_owned_result_chunk_chunks),
-    RDUCKS_UDF_COUNTER_STAT("arrow_ipc_chunks", arrow_ipc_chunks),
+    RDUCKS_UDF_COUNTER_STAT("sexp_chunks", sexp_chunks),
+    RDUCKS_UDF_COUNTER_STAT("direct_eval_chunks", direct_eval_chunks),
+    RDUCKS_UDF_COUNTER_STAT("direct_input_snapshot_chunks", direct_input_snapshot_chunks),
+    RDUCKS_UDF_COUNTER_STAT("direct_owned_result_chunk_chunks", direct_owned_result_chunk_chunks),
+    RDUCKS_UDF_COUNTER_STAT("wire_chunks", wire_chunks),
     RDUCKS_UDF_COUNTER_STAT("ripc_collect_batches", ripc_collect_batches),
     RDUCKS_UDF_COUNTER_STAT("ripc_collect_requests", ripc_collect_requests),
     RDUCKS_UDF_COUNTER_STAT("ripc_collect_max_batch", ripc_collect_max_batch),
@@ -530,11 +530,11 @@ static void rducks_runtime_reset_udf_stats_locked(rducks_r_scalar_meta_t *meta) 
     rducks_udf_counter_store(&meta->dispatch_rows, 0U);
     rducks_udf_counter_store(&meta->direct_chunks, 0U);
     rducks_udf_counter_store(&meta->queued_chunks, 0U);
-    rducks_udf_counter_store(&meta->arrow_r_chunks, 0U);
-    rducks_udf_counter_store(&meta->arrow_c_chunks, 0U);
-    rducks_udf_counter_store(&meta->arrow_c_input_snapshot_chunks, 0U);
-    rducks_udf_counter_store(&meta->arrow_c_owned_result_chunk_chunks, 0U);
-    rducks_udf_counter_store(&meta->arrow_ipc_chunks, 0U);
+    rducks_udf_counter_store(&meta->sexp_chunks, 0U);
+    rducks_udf_counter_store(&meta->direct_eval_chunks, 0U);
+    rducks_udf_counter_store(&meta->direct_input_snapshot_chunks, 0U);
+    rducks_udf_counter_store(&meta->direct_owned_result_chunk_chunks, 0U);
+    rducks_udf_counter_store(&meta->wire_chunks, 0U);
     rducks_udf_counter_store(&meta->ripc_collect_batches, 0U);
     rducks_udf_counter_store(&meta->ripc_collect_requests, 0U);
     rducks_udf_counter_store(&meta->ripc_collect_max_batch, 0U);
@@ -602,8 +602,8 @@ static int rducks_runtime_udf_stat(rducks_runtime_entry_t *runtime, const char *
                  (meta->eval_mode == RDUCKS_EVAL_RIPC ? "RIPC" :
                   (meta->eval_mode == RDUCKS_EVAL_RCV ? "RCV" : "RC")));
     } else if (strcmp(field, "marshalling") == 0) {
-        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "arrow_r" :
-                 (meta->eval_mode == RDUCKS_EVAL_RIPC ? "arrow_ipc" : "arrow_c"));
+        snprintf(out, out_cap, "%s", meta->eval_mode == RDUCKS_EVAL_R ? "sexp" :
+                 (meta->eval_mode == RDUCKS_EVAL_RIPC ? "wire" : "direct"));
     } else if (!rducks_runtime_format_counter_stat(meta, field, out, out_cap)) {
         ok = 0;
     }
@@ -629,7 +629,6 @@ static void *rducks_r_scalar_bind_state_copy(void *ptr) {
     dst = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*dst));
     if (!dst) return NULL;
     dst->runtime = src->runtime;
-    dst->connection_id = src->connection_id;
     dst->arity = src->arity;
     if (src->arity) {
         dst->args = rducks_type_desc_array_clone(src->args, src->arity);
@@ -646,11 +645,6 @@ static void rducks_r_scalar_local_state_destroy(void *ptr) {
     if (!state) return;
     rducks_type_desc_array_destroy(state->args, state->arity);
     free(state);
-}
-
-static idx_t rducks_client_context_connection_id(duckdb_client_context context) {
-    if (!context) return 0;
-    return duckdb_client_context_get_connection_id(context);
 }
 
 static int rducks_r_scalar_resolve_dynamic_bind_args(duckdb_bind_info info,
@@ -705,7 +699,6 @@ static void rducks_effective_meta_for_state(rducks_r_scalar_meta_t *meta,
 static void rducks_r_scalar_bind(duckdb_bind_info info) {
     rducks_r_scalar_meta_t *meta;
     rducks_r_scalar_bind_state_t *state;
-    duckdb_client_context context = NULL;
 
     if (!info) return;
     meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_bind_get_extra_info(info);
@@ -721,10 +714,15 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
     }
     state->runtime = meta->runtime;
 
-    duckdb_scalar_function_get_client_context(info, &context);
-    if (context) {
-        state->connection_id = rducks_client_context_connection_id(context);
-        duckdb_destroy_client_context(&context);
+    if (meta->dynamic_args && meta->eval_mode == RDUCKS_EVAL_RIPC) {
+        /* The R wrapper already rejects dynamic (omitted-args) UDFs under the
+         * wire plan, but guard the native bind too: the Quack wire codec does not
+         * carry dynamic arguments, and bind-time resolved types would not have
+         * gone through wire-support validation. */
+        rducks_r_scalar_bind_state_destroy(state);
+        duckdb_scalar_function_bind_set_error(info,
+            "Rducks ipc (wire) transport does not support dynamic (omitted-args) scalar UDFs");
+        return;
     }
 
     if (meta->dynamic_args) {
@@ -745,7 +743,6 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
     rducks_r_scalar_meta_t *meta;
     rducks_r_scalar_bind_state_t *bind_state;
     rducks_r_scalar_local_state_t *state;
-    duckdb_client_context context = NULL;
 
     if (!info) return;
     meta = (rducks_r_scalar_meta_t *)duckdb_scalar_function_init_get_extra_info(info);
@@ -761,13 +758,6 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
         free(state);
         duckdb_scalar_function_init_set_error(info, "Rducks scalar worker-local state is missing runtime state");
         return;
-    }
-    state->connection_id = bind_state ? bind_state->connection_id : 0;
-
-    duckdb_scalar_function_init_get_client_context(info, &context);
-    if (context) {
-        state->connection_id = rducks_client_context_connection_id(context);
-        duckdb_destroy_client_context(&context);
     }
     if (bind_state && bind_state->arity) {
         state->arity = bind_state->arity;

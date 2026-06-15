@@ -10,10 +10,10 @@ on:
 permissions: read-all
 
 jobs:
-  ipc-provider-contracts:
+  provider-contracts:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    name: ${{ matrix.os }} IPC contracts
+    name: ${{ matrix.os }} provider contracts
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +24,13 @@ jobs:
       RDUCKS_DEV_SURFACES: "true"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Quack codec sources stay in sync
+        if: runner.os == 'Linux'
+        run: |
+          cmp src/quack_core.c tools/ext/src/quack_core.c
+          cmp src/quack_core.h tools/ext/src/quack_core.h
+        shell: bash
 
       - name: Restore script execute bits on Windows
         if: runner.os == 'Windows'
@@ -43,17 +50,48 @@ jobs:
 
       - name: Install R dependencies
         run: |
-          install.packages(c("DBI", "duckdb", "globals", "mirai", "mori", "nanoarrow", "nanonext", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "globals", "mirai", "mori", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks
         run: R CMD INSTALL --preclean .
         shell: bash
 
-      - name: Run focused IPC provider contract tests
+      - name: Run focused provider contract tests
         run: |
-          tinytest::run_test_file("inst/tinytest/test_provider_ipc_worker.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_startup_retry.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_batch_contract.R")
-          tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_nng_10_lifecycle.R")
+          # run_test_file() prints failures but still returns normally, so the
+          # results must be inspected explicitly or a failing test would pass CI.
+          files <- c(
+            "inst/tinytest/test_dependencies.R",
+            "inst/tinytest/test_execution_plan.R",
+            "inst/tinytest/test_quack_codec_roundtrip.R",
+            "inst/tinytest/test_direct_scalar.R",
+            "inst/tinytest/test_wire_support_contract.R",
+            "inst/tinytest/test_quack_malformed.R"
+          )
+          ok <- TRUE
+          for (f in files) {
+            res <- tinytest::run_test_file(f)
+            print(res)
+            if (!all(vapply(res, isTRUE, logical(1)))) ok <- FALSE
+          }
+          if (!ok) stop("focused provider contract tests failed")
+        shell: Rscript {0}
+
+      - name: Run worker-process ipc tests (all advertised wire types + external malformed)
+        if: runner.os == 'Linux'
+        env:
+          RDUCKS_RUN_IPC_TESTS: "true"
+        run: |
+          files <- c(
+            "inst/tinytest/test_ipc_roundtrip.R",
+            "inst/tinytest/test_ipc_external_malformed.R"
+          )
+          ok <- TRUE
+          for (f in files) {
+            res <- tinytest::run_test_file(f)
+            print(res)
+            if (!all(vapply(res, isTRUE, logical(1)))) ok <- FALSE
+          }
+          if (!ok) stop("worker-process ipc tests failed")
         shell: Rscript {0}

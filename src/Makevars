@@ -1,1 +1,1 @@
-PKG_CPPFLAGS = -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I../tools/ext/third_party/na/src -I../tools/ext/third_party/na/flatcc/include
+

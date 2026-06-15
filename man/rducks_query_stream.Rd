@@ -2,72 +2,37 @@
 % Please edit documentation in R/query_stream.R
 \name{rducks_query_stream}
 \alias{rducks_query_stream}
-\title{Stream a DuckDB query in batches}
+\title{Stream a DuckDB query as native data-frame batches}
 \usage{
-rducks_query_stream(
-  con,
-  sql,
-  batch_size = 1024L,
-  format = c("data.frame", "record_batch", "nanoarrow")
-)
+rducks_query_stream(con, sql)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection} with Rducks enabled.}
 
-\item{sql}{SQL query string.}
-
-\item{batch_size}{Maximum number of rows returned by \code{next_batch()} when its
-\code{n} argument is \code{NULL}. DuckDB may fetch a larger native chunk internally;
-Rducks buffers any remainder for later \code{next_batch()} calls.}
-
-\item{format}{Default batch representation. \code{"data.frame"} materializes
-batches to base R data frames. \code{"record_batch"} returns the owned
-\code{nanoarrow_array} record batch directly. \code{"nanoarrow"} is accepted as an
-alias for \code{"record_batch"}.}
+\item{sql}{A non-empty SQL query string.}
 }
 \value{
-Object of class \code{rducks_query_stream} with
-\code{next_batch(n = NULL, format = NULL)}, \code{close()}, \code{is_closed()}, \code{schema},
-and \code{prototype} fields.
+An object of class \code{rducks_query_stream} with \verb{$next_batch()}
+(returns the next data-frame batch, or \code{NULL} at end of stream),
+\verb{$close()}, \verb{$schema} (column names and Rducks type tokens), and \verb{$token}.
+The stream closes on \verb{$close()} or \code{rducks_release(con)}.
 }
 \description{
-Opens a connection-bound query stream with explicit \code{next_batch()} and
-\code{close()} methods. The query itself is executed by the Rducks DuckDB extension
-using DuckDB's native streaming result and data-chunk APIs; each fetched
-DuckDB chunk is exported through DuckDB Arrow C Data. Rducks can either return
-the owned nanoarrow record-batch object directly or materialize it with the
-package's Rducks/nanoarrow helpers. This is an R-side result/session API; it
-is not inferred from scalar UDF IPC behavior and does not use the R-backed SQL
-table function path. Because execution uses a dedicated extension-owned
-DuckDB connection, database-scoped objects are visible but temporary
-tables/views that exist only on the caller's DBI connection are not part of
-the stream query scope. That dedicated stream connection is separate from the
-extension connection used for dynamic scalar/table/aggregate registration; a
-caller connection currently supports one active native query stream at a
-time. Delivery into R runs on the recorded R thread: even record-batch mode
-creates R external-pointer objects and installs nanoarrow finalizers, so
-Rducks does not call R/nanoarrow code from arbitrary DuckDB worker threads.
-}
-\details{
-\code{next_batch()} returns the next batch or \code{NULL} at end-of-stream. With
-\code{format = "data.frame"} it returns a base R data-frame batch. With
-\code{format = "record_batch"} it returns a \code{nanoarrow_array} struct array with an
-attached \code{nanoarrow_schema}; nanoarrow's R finalizer owns the Arrow C Data
-release callbacks, so callers can materialize later without Rducks copying the
-batch to R vectors first. Returned batches carry the stream's DuckDB/nanoarrow
-schema as the \code{"rducks_nanoarrow_schema"} attribute. \code{close()} clears the
-native streaming result; it is safe to call more than once. A finalizer also
-closes unclosed streams, and \code{rducks_release(con)} closes streams registered
-on that connection before detaching connection-local state.
+Opens a native DuckDB streaming result through the Rducks extension and
+returns the rows in DuckDB-sized batches as data frames, instead of an eager
+\code{DBI::dbGetQuery()} result. Each batch is materialized directly from DuckDB
+vectors to R values on the recorded R thread. The stream uses the extension's
+database-scoped connection, so
+it cannot see caller-connection temporary tables or views.
 }
 \examples{
 \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db)
-stream <- rducks_query_stream(db, "SELECT 1 AS n UNION ALL SELECT 2")
+rducks_enable(db, threads = "single")
+stream <- rducks_query_stream(db, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")
 stream$next_batch()
 stream$close()
 rducks_release(db)
-DBI::dbDisconnect(db)
+DBI::dbDisconnect(db, shutdown = TRUE)
 }
 }

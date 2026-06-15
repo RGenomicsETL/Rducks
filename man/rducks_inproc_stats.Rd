@@ -27,8 +27,8 @@ configured native pending-request timeout. Running requests borrow DuckDB
 callback-frame input/output storage, so running-timeout cancellation is
 intentionally not supported and is reported via
 \code{running_timeout_supported = FALSE}. This is a runtime queue summary; for
-per-scalar-UDF execution detail such as selected evaluator, Arrow IPC waves, direct
-\code{arrow_c} input snapshots, and owned result-chunk counters, use
+per-scalar-UDF execution detail such as selected evaluator and direct
+input/result counters, use
 \code{\link[=rducks_explain_udf]{rducks_explain_udf()}}.
 }
 \examples{

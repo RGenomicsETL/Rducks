@@ -542,6 +542,9 @@ UNION <- function(...) {
   if (anyDuplicated(member_names)) {
     stop("UNION member names must be unique", call. = FALSE)
   }
+  if (length(members) > 255L) {
+    stop("UNION supports at most 255 members (DuckDB limit)", call. = FALSE)
+  }
   members <- lapply(members, function(member) if (rducks_type_inherits(member, "rducks_type")) member else rducks_type_object(member))
   rducks_type_construct_s7(
     token = sprintf(
@@ -788,14 +791,14 @@ rducks_scalar_mapping_supported <- function(type) {
   FALSE
 }
 
-rducks_arrow_c_direct_sequence_child_supported <- function(type) {
+rducks_direct_sequence_child_supported <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (kind %in% c("decimal", "enum")) {
     return(TRUE)
   }
   if (kind %in% c("list", "array", "struct", "map", "union")) {
-    return(rducks_arrow_c_direct_mapping_supported(type))
+    return(rducks_direct_mapping_supported(type))
   }
   identical(kind, "scalar") && rducks_type_token(type) %in% c(
     "bool", "i8", "u8", "i16", "u16", "i32", "u32",
@@ -803,7 +806,7 @@ rducks_arrow_c_direct_sequence_child_supported <- function(type) {
   )
 }
 
-rducks_arrow_c_direct_mapping_supported <- function(type) {
+rducks_direct_mapping_supported <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
   if (kind %in% c("decimal", "enum")) {
@@ -813,28 +816,28 @@ rducks_arrow_c_direct_mapping_supported <- function(type) {
     return(rducks_type_token(type) %in% setdiff(rducks_all_scalar_type_names(), "variant"))
   }
   if (kind %in% c("list", "array")) {
-    return(rducks_arrow_c_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
+    return(rducks_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
   }
   if (identical(kind, "struct")) {
     children <- rducks_type_children(type)
-    return(length(children) > 0L && all(vapply(children, rducks_arrow_c_direct_mapping_supported, logical(1))))
+    return(length(children) > 0L && all(vapply(children, rducks_direct_mapping_supported, logical(1))))
   }
   if (identical(kind, "map")) {
     children <- rducks_type_children(type)
-    return(rducks_arrow_c_direct_sequence_child_supported(children[[1L]]) &&
-      rducks_arrow_c_direct_sequence_child_supported(children[[2L]]))
+    return(rducks_direct_sequence_child_supported(children[[1L]]) &&
+      rducks_direct_sequence_child_supported(children[[2L]]))
   }
   if (identical(kind, "union")) {
     children <- rducks_type_children(type)
     return(length(children) > 0L && length(children) <= 255L &&
-      all(vapply(children, rducks_arrow_c_direct_mapping_supported, logical(1))))
+      all(vapply(children, rducks_direct_mapping_supported, logical(1))))
   }
   FALSE
 }
 
-rducks_arrow_c_direct_unsupported_types <- function(type) {
+rducks_direct_unsupported_types <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
-  if (rducks_arrow_c_direct_mapping_supported(type)) character() else rducks_type_duckdb_sql(type)
+  if (rducks_direct_mapping_supported(type)) character() else rducks_type_duckdb_sql(type)
 }
 
 rducks_unsupported_duckdb_types <- function(type) {
@@ -938,7 +941,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' `rducks_argument_type_mapping()` is the package-level source of truth for the
 #' R value shape used when DuckDB argument values are marshalled into an R
 #' function call. It is used by scalar-UDF registration checks and the
-#' nanoarrow scalar-UDF marshalling adapter.
+#' direct native marshalling adapter.
 #'
 #' With `null_handling = "default"`, top-level SQL `NULL` inputs short-circuit
 #' to a SQL `NULL` result and the R function is not called. The
@@ -950,7 +953,7 @@ rducks_check_argument_type_mapping <- function(mapping) {
 #' where the child type has an R `NA` representation; nested composite `NULL`
 #' values are represented as R `NULL`.
 #'
-#' The default table contains all scalar descriptors supported by the nanoarrow
+#' The default table contains all scalar descriptors supported by the direct
 #' scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and composite
 #' descriptors can be requested explicitly to inspect their recursive R function
 #' shapes.

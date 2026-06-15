@@ -17,8 +17,8 @@ read_num_env <- function(name, default) {
 
 rows <- read_int_env("RDUCKS_PERF_ROWS", 2048L * 128L)
 thresholds <- c(
-  arrow_r = read_num_env("RDUCKS_PERF_ARROW_R_MAX_SEC", 8),
-  arrow_c = read_num_env("RDUCKS_PERF_ARROW_C_MAX_SEC", 8)
+  direct = read_num_env("RDUCKS_PERF_DIRECT_MAX_SEC", 8),
+  quack = read_num_env("RDUCKS_PERF_QUACK_MAX_SEC", 8)
 )
 enforce_thresholds <- !tolower(Sys.getenv("RDUCKS_PERF_ENFORCE_THRESHOLDS", "true")) %in% c("0", "false", "no")
 
@@ -32,30 +32,27 @@ on.exit({
 }, add = TRUE)
 
 Rducks::rducks_enable(con, threads = "single")
+Rducks::rducks_set_execution_plan(
+  con,
+  Rducks:::rducks_execution_plan_internal("direct", "serial"),
+  threads = 1L,
+  external_threads = 1L
+)
 
 identity_i32 <- function(x) x
-plans <- list(
-  arrow_r = Rducks::rducks_execution_plan("arrow_r", "serial"),
-  arrow_c = Rducks::rducks_execution_plan("arrow_c", "serial")
+udf <- "r_perf_direct_i32"
+Rducks::rducks_register_scalar_udf(
+  con,
+  name = udf,
+  fun = identity_i32,
+  args = Rducks::INTEGER,
+  returns = Rducks::INTEGER,
+  mode = "vectorized",
+  side_effects = TRUE
 )
-udfs <- paste0("r_perf_", names(plans))
-
-for (i in seq_along(plans)) {
-  Rducks::rducks_set_execution_plan(con, plans[[i]], threads = 1L, external_threads = 1L)
-  Rducks::rducks_register_scalar_udf(
-    con,
-    name = udfs[[i]],
-    fun = identity_i32,
-    args = Rducks::INTEGER,
-    returns = Rducks::INTEGER,
-    mode = "vectorized",
-    side_effects = TRUE
-  )
-}
 
 expected_total <- sum(as.integer(seq.int(0L, rows - 1L) %% 1000L))
-run_one <- function(label, udf, plan) {
-  Rducks::rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+run_direct <- function() {
   invisible(DBI::dbGetQuery(con, sprintf(
     "SELECT sum(%s((i %% 1000)::INTEGER)) AS total FROM range(0, 2048) tbl(i)",
     DBI::dbQuoteIdentifier(con, udf)
@@ -70,18 +67,37 @@ run_one <- function(label, udf, plan) {
   })[["elapsed"]]
   total <- as.numeric(result$total[[1L]])
   if (!identical(total, as.numeric(expected_total))) {
-    stop(label, " returned total ", total, "; expected ", expected_total, call. = FALSE)
+    stop("direct returned total ", total, "; expected ", expected_total, call. = FALSE)
   }
   data.frame(
-    plan = label,
+    plan = "direct",
     rows = rows,
     elapsed_sec = round(elapsed, 3),
-    threshold_sec = thresholds[[label]],
+    threshold_sec = thresholds[["direct"]],
     stringsAsFactors = FALSE
   )
 }
 
-results <- do.call(rbind, Map(run_one, names(plans), udfs, plans))
+run_quack <- function() {
+  values <- as.integer(seq.int(0L, rows - 1L) %% 1000L)
+  gc(FALSE)
+  elapsed <- system.time({
+    payload <- Rducks:::rducks_wire_encode_values(list(Rducks::INTEGER), list(values), length(values))
+    decoded <- Rducks:::rducks_wire_decode_values(list(Rducks::INTEGER), payload)
+  })[["elapsed"]]
+  if (!identical(decoded$values[[1L]], values)) {
+    stop("quack roundtrip returned unexpected values", call. = FALSE)
+  }
+  data.frame(
+    plan = "quack",
+    rows = rows,
+    elapsed_sec = round(elapsed, 3),
+    threshold_sec = thresholds[["quack"]],
+    stringsAsFactors = FALSE
+  )
+}
+
+results <- rbind(run_direct(), run_quack())
 print(results, row.names = FALSE)
 
 output <- Sys.getenv("RDUCKS_PERF_OUTPUT", unset = "")

@@ -13,11 +13,9 @@ evaluation modes for the scalar UDF, not separate DuckDB function kinds.
 
 | Public plan | Engine ID | Scalar evaluation mode | Vectorized evaluation mode | Notes |
 | --- | --- | --- | --- | --- |
-| `arrow_r + serial` | `arrow_r_serial` | supported | supported | Reference path through Arrow C Data and nanoarrow/R. |
-| `arrow_r + inproc_concurrent` | `arrow_r_main_queue` | supported | supported | Queued same-process callbacks; R work stays on the recorded R thread. |
-| `arrow_c + serial` | `arrow_c_direct_serial` | supported | supported | Direct DuckDB-vector marshalling for supported signatures. |
-| `arrow_c + inproc_concurrent` | `arrow_c_direct_main_queue` | supported | supported | Same direct marshalling with owned queued input/result state. |
-| `arrow_ipc + multiprocess_parallel` | `ipc_nng_pool` | supported | supported | Persistent worker processes, native NNG request/reply, owned Arrow IPC bytes. |
+| internal `direct + serial` | `direct_serial` | supported | supported | Reference path; constructed internally, not exposed publicly. |
+| `inproc` (`direct + inproc_concurrent`) | `direct_main_queue` | supported | supported | Direct DuckDB-vector marshalling with owned queued input/result state; R work stays on the recorded R thread. |
+| `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | supported | supported | Persistent worker processes, native NNG request/reply, owned Quack wire bytes. Covers the wire-supported scalar types (see below); other signatures are rejected at registration. |
 
 Invalid marshalling/concurrency pairs fail validation.
 
@@ -35,28 +33,37 @@ are rejected.
 
 ## Streaming queries
 
-`rducks_query_stream()` is a connection-bound R-side result/session API. It
-opens a native DuckDB streaming result through the Rducks extension, fetches
-DuckDB data chunks with `duckdb_stream_fetch_chunk()`, exports them through
-DuckDB Arrow C Data, and materializes data-frame batches with Rducks' existing
-nanoarrow conversion helpers. The stream query scope is the database-scoped
-extension connection, not caller-connection temporary tables/views. It closes the
-native streaming result on `close()`, finalization, or `rducks_release(con)`, and
-does not survive connection release.
+`rducks_query_stream()` opens a native DuckDB streaming result and returns rows
+in DuckDB-sized batches as data frames. Each batch is materialized directly from
+DuckDB vectors to R values on the recorded R thread. The stream uses the
+extension's database-scoped connection, so it cannot see caller-connection
+temporary tables or views.
 
 ## Type-family support
 
-| Type family | Examples | `arrow_r` | `arrow_c` | `arrow_ipc` | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | yes | Values are materialized/copied as R values or vectors. The Arrow C Data bridge accepts both packed Arrow booleans and the `arrow.bool8` extension storage used by some Arrow producers; validity bitmaps remain authoritative for NULLs. |
-| String/binary/geometry/bit | `VARCHAR`, `BLOB`, `GEOMETRY`, `BIT` | yes | yes | yes | Returned binary data is copied into DuckDB-owned output storage. `GEOMETRY` crosses the R boundary as WKB `raw` bytes. |
-| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | no direct `arrow_c` path yet | yes where DuckDB's C API exposes `VARIANT` logical types | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
-| Temporal | `DATE`, `TIME`, `TIMESTAMP`, `INTERVAL` | yes | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
-| Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
-| Decimal | `DECIMAL(width, scale)` | yes | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. |
-| Enum | `ENUM(c("a", "b"))` | yes | yes | yes | IPC uses declared levels plus underlying enum index storage, not dictionary transport. |
-| Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes | yes where direct predicate accepts child | yes | Child descriptors are validated recursively. |
-| Struct/map/union | `STRUCT(...)`, `MAP(...)`, `UNION(...)` | yes | yes where direct predicate accepts children | yes | Direct support depends on native DuckDB-vector handling for the child types. The direct `arrow_c` UNION adapter follows DuckDB's current native UNION tag/child vector layout and is version-coupled; Arrow IPC remains the stable interchange boundary. |
+The `direct` column covers the in-process `inproc` plan. The `wire` column
+covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
+bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at
+registration on `transport = "ipc"` until the native bridge covers it.
+
+| Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
+| --- | --- | --- | --- | --- |
+| Boolean/numeric scalars | `BOOLEAN`, integer widths, `FLOAT`, `DOUBLE` | yes | yes | Values are materialized/copied as R values or vectors. Validity bitmaps remain authoritative for NULLs. |
+| String/binary | `VARCHAR`, `BLOB` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. |
+| Bit | `BIT` | yes | yes | `rducks_bits` (packed bits + length); transported as DuckDB's physical bit storage (padding-header byte + MSB-first bits). |
+| Geometry | `GEOMETRY` | yes | yes | `GEOMETRY` crosses the R boundary as its opaque physical `raw` bytes (WKB for a real geometry); it is physically a varlen blob and rides the wire as a BLOB column, reconstructed from its declared type. The bytes are transported verbatim, not parsed. |
+| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | rejected | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
+| Temporal | `DATE`, `TIME`, `TIMESTAMP` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
+| Interval | `INTERVAL` | yes | yes | `rducks_interval` value class; transported as the 16-byte months/days/micros storage. |
+| Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | Uses Rducks value classes where base R has no exact scalar. |
+| Decimal | `DECIMAL(width, scale)` | yes | yes | Use the `DECIMAL()` constructor, not a quoted SQL type string. Transported as the scaled-integer storage across all four physical widths (2/4/8/16 bytes). |
+| Enum | `ENUM(c("a", "b"))` | yes | yes | Declared levels plus the underlying 0-based dictionary index storage; the worker reconstructs `rducks_enum` from the levels. |
+| Lists/arrays | `INTEGER[]`, `DOUBLE[3]` | yes where the child is supported | yes where the child is supported | Child descriptors are validated recursively; the wire bridge marshals offsets/lengths and the child vector. |
+| Struct | `STRUCT(...)` | yes where children are supported | yes where children are supported | The wire bridge marshals each member vector recursively; arbitrary nesting (struct of list, list of struct, etc.) is covered. |
+| Map | `MAP(...)` | yes where children are supported | yes where children are supported | Transported as `LIST(STRUCT(key, value))`, matching DuckDB's physical layout; key/value child types are validated recursively. |
+| Union | `UNION(...)` | yes where children are supported | yes where members are supported | Transported as DuckDB's physical `STRUCT(tag, members...)`, so the active member tag is explicit (an active-but-NULL member is distinct from an inactive one). Member types are validated recursively. |
 
 ## NULL and error semantics
 
@@ -78,12 +85,12 @@ does not survive connection release.
 
 - Rducks does not expose a zero-copy return contract.
 - Borrowed DuckDB vectors/data chunks are callback-local.
-- Same-process queued `arrow_c` requests copy inputs into owned native state
+- Same-process queued `direct` requests copy inputs into owned native state
   before crossing to the recorded R thread.
 - Queued results are written into owned result state before a waiting worker
   writes callback output.
-- Arrow IPC request/result payloads are owned raw bytes and must not hide R
-  `serialize()` payloads or process-local pointers.
+- Quack wire request/result payloads (`ipc` path) are owned raw bytes and
+  must not hide R `serialize()` payloads or process-local pointers.
 - Same-host `ipc_globals_share = "mori"` is only a long-lived global-sharing
   path. Built-in IPC backends currently report `supports_chunk_shared_memory_handles = FALSE`;
   no SQL chunk data-plane shared-memory handles are supported yet.

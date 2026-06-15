@@ -2,8 +2,8 @@ rducks_vectorized_column_values <- function(type, values, nulls, rows) {
   if (!length(rows)) {
     return(values[integer()])
   }
-  if (any(nulls[rows]) && (rducks_arrow_uses_r_null_for_null(type) || !rducks_type_inherits(type, "rducks_scalar_type"))) {
-    return(lapply(rows, function(i) rducks_arrow_value_at(type, values, nulls, i)))
+  if (any(nulls[rows]) && (rducks_uses_r_null_for_null(type) || !rducks_type_inherits(type, "rducks_scalar_type"))) {
+    return(lapply(rows, function(i) rducks_value_at(type, values, nulls, i)))
   }
   values[rows]
 }
@@ -35,7 +35,9 @@ rducks_vectorized_return_value_at <- function(type, value, i) {
       child <- children[[field_index]]
       if ((!rducks_type_inherits(child, "rducks_scalar_type") || rducks_type_inherits(child, c("rducks_blob_type", "rducks_geometry_type", "rducks_variant_type", "rducks_bit_type"))) &&
           is.list(row[[field]]) && length(row[[field]]) == 1L) {
-        row[[field]] <- row[[field]][[1L]]
+        # Single-bracket assignment so unwrapping a length-1 list whose element is
+        # NULL keeps the field rather than deleting it from the row.
+        row[field] <- row[[field]][1L]
       }
     }
     return(row)
@@ -84,7 +86,7 @@ rducks_vectorized_eval_one <- function(fun, args, n, exception_handling) {
     do.call(fun, args),
     error = function(e) {
       if (identical(exception_handling, "return_null")) {
-        return(structure(list(n = n), class = "rducks_arrow_return_null"))
+        return(structure(list(n = n), class = "rducks_return_null"))
       }
       stop(e)
     }
@@ -112,7 +114,7 @@ rducks_vectorized_eval_prepared_chunk <- function(fun, arg_types, return_type, p
     length(eval_rows),
     exception_handling
   )
-  rows <- if (inherits(value, "rducks_arrow_return_null")) {
+  rows <- if (inherits(value, "rducks_return_null")) {
     vector("list", length(eval_rows))
   } else {
     rducks_vectorized_result_to_rows(return_type, value, length(eval_rows))

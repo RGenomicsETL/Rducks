@@ -32,8 +32,6 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include <nanoarrow/r.h>
-
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -215,11 +213,11 @@ struct rducks_r_scalar_meta {
     atomic_uint_fast64_t queued_chunks;
     atomic_uint_fast64_t queue_pending_current;
     atomic_uint_fast64_t queue_pending_max;
-    atomic_uint_fast64_t arrow_r_chunks;
-    atomic_uint_fast64_t arrow_c_chunks;
-    atomic_uint_fast64_t arrow_c_input_snapshot_chunks;
-    atomic_uint_fast64_t arrow_c_owned_result_chunk_chunks;
-    atomic_uint_fast64_t arrow_ipc_chunks;
+    atomic_uint_fast64_t sexp_chunks;
+    atomic_uint_fast64_t direct_eval_chunks;
+    atomic_uint_fast64_t direct_input_snapshot_chunks;
+    atomic_uint_fast64_t direct_owned_result_chunk_chunks;
+    atomic_uint_fast64_t wire_chunks;
     atomic_uint_fast64_t ripc_collect_batches;
     atomic_uint_fast64_t ripc_collect_requests;
     atomic_uint_fast64_t ripc_collect_max_batch;
@@ -231,14 +229,12 @@ struct rducks_r_scalar_meta {
 
 typedef struct rducks_r_scalar_bind_state {
     rducks_runtime_entry_t *runtime;
-    idx_t connection_id;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_bind_state_t;
 
 typedef struct rducks_r_scalar_local_state {
     rducks_runtime_entry_t *runtime;
-    idx_t connection_id;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_local_state_t;
@@ -393,19 +389,12 @@ static void rducks_runtime_queue_destroy_entry(rducks_runtime_entry_t *entry) {
 }
 
 static int rducks_runtime_configure_connection(duckdb_connection connection, char *err, size_t err_cap) {
-    duckdb_result result;
-    memset(&result, 0, sizeof(result));
+    /* Hook for extension-owned connection setup. Direct DuckDB-vector
+     * marshalling needs no DuckDB session settings. */
     if (!connection) {
         snprintf(err, err_cap, "Rducks runtime connection is missing");
         return 0;
     }
-    if (duckdb_query(connection, "SET arrow_lossless_conversion=true", &result) == DuckDBError) {
-        const char *msg = duckdb_result_error(&result);
-        rducks_copy_error_message(err, err_cap, msg, "failed to configure Rducks extension connection");
-        duckdb_destroy_result(&result);
-        return 0;
-    }
-    duckdb_destroy_result(&result);
     return 1;
 }
 
@@ -555,19 +544,24 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
-#include "src/rducks_vendor_nanoarrow.c"
-#include "src/rducks_vendor_ipc_helpers.h"
 #include "src/rducks_threads.c"
 #include "src/rducks_util.c"
 #include "src/rducks_types.c"
 #include "src/rducks_runtime.c"
 #include "src/rducks_nng.c"
-#include "src/rducks_arrow.c"
-#include "src/rducks_query_stream.c"
+/* Defined in src/rducks_ripc.c (included after rducks_rc.c); forward-declared so
+ * the scalar dispatch in rducks_scalar_dispatch.c can route wire (RIPC) UDFs to it. */
+static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                               duckdb_data_chunk input, duckdb_vector output,
+                               char *err_msg, size_t err_cap);
+#include "src/rducks_scalar_dispatch.c"
 #include "src/rducks_rc.c"
+#include "src/quack_core.c"
+#include "src/rducks_ripc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"
 #include "src/rducks_udf_sql.c"
-#include "src/rducks_table.c"
 #include "src/rducks_aggregate.c"
+#include "src/rducks_table.c"
+#include "src/rducks_query_stream.c"
 #include "src/rducks_surfaces.c"

@@ -47,7 +47,11 @@ static void rducks_copy_error_message(char *out, size_t out_cap,
         memcpy(out, text, len + 1U);
         return;
     }
-    snprintf(out, out_cap, "%s", text);
+    /* Deliberate truncation: copy what fits, NUL-terminate, then mark. Done with
+     * memcpy rather than snprintf to avoid a -Wformat-truncation diagnostic for
+     * the intentionally-clipped copy. */
+    memcpy(out, text, out_cap - 1U);
+    out[out_cap - 1U] = '\0';
     rducks_mark_error_truncated(out, out_cap);
 }
 

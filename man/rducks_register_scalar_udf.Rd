@@ -27,13 +27,11 @@ rducks_register_scalar_udf(
 a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
 argument logical types at bind time, and Rducks materializes those inputs
 with the same typed semantics used for an explicit \code{args = ...} signature
-across scalar/vectorized evaluation and supported \code{arrow_r}, \code{arrow_c}, and
-\code{arrow_ipc} execution plans. Use explicit \code{NULL} for a zero-argument scalar
+across scalar/vectorized direct evaluation. Use explicit \code{NULL} for a zero-argument scalar
 UDF. Otherwise use exported DuckDB-style type descriptors such as \code{INTEGER},
 \code{DOUBLE}, \code{GEOMETRY}, \code{VARIANT}, \code{INTEGER[]}, \code{INTEGER[3]},
 \code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}. \code{VARIANT} signatures
-require a DuckDB runtime whose C API exposes VARIANT logical types, and are
-not supported by the direct \code{arrow_c} marshalling path yet.}
+require a DuckDB runtime whose C API exposes VARIANT logical types.}
 
 \item{returns}{Return type specification.}
 
@@ -85,10 +83,7 @@ selected evaluator/marshalling metadata is then stored with the native catalog
 entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
 not durable schema objects: they are visible to sibling connections while the
 same DuckDB database runtime remains open, but a file-backed database must be
-enabled and registered again after it is fully closed and reopened. For
-\code{arrow_ipc} plans, the UDF closure and discovered globals are copied once to
-each NNG worker in the shared provider pool and retained for that pool's
-lifetime.
+enabled and registered again after it is fully closed and reopened.
 }
 \examples{
 \donttest{

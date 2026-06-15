@@ -586,38 +586,80 @@ static rducks_type_desc_t *rducks_r_table_infer_column_desc(SEXP column, const c
     return NULL;
 }
 
-static int rducks_r_table_arrow_array_from_result(SEXP result, SEXP *array_xptr_out, char *err, size_t err_cap) {
-    int r_err = 0;
-    int protect_count = 0;
-    SEXP pkg = PROTECT(Rf_mkString("Rducks"));
-    protect_count++;
-    SEXP ns = PROTECT(R_FindNamespace(pkg));
-    protect_count++;
-    SEXP fun = PROTECT(Rf_findFun(Rf_install("rducks_table_as_arrow_array"), ns));
-    protect_count++;
-    if (!Rf_isFunction(fun)) {
-        rducks_format_error_message(err, err_cap, "Rducks table nanoarrow helper is unavailable");
-        UNPROTECT(protect_count);
+/* Direct: build an owned DuckDB data chunk from an R data frame (a VECSXP of
+ * equal-length columns) using the already-inferred column descriptors. Reuses
+ * the same direct DuckDB-vector writers used by scalar-UDF result writeback, so
+ * there is no wire serialization for the in-process scan. */
+static int rducks_r_table_chunk_from_df(rducks_r_table_bind_t *bind, SEXP df, idx_t rows,
+                                        duckdb_data_chunk *chunk_out, char *err, size_t err_cap) {
+    duckdb_logical_type *types = NULL;
+    duckdb_data_chunk chunk = NULL;
+    size_t ncol;
+    int ok = 0;
+    if (chunk_out) *chunk_out = NULL;
+    if (!bind || !bind->column_descs) {
+        rducks_format_error_message(err, err_cap, "Rducks table bind metadata is missing");
         return 0;
     }
-    SEXP call = PROTECT(Rf_lang2(fun, result));
-    protect_count++;
-    SEXP array_xptr = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
-    protect_count++;
-    if (r_err) {
-        rducks_r_table_set_r_error(array_xptr, "Rducks table nanoarrow materialization error", err, err_cap);
-        UNPROTECT(protect_count);
+    ncol = bind->column_count;
+    if (TYPEOF(df) != VECSXP || (size_t)XLENGTH(df) != ncol) {
+        rducks_format_error_message(err, err_cap, "Rducks table batch shape does not match the bound columns");
         return 0;
     }
-    if (!Rf_inherits(array_xptr, "nanoarrow_array")) {
-        rducks_format_error_message(err, err_cap, "Rducks table nanoarrow helper did not return a nanoarrow_array");
-        UNPROTECT(protect_count);
+    types = (duckdb_logical_type *)rducks_calloc_array(ncol, sizeof(*types));
+    if (!types) {
+        rducks_format_error_message(err, err_cap, "out of memory allocating Rducks table chunk types");
         return 0;
     }
-    R_PreserveObject(array_xptr);
-    *array_xptr_out = array_xptr;
-    UNPROTECT(protect_count);
-    return 1;
+    for (size_t c = 0; c < ncol; c++) {
+        types[c] = rducks_create_logical_type_for_desc(bind->column_descs[c]);
+        if (!types[c]) {
+            rducks_format_error_message(err, err_cap, "failed to build Rducks table column logical type");
+            goto cleanup;
+        }
+    }
+    chunk = duckdb_create_data_chunk(types, (idx_t)ncol);
+    if (!chunk) {
+        rducks_format_error_message(err, err_cap, "failed to allocate Rducks table data chunk");
+        goto cleanup;
+    }
+    duckdb_data_chunk_set_size(chunk, rows);
+    for (size_t c = 0; c < ncol; c++) {
+        duckdb_vector vec = duckdb_data_chunk_get_vector(chunk, (idx_t)c);
+        rducks_rc_direct_vector_view_t view;
+        SEXP col = VECTOR_ELT(df, (R_xlen_t)c);
+        if (!vec) {
+            rducks_format_error_message(err, err_cap, "Rducks table chunk vector is missing");
+            goto cleanup;
+        }
+        if ((idx_t)XLENGTH(col) != rows) {
+            rducks_format_error_message(err, err_cap, "Rducks table column length does not match the row count");
+            goto cleanup;
+        }
+        rducks_rc_direct_view_init(&view, vec);
+        for (idx_t r = 0; r < rows; r++) {
+            int vok = 1;
+            SEXP value = PROTECT(rducks_rc_vector_value_at(col, r, &vok));
+            int wrote = vok && rducks_rc_write_direct_output(bind->column_descs[c], &view, r, value, err, err_cap);
+            UNPROTECT(1);
+            if (!wrote) {
+                if (!err[0]) rducks_format_error_message(err, err_cap, "failed to write Rducks table cell value");
+                goto cleanup;
+            }
+        }
+    }
+    *chunk_out = chunk;
+    chunk = NULL;
+    ok = 1;
+cleanup:
+    if (chunk) duckdb_destroy_data_chunk(&chunk);
+    if (types) {
+        for (size_t c = 0; c < ncol; c++) {
+            if (types[c]) duckdb_destroy_logical_type(&types[c]);
+        }
+        free(types);
+    }
+    return ok;
 }
 
 static int rducks_r_table_call_namespace_fun1(const char *fun_name, SEXP arg, SEXP *out,
@@ -689,28 +731,13 @@ static int rducks_r_table_stream_cardinality(SEXP stream, int *known_out, idx_t 
     return 1;
 }
 
-static int rducks_r_table_import_arrow_result(rducks_r_table_bind_t *bind, SEXP result,
-                                              char *err, size_t err_cap) {
-    SEXP array_xptr = R_NilValue;
-    rducks_arrow_import_result_t imported;
+static int rducks_r_table_import_result(rducks_r_table_bind_t *bind, SEXP result,
+                                        char *err, size_t err_cap) {
     if (!bind || !bind->meta || !bind->meta->runtime) {
-        rducks_format_error_message(err, err_cap, "Rducks table runtime is unavailable for Arrow import");
+        rducks_format_error_message(err, err_cap, "Rducks table runtime is unavailable for result import");
         return 0;
     }
-    if (!rducks_r_table_arrow_array_from_result(result, &array_xptr, err, err_cap)) return 0;
-    if (!rducks_arrow_import_nanoarrow_xptr_to_chunk(bind->meta->runtime,
-                                                     array_xptr,
-                                                     1, bind->rows,
-                                                     1, (idx_t)bind->column_count,
-                                                     "Rducks table",
-                                                     &imported,
-                                                     err, err_cap)) {
-        R_ReleaseObject(array_xptr);
-        return 0;
-    }
-    bind->imported_chunk = imported.chunk;
-    R_ReleaseObject(array_xptr);
-    return 1;
+    return rducks_r_table_chunk_from_df(bind, result, bind->rows, &bind->imported_chunk, err, err_cap);
 }
 
 static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
@@ -853,7 +880,7 @@ static int rducks_r_table_bind_result(rducks_r_table_meta_t *meta, SEXP result,
     if (is_streaming) {
         if (cardinality_known) duckdb_bind_set_cardinality(info, cardinality, cardinality_exact ? true : false);
     } else {
-        if (!rducks_r_table_import_arrow_result(bind, result, err, err_cap)) {
+        if (!rducks_r_table_import_result(bind, result, err, err_cap)) {
             rducks_r_table_bind_destroy(bind);
             if (release_schema_result) R_ReleaseObject(schema_result);
             return 0;
@@ -1014,8 +1041,8 @@ static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
         UNPROTECT(protect_count);
         return 1;
     }
-    if (!Rf_inherits(result, "nanoarrow_array")) {
-        rducks_format_error_message(err, err_cap, "Rducks table stream next_batch did not return a nanoarrow_array");
+    if (TYPEOF(result) != VECSXP) {
+        rducks_format_error_message(err, err_cap, "Rducks table stream next_batch must return a data frame batch or NULL");
         UNPROTECT(protect_count);
         return 0;
     }
@@ -1027,9 +1054,10 @@ static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
 
 static int rducks_r_table_stream_load_next_chunk(rducks_r_table_state_t *state,
                                                  char *err, size_t err_cap) {
-    SEXP array_xptr = R_NilValue;
-    rducks_arrow_import_result_t imported;
+    SEXP df = R_NilValue;
     rducks_r_table_bind_t *bind = state ? state->bind : NULL;
+    idx_t rows;
+    duckdb_data_chunk chunk = NULL;
     if (!state || !bind || !bind->meta) {
         rducks_format_error_message(err, err_cap, "Rducks table stream state is missing");
         return 0;
@@ -1039,29 +1067,29 @@ static int rducks_r_table_stream_load_next_chunk(rducks_r_table_state_t *state,
         state->current_rows = 0;
         state->current_pos = 0;
     }
-    if (!rducks_r_table_stream_next_array_xptr(state, &array_xptr, err, err_cap)) return 0;
-    if (array_xptr == R_NilValue) {
+    if (!rducks_r_table_stream_next_array_xptr(state, &df, err, err_cap)) return 0;
+    if (df == R_NilValue) {
         state->stream_done = 1;
         return 1;
     }
-    if (!rducks_arrow_import_nanoarrow_xptr_to_chunk(bind->meta->runtime,
-                                                     array_xptr,
-                                                     0, 0,
-                                                     1, (idx_t)bind->column_count,
-                                                     "Rducks streaming table batch",
-                                                     &imported,
-                                                     err, err_cap)) {
-        R_ReleaseObject(array_xptr);
+    if (TYPEOF(df) != VECSXP || (size_t)XLENGTH(df) != bind->column_count || XLENGTH(df) == 0) {
+        R_ReleaseObject(df);
+        rducks_format_error_message(err, err_cap, "Rducks table stream batch shape does not match the bound columns");
         return 0;
     }
-    R_ReleaseObject(array_xptr);
-    if (imported.rows == 0) {
-        duckdb_destroy_data_chunk(&imported.chunk);
+    rows = (idx_t)XLENGTH(VECTOR_ELT(df, 0));
+    if (rows == 0) {
+        R_ReleaseObject(df);
         rducks_format_error_message(err, err_cap, "Rducks table stream next_batch returned an empty batch; return NULL to signal end-of-stream");
         return 0;
     }
-    state->current_chunk = imported.chunk;
-    state->current_rows = imported.rows;
+    if (!rducks_r_table_chunk_from_df(bind, df, rows, &chunk, err, err_cap)) {
+        R_ReleaseObject(df);
+        return 0;
+    }
+    R_ReleaseObject(df);
+    state->current_chunk = chunk;
+    state->current_rows = rows;
     state->current_pos = 0;
     return 1;
 }
@@ -1079,7 +1107,7 @@ static int rducks_r_table_copy_projected_rows(duckdb_function_info info,
     }
     if (state->projected_count == 0) return 1;
     if (!source) {
-        duckdb_function_set_error(info, "Rducks table imported Arrow chunk is missing");
+        duckdb_function_set_error(info, "Rducks table imported source chunk is missing");
         return 0;
     }
     if (count > (idx_t)UINT32_MAX || source_pos > (idx_t)UINT32_MAX || source_pos + count > (idx_t)UINT32_MAX) {

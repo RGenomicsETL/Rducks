@@ -12,7 +12,8 @@ This repo owns:
 - execution-plan selection and validation
 - scalar and vectorized R UDF marshalling
 - type descriptors, value classes, NULL/error semantics, and diagnostics
-- native NNG/Arrow IPC worker transport used by the `arrow_ipc` plan
+- native NNG worker transport and the Rducks Quack wire codec (DuckDB
+  BinarySerializer subset) for the worker-process data plane
 
 ## Rules
 
@@ -24,8 +25,9 @@ This repo owns:
   directly or the explicit extension-owned in-process queue.
 - Do not silently change execution plans. Unsupported plan/type/mode
   combinations must fail instead of falling back to another engine.
-- Use DuckDB Arrow C Data plus nanoarrow for in-process marshalling. Use Arrow
-  IPC only where bytes intentionally cross a process/transport boundary.
+- Marshal in-process by materializing DuckDB vectors to SEXPs directly in
+  extension C. Use the Quack wire codec only for bytes that intentionally cross
+  a process/transport boundary.
 - Treat R function lifetime explicitly. Preserve objects while native metadata
   can call them; release only through paths that are safe for the R thread.
 - Keep docs factual. Mark unsupported and experimental behavior plainly; remove

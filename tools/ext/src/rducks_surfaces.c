@@ -810,71 +810,6 @@ static void rducks_query_stream_metadata_scalar(duckdb_function_info info, duckd
     }
 }
 
-static void rducks_query_stream_schema_handle_scalar(duckdb_function_info info, duckdb_data_chunk input,
-                                                     duckdb_vector output) {
-    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
-    idx_t n = duckdb_data_chunk_get_size(input);
-    duckdb_vector token_vector = duckdb_data_chunk_get_vector(input, 0);
-    duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(token_vector);
-    uint64_t *validity = duckdb_vector_get_validity(token_vector);
-    if (!rducks_query_stream_require_runtime(info, runtime)) return;
-    for (idx_t i = 0; i < n; i++) {
-        char *token;
-        char *handle = NULL;
-        char err[RDUCKS_ERROR_BUFFER_SIZE];
-        err[0] = '\0';
-        if (!rducks_query_stream_copy_nonnull_arg(info, tokens, validity, i,
-                                                  "Rducks query stream token must not be NULL",
-                                                  "out of memory reading Rducks query stream schema", &token)) {
-            return;
-        }
-        if (!rducks_query_stream_schema_handle_native(runtime, token, &handle, err, sizeof(err))) {
-            free(token);
-            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to read Rducks query stream schema");
-            return;
-        }
-        duckdb_vector_assign_string_element(output, i, handle ? handle : "");
-        free(handle);
-        free(token);
-    }
-}
-
-static void rducks_query_stream_next_handle_scalar(duckdb_function_info info, duckdb_data_chunk input,
-                                                   duckdb_vector output) {
-    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
-    idx_t n = duckdb_data_chunk_get_size(input);
-    duckdb_vector token_vector = duckdb_data_chunk_get_vector(input, 0);
-    duckdb_string_t *tokens = (duckdb_string_t *)duckdb_vector_get_data(token_vector);
-    uint64_t *validity = duckdb_vector_get_validity(token_vector);
-    duckdb_vector_ensure_validity_writable(output);
-    uint64_t *out_validity = duckdb_vector_get_validity(output);
-    if (!rducks_query_stream_require_runtime(info, runtime)) return;
-    for (idx_t i = 0; i < n; i++) {
-        char *token;
-        char *handle = NULL;
-        int has_batch = 0;
-        char err[RDUCKS_ERROR_BUFFER_SIZE];
-        err[0] = '\0';
-        if (!rducks_query_stream_copy_nonnull_arg(info, tokens, validity, i,
-                                                  "Rducks query stream token must not be NULL",
-                                                  "out of memory fetching Rducks query stream batch", &token)) {
-            return;
-        }
-        if (!rducks_query_stream_next_handle_native(runtime, token, &has_batch, &handle, err, sizeof(err))) {
-            free(token);
-            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to fetch Rducks query stream batch");
-            return;
-        }
-        if (has_batch) {
-            duckdb_vector_assign_string_element(output, i, handle ? handle : "");
-        } else {
-            duckdb_validity_set_row_invalid(out_validity, i);
-        }
-        free(handle);
-        free(token);
-    }
-}
-
 static void rducks_query_stream_close_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                              duckdb_vector output) {
     rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
@@ -908,8 +843,6 @@ static bool rducks_register_query_stream_surfaces(duckdb_connection con, rducks_
     duckdb_scalar_function next_fn = NULL;
     duckdb_scalar_function close_fn = NULL;
     duckdb_scalar_function metadata_fn = NULL;
-    duckdb_scalar_function schema_handle_fn = NULL;
-    duckdb_scalar_function next_handle_fn = NULL;
     duckdb_logical_type varchar_type = NULL;
     duckdb_logical_type bool_type = NULL;
     bool ok = false;
@@ -919,11 +852,9 @@ static bool rducks_register_query_stream_surfaces(duckdb_connection con, rducks_
     next_fn = duckdb_create_scalar_function();
     close_fn = duckdb_create_scalar_function();
     metadata_fn = duckdb_create_scalar_function();
-    schema_handle_fn = duckdb_create_scalar_function();
-    next_handle_fn = duckdb_create_scalar_function();
     varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
     bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
-    if (!open_fn || !schema_fn || !next_fn || !close_fn || !metadata_fn || !schema_handle_fn || !next_handle_fn ||
+    if (!open_fn || !schema_fn || !next_fn || !close_fn || !metadata_fn ||
         !varchar_type || !bool_type) goto cleanup;
 
     duckdb_scalar_function_set_name(open_fn, "rducks_query_stream_open");
@@ -958,22 +889,6 @@ static bool rducks_register_query_stream_surfaces(duckdb_connection con, rducks_
     duckdb_scalar_function_set_function(metadata_fn, rducks_query_stream_metadata_scalar);
     if (duckdb_register_scalar_function(con, metadata_fn) != DuckDBSuccess) goto cleanup;
 
-    duckdb_scalar_function_set_name(schema_handle_fn, "rducks_query_stream_schema_handle");
-    duckdb_scalar_function_add_parameter(schema_handle_fn, varchar_type);
-    duckdb_scalar_function_set_return_type(schema_handle_fn, varchar_type);
-    duckdb_scalar_function_set_volatile(schema_handle_fn);
-    duckdb_scalar_function_set_extra_info(schema_handle_fn, runtime, NULL);
-    duckdb_scalar_function_set_function(schema_handle_fn, rducks_query_stream_schema_handle_scalar);
-    if (duckdb_register_scalar_function(con, schema_handle_fn) != DuckDBSuccess) goto cleanup;
-
-    duckdb_scalar_function_set_name(next_handle_fn, "rducks_query_stream_next_handle");
-    duckdb_scalar_function_add_parameter(next_handle_fn, varchar_type);
-    duckdb_scalar_function_set_return_type(next_handle_fn, varchar_type);
-    duckdb_scalar_function_set_volatile(next_handle_fn);
-    duckdb_scalar_function_set_extra_info(next_handle_fn, runtime, NULL);
-    duckdb_scalar_function_set_function(next_handle_fn, rducks_query_stream_next_handle_scalar);
-    if (duckdb_register_scalar_function(con, next_handle_fn) != DuckDBSuccess) goto cleanup;
-
     duckdb_scalar_function_set_name(close_fn, "rducks_query_stream_close");
     duckdb_scalar_function_add_parameter(close_fn, varchar_type);
     duckdb_scalar_function_set_return_type(close_fn, bool_type);
@@ -989,8 +904,6 @@ cleanup:
     if (next_fn) duckdb_destroy_scalar_function(&next_fn);
     if (close_fn) duckdb_destroy_scalar_function(&close_fn);
     if (metadata_fn) duckdb_destroy_scalar_function(&metadata_fn);
-    if (schema_handle_fn) duckdb_destroy_scalar_function(&schema_handle_fn);
-    if (next_handle_fn) duckdb_destroy_scalar_function(&next_handle_fn);
     if (varchar_type) duckdb_destroy_logical_type(&varchar_type);
     if (bool_type) duckdb_destroy_logical_type(&bool_type);
     return ok;

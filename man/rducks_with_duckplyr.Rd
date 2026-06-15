@@ -69,14 +69,15 @@ explicit return type.
 This helper intentionally requires return-type declarations: DuckDB needs a
 scalar function's return type during planning even when its input arguments
 are accepted dynamically. Dynamic arguments are a duckplyr-oriented
-convenience path that uses nanoarrow's default input conversion. The duckplyr
-bridge defaults to \code{mode = "scalar"} because ordinary R calls in duckplyr SQL
-expressions are written as row-wise scalar functions. Set \code{mode = "vectorized"}
-only for helpers that accept full vectors/chunks and return a vector of the
-same length. The selected Rducks execution plan is still taken from \code{con}, so
-\code{arrow_c} and \code{arrow_ipc} plans can be selected with
-\code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}} before
-evaluating the duckplyr expression. Use explicit \code{args} in
+convenience path that uses Rducks' direct DuckDB-vector input conversion. The
+duckplyr bridge defaults to \code{mode = "scalar"} because ordinary R calls in
+duckplyr SQL expressions are written as row-wise scalar functions. Set
+\code{mode = "vectorized"} only for helpers that accept full vectors/chunks and
+return a vector of the same length. The selected Rducks execution plan is
+still taken from \code{con}, so the in-process plan from
+\code{\link[=rducks_execution_plan]{rducks_execution_plan()}} applies; set it
+with \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
+before evaluating the duckplyr expression. Use explicit \code{args} in
 \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}
 when you need Rducks' declared composite, exotic, or special-NULL input
 semantics.

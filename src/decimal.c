@@ -640,7 +640,7 @@ static void rducks_decimal_abs_to_unsigned_bytes(const char *digits, size_t len,
     size_t ndigits = len;
     int byte_pos = 0;
     while (ndigits > 0) {
-        if (byte_pos >= width) Rf_error("integer value does not fit in Arrow C Data storage");
+        if (byte_pos >= width) Rf_error("integer value does not fit in fixed-width storage");
         int carry = 0;
         size_t write = 0;
         int started = 0;

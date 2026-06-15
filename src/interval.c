@@ -73,7 +73,7 @@ SEXP RDUCKS_interval_bytes_from_values(SEXP values) {
             continue;
         }
         if (micro > INT64_MAX / 1000LL || micro < INT64_MIN / 1000LL) {
-            Rf_error("INTERVAL microseconds do not fit in Arrow nanosecond storage");
+            Rf_error("INTERVAL microseconds do not fit in nanosecond storage");
         }
         LOGICAL(valid)[i] = TRUE;
         Rbyte *dst = RAW(data) + i * 16;

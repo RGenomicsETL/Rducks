@@ -31,7 +31,6 @@ struct rducks_udf_request {
     rducks_r_scalar_local_state_t *local_state;
     duckdb_data_chunk input;
     duckdb_vector output;
-    rducks_rc_owned_result_payload_t *rc_result_payload;
     duckdb_data_chunk rc_result_chunk;
     rducks_udf_request_state_t state;
     /* Only non-R diagnostic requests may opt into off-main draining. R-backed
@@ -265,19 +264,15 @@ static int rducks_queue_execute_scalar_on_main(rducks_udf_request_t *request, ch
                                   request->output, err_msg, err_cap);
 }
 
-static int rducks_queue_execute_arrow_scalar_to_chunk_on_main(rducks_udf_request_t *request,
-                                                              char *err_msg, size_t err_cap) {
+static int rducks_queue_execute_r_scalar_to_chunk_on_main(rducks_udf_request_t *request,
+                                                          char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->meta) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks queued Arrow/R owned-result request is missing execution state");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued R owned-result request is missing execution state");
         return 0;
     }
     if (!rducks_is_main_thread(request->runtime)) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks queued Arrow/R owned-result request reached a non-main thread");
+        rducks_format_error_message(err_msg, err_cap, "Rducks queued R owned-result request reached a non-main thread");
         return 0;
-    }
-    if (request->rc_result_payload) {
-        rducks_rc_owned_result_payload_free(request->rc_result_payload);
-        request->rc_result_payload = NULL;
     }
     if (request->rc_result_chunk) {
         duckdb_destroy_data_chunk(&request->rc_result_chunk);
@@ -293,8 +288,8 @@ static int rducks_queue_execute_arrow_scalar_to_chunk_on_main(rducks_udf_request
     }
 }
 
-static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_t *request,
-                                                             char *err_msg, size_t err_cap) {
+static int rducks_queue_execute_rc_scalar_to_chunk_on_main(rducks_udf_request_t *request,
+                                                           char *err_msg, size_t err_cap) {
     rducks_r_scalar_meta_t effective_meta_storage;
     rducks_r_scalar_meta_t *exec_meta = NULL;
     if (!request || !request->runtime || !request->meta) {
@@ -307,17 +302,9 @@ static int rducks_queue_execute_rc_scalar_to_payload_on_main(rducks_udf_request_
     }
     memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
     rducks_effective_meta_for_state(request->meta, request->local_state, &effective_meta_storage, &exec_meta);
-    if (request->rc_result_payload) {
-        rducks_rc_owned_result_payload_free(request->rc_result_payload);
-        request->rc_result_payload = NULL;
-    }
     if (request->rc_result_chunk) {
         duckdb_destroy_data_chunk(&request->rc_result_chunk);
         request->rc_result_chunk = NULL;
-    }
-    if (rducks_rc_owned_result_supported(exec_meta)) {
-        return rducks_rc_scalar_execute_to_owned_payload(request->runtime, exec_meta, request->input, request->output,
-                                                         &request->rc_result_payload, err_msg, err_cap);
     }
     return rducks_rc_scalar_execute_to_owned_chunk(request->runtime, exec_meta, request->input, request->output,
                                                   &request->rc_result_chunk, err_msg, err_cap);
@@ -437,7 +424,6 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
                                               rducks_r_scalar_local_state_t *local_state,
                                               duckdb_data_chunk input, duckdb_vector output,
                                               int snapshot_input, int writeback_on_submitter,
-                                              rducks_rc_owned_result_payload_t **payload_out,
                                               duckdb_data_chunk *chunk_out,
                                               int cancel_generation_set, uint64_t cancel_generation,
                                               char *err_msg, size_t err_cap) {
@@ -446,7 +432,6 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
     rducks_r_scalar_meta_t *exec_meta = meta;
     duckdb_data_chunk owned_input = NULL;
     int ok;
-    if (payload_out) *payload_out = NULL;
     if (chunk_out) *chunk_out = NULL;
     if (!meta) {
         rducks_format_error_message(err_msg, err_cap, "Rducks queued scalar metadata is missing");
@@ -457,9 +442,9 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
     rducks_effective_meta_for_state(meta, local_state, &effective_meta_storage, &exec_meta);
     memset(&request, 0, sizeof(request));
     if (exec_meta->eval_mode == RDUCKS_EVAL_R) {
-        request.execute = rducks_queue_execute_arrow_scalar_to_chunk_on_main;
+        request.execute = rducks_queue_execute_r_scalar_to_chunk_on_main;
     } else if (rducks_rc_owned_result_queue_supported(exec_meta)) {
-        request.execute = rducks_queue_execute_rc_scalar_to_payload_on_main;
+        request.execute = rducks_queue_execute_rc_scalar_to_chunk_on_main;
     } else {
         request.execute = rducks_queue_execute_scalar_on_main;
     }
@@ -478,30 +463,19 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
         }
         if (owned_input) {
             request.input = owned_input;
-            rducks_udf_record_arrow_c_input_snapshot(meta);
+            rducks_udf_record_direct_input_snapshot(meta);
         }
     }
 
     ok = rducks_queue_submit_request(runtime, &request,
         "Rducks timed out waiting for the recorded main R thread to drain a queued scalar UDF request",
         err_msg, err_cap);
-    if (ok && request.rc_result_payload && writeback_on_submitter) {
-        ok = rducks_rc_owned_result_payload_writeback(request.rc_result_payload, output, err_msg, err_cap);
-    }
     if (ok && request.rc_result_chunk && writeback_on_submitter) {
         ok = rducks_rc_owned_result_chunk_writeback(request.rc_result_chunk, output, err_msg, err_cap);
-    }
-    if (ok && !writeback_on_submitter && payload_out && request.rc_result_payload) {
-        *payload_out = request.rc_result_payload;
-        request.rc_result_payload = NULL;
     }
     if (ok && !writeback_on_submitter && chunk_out && request.rc_result_chunk) {
         *chunk_out = request.rc_result_chunk;
         request.rc_result_chunk = NULL;
-    }
-    if (request.rc_result_payload) {
-        rducks_rc_owned_result_payload_free(request.rc_result_payload);
-        request.rc_result_payload = NULL;
     }
     if (request.rc_result_chunk) {
         duckdb_destroy_data_chunk(&request.rc_result_chunk);
@@ -519,7 +493,7 @@ static int rducks_queue_submit_scalar(rducks_runtime_entry_t *runtime, rducks_r_
                                       duckdb_data_chunk input, duckdb_vector output,
                                       char *err_msg, size_t err_cap) {
     return rducks_queue_submit_scalar_collect(runtime, meta, local_state, input, output,
-                                             1, 1, NULL, NULL, 0, 0U, err_msg, err_cap);
+                                             1, 1, NULL, 0, 0U, err_msg, err_cap);
 }
 
 typedef struct rducks_queue_scalar_worker_state {
@@ -530,7 +504,6 @@ typedef struct rducks_queue_scalar_worker_state {
     duckdb_vector output;
     atomic_int done;
     int ok;
-    rducks_rc_owned_result_payload_t *rc_result_payload;
     duckdb_data_chunk rc_result_chunk;
     uint64_t cancel_generation;
     char error[RDUCKS_QUEUE_ERROR_SIZE];
@@ -544,7 +517,7 @@ static void *rducks_queue_scalar_worker(void *arg) {
     rducks_queue_scalar_worker_state_t *state = (rducks_queue_scalar_worker_state_t *)arg;
     state->ok = rducks_queue_submit_scalar_collect(state->runtime, state->meta, state->local_state,
                                                    state->input, state->output,
-                                                   0, 0, &state->rc_result_payload,
+                                                   0, 0,
                                                    &state->rc_result_chunk,
                                                    1, state->cancel_generation,
                                                    state->error, sizeof(state->error));
@@ -620,14 +593,8 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
         if (!err_msg[0]) rducks_queue_interrupted_error(err_msg, err_cap);
     } else if (!state.ok) {
         rducks_queue_error_copy(err_msg, err_cap, state.error, "Rducks scalar queue worker failed");
-    } else if (state.rc_result_payload) {
-        state.ok = rducks_rc_owned_result_payload_writeback(state.rc_result_payload, output, err_msg, err_cap);
     } else if (state.rc_result_chunk) {
         state.ok = rducks_rc_owned_result_chunk_writeback(state.rc_result_chunk, output, err_msg, err_cap);
-    }
-    if (state.rc_result_payload) {
-        rducks_rc_owned_result_payload_free(state.rc_result_payload);
-        state.rc_result_payload = NULL;
     }
     if (state.rc_result_chunk) {
         duckdb_destroy_data_chunk(&state.rc_result_chunk);

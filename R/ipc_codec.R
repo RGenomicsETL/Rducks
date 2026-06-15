@@ -1,64 +1,27 @@
-rducks_as_raw_payload <- function(payload, what = "payload") {
-  if (is.raw(payload)) return(payload)
-  if (!is.numeric(payload) || anyNA(payload) || any(!is.finite(payload)) ||
-      any(payload < 0 | payload > 255 | payload != floor(payload))) {
-    stop(what, " must be a raw vector or byte-valued numeric vector", call. = FALSE)
-  }
-  as.raw(payload)
+# Quack wire payload helpers for the IPC data plane.
+#
+# Task payloads are self-describing quack DataChunk bytes (see
+# src/quack_core.h): the worker decodes them, validates the decoded wire types
+# against the declared signature, materializes Rducks values, evaluates, and
+# returns a single-column quack payload for the declared return type. The chunk
+# bytes carry their own types, so a task needs no separate schema alongside it.
+
+rducks_wire_encode_values <- function(types, values_list, rows) {
+  columns <- Map(function(type, values) {
+    array <- rducks_native_array_from_values(type, values)
+    rducks_quack_storage_from_array(array)
+  }, types, values_list)
+  rducks_quack_encode_columns(types, columns, rows)
 }
 
-rducks_arrow_ipc_encode <- function(data) {
-  if (!inherits(data, "nanoarrow_array")) {
-    stop("Arrow IPC native path requires a nanoarrow_array", call. = FALSE)
-  }
-  .Call(RDUCKS_arrow_ipc_encode_array, data)
-}
-
-rducks_arrow_ipc_decode_stream <- function(payload, lazy = FALSE) {
-  payload <- rducks_as_raw_payload(payload, "Arrow IPC payload")
-  nanoarrow::read_nanoarrow(payload, lazy = lazy)
-}
-
-rducks_arrow_ipc_decode_array <- function(payload) {
-  stream <- rducks_arrow_ipc_decode_stream(payload, lazy = FALSE)
-  schema <- stream$get_schema()
-  array <- stream$get_next(schema)
-  if (is.null(array)) {
-    stop("Arrow IPC payload did not contain a record batch", call. = FALSE)
-  }
-  extra <- stream$get_next(schema)
-  if (!is.null(extra)) {
-    stop("Arrow IPC payload contained more than one record batch", call. = FALSE)
-  }
-  nanoarrow::nanoarrow_array_set_schema(array, schema)
-  list(array = array, schema = schema)
-}
-
-rducks_arrow_schema_to_spec <- function(schema) {
-  schema <- nanoarrow::as_nanoarrow_schema(schema)
-  list(
-    format = schema$format %||% "",
-    name = schema$name %||% "",
-    metadata = as.list(schema$metadata %||% list()),
-    flags = as.integer(schema$flags %||% 0L),
-    children = lapply(schema$children %||% list(), rducks_arrow_schema_to_spec),
-    dictionary = if (is.null(schema$dictionary)) NULL else rducks_arrow_schema_to_spec(schema$dictionary)
-  )
-}
-
-rducks_arrow_schema_from_spec <- function(spec) {
-  children <- lapply(spec$children %||% list(), rducks_arrow_schema_from_spec)
-  dictionary <- if (is.null(spec$dictionary)) NULL else rducks_arrow_schema_from_spec(spec$dictionary)
-  nanoarrow::nanoarrow_schema_modify(
-    nanoarrow::as_nanoarrow_schema(nanoarrow::na_na()),
-    list(
-      format = spec$format %||% "n",
-      name = spec$name %||% "",
-      metadata = as.list(spec$metadata %||% list()),
-      flags = as.integer(spec$flags %||% 0L),
-      children = children,
-      dictionary = dictionary
-    ),
-    validate = TRUE
-  )
+rducks_wire_decode_values <- function(arg_types, payload) {
+  # The payload is self-describing; validate its decoded wire types against the
+  # declared signature (column count + per-column type) inside the decoder before
+  # any column is materialized. The input boundary is native-produced and so
+  # trusted, but the check is near-free here -- the decoder already reconstructs
+  # the types -- and keeps the codec self-consistent against protocol drift.
+  expected <- lapply(arg_types, rducks_quack_spec)
+  decoded <- rducks_quack_decode_payload(payload, expected)
+  list(rows = as.integer(decoded$rows),
+       values = rducks_quack_columns_to_values(arg_types, decoded))
 }

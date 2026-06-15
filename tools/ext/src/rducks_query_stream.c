@@ -126,113 +126,6 @@ static int rducks_query_stream_capture_schema(rducks_query_stream_entry_t *entry
     return 1;
 }
 
-static int rducks_query_stream_fill_arrow_schema(rducks_runtime_entry_t *runtime,
-                                                 rducks_query_stream_entry_t *entry,
-                                                 struct ArrowSchema *schema,
-                                                 char *err_msg, size_t err_cap) {
-    duckdb_arrow_options options = NULL;
-    int borrowed_options = 0;
-    duckdb_error_data error_data = NULL;
-    const char **names = NULL;
-    int ok = 0;
-
-    (void)runtime;
-    if (!entry || !schema) {
-        rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream Arrow schema request");
-        return 0;
-    }
-    if (!entry->connection) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks query stream has no DuckDB connection for Arrow schema conversion");
-        return 0;
-    }
-    if (!rducks_allocate_arrow_options_for_connection(entry->connection, &options, &borrowed_options, err_msg, err_cap)) return 0;
-    if (entry->column_count > 0) {
-        names = (const char **)rducks_calloc_array((size_t)entry->column_count, sizeof(*names));
-        if (!names) {
-            rducks_format_error_message(err_msg, err_cap, "out of memory allocating Rducks query stream Arrow names");
-            goto cleanup;
-        }
-        for (idx_t i = 0; i < entry->column_count; i++) names[i] = entry->names[i] ? entry->names[i] : "";
-    }
-
-    error_data = duckdb_to_arrow_schema(options, entry->types, names, entry->column_count, schema);
-    if (error_data) {
-        int has_error = duckdb_error_data_has_error(error_data);
-        if (has_error) {
-            rducks_arrow_error_to_buffer(error_data, "DuckDB failed to create query stream Arrow schema", err_msg, err_cap);
-            duckdb_destroy_error_data(&error_data);
-            rducks_release_arrow_schema_if_set(schema);
-            goto cleanup;
-        }
-        duckdb_destroy_error_data(&error_data);
-    }
-    ok = 1;
-cleanup:
-    free(names);
-    rducks_release_arrow_options(&options, borrowed_options);
-    return ok;
-}
-
-static int rducks_query_stream_chunk_to_cdata_handle(rducks_runtime_entry_t *runtime,
-                                                     rducks_query_stream_entry_t *entry,
-                                                     duckdb_data_chunk chunk,
-                                                     char **handle_out,
-                                                     char *err_msg, size_t err_cap) {
-    struct ArrowSchema *schema = NULL;
-    struct ArrowArray *array = NULL;
-    int schema_initialized = 0;
-    int array_initialized = 0;
-    int ok = 0;
-    char handle[160];
-
-    if (handle_out) *handle_out = NULL;
-    if (!runtime || !entry || !chunk || !handle_out) {
-        rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream Arrow C Data request");
-        return 0;
-    }
-    if (!entry->connection) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks query stream has no DuckDB connection for Arrow C Data conversion");
-        return 0;
-    }
-
-    schema = (struct ArrowSchema *)calloc(1, sizeof(*schema));
-    array = (struct ArrowArray *)calloc(1, sizeof(*array));
-    if (!schema || !array) {
-        rducks_format_error_message(err_msg, err_cap, "out of memory allocating Rducks query stream Arrow C Data handle");
-        goto cleanup;
-    }
-    if (!rducks_query_stream_fill_arrow_schema(runtime, entry, schema, err_msg, err_cap)) goto cleanup;
-    schema_initialized = schema->release != NULL;
-    if (!rducks_fill_input_arrow_array_native_for_connection(entry->connection, array, chunk, err_msg, err_cap)) goto cleanup;
-    array_initialized = array->release != NULL;
-
-    snprintf(handle, sizeof(handle), "rducks-cdata:%llx:%llx",
-             (unsigned long long)(uintptr_t)schema,
-             (unsigned long long)(uintptr_t)array);
-    *handle_out = rducks_strdup(handle);
-    if (!*handle_out) {
-        rducks_format_error_message(err_msg, err_cap, "out of memory formatting Rducks query stream Arrow C Data handle");
-        goto cleanup;
-    }
-
-    schema = NULL;
-    array = NULL;
-    schema_initialized = 0;
-    array_initialized = 0;
-    ok = 1;
-
-cleanup:
-    if (array) {
-        if (array_initialized) rducks_release_arrow_array_if_set(array);
-        free(array);
-    }
-    if (schema) {
-        if (schema_initialized) rducks_release_arrow_schema_if_set(schema);
-        free(schema);
-    }
-    return ok;
-}
-
 static int rducks_query_stream_metadata_native(rducks_runtime_entry_t *runtime, const char *token,
                                                char **metadata_out,
                                                char *err_msg, size_t err_cap) {
@@ -296,94 +189,6 @@ static int rducks_query_stream_metadata_native(rducks_runtime_entry_t *runtime, 
 
 cleanup:
     free(buf.data);
-    return ok;
-}
-
-static int rducks_query_stream_schema_handle_native(rducks_runtime_entry_t *runtime, const char *token,
-                                                    char **handle_out,
-                                                    char *err_msg, size_t err_cap) {
-    rducks_query_stream_entry_t *entry;
-    duckdb_data_chunk chunk = NULL;
-    int ok = 0;
-    if (handle_out) *handle_out = NULL;
-    if (!runtime || !token || !token[0] || !handle_out) {
-        rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream token");
-        return 0;
-    }
-
-    rducks_runtime_lock();
-    entry = rducks_query_stream_find_locked(runtime, token, NULL);
-    rducks_runtime_unlock();
-    if (!entry) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks query stream is closed");
-        return 0;
-    }
-
-    chunk = duckdb_create_data_chunk(entry->types, entry->column_count);
-    if (!chunk) {
-        rducks_format_error_message(err_msg, err_cap, "failed to allocate empty Rducks query stream schema batch");
-        return 0;
-    }
-    duckdb_data_chunk_set_size(chunk, 0);
-    ok = rducks_query_stream_chunk_to_cdata_handle(runtime, entry, chunk, handle_out, err_msg, err_cap);
-    duckdb_destroy_data_chunk(&chunk);
-    return ok;
-}
-
-static int rducks_query_stream_next_handle_native(rducks_runtime_entry_t *runtime, const char *token,
-                                                  int *has_batch_out,
-                                                  char **handle_out,
-                                                  char *err_msg, size_t err_cap) {
-    rducks_query_stream_entry_t *entry;
-    duckdb_data_chunk chunk = NULL;
-    int ok = 0;
-    if (has_batch_out) *has_batch_out = 0;
-    if (handle_out) *handle_out = NULL;
-    if (!runtime || !token || !token[0]) {
-        rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream token");
-        return 0;
-    }
-
-    rducks_runtime_lock();
-    entry = rducks_query_stream_find_locked(runtime, token, NULL);
-    if (entry && entry->busy) {
-        rducks_runtime_unlock();
-        rducks_format_error_message(err_msg, err_cap, "Rducks query stream is already active");
-        return 0;
-    }
-    if (entry) entry->busy = 1;
-    rducks_runtime_unlock();
-
-    if (!entry) {
-        rducks_format_error_message(err_msg, err_cap, "Rducks query stream is closed");
-        return 0;
-    }
-    if (entry->done) {
-        ok = 1;
-        goto cleanup;
-    }
-
-    chunk = duckdb_stream_fetch_chunk(entry->result);
-    if (!chunk || duckdb_data_chunk_get_size(chunk) == 0) {
-        const char *msg = duckdb_result_error(&entry->result);
-        if (msg && msg[0]) {
-            rducks_copy_error_message(err_msg, err_cap, msg, "DuckDB query stream fetch failed");
-            goto cleanup;
-        }
-        entry->done = 1;
-        ok = 1;
-        goto cleanup;
-    }
-
-    if (!rducks_query_stream_chunk_to_cdata_handle(runtime, entry, chunk, handle_out, err_msg, err_cap)) goto cleanup;
-    if (has_batch_out) *has_batch_out = 1;
-    ok = 1;
-
-cleanup:
-    if (chunk) duckdb_destroy_data_chunk(&chunk);
-    rducks_runtime_lock();
-    if (entry) entry->busy = 0;
-    rducks_runtime_unlock();
     return ok;
 }
 
@@ -518,6 +323,59 @@ static int rducks_query_stream_schema_native(rducks_runtime_entry_t *runtime, co
     return 1;
 }
 
+/* Materialize a fetched DuckDB chunk directly into an R data frame (one column
+ * per result column via the same DuckDB-vector -> SEXP readers used for scalar
+ * UDF inputs) and hand it to the R side. In-process streaming shares the address
+ * space with DuckDB, so there is no wire codec. */
+static int rducks_query_stream_store_chunk(rducks_query_stream_entry_t *entry,
+                                            duckdb_data_chunk chunk, char *err_msg, size_t err_cap) {
+    idx_t n = duckdb_data_chunk_get_size(chunk);
+    idx_t ncol = entry->column_count;
+    SEXP df, names, pkg, ns, fun, tok, call;
+    int r_err = 0;
+    int nprot = 0;
+    df = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)ncol)); nprot++;
+    names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)ncol)); nprot++;
+    for (idx_t c = 0; c < ncol; c++) {
+        rducks_type_desc_t *desc = NULL;
+        duckdb_vector vec = duckdb_data_chunk_get_vector(chunk, c);
+        SEXP col;
+        if (!vec) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks query stream chunk vector is missing");
+            UNPROTECT(nprot);
+            return 0;
+        }
+        if (!rducks_type_desc_from_logical_type(entry->types[c], &desc, err_msg, err_cap)) {
+            UNPROTECT(nprot);
+            return 0;
+        }
+        col = rducks_rc_direct_column_values(desc, vec, n, err_msg, err_cap);
+        rducks_type_desc_destroy(desc);
+        if (!col) {
+            UNPROTECT(nprot);
+            return 0;
+        }
+        SET_VECTOR_ELT(df, (R_xlen_t)c, col);
+        SET_STRING_ELT(names, (R_xlen_t)c, Rf_mkChar(entry->names[c] ? entry->names[c] : ""));
+    }
+    Rf_setAttrib(df, R_NamesSymbol, names);
+    pkg = PROTECT(Rf_mkString("Rducks")); nprot++;
+    ns = PROTECT(R_FindNamespace(pkg)); nprot++;
+    fun = PROTECT(Rf_findFun(Rf_install("rducks_query_stream_store_native_batch"), ns)); nprot++;
+    tok = PROTECT(Rf_mkString(entry->token)); nprot++;
+    {
+        SEXP nrows = PROTECT(Rf_ScalarReal((double)n)); nprot++;
+        call = PROTECT(Rf_lang4(fun, tok, df, nrows)); nprot++;
+    }
+    R_tryEvalSilent(call, R_GlobalEnv, &r_err);
+    UNPROTECT(nprot);
+    if (r_err) {
+        rducks_format_error_message(err_msg, err_cap, "failed to store Rducks query stream batch");
+        return 0;
+    }
+    return 1;
+}
+
 static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, const char *token,
                                            int *has_batch_out, char *err_msg, size_t err_cap) {
     rducks_query_stream_entry_t *entry;
@@ -526,6 +384,11 @@ static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, cons
     if (has_batch_out) *has_batch_out = 0;
     if (!runtime || !token || !token[0]) {
         rducks_format_error_message(err_msg, err_cap, "invalid Rducks query stream token");
+        return 0;
+    }
+    /* Materializing a batch allocates SEXPs and calls back into R, so it must run
+     * on the recorded R thread. Reject off-main DuckDB worker threads. */
+    if (!rducks_allow_calling_thread_r_execution(runtime, err_msg, err_cap)) {
         return 0;
     }
 
@@ -559,6 +422,7 @@ static int rducks_query_stream_next_native(rducks_runtime_entry_t *runtime, cons
         ok = 1;
         goto cleanup;
     }
+    if (!rducks_query_stream_store_chunk(entry, chunk, err_msg, err_cap)) goto cleanup;
     if (has_batch_out) *has_batch_out = 1;
     ok = 1;
 

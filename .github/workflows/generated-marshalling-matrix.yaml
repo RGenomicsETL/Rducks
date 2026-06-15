@@ -1,4 +1,4 @@
-name: Generated marshalling matrix
+name: Generated direct/quack marshalling matrix
 
 on:
   push:
@@ -10,21 +10,13 @@ on:
         description: "Maximum generated cases to run; 0 means all"
         required: false
         default: "0"
-      include_ipc:
-        description: "Also include arrow_ipc + multiprocess_parallel generated cases"
-        required: false
-        default: "false"
-      ipc_workers:
-        description: "NNG worker count when include_ipc is true"
-        required: false
-        default: "1"
   schedule:
     - cron: "17 3 * * 1"
 
 jobs:
   generated-marshalling-matrix:
     runs-on: ubuntu-latest
-    name: R ${{ matrix.r }} generated matrix
+    name: R ${{ matrix.r }} generated direct/quack matrix
     strategy:
       fail-fast: false
       matrix:
@@ -34,8 +26,6 @@ jobs:
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
-      RDUCKS_MATRIX_INCLUDE_IPC: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.include_ipc || 'false' }}
-      RDUCKS_MATRIX_IPC_WORKERS: ${{ github.event.inputs.ipc_workers || '1' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,11 +43,11 @@ jobs:
         env:
           GITHUB_PAT: ${{ github.token }}
         run: |
-          install.packages(c("DBI", "duckdb", "mirai", "nanoarrow", "nanonext", "S7", "tinytest"))
+          install.packages(c("DBI", "duckdb", "mirai", "nanonext", "S7", "tinytest"))
         shell: Rscript {0}
 
       - name: Install Rducks
         run: R CMD INSTALL --preclean .
 
-      - name: Run generated marshalling matrix
+      - name: Run generated direct/quack marshalling matrix
         run: Rscript tools/run_generated_marshalling_matrix.R

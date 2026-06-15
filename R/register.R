@@ -82,7 +82,7 @@ rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, 
   )
 }
 
-rducks_assert_arrow_marshalling_supported <- function(spec) {
+rducks_assert_marshalling_supported <- function(spec) {
   types <- c(spec$arg_types %||% list(), list(spec$return_type))
   unsupported <- vapply(types, function(type) {
     if (rducks_scalar_mapping_supported(type)) "" else rducks_type_duckdb_sql(type)
@@ -121,10 +121,7 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #' entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
 #' not durable schema objects: they are visible to sibling connections while the
 #' same DuckDB database runtime remains open, but a file-backed database must be
-#' enabled and registered again after it is fully closed and reopened. For
-#' `arrow_ipc` plans, the UDF closure and discovered globals are copied once to
-#' each NNG worker in the shared provider pool and retained for that pool's
-#' lifetime.
+#' enabled and registered again after it is fully closed and reopened.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL function name.
@@ -133,13 +130,11 @@ rducks_assert_arrow_marshalling_supported <- function(spec) {
 #'   a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
 #'   argument logical types at bind time, and Rducks materializes those inputs
 #'   with the same typed semantics used for an explicit `args = ...` signature
-#'   across scalar/vectorized evaluation and supported `arrow_r`, `arrow_c`, and
-#'   `arrow_ipc` execution plans. Use explicit `NULL` for a zero-argument scalar
+#'   across scalar/vectorized direct evaluation. Use explicit `NULL` for a zero-argument scalar
 #'   UDF. Otherwise use exported DuckDB-style type descriptors such as `INTEGER`,
 #'   `DOUBLE`, `GEOMETRY`, `VARIANT`, `INTEGER[]`, `INTEGER[3]`,
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures
-#'   require a DuckDB runtime whose C API exposes VARIANT logical types, and are
-#'   not supported by the direct `arrow_c` marshalling path yet.
+#'   require a DuckDB runtime whose C API exposes VARIANT logical types.
 #' @param returns Return type specification.
 #' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
 #'   calls the R function once per DuckDB row. `"vectorized"` calls the R
@@ -197,25 +192,21 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
     dynamic_args = dynamic_args
   )
   plan <- rducks_current_execution_plan(con)
-  rducks_assert_arrow_marshalling_supported(spec)
+  rducks_assert_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
   rducks_assert_single_thread(con)
   runtime_token <- rducks_attach_runtime_anchor(con)
   native_evaluator <- rducks_plan_native_evaluator_token(plan, spec$mode)
-  eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_r")) {
-    rducks_make_arrow_vectorized_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_c")) {
+  eval_ref <- if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "direct")) {
     rducks_make_rc_vectorized_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_nng_vectorized_wrapper(
+  } else if (identical(spec$mode, "vectorized") && identical(plan$marshalling, "wire")) {
+    rducks_make_wire_ipc_nng_vectorized_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
-  } else if (identical(plan$marshalling, "arrow_r")) {
-    rducks_make_arrow_scalar_wrapper(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(plan$marshalling, "arrow_c")) {
+  } else if (identical(plan$marshalling, "direct")) {
     rducks_make_rc_scalar_bundle(fun, spec, null_handling, exception_handling, plan = plan)
-  } else if (identical(plan$marshalling, "arrow_ipc")) {
-    rducks_make_arrow_ipc_nng_scalar_wrapper(
+  } else if (identical(plan$marshalling, "wire")) {
+    rducks_make_wire_ipc_nng_scalar_wrapper(
       fun, spec, null_handling, exception_handling, plan = plan, runtime_token = runtime_token
     )
   } else {
@@ -318,8 +309,7 @@ rducks_table_registration_spec <- function(name, fun, chunk_size) {
 #' finite table without materializing all rows during DuckDB bind. The
 #' \code{prototype} supplies the output column names and types. During scan,
 #' Rducks repeatedly calls \code{next_batch(n)} and imports each returned data
-#' frame, named list, \code{nanoarrow_array}, or one-batch
-#' \code{nanoarrow_array_stream}. Return \code{NULL} from \code{next_batch()} to
+#' frame or named list. Return \code{NULL} from \code{next_batch()} to
 #' signal end-of-stream.
 #'
 #' \code{close}, when supplied, is called at most once when the stream reaches
@@ -446,7 +436,6 @@ rducks_table_stream_column_signature <- function(x) {
 }
 
 rducks_table_stream_validate_batch <- function(stream, batch) {
-  if (inherits(batch, "nanoarrow_array") || inherits(batch, "nanoarrow_array_stream")) return(batch)
   batch <- rducks_table_result_as_data_frame(batch)
   expected <- names(stream$prototype)
   actual <- names(batch)
@@ -474,8 +463,12 @@ rducks_table_stream_next_array <- function(stream, n) {
     rducks_table_stream_close(stream)
     return(NULL)
   }
-  batch <- rducks_table_stream_validate_batch(stream, batch)
-  rducks_table_as_arrow_array(batch)
+  # In-process table scans share the address space with DuckDB, so hand the
+  # validated data frame straight to the extension and let it fill DuckDB output
+  # vectors directly. Serializing to a Quack wire payload here would add 2-3 full
+  # copies for no benefit; the wire codec is reserved for the cross-process ipc
+  # transport where data must actually leave the process.
+  rducks_table_stream_validate_batch(stream, batch)
 }
 
 rducks_table_result_as_data_frame <- function(result) {
@@ -500,47 +493,15 @@ rducks_table_result_as_data_frame <- function(result) {
   structure(result, names = column_names, class = "data.frame", row.names = .set_row_names(lengths[[1L]]))
 }
 
-rducks_table_as_arrow_array <- function(result) {
-  if (inherits(result, "nanoarrow_array")) return(result)
-  stream <- if (inherits(result, "nanoarrow_array_stream")) {
-    result
-  } else {
-    nanoarrow::as_nanoarrow_array_stream(rducks_table_result_as_data_frame(result))
-  }
-  batches <- nanoarrow::collect_array_stream(stream)
-  if (length(batches) != 1L) {
-    stop("Rducks table nanoarrow stream must yield exactly one record batch", call. = FALSE)
-  }
-  batches[[1L]]
-}
-
 #' Register an R table function in DuckDB
 #'
-#' Registers an R-backed DuckDB table function. The registered SQL
-#' table function infers its positional SQL argument count from `formals(fun)`
-#' and registers those arguments with DuckDB's dynamic `ANY` type. During
-#' DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-#' scalars/lists and calls `fun(...)` on the recorded calling R thread. `fun()`
-#' may return either a finite data frame/named list or a
-#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} object.
-#'
-#' For finite results, Rducks imports the full result into one DuckDB data chunk
-#' during bind and then emits row batches during scan. For streaming results,
-#' bind uses only the stream prototype to define the DuckDB schema; scan calls
-#' `next_batch()` repeatedly and imports one returned batch at a time. Both
-#' paths honor DuckDB projection pushdown, so unreferenced columns are not copied
-#' from imported chunks into DuckDB output chunks.
-#'
-#' This is intentionally separate from DuckDB scalar-UDF registration through
-#' \code{\link[=rducks_register_scalar_udf]{rducks_register_scalar_udf()}}: table
-#' functions have their own bind/init/scan state, bind-time dynamic schemas, and
-#' positional SQL arguments fixed by the R function's finite formal argument
-#' count. Variadic `...` arguments are not supported. If you already have a
-#' static R data frame to expose as a virtual table, prefer
-#' `duckdb::duckdb_register()`; DuckDB's R package routes that through its native
-#' data-frame scan path. Use `rducks_enable(con, threads = "single")` or
-#' otherwise set `external_threads=1` plus `PRAGMA threads=1` before registration
-#' and execution; worker-thread calls into R are rejected.
+#' Registers an R function as a DuckDB table function. The R function is called on
+#' the recorded R thread to produce either a finite result (a data frame or named
+#' list of equal-length columns) or a
+#' \code{\link[=rducks_table_stream]{rducks_table_stream()}} producer for
+#' scan-time batches. Column types are inferred from the returned columns, and the
+#' extension fills DuckDB output vectors directly from the R columns, with no
+#' wire serialization for the in-process scan.
 #'
 #' @param con A `duckdb_connection`.
 #' @param name SQL table function name.
@@ -554,15 +515,6 @@ rducks_table_as_arrow_array <- function(result) {
 #' @return Object of class `rducks_table_registration` containing the
 #'   connection and normalized table signature. The table function remains
 #'   registered in DuckDB even if this object is discarded.
-#' @examples
-#' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-#' rducks_enable(db, threads = "single")
-#' rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
-#' DBI::dbGetQuery(db, "SELECT * FROM my_table()")
-#' rducks_release(db)
-#' DBI::dbDisconnect(db)
-#' }
 #' @export
 rducks_register_table <- function(con, name, fun, chunk_size = 1024L) {
   if (!inherits(con, "duckdb_connection")) {

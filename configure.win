@@ -14,7 +14,6 @@ FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
 VENDOR_DIR="${EXT_SRC_DIR}/third_party"
 VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
 VENDOR_MBEDTLS_DIR="${VENDOR_DIR}/mbedtls"
-VENDOR_NANOARROW_DIR="${VENDOR_DIR}/na"
 
 if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
   echo "ERROR: DuckDB C API header not found at ${DUCKDB_CAPI_HEADER}"
@@ -25,13 +24,6 @@ if [ ! -f "${SRC_FILE}" ]; then
   echo "ERROR: Rducks extension source not found at ${SRC_FILE}"
   exit 1
 fi
-if [ ! -f "${VENDOR_NANOARROW_DIR}/src/nanoarrow/nanoarrow.h" ] || \
-   [ ! -f "${VENDOR_NANOARROW_DIR}/src/nanoarrow/nanoarrow_ipc.h" ] || \
-   [ ! -f "${VENDOR_NANOARROW_DIR}/flatcc/include/flatcc/flatcc_builder.h" ]; then
-  echo "ERROR: vendored nanoarrow C/IPC sources are missing"
-  exit 1
-fi
-
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
 RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
 if [ "${USE_UNSTABLE_C_API}" != "0" ] && [ "${USE_UNSTABLE_C_API}" != "1" ]; then
@@ -41,7 +33,7 @@ fi
 case "${RDUCKS_EXTENSION_ABI_TYPE}" in
   C_STRUCT_UNSTABLE) ;;
   *)
-    echo "ERROR: Rducks uses DuckDB Arrow C APIs and must be built with RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE (got '${RDUCKS_EXTENSION_ABI_TYPE}')"
+    echo "ERROR: Rducks requires RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE (got '${RDUCKS_EXTENSION_ABI_TYPE}')"
     exit 1
     ;;
 esac
@@ -53,11 +45,6 @@ R_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
 R_CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
 R_LDFLAGS=`"${R_HOME}/bin/R" CMD config LDFLAGS`
 R_LD_FLAGS=`"${R_HOME}/bin/R" CMD config --ldflags`
-NANOARROW_INCLUDE=`"${R_HOME}/bin/Rscript" -e 'cat(system.file("include", package = "nanoarrow"))'`
-if [ -z "${NANOARROW_INCLUDE}" ] || [ ! -f "${NANOARROW_INCLUDE}/nanoarrow/r.h" ]; then
-  echo "ERROR: nanoarrow headers not found. Install the nanoarrow R package."
-  exit 1
-fi
 
 case " ${R_CPPFLAGS} ${R_INCLUDE_FLAGS} ${R_CFLAGS} ${R_CPICFLAGS} " in
   *DUCKDB_EXTENSION_API_VERSION_UNSTABLE*)
@@ -90,7 +77,7 @@ fi
 ABI_TYPE="C_STRUCT_UNSTABLE"
 UNSTABLE_CPPFLAGS=""
 if [ "${USE_UNSTABLE_C_API}" != "1" ]; then
-  echo "ERROR: Rducks uses DuckDB Arrow C APIs and requires USE_UNSTABLE_C_API=1"
+  echo "ERROR: Rducks requires USE_UNSTABLE_C_API=1"
   exit 1
 fi
 if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
@@ -155,7 +142,7 @@ VENDOR_NNG_CPPFLAGS="-DNNG_STATIC_LIB -I${VENDOR_NNG_DIR}/include"
 VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -DNANOARROW_NAMESPACE=RducksNanoarrow -DNANOARROW_DLL= -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi -I${NANOARROW_INCLUDE} -I${VENDOR_NANOARROW_DIR}/src -I${VENDOR_NANOARROW_DIR}/flatcc/include ${VENDOR_NNG_CPPFLAGS}"
+CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi ${VENDOR_NNG_CPPFLAGS}"
 SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
 
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
