@@ -41,6 +41,11 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="development version" id="rducks-development-version">Rducks (development version)<a class="anchor" aria-label="anchor" href="#rducks-development-version"></a></h2>
+<ul><li>
+<code>transport = "ipc"</code> now supports dynamic (omitted-<code>args</code>) scalar UDFs, matching <code>transport = "inproc"</code>. DuckDB resolves the concrete argument types per call site at bind; the native bind carries those resolved types to the worker in an <code>RDT1</code> dynamic payload (concrete arg tokens + the Quack chunk), so one registration serves call sites with different argument types. A type the wire codec cannot encode fails cleanly at the first chunk encode.</li>
+</ul></div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.1.1" id="rducks-011">Rducks 0.1.1<a class="anchor" aria-label="anchor" href="#rducks-011"></a></h2>
 <ul><li>Improved configure-time CMake discovery for required vendored NNG builds on macOS builders by honoring <code>CMAKE</code>, using <code>cmake</code> from <code>PATH</code>, and probing CRAN/macbuilder’s <code>/Applications/CMake.app/Contents/bin/cmake</code> location while keeping missing CMake as a hard configuration error.</li>
 <li>Cleaned up macOS source-check diagnostics by removing an unused native helper, suppressing private-extension debug-map noise from vendored static archives, and making NNG batch-contract tests use local IPC fake workers instead of random loopback TCP ports in sandboxed check environments.</li>
