@@ -16,11 +16,13 @@ rducks_wire_encode_values <- function(types, values_list, rows) {
 }
 
 rducks_wire_decode_values <- function(arg_types, payload) {
-  decoded <- rducks_quack_decode_payload(payload)
-  if (length(decoded$columns) != length(arg_types)) {
-    stop("Rducks wire payload column count disagrees with the declared signature",
-         call. = FALSE)
-  }
+  # The payload is self-describing; validate its decoded wire types against the
+  # declared signature (column count + per-column type) inside the decoder before
+  # any column is materialized. The input boundary is native-produced and so
+  # trusted, but the check is near-free here -- the decoder already reconstructs
+  # the types -- and keeps the codec self-consistent against protocol drift.
+  expected <- lapply(arg_types, rducks_quack_spec)
+  decoded <- rducks_quack_decode_payload(payload, expected)
   list(rows = as.integer(decoded$rows),
        values = rducks_quack_columns_to_values(arg_types, decoded))
 }

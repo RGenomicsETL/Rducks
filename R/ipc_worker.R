@@ -7,7 +7,6 @@ rducks_ipc_worker_check_n <- function(n) {
 }
 
 rducks_ipc_worker_eval_quack_chunk <- function(input_payload,
-                                               output_schema_spec,
                                                n,
                                                fun,
                                                arg_types,
@@ -47,7 +46,6 @@ rducks_ipc_worker_eval_quack_chunk <- function(input_payload,
 }
 
 rducks_ipc_worker_eval_vectorized_chunk <- function(input_payload,
-                                                    output_schema_spec,
                                                     n,
                                                     fun,
                                                     arg_types,
@@ -56,7 +54,6 @@ rducks_ipc_worker_eval_vectorized_chunk <- function(input_payload,
                                                     exception_handling) {
   rducks_ipc_worker_eval_quack_chunk(
     input_payload = input_payload,
-    output_schema_spec = output_schema_spec,
     n = n,
     fun = fun,
     arg_types = arg_types,

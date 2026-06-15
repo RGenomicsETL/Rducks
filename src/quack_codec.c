@@ -1416,6 +1416,7 @@ SEXP RDUCKS_quack_encode_chunk(SEXP rows_sexp, SEXP types_spec, SEXP columns) {
  * runs on both normal return and unwinding. */
 typedef struct {
     rdx_qk_chunk *chunk;   /* freed by cleanup */
+    SEXP expected;         /* declared wire specs to validate against, or R_NilValue */
 } rdx_qkr_decode_ctx;
 
 static void rdx_qkr_decode_cleanup(void *data, Rboolean jump) {
@@ -1430,6 +1431,25 @@ static SEXP rdx_qkr_decode_body(void *data) {
     SEXP out, types, columns;
     static const char *fields[] = {"rows", "types", "columns"};
     uint32_t i;
+    /* When the caller declares the expected wire types, reject any payload whose
+     * decoded types disagree before materializing a single column. The comparison
+     * reuses rdx_qk_type_equal -- the same canonical type equality the native
+     * result-writeback path uses -- so both decode boundaries stay consistent. */
+    if (ctx->expected != R_NilValue) {
+        if (TYPEOF(ctx->expected) != VECSXP ||
+            (uint32_t)Rf_xlength(ctx->expected) != chunk->ncolumns) {
+            Rf_error("Rducks wire payload column count disagrees with the declared signature");
+        }
+        for (i = 0; i < chunk->ncolumns; i++) {
+            rdx_qk_type *exp = rdx_qkr_type_from_spec(VECTOR_ELT(ctx->expected, (R_xlen_t)i), 0);
+            int eq = rdx_qk_type_equal(exp, chunk->types[i]);
+            rdx_qk_type_free(exp);
+            if (!eq) {
+                Rf_error("Rducks wire payload type for column %u disagrees with the declared signature",
+                         (unsigned)(i + 1));
+            }
+        }
+    }
     out = PROTECT(rdx_qkr_named_list(3, fields));
     SET_VECTOR_ELT(out, 0, Rf_ScalarReal((double)chunk->rows));
     types = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)chunk->ncolumns));
@@ -1444,13 +1464,14 @@ static SEXP rdx_qkr_decode_body(void *data) {
     return out;
 }
 
-SEXP RDUCKS_quack_decode_chunk(SEXP payload) {
+SEXP RDUCKS_quack_decode_chunk(SEXP payload, SEXP expected) {
     rdx_qk_reader r;
     rdx_qk_error err = {{0}};
     rdx_qkr_decode_ctx ctx = {0};
     SEXP cont, res;
 
     if (TYPEOF(payload) != RAWSXP) Rf_error("Rducks quack codec: payload must be a raw vector");
+    ctx.expected = expected;
     rdx_qk_reader_init(&r, RAW(payload), (size_t)Rf_xlength(payload));
     if (!rdx_qk_chunk_decode(&r, &ctx.chunk, &err)) {
         rdx_qkr_fail(&err, "decode failed");

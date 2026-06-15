@@ -299,7 +299,6 @@ rducks_nng_worker_loop <- function(endpoint) {
         rec <- get(req$udf_id, envir = registry, inherits = FALSE)
         output <- rducks_ipc_worker_eval_quack_chunk(
           input_payload = req$payload,
-          output_schema_spec = rec$output_schema_spec,
           n = req$row_count,
           fun = rec$fun,
           arg_types = rec$arg_types,
@@ -897,7 +896,7 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
     invisible(shutdown_status)
   }
   provider$register_udf <- function(udf_id, udf_name, fun, arg_types, return_type, mode,
-                                    null_handling, exception_handling, output_schema_spec,
+                                    null_handling, exception_handling,
                                     globals = NULL, packages = character(),
                                     timeout = rducks_nng_defaults$register_timeout) {
     rducks_nng_provider_trace(paste0(state$transport, ":register:begin"))
@@ -912,7 +911,6 @@ rducks_nng_provider <- function(workers = 1L, compute = NULL, max_pending = 64L,
       mode = mode,
       null_handling = null_handling,
       exception_handling = exception_handling,
-      output_schema_spec = output_schema_spec,
       globals = globals %||% list(),
       packages = packages
     )
@@ -1036,10 +1034,10 @@ rducks_make_wire_ipc_nng_wrapper_impl <- function(fun, spec, null_handling, exce
     invisible(provider)
   }
 
+  # output_schema is a vestigial placeholder kept for the native call shape
+  # (rducks_ripc.c invokes configure() with a single NULL argument); quack
+  # payloads are self-describing, so no output schema is needed.
   configure <- function(output_schema) {
-    # Quack payloads are self-describing; carry the declared return type token
-    # for validation instead of an declared return type token.
-    output_schema_spec <- rducks_type_token(engine$return_type)
     ensure_provider_started()
     if (!isTRUE(provider_registered)) {
       provider$register_udf(
@@ -1051,7 +1049,6 @@ rducks_make_wire_ipc_nng_wrapper_impl <- function(fun, spec, null_handling, exce
         mode = mode,
         null_handling = engine$null_handling,
         exception_handling = engine$exception_handling,
-        output_schema_spec = output_schema_spec,
         globals = worker_state$globals,
         packages = unique(c(opts$packages, worker_state$packages)),
         timeout = opts$timeout %||% rducks_nng_defaults$register_timeout

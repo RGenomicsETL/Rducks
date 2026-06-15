@@ -162,3 +162,33 @@ expect_error(
   pattern = "advertises validity but is missing its mask",
   info = "has_validity without a mask must be rejected"
 )
+
+# The payload is self-describing, so a decoded wire type that disagrees with the
+# declared signature must be rejected before any column is materialized (rather
+# than silently reinterpreting the bytes under the declared type). The check uses
+# the same canonical type equality the native result path uses.
+int_p <- Rducks:::rducks_wire_encode_values(list(INTEGER), list(42L), 1L)
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(VARCHAR), int_p),
+  pattern = "type for column 1 disagrees with the declared signature",
+  info = "wire type that disagrees with the declared type must be rejected"
+)
+str_p <- Rducks:::rducks_wire_encode_values(list(VARCHAR), list("42"), 1L)
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(INTEGER), str_p),
+  pattern = "type for column 1 disagrees with the declared signature",
+  info = "reverse wire/declared type mismatch must also be rejected"
+)
+# A nested mismatch (LIST(INTEGER) wire vs declared LIST(VARCHAR)) is caught too.
+listint_p <- Rducks:::rducks_wire_encode_values(list(LIST(INTEGER)), list(list(c(1L, 2L))), 1L)
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(LIST(VARCHAR)), listint_p),
+  pattern = "type for column 1 disagrees with the declared signature",
+  info = "nested wire/declared type mismatch must be rejected"
+)
+# Column-count mismatch is reported by the same decoder gate.
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(INTEGER, VARCHAR), int_p),
+  pattern = "column count disagrees with the declared signature",
+  info = "wire column count that disagrees with the declared arity must be rejected"
+)

@@ -33,7 +33,7 @@ columns <- list(
 )
 payload <- .Call("RDUCKS_quack_encode_chunk", 3, types, columns)
 cat("payload bytes:", length(payload), "\n")
-dec <- .Call("RDUCKS_quack_decode_chunk", payload)
+dec <- .Call("RDUCKS_quack_decode_chunk", payload, NULL)
 stopifnot(dec$rows == 3)
 stopifnot(identical(dec$columns[[1]]$data, c(7L, NA, -42L)))
 stopifnot(identical(dec$columns[[1]]$valid, c(TRUE, FALSE, TRUE)))
@@ -58,7 +58,7 @@ stopifnot(identical(dec$types[[4]]$width, 12L), identical(dec$types[[4]]$scale, 
 # adversarial: every truncation must error, never crash
 errs <- 0L
 for (cut in seq_len(length(payload) - 1L)) {
-  r <- tryCatch({.Call("RDUCKS_quack_decode_chunk", payload[seq_len(cut)]); FALSE},
+  r <- tryCatch({.Call("RDUCKS_quack_decode_chunk", payload[seq_len(cut)], NULL); FALSE},
                 error = function(e) TRUE)
   if (r) errs <- errs + 1L
 }

@@ -69,9 +69,9 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
     }
 
     configure = rducks_named_list_get(bundle, "configure");
-    /* The R-side configure() derives the Quack output schema from the engine's
-     * return type itself (rducks_type_token(engine$return_type)); the argument is
-     * a vestigial placeholder, so pass NULL instead of an Arrow schema. */
+    /* Quack payloads are self-describing, so configure() needs no output schema;
+     * its single argument is a vestigial placeholder (an Arrow schema in the old
+     * data plane), so pass NULL. */
     call = PROTECT(Rf_lang2(configure, R_NilValue));
     protect_count++;
     result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));

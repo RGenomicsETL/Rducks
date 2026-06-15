@@ -259,8 +259,8 @@ rducks_quack_encode_columns <- function(types, columns, rows) {
   .Call(RDUCKS_quack_encode_chunk, as.numeric(rows), specs, columns)
 }
 
-rducks_quack_decode_payload <- function(payload) {
-  .Call(RDUCKS_quack_decode_chunk, payload)
+rducks_quack_decode_payload <- function(payload, expected = NULL) {
+  .Call(RDUCKS_quack_decode_chunk, payload, expected)
 }
 
 # Materialize decoded wire columns to Rducks values for declared arg types.
