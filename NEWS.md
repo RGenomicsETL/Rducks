@@ -8,6 +8,7 @@
 * `rducks_query_stream()` is restored on the direct path: native DuckDB streaming results are materialized to data-frame batches directly from DuckDB vectors.
 * Internal: queued/concurrent scalar-UDF results are now written through an owned `duckdb_data_chunk` for every supported return type.
 * Internal: dropped the unused per-call `connection_id` capture, removing four DuckDB client-context entries from the unstable C API surface (no behavior change).
+* The Arrow-era vignettes are removed; the README covers current usage, including an `inproc`-vs-`ipc` worker-process benchmark (with optional mori global sharing).
 
 # Rducks 0.1.1
 
@@ -47,8 +48,6 @@
 - Tightened execution-plan and support documentation, clarified aggregate state
   ownership, and expanded tests for IPC, duckplyr, query streams, and
   table-stream cardinality.
-- Added package vignettes for getting started, type/value semantics, execution
-  plans and IPC worker lifecycle, and current internal implementation details.
 - Added dynamic-argument scalar UDF registration: omitting `args` in
   `rducks_register_scalar_udf()` registers a DuckDB varargs `ANY` function while
   keeping the return type explicit. DuckDB now resolves the concrete argument
