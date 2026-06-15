@@ -41,9 +41,6 @@
 - Tightened execution-plan and support documentation, clarified
   aggregate state ownership, and expanded tests for IPC, duckplyr, query
   streams, and table-stream cardinality.
-- Added package vignettes for getting started, type/value semantics,
-  execution plans and IPC worker lifecycle, and current internal
-  implementation details.
 - Added dynamic-argument scalar UDF registration: omitting `args` in
   [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   registers a DuckDB varargs `ANY` function while keeping the return
