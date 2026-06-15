@@ -19,13 +19,20 @@
 /* End-to-end VARIANT support has two halves: (1) this extension implementing
  * VARIANT value materialization, and (2) the loaded DuckDB runtime C API
  * exposing a creatable VARIANT logical type. RDUCKS_VARIANT_MATERIALIZATION is
- * the compile-time half; the runtime half is probed at load time
- * (rducks_runtime_variant_supported). Both must hold before Rducks accepts a
- * VARIANT-typed scalar UDF, so on runtimes whose C API predates VARIANT (e.g.
- * 1.5.2) VARIANT stays rejected at registration regardless of this flag. Rducks
- * materializes VARIANT through its physical storage STRUCT (keys/children/
- * values/data); that routing is exercised end-to-end only on a VARIANT-capable
- * runtime. */
+ * the compile-time half (probed together with the runtime half by
+ * rducks_variant_supported); both must hold before Rducks accepts a VARIANT
+ * scalar UDF, so on runtimes whose C API predates VARIANT (e.g. 1.5.2) VARIANT
+ * stays rejected at registration regardless of this flag.
+ *
+ * The flag is 0 because the materialization half is not implementable with the
+ * current C API: tested against duckdb 1.5.4-dev (which does create VARIANT
+ * logical types and lets a VARIANT scalar UDF register), reading a VARIANT
+ * argument vector fails with DuckDB's internal "optional pointer not set" --
+ * duckdb_struct_vector_get_child does not work on a VARIANT vector, so the
+ * storage-STRUCT routing used for UNION is not viable for VARIANT. Enabling it
+ * needs DuckDB to expose a VARIANT vector accessor (or documented physical
+ * layout) in the C extension API; until then the probe stays FALSE so VARIANT
+ * is rejected at registration rather than registering and failing at execution. */
 #ifndef RDUCKS_VARIANT_MATERIALIZATION
 #define RDUCKS_VARIANT_MATERIALIZATION 0
 #endif
