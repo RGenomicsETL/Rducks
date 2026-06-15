@@ -28,10 +28,27 @@ local({
       rducks_register_scalar_udf(con, "r_variant_id", function(x) x, args = VARIANT, returns = VARIANT)
     )
   } else {
+    # Every registration path must reject VARIANT consistently, not just the
+    # scalar direct path: nested VARIANT, and the aggregate path (which has no
+    # execution plan and so bypasses the scalar/wire type gates).
     expect_error(
       rducks_register_scalar_udf(con, "r_variant_arg", function(x) x, args = VARIANT, returns = INTEGER),
       pattern = "VARIANT",
-      info = "VARIANT is rejected at registration when the runtime cannot carry it"
+      info = "scalar VARIANT is rejected when the runtime cannot carry it"
+    )
+    expect_error(
+      rducks_register_scalar_udf(con, "r_variant_nested", function(x) x,
+                                 args = STRUCT(v = VARIANT), returns = INTEGER),
+      pattern = "VARIANT",
+      info = "nested VARIANT (STRUCT(v = VARIANT)) is rejected"
+    )
+    expect_error(
+      rducks_register_aggregate(con, "r_variant_agg",
+                                update = function(state, x) x,
+                                finalize = function(state) state,
+                                args = VARIANT, returns = VARIANT),
+      pattern = "VARIANT",
+      info = "aggregate VARIANT is rejected when the runtime cannot carry it"
     )
   }
 })

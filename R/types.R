@@ -829,6 +829,33 @@ rducks_variant_runtime_supported <- function() {
   isTRUE(rducks_runtime_caps$variant)
 }
 
+# Recursively detect VARIANT anywhere in a (possibly nested) type.
+rducks_type_contains_variant <- function(type) {
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
+  if (identical(rducks_type_kind(type), "scalar") && identical(rducks_type_token(type), "variant")) {
+    return(TRUE)
+  }
+  children <- tryCatch(rducks_type_children(type), error = function(e) list())
+  length(children) > 0L && any(vapply(children, rducks_type_contains_variant, logical(1)))
+}
+
+# Registration paths that do not run through the execution-plan type gates (e.g.
+# aggregates) must still reject VARIANT until the runtime reports VARIANT
+# materialization support, so VARIANT is refused consistently everywhere rather
+# than registering and then failing at execution on a VARIANT-capable runtime.
+rducks_assert_variant_materializable <- function(types, what) {
+  if (rducks_variant_runtime_supported()) {
+    return(invisible(NULL))
+  }
+  bad <- types[vapply(types, rducks_type_contains_variant, logical(1))]
+  if (length(bad)) {
+    stop("DuckDB ", what, " VARIANT marshalling is not implemented for: ",
+         paste(unique(vapply(bad, rducks_type_duckdb_sql, character(1))), collapse = ", "),
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 rducks_direct_mapping_supported <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
