@@ -384,6 +384,59 @@ stream$next_batch()
 stream$close()
 ```
 
+Because each batch is one DuckDB chunk that R materializes and then
+releases, memory stays bounded regardless of result size: the stream
+never holds the whole result. The query below produces ~8 million rows
+with a padded column (well over half a gigabyte if collected eagerly
+with `dbGetQuery()`), yet the resident set stays a small, roughly
+constant fraction of that.
+
+``` r
+rss_mb <- function() {
+  vm <- grep("VmRSS", tryCatch(readLines("/proc/self/status"), error = function(e) ""), value = TRUE)
+  if (length(vm)) round(as.numeric(gsub("[^0-9]", "", vm)) / 1024) else NA_real_
+}
+
+stream <- rducks_query_stream(
+  con,
+  "SELECT i, i * i AS sq, repeat('x', 64) AS pad FROM range(8000000) t(i)"
+)
+rss_at_open <- rss_mb()
+rows <- 0
+peak <- rss_at_open
+repeat {
+  batch <- stream$next_batch()
+  if (is.null(batch)) break
+  rows <- rows + nrow(batch)          # consume one chunk, then let it be GC'd
+  peak <- max(peak, rss_mb())
+}
+stream$close()
+data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
+#>    rows rss_at_open_mb peak_rss_mb
+#> 1 8e+06            169         250
+```
+
+The same streaming holds over arbitrary scans, including external
+table-function extensions. Streaming a 15 GB BAM through a `read_bam()`
+scanner (the [duckhts](https://github.com/RGenomicsETL/duckhts)
+extension) keeps the R process at roughly 240 MB resident across 40
+million reads:
+
+``` r
+DBI::dbExecute(con, "LOAD 'duckhts'")
+stream <- rducks_query_stream(
+  con,
+  "SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
+     FROM read_bam('NA12878.low_coverage.bam')"   # 15 GB on disk
+)
+repeat {
+  batch <- stream$next_batch()
+  if (is.null(batch)) break
+  # process one chunk at a time; resident memory stays ~240 MB
+}
+stream$close()
+```
+
 ## Execution plans
 
 Execution plans are fixed at scalar-UDF registration time and select the
@@ -540,9 +593,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.342
-#> 2          ipc (2 workers) 65961344       1.936
-#> 3   ipc + mori (2 workers) 65961344       1.923
+#> 1 inproc (single R thread) 65961344       3.358
+#> 2          ipc (2 workers) 65961344       1.968
+#> 3   ipc + mori (2 workers) 65961344       1.928
 ```
 
 ## duckplyr integration
