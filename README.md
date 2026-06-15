@@ -447,6 +447,104 @@ dbGetQuery(con, "SELECT sum(r_inc((i % 1000)::INTEGER)) AS total FROM range(2000
 rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
 ```
 
+### When worker-process execution wins
+
+`inproc` runs every R callback on the single recorded R thread, so an
+expensive per-chunk UDF serializes even while DuckDB scans in parallel.
+`transport = "ipc"` fans those chunks out to worker R processes, so the
+per-chunk cost overlaps once it is worth the marshalling. The benchmark
+registers the same sleeping vectorized UDF on three plans and runs each
+against one large parallel CSV scan. The UDF closes over a random R
+lookup vector; the third plan ships that global to the workers through
+[mori](https://shikokuchuo.net/mori/) shared memory
+(`ipc_globals_share = "mori"`). Timings are illustrative and
+machine-dependent.
+
+``` r
+set.seed(1)
+lookup <- sample.int(20L, 1000L, replace = TRUE)
+slow_lookup <- function(x) {
+  Sys.sleep(0.05)
+  x + lookup[[1L]]
+}
+
+duckdb_vector_size <- 2048L
+csv_rows <- duckdb_vector_size * 64L
+csv_pad <- strrep("x", 128L)
+csv_path <- tempfile("rducks-readme-csv-", fileext = ".csv")
+writeLines(
+  c("i,pad", paste0(seq.int(0L, csv_rows - 1L), ",", csv_pad)),
+  csv_path
+)
+
+ipc_workers <- 2L
+plans <- list(
+  inproc = rducks_execution_plan("inproc"),
+  ipc = rducks_execution_plan(
+    "ipc",
+    ipc_workers = ipc_workers,
+    ipc_timeout = 60,
+    ipc_globals = "lookup"
+  ),
+  ipc_mori = rducks_execution_plan(
+    "ipc",
+    ipc_workers = ipc_workers,
+    ipc_timeout = 60,
+    ipc_globals = "lookup",
+    ipc_globals_share = "mori"
+  )
+)
+udfs <- paste0("r_bench_", names(plans))
+
+# Register each UDF single-threaded under its plan; for the ipc plans this
+# starts the worker processes and broadcasts the UDF (and its globals).
+for (i in seq_along(plans)) {
+  rducks_set_execution_plan(con, plans[[i]], threads = 1L, external_threads = 1L)
+  rducks_register_scalar_udf(
+    con,
+    name = udfs[[i]],
+    fun = slow_lookup,
+    args = INTEGER,
+    returns = INTEGER,
+    mode = "vectorized",
+    side_effects = TRUE
+  )
+}
+
+run_plan <- function(label, udf, plan, threads, external_threads) {
+  rducks_set_execution_plan(con, plan, threads = threads, external_threads = external_threads)
+  elapsed <- system.time({
+    result <- DBI::dbGetQuery(con, sprintf(
+      paste(
+        "SELECT sum(%s((i %% 1000)::INTEGER)) AS total",
+        "FROM read_csv(%s, header = true,",
+        "columns = {'i': 'INTEGER', 'pad': 'VARCHAR'}, parallel = true)"
+      ),
+      DBI::dbQuoteIdentifier(con, udf),
+      DBI::dbQuoteString(con, csv_path)
+    ))
+  })[["elapsed"]]
+  data.frame(label = label, total = result$total[[1]], elapsed_sec = round(elapsed, 3))
+}
+
+benchmark <- rbind(
+  run_plan("inproc (single R thread)", udfs[[1]], plans[[1]],
+           threads = 1L, external_threads = 1L),
+  run_plan("ipc (2 workers)", udfs[[2]], plans[[2]],
+           threads = ipc_workers + 1L, external_threads = ipc_workers),
+  run_plan("ipc + mori (2 workers)", udfs[[3]], plans[[3]],
+           threads = ipc_workers + 1L, external_threads = ipc_workers)
+)
+unlink(csv_path, force = TRUE)
+rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
+                          threads = 1L, external_threads = 1L)
+benchmark
+#>                      label    total elapsed_sec
+#> 1 inproc (single R thread) 65961344       3.342
+#> 2          ipc (2 workers) 65961344       1.936
+#> 3   ipc + mori (2 workers) 65961344       1.923
+```
+
 ## duckplyr integration
 
 `rducks_with_duckplyr()` and the `with.duckdb_connection()` method let
