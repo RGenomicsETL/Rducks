@@ -75,7 +75,7 @@ jobs:
             exit 0
           fi
           if git show "$baseline_ref:DESCRIPTION" | grep -qi 'nanoarrow'; then
-            echo "Baseline still depends on nanoarrow; no-Arrow PR is not performance-comparable. Running current smoke only."
+            echo "Baseline still depends on nanoarrow; this PR is not performance-comparable to it. Running current smoke only."
             run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
             exit 0
           fi

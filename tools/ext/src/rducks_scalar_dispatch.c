@@ -1,8 +1,8 @@
 /* Included by ../rducks_extension.c.
- * No-Arrow native dispatch and disabled legacy surfaces.
+ * Native scalar-UDF dispatch plus stubs for unsupported evaluator surfaces.
  */
 
-static void rducks_noarrow_error(char *err_msg, size_t err_cap, const char *msg) {
+static void rducks_dispatch_error(char *err_msg, size_t err_cap, const char *msg) {
     rducks_format_error_message(err_msg, err_cap, "%s", msg);
 }
 
@@ -45,8 +45,8 @@ static int rducks_r_scalar_execute(rducks_runtime_entry_t *runtime, rducks_r_sca
     (void)meta;
     (void)input;
     (void)output;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "legacy R evaluator path was removed with the Arrow bridge; use direct in-process marshalling");
+    rducks_dispatch_error(err_msg, err_cap,
+                          "Rducks supports only direct in-process scalar-UDF marshalling");
     return 0;
 }
 
@@ -61,8 +61,8 @@ static int rducks_r_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtim
     (void)input;
     (void)output;
     if (chunk_out) *chunk_out = NULL;
-    rducks_noarrow_error(err_msg, err_cap,
-                         "legacy queued R result chunks were removed with the Arrow bridge");
+    rducks_dispatch_error(err_msg, err_cap,
+                          "Rducks has no separate queued R result chunk path; results use owned DuckDB chunks");
     return 0;
 }
 
@@ -95,7 +95,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
 
     if (!exec_meta || (exec_meta->eval_mode != RDUCKS_EVAL_RC && exec_meta->eval_mode != RDUCKS_EVAL_RCV)) {
         duckdb_scalar_function_set_error(info,
-            "this no-Arrow build only supports direct RC/RCV scalar-UDF evaluators");
+            "Rducks supports only the direct RC/RCV scalar-UDF evaluators");
         return;
     }
 

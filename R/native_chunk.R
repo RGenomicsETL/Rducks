@@ -1,8 +1,8 @@
 # Native Rducks chunk representation.
 #
-# This is deliberately not Arrow and deliberately not a SEXP header clone.  It is
-# SEXP-materializable storage: side-thread/worker code may serialize this shape,
-# while all actual R API object allocation remains on the owning R main thread.
+# This is SEXP-materializable storage, deliberately not a clone of R's internal
+# SEXP layout: side-thread/worker code may serialize this shape, while all actual
+# R API object allocation remains on the owning R main thread.
 
 rducks_native_array <- function(type, length, valid, storage) {
   type <- rducks_as_type(type)

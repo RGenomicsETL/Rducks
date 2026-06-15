@@ -1,11 +1,10 @@
 # Quack wire payload helpers for the IPC data plane.
 #
 # Task payloads are self-describing quack DataChunk bytes (see
-# src/quack_core.h); the worker decodes them, materializes Rducks values for
-# the declared argument types, evaluates, and returns a single-column quack
-# payload for the declared return type. The output "schema spec" of the old
-# Arrow IPC path is replaced by the declared return type token: the chunk
-# bytes already carry their own types.
+# src/quack_core.h): the worker decodes them, validates the decoded wire types
+# against the declared signature, materializes Rducks values, evaluates, and
+# returns a single-column quack payload for the declared return type. The chunk
+# bytes carry their own types, so a task needs no separate schema alongside it.
 
 rducks_wire_encode_values <- function(types, values_list, rows) {
   columns <- Map(function(type, values) {

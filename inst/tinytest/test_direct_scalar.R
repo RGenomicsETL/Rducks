@@ -9,7 +9,7 @@ local({
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
 
-  rducks_register_scalar_udf(con, "rducks_noarrow_plus1", function(x) x + 1L,
+  rducks_register_scalar_udf(con, "rducks_direct_plus1", function(x) x + 1L,
     args = list(INTEGER), returns = INTEGER)
-  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_noarrow_plus1(41::INTEGER) AS x")$x, 42L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT rducks_direct_plus1(41::INTEGER) AS x")$x, 42L)
 })

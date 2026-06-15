@@ -1,4 +1,4 @@
-name: No-Arrow provider contracts
+name: IPC provider contracts
 
 on:
   push:
@@ -10,10 +10,10 @@ on:
 permissions: read-all
 
 jobs:
-  noarrow-provider-contracts:
+  provider-contracts:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    name: ${{ matrix.os }} no-Arrow contracts
+    name: ${{ matrix.os }} provider contracts
     strategy:
       fail-fast: false
       matrix:
@@ -57,17 +57,17 @@ jobs:
         run: R CMD INSTALL --preclean .
         shell: bash
 
-      - name: Run focused no-Arrow provider contract tests
+      - name: Run focused provider contract tests
         run: |
           # run_test_file() prints failures but still returns normally, so the
           # results must be inspected explicitly or a failing test would pass CI.
           files <- c(
-            "inst/tinytest/test_noarrow_dependency.R",
-            "inst/tinytest/test_execution_plan_noarrow.R",
+            "inst/tinytest/test_dependencies.R",
+            "inst/tinytest/test_execution_plan.R",
             "inst/tinytest/test_quack_codec_roundtrip.R",
-            "inst/tinytest/test_direct_scalar_noarrow.R",
-            "inst/tinytest/test_wire_support_contract_noarrow.R",
-            "inst/tinytest/test_quack_malformed_noarrow.R"
+            "inst/tinytest/test_direct_scalar.R",
+            "inst/tinytest/test_wire_support_contract.R",
+            "inst/tinytest/test_quack_malformed.R"
           )
           ok <- TRUE
           for (f in files) {
@@ -75,7 +75,7 @@ jobs:
             print(res)
             if (!all(vapply(res, isTRUE, logical(1)))) ok <- FALSE
           }
-          if (!ok) stop("focused no-Arrow contract tests failed")
+          if (!ok) stop("focused provider contract tests failed")
         shell: Rscript {0}
 
       - name: Run worker-process ipc tests (all advertised wire types + external malformed)
@@ -84,8 +84,8 @@ jobs:
           RDUCKS_RUN_IPC_TESTS: "true"
         run: |
           files <- c(
-            "inst/tinytest/test_ipc_roundtrip_noarrow.R",
-            "inst/tinytest/test_ipc_external_malformed_noarrow.R"
+            "inst/tinytest/test_ipc_roundtrip.R",
+            "inst/tinytest/test_ipc_external_malformed.R"
           )
           ok <- TRUE
           for (f in files) {

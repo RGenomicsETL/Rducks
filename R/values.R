@@ -1,7 +1,6 @@
 # Value-level row extraction and NULL conventions, shared by the scalar and
-# vectorized evaluators. Formerly part of the Arrow materialization layer;
-# these helpers never touched Arrow buffers, only Rducks values, so they
-# survive the wire migration unchanged apart from their names.
+# vectorized evaluators. These helpers operate purely on Rducks values, with no
+# dependence on any particular marshalling buffer.
 
 rducks_uses_r_null_for_null <- function(type) {
   rducks_type_inherits(type, c(

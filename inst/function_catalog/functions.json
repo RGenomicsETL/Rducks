@@ -30,7 +30,7 @@
     "name": "rducks_quack_codec",
     "kind": "internal C/R helpers",
     "category": "wire format",
-    "signature": "RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload)",
+    "signature": "RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload, expected)",
     "returns": "raw payload or decoded chunk",
     "description": "Thread-safe Quack/BinarySerializer DataChunk subset used as the worker-process IPC wire format.",
     "notes": ["Backs the 'ipc' transport; the standalone codec round-trips are exercised in the test suite."]

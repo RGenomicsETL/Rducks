@@ -389,8 +389,8 @@ static void rducks_runtime_queue_destroy_entry(rducks_runtime_entry_t *entry) {
 }
 
 static int rducks_runtime_configure_connection(duckdb_connection connection, char *err, size_t err_cap) {
-    /* Hook for extension-owned connection setup. The no-Arrow build needs no
-     * DuckDB session settings for its direct DuckDB-vector marshalling. */
+    /* Hook for extension-owned connection setup. Direct DuckDB-vector
+     * marshalling needs no DuckDB session settings. */
     if (!connection) {
         snprintf(err, err_cap, "Rducks runtime connection is missing");
         return 0;
@@ -550,11 +550,11 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 #include "src/rducks_runtime.c"
 #include "src/rducks_nng.c"
 /* Defined in src/rducks_ripc.c (included after rducks_rc.c); forward-declared so
- * the scalar dispatch in rducks_noarrow.c can route wire (RIPC) UDFs to it. */
+ * the scalar dispatch in rducks_scalar_dispatch.c can route wire (RIPC) UDFs to it. */
 static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                duckdb_data_chunk input, duckdb_vector output,
                                char *err_msg, size_t err_cap);
-#include "src/rducks_noarrow.c"
+#include "src/rducks_scalar_dispatch.c"
 #include "src/rducks_rc.c"
 #include "src/quack_core.c"
 #include "src/rducks_ripc.c"

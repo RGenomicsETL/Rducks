@@ -1,6 +1,6 @@
 /* Included by ../rducks_extension.c. RIPC (worker-process) execution over the
- * Quack wire codec. Ported from the removed Arrow IPC path; the input/result
- * marshalling now uses the native DuckDB<->Quack-IR bridge instead of Arrow. */
+ * Quack wire codec. Input and result marshalling use the native
+ * DuckDB<->Quack-IR bridge. */
 
 
 typedef struct rducks_owned_bytes {
@@ -70,8 +70,7 @@ static int rducks_ripc_configure_meta_on_main(rducks_runtime_entry_t *runtime, r
 
     configure = rducks_named_list_get(bundle, "configure");
     /* Quack payloads are self-describing, so configure() needs no output schema;
-     * its single argument is a vestigial placeholder (an Arrow schema in the old
-     * data plane), so pass NULL. */
+     * its single argument is a vestigial placeholder, so pass NULL. */
     call = PROTECT(Rf_lang2(configure, R_NilValue));
     protect_count++;
     result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));

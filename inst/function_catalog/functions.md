@@ -46,7 +46,7 @@ Notes:
 
 - Kind: `internal C/R helpers`
 - Category: `wire format`
-- Signature: `RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload)`
+- Signature: `RDUCKS_quack_encode_chunk(rows, types, columns); RDUCKS_quack_decode_chunk(payload, expected)`
 - Returns: `raw payload or decoded chunk`
 
 Thread-safe Quack/BinarySerializer DataChunk subset used as the worker-process IPC wire format.
