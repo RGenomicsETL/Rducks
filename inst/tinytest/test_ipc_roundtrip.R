@@ -219,11 +219,11 @@ local({
     )
   }
 
-  # Dynamic (omitted-args) UDFs are not on the wire and must be rejected at
-  # registration, not deferred to a worker failure.
-  expect_error(
-    rducks_register_scalar_udf(con, "rej_dynamic", function(...) 1L, returns = INTEGER),
-    pattern = "does not support dynamic",
-    info = "ipc registration must reject dynamic varargs"
+  # Dynamic (omitted-args) UDFs are now supported on the wire: registration
+  # succeeds and the concrete argument types resolve per call site at bind.
+  # End-to-end coverage lives in test_ipc_dynamic_args.R.
+  rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+  expect_silent(
+    rducks_register_scalar_udf(con, "accept_dynamic", function(...) 1L, returns = INTEGER)
   )
 })

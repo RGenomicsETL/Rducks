@@ -198,14 +198,17 @@ static uint64_t rducks_wire_get_u64(const uint8_t *p) {
 
 static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t row_count,
                                              const uint8_t *payload, size_t payload_size,
+                                             int dynamic_payload,
                                              rducks_owned_bytes_t *request,
                                              char *err_msg, size_t err_cap) {
     size_t udf_len;
     size_t total;
     uint8_t *p;
-    /* Dynamic (omitted-args) UDFs are rejected for the wire plan at both the R
-     * wrapper and the native bind, so the request payload is always a static
-     * declared-type chunk and the reserved frame field stays zero. */
+    /* The request payload is either a static declared-type quack chunk or, for
+     * dynamic (omitted-args) UDFs, the RDT1 wrapper built by
+     * rducks_ripc_build_dynamic_payload (concrete arg tokens + the chunk). The
+     * worker dispatches on the payload's leading magic, so the reserved frame
+     * field stays zero either way. */
     if (!meta || !meta->ripc_udf_id || !payload || !request) {
         rducks_format_error_message(err_msg, err_cap, "RIPC request metadata is missing");
         return 0;
@@ -228,12 +231,87 @@ static int rducks_ripc_build_execute_request(rducks_r_scalar_meta_t *meta, idx_t
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, 1U); p += 4;
     rducks_wire_put_u32(p, (uint32_t)udf_len); p += 4;
-    rducks_wire_put_u32(p, 0U); p += 4;
+    rducks_wire_put_u32(p, dynamic_payload ? 1U : 0U); p += 4;   /* reserved: 1 => RDT1 dynamic payload */
     rducks_wire_put_u64(p, (uint64_t)row_count); p += 8;
     rducks_wire_put_u64(p, (uint64_t)payload_size); p += 8;
     if (udf_len) { memcpy(p, meta->ripc_udf_id, udf_len); p += udf_len; }
     if (payload_size) memcpy(p, payload, payload_size);
     return 1;
+}
+
+/* Build the RDT1 dynamic-argument payload for an omitted-args (dynamic) UDF:
+ *
+ *   "RDT1" | count:u32 | wire_len:u64 | (token_len:u32, token bytes) * count | chunk
+ *
+ * `count` is the bind-resolved arity and the tokens are the concrete argument
+ * type tokens (rducks_type_desc_token); the worker
+ * (rducks_nng_wire_decode_dynamic_payload) unwraps them so it materializes the
+ * chunk under the same effective types DuckDB resolved at bind. All integers are
+ * little-endian, matching the R reader. */
+static int rducks_ripc_build_dynamic_payload(rducks_r_scalar_meta_t *meta,
+                                             const uint8_t *chunk, size_t chunk_size,
+                                             rducks_owned_bytes_t *out,
+                                             char *err_msg, size_t err_cap) {
+    char **tokens;
+    size_t *token_lens;
+    size_t i, total, tokens_bytes = 0;
+    uint8_t *p;
+    int ok = 0;
+    if (!meta || !meta->args || meta->arity == 0U || !chunk || !out) {
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload requires resolved argument types");
+        return 0;
+    }
+    if (meta->arity > UINT32_MAX || chunk_size > (uint64_t)UINT64_MAX) {
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload is too large");
+        return 0;
+    }
+    tokens = (char **)rducks_calloc_array(meta->arity, sizeof(*tokens));
+    token_lens = (size_t *)rducks_calloc_array(meta->arity, sizeof(*token_lens));
+    if (!tokens || !token_lens) {
+        free(tokens); free(token_lens);
+        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
+        return 0;
+    }
+    for (i = 0; i < meta->arity; i++) {
+        tokens[i] = rducks_type_desc_token(meta->args[i]);
+        if (!tokens[i]) {
+            rducks_format_error_message(err_msg, err_cap, "out of memory encoding dynamic argument type %zu", i + 1U);
+            goto done;
+        }
+        token_lens[i] = strlen(tokens[i]);
+        if (token_lens[i] > UINT32_MAX || tokens_bytes > SIZE_MAX - 4U - token_lens[i]) {
+            rducks_format_error_message(err_msg, err_cap, "RIPC dynamic argument type %zu is too large", i + 1U);
+            goto done;
+        }
+        tokens_bytes += 4U + token_lens[i];
+    }
+    /* magic(4) + count(4) + wire_len(8) + tokens + chunk */
+    if (chunk_size > SIZE_MAX - 16U - tokens_bytes) {
+        rducks_format_error_message(err_msg, err_cap, "RIPC dynamic payload is too large");
+        goto done;
+    }
+    total = 16U + tokens_bytes + chunk_size;
+    out->data = (uint8_t *)malloc(total);
+    if (!out->data) {
+        rducks_format_error_message(err_msg, err_cap, "out of memory allocating RIPC dynamic payload");
+        goto done;
+    }
+    out->size = total;
+    p = out->data;
+    memcpy(p, "RDT1", 4); p += 4;
+    rducks_wire_put_u32(p, (uint32_t)meta->arity); p += 4;
+    rducks_wire_put_u64(p, (uint64_t)chunk_size); p += 8;
+    for (i = 0; i < meta->arity; i++) {
+        rducks_wire_put_u32(p, (uint32_t)token_lens[i]); p += 4;
+        if (token_lens[i]) { memcpy(p, tokens[i], token_lens[i]); p += token_lens[i]; }
+    }
+    if (chunk_size) memcpy(p, chunk, chunk_size);
+    ok = 1;
+done:
+    for (i = 0; i < meta->arity; i++) free(tokens[i]);
+    free(tokens);
+    free(token_lens);
+    return ok;
 }
 
 static int rducks_ripc_parse_response(const uint8_t *response, size_t response_size,
@@ -1015,7 +1093,10 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     idx_t n;
     rducks_nng_client_pool_t *client_pool = NULL;
     rducks_owned_bytes_t input_payload = {0};
+    rducks_owned_bytes_t dynamic_payload = {0};
     rducks_owned_bytes_t request = {0};
+    const uint8_t *request_payload;
+    size_t request_payload_size;
     void *response_msg = NULL;
     const uint8_t *response = NULL;
     size_t response_size = 0;
@@ -1034,7 +1115,18 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     n = duckdb_data_chunk_get_size(input);
     rducks_udf_record_evaluator(meta, n);
     if (!rducks_quack_encode_input_chunk_native(runtime, meta, input, &input_payload, err_msg, err_cap)) goto cleanup;
-    if (!rducks_ripc_build_execute_request(meta, n, input_payload.data, input_payload.size, &request, err_msg, err_cap)) goto cleanup;
+    request_payload = input_payload.data;
+    request_payload_size = input_payload.size;
+    if (meta->dynamic_args) {
+        /* Omitted-args UDFs resolve concrete types per call site at bind; carry
+         * those resolved types to the worker in the RDT1 dynamic payload. */
+        if (!rducks_ripc_build_dynamic_payload(meta, input_payload.data, input_payload.size,
+                                               &dynamic_payload, err_msg, err_cap)) goto cleanup;
+        request_payload = dynamic_payload.data;
+        request_payload_size = dynamic_payload.size;
+    }
+    if (!rducks_ripc_build_execute_request(meta, n, request_payload, request_payload_size,
+                                           meta->dynamic_args ? 1 : 0, &request, err_msg, err_cap)) goto cleanup;
 
     rducks_udf_record_ripc_inflight_add(meta);
     client_pool = rducks_ripc_acquire_pool(meta, err_msg, err_cap);
@@ -1060,6 +1152,7 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
     ok = 1;
 
 cleanup:
+    rducks_owned_bytes_reset(&dynamic_payload);
     rducks_owned_bytes_reset(&input_payload);
     rducks_owned_bytes_reset(&request);
     rducks_nng_response_msg_free(response_msg);
