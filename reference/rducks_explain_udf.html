@@ -9,8 +9,8 @@ r_side_record column is FALSE when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
 through its requested evaluator instead of silently switching engines: for
-example, an arrow_c scalar UDF should increment arrow_c_chunks and leave
-arrow_r_chunks unchanged."><meta property="og:description" content="Returns the R-side registration metadata together with native execution
+example, a direct scalar UDF should increment direct_eval_chunks and leave
+wire_chunks unchanged."><meta property="og:description" content="Returns the R-side registration metadata together with native execution
 counters for a DuckDB scalar UDF registered by
 rducks_register_scalar_udf(). The
 mode column is the Rducks scalar-UDF evaluation mode, while plan_id,
@@ -20,8 +20,8 @@ r_side_record column is FALSE when native catalog metadata is still
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
 through its requested evaluator instead of silently switching engines: for
-example, an arrow_c scalar UDF should increment arrow_c_chunks and leave
-arrow_r_chunks unchanged."></head><body>
+example, a direct scalar UDF should increment direct_eval_chunks and leave
+wire_chunks unchanged."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -38,14 +38,6 @@ arrow_r_chunks unchanged."></head><body>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
-    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
-  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -74,8 +66,8 @@ time. The
 present but the connection-local R registry view was detached or is otherwise
 unavailable. The native counters are useful for checking that a plan executed
 through its requested evaluator instead of silently switching engines: for
-example, an <code>arrow_c</code> scalar UDF should increment <code>arrow_c_chunks</code> and leave
-<code>arrow_r_chunks</code> unchanged.</p>
+example, a direct scalar UDF should increment <code>direct_eval_chunks</code> and leave
+<code>wire_chunks</code> unchanged.</p>
     </div>
 
     <div class="section level2">
@@ -112,21 +104,21 @@ example, an <code>arrow_c</code> scalar UDF should increment <code>arrow_c_chunk
 <span class="r-out co"><span class="r-pr">#&gt;</span>   registered:      yes</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   name:            my_fn</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluation_mode: scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   plan:            arrow_r+serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   plan:            direct+serial</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   signature:       my_fn(INTEGER) -&gt; INTEGER</span>
 <span class="r-in"><span><span class="fu">rducks_explain_udf</span><span class="op">(</span><span class="va">db</span>, <span class="st">"my_fn"</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>    name   mode        plan_id      engine_id marshalling concurrency</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 my_fn scalar arrow_r+serial arrow_r_serial     arrow_r      serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    name   mode       plan_id     engine_id marshalling concurrency</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 my_fn scalar direct+serial direct_serial      direct      serial</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   native_marshalling evaluator args returns r_side_record null_handling</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1            arrow_r         R  i32     i32          TRUE       default</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1             direct        RC  i32     i32          TRUE       default</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   exception_handling side_effects dispatch_chunks dispatch_rows direct_chunks</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1            rethrow        FALSE               0             0             0</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   queued_chunks queue_pending_current queue_pending_max arrow_r_chunks</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1             0                     0                 0              0</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   arrow_c_chunks arrow_c_input_snapshot_chunks</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1              0                             0</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   arrow_c_owned_result_chunk_chunks arrow_ipc_chunks ripc_collect_batches</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                 0                0                    0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   queued_chunks queue_pending_current queue_pending_max sexp_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1             0                     0                 0           0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   direct_eval_chunks direct_input_snapshot_chunks</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                  0                            0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   direct_owned_result_chunk_chunks wire_chunks ripc_collect_batches</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                0           0                    0</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   ripc_collect_requests ripc_collect_max_batch ripc_submit_wave_max</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1                     0                      0                    0</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   ripc_collect_ready_max ripc_inflight_current ripc_inflight_max</span>

@@ -1,13 +1,8 @@
 pandoc: 3.8.3
 pkgdown: 2.2.0
 pkgdown_sha: ~
-articles:
-  duckplyr-integration: duckplyr-integration.html
-  execution-plans-ipc-workers: execution-plans-ipc-workers.html
-  getting-started: getting-started.html
-  internal-current-implementation: internal-current-implementation.html
-  type-value-semantics: type-value-semantics.html
-last_built: 2026-05-26T09:43Z
+articles: {}
+last_built: 2026-06-15T08:54Z
 urls:
   reference: https://sounkou-bioinfo.github.io/Rducks/reference
   article: https://sounkou-bioinfo.github.io/Rducks/articles

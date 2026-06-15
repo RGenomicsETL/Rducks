@@ -26,14 +26,6 @@ calls the R function once per DuckDB chunk with vector/list-column inputs."></he
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
-    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
-  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -96,13 +88,11 @@ calls the R function once per DuckDB chunk with vector/list-column inputs.</p>
 a dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
 argument logical types at bind time, and Rducks materializes those inputs
 with the same typed semantics used for an explicit <code>args = ...</code> signature
-across scalar/vectorized evaluation and supported <code>arrow_r</code>, <code>arrow_c</code>, and
-<code>arrow_ipc</code> execution plans. Use explicit <code>NULL</code> for a zero-argument scalar
+across scalar/vectorized direct evaluation. Use explicit <code>NULL</code> for a zero-argument scalar
 UDF. Otherwise use exported DuckDB-style type descriptors such as <code>INTEGER</code>,
 <code>DOUBLE</code>, <code>GEOMETRY</code>, <code>VARIANT</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>,
 <code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>. <code>VARIANT</code> signatures
-require a DuckDB runtime whose C API exposes VARIANT logical types, and are
-not supported by the direct <code>arrow_c</code> marshalling path yet.</p></dd>
+require a DuckDB runtime whose C API exposes VARIANT logical types.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>
@@ -159,10 +149,7 @@ selected evaluator/marshalling metadata is then stored with the native catalog
 entry. R-backed UDF registrations are live DuckDB-runtime catalog entries,
 not durable schema objects: they are visible to sibling connections while the
 same DuckDB database runtime remains open, but a file-backed database must be
-enabled and registered again after it is fully closed and reopened. For
-<code>arrow_ipc</code> plans, the UDF closure and discovered globals are copied once to
-each NNG worker in the shared provider pool and retained for that pool's
-lifetime.</p>
+enabled and registered again after it is fully closed and reopened.</p>
     </div>
 
     <div class="section level2">
@@ -176,7 +163,7 @@ lifetime.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   registered:      yes</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   name:            my_double</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluation_mode: scalar</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   plan:            arrow_r+serial</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   plan:            direct+serial</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   signature:       my_double(INTEGER) -&gt; INTEGER</span>
 <span class="r-in"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">db</span>, <span class="st">"SELECT my_double(3)"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   my_double(3)</span>

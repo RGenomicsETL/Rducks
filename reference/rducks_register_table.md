@@ -1,13 +1,12 @@
 # Register an R table function in DuckDB
 
-Registers an R-backed DuckDB table function. The registered SQL table
-function infers its positional SQL argument count from `formals(fun)`
-and registers those arguments with DuckDB's dynamic `ANY` type. During
-DuckDB's bind phase, Rducks converts the actual SQL argument values to R
-scalars/lists and calls `fun(...)` on the recorded calling R thread.
-`fun()` may return either a finite data frame/named list or a
+Registers an R function as a DuckDB table function. The R function is
+called on the recorded R thread to produce either a finite result (a
+data frame or named list of equal-length columns) or a
 [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
-object.
+producer for scan-time batches. Column types are inferred from the
+returned columns, and the extension fills DuckDB output vectors directly
+from the R columns, with no wire serialization for the in-process scan.
 
 ## Usage
 
@@ -43,48 +42,3 @@ rducks_register_table(con, name, fun, chunk_size = 1024L)
 Object of class `rducks_table_registration` containing the connection
 and normalized table signature. The table function remains registered in
 DuckDB even if this object is discarded.
-
-## Details
-
-For finite results, Rducks imports the full result into one DuckDB data
-chunk during bind and then emits row batches during scan. For streaming
-results, bind uses only the stream prototype to define the DuckDB
-schema; scan calls `next_batch()` repeatedly and imports one returned
-batch at a time. Both paths honor DuckDB projection pushdown, so
-unreferenced columns are not copied from imported chunks into DuckDB
-output chunks.
-
-This is intentionally separate from DuckDB scalar-UDF registration
-through
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md):
-table functions have their own bind/init/scan state, bind-time dynamic
-schemas, and positional SQL arguments fixed by the R function's finite
-formal argument count. Variadic `...` arguments are not supported. If
-you already have a static R data frame to expose as a virtual table,
-prefer
-[`duckdb::duckdb_register()`](https://r.duckdb.org/reference/duckdb_register.html);
-DuckDB's R package routes that through its native data-frame scan path.
-Use `rducks_enable(con, threads = "single")` or otherwise set
-`external_threads=1` plus `PRAGMA threads=1` before registration and
-execution; worker-thread calls into R are rejected.
-
-## Examples
-
-``` r
-# \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
-rducks_enable(db, threads = "single")
-rducks_register_table(db, "my_table", function() data.frame(x = 1:3))
-#> <rducks_table_registration>
-#>   registered: yes
-#>   name:       my_table
-#>   signature:  my_table() -> TABLE(<bind-time schema>)
-DBI::dbGetQuery(db, "SELECT * FROM my_table()")
-#>   x
-#> 1 1
-#> 2 2
-#> 3 3
-rducks_release(db)
-DBI::dbDisconnect(db)
-# }
-```

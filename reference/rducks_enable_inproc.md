@@ -40,13 +40,11 @@ rducks_enable_inproc(con, threads = NULL, external_threads = NULL)
 
 ## Details
 
-This is a compatibility helper for the `arrow_r`/`arrow_c` in-process
-queue. New code can call
+This is a helper for the direct in-process queue. New code can call
 [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
-directly with `rducks_execution_plan("arrow_r", "inproc_concurrent")` or
-`rducks_execution_plan("arrow_c", "inproc_concurrent")`. Select the plan
-before registering scalar UDFs whose reported execution plan should be
-the queued in-process path.
+directly with `rducks_execution_plan("inproc")`. Select the plan before
+registering scalar UDFs whose reported execution plan should be the
+queued in-process path.
 
 ## Examples
 

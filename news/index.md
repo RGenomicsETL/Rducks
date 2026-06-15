@@ -8,10 +8,10 @@
   `/Applications/CMake.app/Contents/bin/cmake` location while keeping
   missing CMake as a hard configuration error.
 - Cleaned up macOS source-check diagnostics by removing an unused native
-  Arrow helper, suppressing private-extension debug-map noise from
-  vendored static archives, and making NNG batch-contract tests use
-  local IPC fake workers instead of random loopback TCP ports in
-  sandboxed check environments.
+  helper, suppressing private-extension debug-map noise from vendored
+  static archives, and making NNG batch-contract tests use local IPC
+  fake workers instead of random loopback TCP ports in sandboxed check
+  environments.
 - Tightened dynamic-varargs test lifecycle cleanup so extension-owned
   DuckDB connections are closed before in-memory test databases are
   disconnected. Explicit native runtime-connection release now also
@@ -38,10 +38,9 @@
   with SQL-side DuckDB VARIANT functions remaining the canonical way to
   construct and inspect semantic values. VARIANT scalar-UDF registration
   requires a DuckDB runtime C API that exposes VARIANT logical types.
-- Tightened execution-plan and support documentation, documented
-  `arrow.bool8` boolean extension handling, clarified aggregate state
-  ownership, and expanded tests for IPC, duckplyr, query streams, and
-  table-stream cardinality.
+- Tightened execution-plan and support documentation, clarified
+  aggregate state ownership, and expanded tests for IPC, duckplyr, query
+  streams, and table-stream cardinality.
 - Added package vignettes for getting started, type/value semantics,
   execution plans and IPC worker lifecycle, and current internal
   implementation details.
@@ -50,8 +49,7 @@
   registers a DuckDB varargs `ANY` function while keeping the return
   type explicit. DuckDB now resolves the concrete argument types at bind
   time, and Rducks uses those effective types for scalar and vectorized
-  evaluation across the supported `arrow_r`, `arrow_c`, and `arrow_ipc`
-  execution plans, including composite, exotic, and special-NULL inputs.
+  evaluation, including composite, exotic, and special-NULL inputs.
   Added
   [`rducks_with_duckplyr()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
   and a
@@ -83,8 +81,7 @@
   the R function formals, registers those inputs as DuckDB `ANY`,
   converts actual SQL bind values to R values, and calls the R function
   during DuckDB bind on the recorded calling R thread. Finite results
-  still infer the output schema from a returned data frame/list and
-  import the full result through nanoarrow Arrow C Data, while
+  infer the output schema from a returned data frame/list, while
   [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
   adds a scan-time `next_batch()` path driven by a bind-time prototype,
   optional cardinality metadata, and projection-aware output copying.
@@ -103,27 +100,17 @@
   result/data-chunk APIs through a dedicated extension-owned
   query-stream connection, keeping dynamic scalar, table, and aggregate
   registration on the separate runtime connection. Fetched chunks are
-  exported via DuckDB Arrow C Data and either returned as owned
-  nanoarrow record batches (`format = "record_batch"`) or materialized
-  through the existing Rducks/nanoarrow conversion helpers, without
-  requiring the `arrow` package.
+  materialized into data-frame batches directly from DuckDB vectors.
 - Clarified IPC shared-memory capability metadata and design notes: mori
   is a same-host path for long-lived globals, while built-in backends
-  still report no SQL chunk shared-memory handle support. Added a
-  diagnostic data-plane benchmark for current Arrow IPC bytes versus
-  per-chunk mori reference costs.
-- Added vendored Apache Arrow nanoarrow C/IPC sources for the native
-  `arrow_ipc + multiprocess_parallel` path. The vendored code is
-  compiled with `-DNANOARROW_NAMESPACE=RducksNanoarrow`, flatcc runtime
-  symbols are prefixed, and Rducks uses these local C symbols instead of
-  path-loading the nanoarrow R package shared library. The NNG provider
-  path launches local mirai/nanonext worker loops by default, supports
-  explicit `ipc_endpoints`, and errors rather than changing to generic
-  process backends, same-process execution, or R serialization.
+  still report no SQL chunk shared-memory handle support.
+- The NNG provider path launches local mirai/nanonext worker loops by
+  default, supports explicit `ipc_endpoints`, and errors rather than
+  changing to generic process backends, same-process execution, or R
+  serialization.
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
-  now reports queue-pending, `arrow_c` input-snapshot, `arrow_c`
-  owned-result-chunk, and RIPC diagnostic counters for future native
-  provider work.
+  now reports queue-pending and worker-process (RIPC) diagnostic
+  counters for future native provider work.
 - Added
   [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
   to reset one UDF’s diagnostic counters or all native UDF counters in
@@ -132,10 +119,6 @@
   `rducks_udf_stat_fields()`; the R-side field vector is only a
   documented compatibility list for sessions where that optional native
   discovery helper is unavailable.
-- Queued `arrow_r` helper returns now import into an owned DuckDB result
-  chunk on the recorded main R thread; the waiting worker copies that
-  owned vector into callback output instead of having the main thread
-  write directly into the callback-owned output vector.
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
@@ -147,16 +130,14 @@
   [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
   to cross-check the native database-scoped execution backend against
   the R-side current/default execution plan.
-- The Arrow IPC NNG path defaults to one-time scalar-UDF global
+- The worker-process (ipc) path defaults to one-time scalar-UDF global
   discovery (`ipc_globals = "auto"`) and then broadcasts explicit
   globals when the scalar UDF is registered with the provider pool. This
   avoids per-chunk automatic global discovery while preserving common
   scalar-UDF globals; set `ipc_globals = TRUE`, `FALSE`, a character
   vector, or a named list to override the behavior.
-- Execution plans now carry a concrete `engine_id` (for example
-  `arrow_c_direct_serial`, `arrow_c_direct_main_queue`, or
-  `ipc_nng_pool`), and `rducks_as_execution_plan()` accepts the current
-  engine-id shortcuts.
+- Execution plans carry a concrete `engine_id`, and
+  `rducks_as_execution_plan()` accepts the current engine-id shortcuts.
 - [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
   now reports main-thread drain attempts, non-empty drain batches, and
   maximum drain batch size in addition to pending/running queue pressure
@@ -172,45 +153,33 @@
   `RDUCKS_DEV_SURFACES=true` is set before extension load. Production
   SQL surfaces keep only the registration, execution, and documented
   statistics helpers.
-- Direct `arrow_c` scalar-UDF execution and the Arrow/R + Arrow IPC
-  callback paths are fenced with `R_tryCatchError()` plus
-  `R_UnwindProtect()` so unexpected marshalling/allocation errors are
-  converted into DuckDB UDF errors without installing a fresh R
-  top-level context inside DuckDB callbacks. RIPC cleanup now releases
-  preserved task/schema objects and decrements in-flight counters on
-  abnormal unwind.
-- Arrow C Data result import now copies the temporary imported DuckDB
-  vector into the callback-owned output vector before destroying the
-  imported chunk, avoiding reliance on reference-vector lifetime
-  semantics.
-- Added direct native `arrow_c` vectorized UDF support (`RCV`) for
-  signatures accepted by the direct `arrow_c` type matrix. Chunk
-  arguments are materialized from DuckDB vectors in C, return rows are
-  written back through the direct writer, and generated marshalling
-  coverage verifies the selected native path. Queued direct `arrow_c`
-  row-wise and vectorized scalar UDFs now copy input vectors into an
-  owned DuckDB data chunk before the request is submitted to the
-  recorded main R thread. With supported scalar returns, they then
-  evaluate into an owned Arrow C Data result chunk; the waiting worker
-  writes DuckDB output from those Arrow buffers without touching `SEXP`s
-  or nanoarrow R external pointers. Composite direct returns now use an
-  owned DuckDB result chunk filled on the main R thread and copied into
-  callback output by the waiting worker. The owned return envelope
-  covers primitive, temporal, VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID,
-  HUGEINT/UHUGEINT, and INTERVAL results; the owned DuckDB result-chunk
-  path covers direct composite returns.
+- Scalar-UDF execution and worker-process callback paths are fenced with
+  `R_tryCatchError()` plus `R_UnwindProtect()` so unexpected
+  marshalling/allocation errors are converted into DuckDB UDF errors
+  without installing a fresh R top-level context inside DuckDB
+  callbacks. RIPC cleanup now releases the worker client pool and
+  decrements in-flight counters on abnormal unwind.
+- Added direct native vectorized UDF support (`RCV`). Chunk arguments
+  are materialized from DuckDB vectors in C, return rows are written
+  back through the direct writer, and generated marshalling coverage
+  verifies the selected native path. Queued row-wise and vectorized
+  scalar UDFs copy input vectors into an owned DuckDB data chunk before
+  the request is submitted to the recorded main R thread, then evaluate
+  into an owned DuckDB result chunk that the waiting worker copies into
+  callback output. The owned return envelope covers primitive, temporal,
+  VARCHAR/BLOB/BIT, DECIMAL, ENUM, UUID, HUGEINT/UHUGEINT, INTERVAL, and
+  composite results.
 - Added an internal `%||%` compatibility shim so the package works under
   the lowered R 4.3 dependency floor.
-- `arrow_c` is now a direct marshalling path for row-wise and vectorized
-  scalar-UDF evaluation. Unsupported signatures fail explicitly instead
-  of changing to Arrow/R helper marshalling.
+- Scalar-UDF evaluation uses direct DuckDB-vector marshalling for
+  row-wise and vectorized modes; unsupported signatures fail explicitly.
 - Added
   [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   and
   [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
   with native per-UDF execution counters so users can inspect
-  registration metadata and verify that `arrow_r`/`arrow_c` chunks ran
-  through the requested evaluator. Added
+  registration metadata and verify that chunks ran through the requested
+  evaluator. Added
   [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
   to inspect process-local counters for preserved R objects queued by
   off-main DuckDB metadata destructors and drained later on the recorded
@@ -230,9 +199,8 @@
   and
   [`rducks_current_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.md)
   to separate scalar-UDF semantics from connection-level
-  marshalling/concurrency policy. The `arrow_r + serial` plan is the
-  reference implementation; unsupported execution-plan combinations fail
-  explicitly through plan validation.
+  marshalling/concurrency policy. Unsupported execution-plan
+  combinations fail explicitly through plan validation.
 - Removed per-registration evaluator selection from
   [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
   The evaluator is now derived from the active execution plan, so
@@ -240,10 +208,9 @@
   evaluator choices inside a single registration call.
 - Added `mode = "vectorized"` for DuckDB scalar UDFs whose backing R
   function should be called once per DuckDB chunk with
-  vector/list-column arguments. The vectorized adapter uses the same
-  Arrow C Data/nanoarrow bridge as scalar row-wise mode, enforces return
-  length, defines default vs special NULL handling, and is covered by
-  runtime tests.
+  vector/list-column arguments. The vectorized adapter shares the scalar
+  row-wise marshalling path, enforces return length, defines default vs
+  special NULL handling, and is covered by runtime tests.
 - Added an official in-process queued execution API for scalar UDFs:
   [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md),
   [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md),

@@ -3,7 +3,7 @@
 `rducks_argument_type_mapping()` is the package-level source of truth
 for the R value shape used when DuckDB argument values are marshalled
 into an R function call. It is used by scalar-UDF registration checks
-and the nanoarrow scalar-UDF marshalling adapter.
+and the direct native marshalling adapter.
 
 ## Usage
 
@@ -39,8 +39,8 @@ representation; nested composite `NULL` values are represented as R
 `NULL`.
 
 The default table contains all scalar descriptors supported by the
-nanoarrow scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`,
-and composite descriptors can be requested explicitly to inspect their
+direct scalar-UDF marshalling adapter. `DECIMAL`, `ENUM`, `UNION`, and
+composite descriptors can be requested explicitly to inspect their
 recursive R function shapes.
 
 ## Examples

@@ -26,14 +26,6 @@ explicit return type."></head><body>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
-    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
-  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -147,14 +139,15 @@ through <code>with.duckdb_connection()</code>.</p></dd>
     <p>This helper intentionally requires return-type declarations: DuckDB needs a
 scalar function's return type during planning even when its input arguments
 are accepted dynamically. Dynamic arguments are a duckplyr-oriented
-convenience path that uses nanoarrow's default input conversion. The duckplyr
-bridge defaults to <code>mode = "scalar"</code> because ordinary R calls in duckplyr SQL
-expressions are written as row-wise scalar functions. Set <code>mode = "vectorized"</code>
-only for helpers that accept full vectors/chunks and return a vector of the
-same length. The selected Rducks execution plan is still taken from <code>con</code>, so
-<code>arrow_c</code> and <code>arrow_ipc</code> plans can be selected with
-<code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code> before
-evaluating the duckplyr expression. Use explicit <code>args</code> in
+convenience path that uses Rducks' direct DuckDB-vector input conversion. The
+duckplyr bridge defaults to <code>mode = "scalar"</code> because ordinary R calls in
+duckplyr SQL expressions are written as row-wise scalar functions. Set
+<code>mode = "vectorized"</code> only for helpers that accept full vectors/chunks and
+return a vector of the same length. The selected Rducks execution plan is
+still taken from <code>con</code>, so the in-process plan from
+<code><a href="rducks_execution_plan.html">rducks_execution_plan()</a></code> applies; set it
+with <code><a href="rducks_set_execution_plan.html">rducks_set_execution_plan()</a></code>
+before evaluating the duckplyr expression. Use explicit <code>args</code> in
 <code><a href="rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code>
 when you need Rducks' declared composite, exotic, or special-NULL input
 semantics.</p>

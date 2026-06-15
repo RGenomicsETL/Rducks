@@ -31,13 +31,12 @@ Integer-like numeric scalar: number of requests completed.
 ## Examples
 
 ``` r
-# \donttest{
+if (FALSE) { # \dontrun{
 # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(db)
 rducks_inproc_self_test(db, n = 10L)
-#> Error: rducks_inproc_self_test() requires RDUCKS_DEV_SURFACES=true before rducks_enable()
 rducks_release(db)
 DBI::dbDisconnect(db)
-# }
+} # }
 ```

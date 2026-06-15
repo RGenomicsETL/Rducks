@@ -1,11 +1,12 @@
 # Define an Rducks execution plan
 
-An execution plan describes how Rducks should marshal DuckDB chunks and
-what concurrency model is allowed. When stored on a connection it is the
-default for future
+An execution plan describes where Rducks evaluates registered scalar-UDF
+chunks: in the current R process (`transport = "inproc"`) or in
+persistent worker R processes (`transport = "ipc"`). When stored on a
+connection it is the default for future
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 calls and updates the native runtime backend used for matching
-concurrent execution; the selected evaluator/marshalling is frozen into
+concurrent execution; the resolved transport metadata is frozen into
 each registered scalar UDF's database-catalog metadata. It is separate
 from DuckDB function kind and from scalar-UDF registration semantics
 such as Rducks evaluation mode (`"scalar"` row calls versus
@@ -16,8 +17,7 @@ handling, and side effects.
 
 ``` r
 rducks_execution_plan(
-  marshalling = c("arrow_r", "arrow_c", "arrow_ipc"),
-  concurrency = c("serial", "inproc_concurrent", "multiprocess_parallel"),
+  transport = "inproc",
   ipc_globals = "auto",
   ipc_packages = NULL,
   ipc_timeout = NULL,
@@ -32,38 +32,26 @@ rducks_execution_plan(
 
 ## Arguments
 
-- marshalling:
+- transport:
 
-  Chunk marshalling implementation. `"arrow_r"` uses Arrow C Data plus
-  nanoarrow/R materialization and is the reference implementation.
-  `"arrow_c"` uses native C/DuckDB-vector materialization for supported
-  scalar-UDF evaluation modes. `"arrow_ipc"` uses Arrow IPC bytes as the
-  explicit task/result payload for the NNG multiprocess path.
-
-- concurrency:
-
-  Concurrency contract. `"serial"` evaluates one chunk at a time in the
-  calling process. `"inproc_concurrent"` allows in-process DuckDB
-  callback concurrency while keeping R API work serialized on the
-  recorded main R thread. `"multiprocess_parallel"` uses persistent
-  NNG/nanonext workers for process-isolated chunk work and requires
-  `marshalling = "arrow_ipc"`. When `ipc_endpoints` is `NULL`, Rducks
-  starts local worker loops with mirai daemons; otherwise the endpoint
-  URLs are passed through unchanged.
+  Placement/transport. `"inproc"` evaluates in the current R process
+  with the in-process queued backend. `"ipc"` evaluates in persistent
+  worker R processes over NNG; when `ipc_endpoints` is `NULL`, Rducks
+  starts local worker loops with mirai daemons.
 
 - ipc_globals, ipc_packages, ipc_timeout, ipc_endpoints, ipc_transport:
 
-  Arrow IPC worker options. By default (`ipc_globals = "auto"`), Rducks
-  discovers scalar-UDF globals once at registration-wrapper creation and
-  broadcasts them to each NNG worker when the scalar UDF is registered
-  with the shared provider pool. Automatic capture estimates the
-  serialized globals payload and warns when it exceeds option
-  `rducks.ipc_globals.warn_bytes` (8 MiB by default); option
-  `rducks.ipc_globals.max_bytes` can set a hard byte limit. Set
-  `ipc_globals_share = "mori"` to pass selected globals through mori
-  shared memory references for same-host workers; Rducks keeps the
-  shared objects anchored for the registered scalar UDF lifetime. Use
-  `ipc_packages` for packages that workers should attach,
+  IPC worker options (used when `transport = "ipc"`). By default
+  (`ipc_globals = "auto"`), Rducks discovers scalar-UDF globals once at
+  registration-wrapper creation and broadcasts them to each NNG worker
+  when the scalar UDF is registered with the shared provider pool.
+  Automatic capture estimates the serialized globals payload and warns
+  when it exceeds option `rducks.ipc_globals.warn_bytes` (8 MiB by
+  default); option `rducks.ipc_globals.max_bytes` can set a hard byte
+  limit. Set `ipc_globals_share = "mori"` to pass selected globals
+  through mori shared memory references for same-host workers; Rducks
+  keeps the shared objects anchored for the registered scalar UDF
+  lifetime. Use `ipc_packages` for packages that workers should attach,
   `ipc_globals = FALSE` to rely only on the serialized UDF closure and
   explicit task state, or a character vector / named list for explicit
   extra globals. `ipc_timeout` is the positive finite provider wait
@@ -95,9 +83,9 @@ rducks_execution_plan(
 
 - ipc_provider:
 
-  Worker provider for `arrow_ipc + multiprocess_parallel`. Only `"nng"`
-  is supported. The NNG provider broadcasts each registered scalar UDF
-  closure plus discovered globals/packages to every worker in the shared
+  Worker provider for `transport = "ipc"`. Only `"nng"` is supported.
+  The NNG provider broadcasts each registered scalar UDF closure plus
+  discovered globals/packages to every worker in the shared
   database-runtime provider pool, so avoid capturing large objects in
   UDF environments unless that memory cost is intended or
   `ipc_globals_share = "mori"` is appropriate.
@@ -122,31 +110,29 @@ An object of class `rducks_execution_plan`.
 
 ## Details
 
-`arrow_r + serial` is the reference implementation used for conformance.
-Other plans must be explicitly implemented and validated against that
-reference; Rducks does not silently switch from one plan to another.
-`arrow_ipc + multiprocess_parallel` uses the native NNG path with
-vendored nanoarrow C/IPC encoding. Each valid pair maps to a concrete
-internal `engine_id` such as `"arrow_c_direct_serial"` or
-`"ipc_nng_pool"`.
+`"inproc"` keeps all R API work serialized on the recorded main R thread
+while allowing DuckDB callback concurrency; DuckDB vectors are
+materialized to SEXPs directly in extension C with no intermediate
+columnar format. It maps to the internal `"direct_main_queue"` engine.
+
+`"ipc"` uses persistent NNG/nanonext worker R processes that exchange
+Quack-style binary chunk payloads (a DuckDB BinarySerializer subset):
+the extension encodes each input chunk to wire bytes, the worker decodes
+them, runs the R function, and returns wire-encoded results that the
+extension writes back to DuckDB. Worker-process types currently cover
+fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`,
+`BIT`, `GEOMETRY`, `MAP`, `UNION`, and `LIST`/`ARRAY`/`STRUCT` of
+supported types; `VARIANT` is rejected at registration until the native
+bridge covers it. It maps to the internal `"ipc_nng_pool"` engine.
 
 ## Examples
 
 ``` r
-rducks_execution_plan("arrow_r", "serial")
+rducks_execution_plan("inproc")
 #> <rducks_execution_plan>
-#>   plan_id:     arrow_r+serial
-#>   engine_id:   arrow_r_serial
-#>   marshalling: arrow_r
-#>   concurrency: serial
-#>   reference:   yes
-#>   implemented: yes
-#>   call shapes: scalar, vectorized
-rducks_execution_plan("arrow_c", "inproc_concurrent")
-#> <rducks_execution_plan>
-#>   plan_id:     arrow_c+inproc_concurrent
-#>   engine_id:   arrow_c_direct_main_queue
-#>   marshalling: arrow_c
+#>   plan_id:     direct+inproc_concurrent
+#>   engine_id:   direct_main_queue
+#>   transport:   inproc
 #>   concurrency: inproc_concurrent
 #>   reference:   no
 #>   implemented: yes

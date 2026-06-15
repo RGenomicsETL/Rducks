@@ -40,9 +40,9 @@ db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions =
 rducks_enable(db)
 rducks_runtime_stats(db)
 #>   registry_entries active_entries stale_entries entries_created stale_aliases
-#> 1               18             18             0              18             0
+#> 1               16             16             0              16             0
 #>   connections_opened connections_closed connections_current
-#> 1                 36                  0                  36
+#> 1                 32                  0                  32
 #>   connection_open_failed queue_init_failed native_release_supported
 #> 1                      0                 0                     TRUE
 rducks_release(db)

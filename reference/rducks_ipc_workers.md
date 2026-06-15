@@ -1,10 +1,9 @@
 # List Rducks-managed IPC workers
 
 Lists the local Rducks NNG providers currently known to this R process.
-These are the managed workers used by
-`arrow_ipc + multiprocess_parallel` scalar-UDF execution plans when
-`ipc_endpoints` is not supplied. Caller-supplied external endpoints are
-shown as external providers.
+These are the managed workers used by `transport = "ipc"` scalar-UDF
+execution plans when `ipc_endpoints` is not supplied. Caller-supplied
+external endpoints are shown as external providers.
 
 ## Usage
 

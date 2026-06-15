@@ -2,7 +2,7 @@
 
 Returns the R-side execution plan recorded for a DuckDB connection. If
 no plan has been recorded yet, this returns the reference plan
-`arrow_r + serial`.
+`direct + serial`.
 
 ## Usage
 
@@ -28,9 +28,9 @@ db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions =
 rducks_enable(db)
 rducks_current_execution_plan(db)
 #> <rducks_execution_plan>
-#>   plan_id:     arrow_r+serial
-#>   engine_id:   arrow_r_serial
-#>   marshalling: arrow_r
+#>   plan_id:     direct+serial
+#>   engine_id:   direct_serial
+#>   transport:   inproc
 #>   concurrency: serial
 #>   reference:   yes
 #>   implemented: yes

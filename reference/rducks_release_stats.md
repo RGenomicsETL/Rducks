@@ -34,7 +34,7 @@ db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions =
 rducks_enable(db)
 rducks_release_stats(db)
 #>   queued released failed pending
-#> 1      0        4      0       0
+#> 1      0        3      0       0
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

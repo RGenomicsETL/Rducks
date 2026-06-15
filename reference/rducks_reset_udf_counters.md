@@ -40,7 +40,7 @@ rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #>   registered:      yes
 #>   name:            my_fn
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       my_fn(INTEGER) -> INTEGER
 rducks_reset_udf_counters(db, "my_fn")
 rducks_release(db)

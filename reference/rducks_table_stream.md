@@ -5,8 +5,7 @@ Return this object from a function registered with
 to expose a finite table without materializing all rows during DuckDB
 bind. The `prototype` supplies the output column names and types. During
 scan, Rducks repeatedly calls `next_batch(n)` and imports each returned
-data frame, named list, `nanoarrow_array`, or one-batch
-`nanoarrow_array_stream`. Return `NULL` from `next_batch()` to signal
+data frame or named list. Return `NULL` from `next_batch()` to signal
 end-of-stream.
 
 ## Usage
@@ -75,7 +74,7 @@ stream
 #> <0 rows> (or 0-length row.names)
 #> 
 #> $state
-#> <environment: 0x5589a7605188>
+#> <environment: 0x55625e1626c8>
 #> 
 #> attr(,"class")
 #> [1] "rducks_table_stream"

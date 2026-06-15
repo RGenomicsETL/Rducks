@@ -3,14 +3,10 @@
 Loads the bundled Rducks DuckDB extension. The registration-safe R UDF
 path requires R API work to happen on the recorded main R thread; pass
 `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
-explicitly. `rducks_enable()` also sets DuckDB's
-`arrow_lossless_conversion=true` option on the user connection; the
-extension applies the same setting to its internal connections so
-DuckDB-specific Arrow metadata is preserved for typed scalar-UDF, table,
-and query-stream marshalling. Use
+explicitly. Use
 [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
-before scalar-UDF registration to select a non-reference marshalling or
-concurrency plan.
+before scalar-UDF registration to select direct serial or queued
+in-process execution.
 
 ## Usage
 

@@ -9,9 +9,8 @@ at registration time. The `r_side_record` column is `FALSE` when native
 catalog metadata is still present but the connection-local R registry
 view was detached or is otherwise unavailable. The native counters are
 useful for checking that a plan executed through its requested evaluator
-instead of silently switching engines: for example, an `arrow_c` scalar
-UDF should increment `arrow_c_chunks` and leave `arrow_r_chunks`
-unchanged.
+instead of silently switching engines: for example, a direct scalar UDF
+should increment `direct_eval_chunks` and leave `wire_chunks` unchanged.
 
 ## Usage
 
@@ -47,21 +46,21 @@ rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #>   registered:      yes
 #>   name:            my_fn
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       my_fn(INTEGER) -> INTEGER
 rducks_explain_udf(db, "my_fn")
-#>    name   mode        plan_id      engine_id marshalling concurrency
-#> 1 my_fn scalar arrow_r+serial arrow_r_serial     arrow_r      serial
+#>    name   mode       plan_id     engine_id marshalling concurrency
+#> 1 my_fn scalar direct+serial direct_serial      direct      serial
 #>   native_marshalling evaluator args returns r_side_record null_handling
-#> 1            arrow_r         R  i32     i32          TRUE       default
+#> 1             direct        RC  i32     i32          TRUE       default
 #>   exception_handling side_effects dispatch_chunks dispatch_rows direct_chunks
 #> 1            rethrow        FALSE               0             0             0
-#>   queued_chunks queue_pending_current queue_pending_max arrow_r_chunks
-#> 1             0                     0                 0              0
-#>   arrow_c_chunks arrow_c_input_snapshot_chunks
-#> 1              0                             0
-#>   arrow_c_owned_result_chunk_chunks arrow_ipc_chunks ripc_collect_batches
-#> 1                                 0                0                    0
+#>   queued_chunks queue_pending_current queue_pending_max sexp_chunks
+#> 1             0                     0                 0           0
+#>   direct_eval_chunks direct_input_snapshot_chunks
+#> 1                  0                            0
+#>   direct_owned_result_chunk_chunks wire_chunks ripc_collect_batches
+#> 1                                0           0                    0
 #>   ripc_collect_requests ripc_collect_max_batch ripc_submit_wave_max
 #> 1                     0                      0                    0
 #>   ripc_collect_ready_max ripc_inflight_current ripc_inflight_max

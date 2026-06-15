@@ -44,14 +44,12 @@ rducks_register_scalar_udf(
   dynamic-varargs DuckDB scalar function. DuckDB resolves the concrete
   argument logical types at bind time, and Rducks materializes those
   inputs with the same typed semantics used for an explicit `args = ...`
-  signature across scalar/vectorized evaluation and supported `arrow_r`,
-  `arrow_c`, and `arrow_ipc` execution plans. Use explicit `NULL` for a
-  zero-argument scalar UDF. Otherwise use exported DuckDB-style type
-  descriptors such as `INTEGER`, `DOUBLE`, `GEOMETRY`, `VARIANT`,
-  `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
+  signature across scalar/vectorized direct evaluation. Use explicit
+  `NULL` for a zero-argument scalar UDF. Otherwise use exported
+  DuckDB-style type descriptors such as `INTEGER`, `DOUBLE`, `GEOMETRY`,
+  `VARIANT`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
   `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures require a DuckDB runtime
-  whose C API exposes VARIANT logical types, and are not supported by
-  the direct `arrow_c` marshalling path yet.
+  whose C API exposes VARIANT logical types.
 
 - returns:
 
@@ -108,9 +106,7 @@ native catalog entry. R-backed UDF registrations are live DuckDB-runtime
 catalog entries, not durable schema objects: they are visible to sibling
 connections while the same DuckDB database runtime remains open, but a
 file-backed database must be enabled and registered again after it is
-fully closed and reopened. For `arrow_ipc` plans, the UDF closure and
-discovered globals are copied once to each NNG worker in the shared
-provider pool and retained for that pool's lifetime.
+fully closed and reopened.
 
 ## Examples
 
@@ -124,7 +120,7 @@ rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
 #>   registered:      yes
 #>   name:            my_double
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       my_double(INTEGER) -> INTEGER
 DBI::dbGetQuery(db, "SELECT my_double(3)")
 #>   my_double(3)

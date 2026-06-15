@@ -7,8 +7,8 @@ This is distinct from DuckDB function kind (scalar, aggregate, or table)
 and from Rducks execution plans. `mode = "scalar"` calls the R function
 once for each DuckDB row. `mode = "vectorized"` calls the R function
 once per DuckDB chunk with one R vector/list-column per declared or
-dynamically bound argument. Vectorized mode is exposed for `arrow_r`,
-direct `arrow_c`, and worker-provider `arrow_ipc` plans.
+dynamically bound argument. Vectorized mode is exposed for the direct
+native backend.
 
 ## Usage
 
@@ -51,15 +51,15 @@ rducks_mode_semantics()
 #>                                                                                                                                    error_semantics
 #> 1                  R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query
 #> 2 R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query
-#>                                                                                                                                                                       threading
-#> 1   R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding
-#> 2 arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider
-#>                                                                                                                                                                                                                                    copy_semantics
-#> 1                                                                       DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport
-#> 2 arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport
-#>                                                                                                                                                          notes
-#> 1 scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation
-#> 2            batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet
+#>                                                                                                             threading
+#> 1 direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread
+#> 2       direct vectorized work runs on the recorded main R thread; queued in-process calls are drained by that thread
+#>                                                       copy_semantics
+#> 1               DuckDB vectors are materialized directly to R values
+#> 2 DuckDB vectors are materialized directly to R vectors/list-columns
+#>                                                                                                                                                                                                                                    notes
+#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it
+#> 2                                                                                                                            batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet
 rducks_mode_semantics("scalar")
 #>     mode      status   call_granularity
 #> 1 scalar implemented one R call per row
@@ -73,12 +73,12 @@ rducks_mode_semantics("scalar")
 #> 1 one output value per R function call
 #>                                                                                                                   error_semantics
 #> 1 R function errors become SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query
-#>                                                                                                                                                                     threading
-#> 1 R API work for arrow_r/arrow_c runs on the recorded main R thread; arrow_ipc + multiprocess_parallel evaluates scalar rows inside provider workers after Arrow IPC encoding
-#>                                                                                                                                                              copy_semantics
-#> 1 DuckDB chunks are exported/imported through Arrow C Data for in-process plans; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport
-#>                                                                                                                                                          notes
-#> 1 scalar arrow_ipc loops over rows inside the worker; in-process queuing is available for deadlock-safe same-process scheduling, not for parallel R evaluation
+#>                                                                                                             threading
+#> 1 direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread
+#>                                         copy_semantics
+#> 1 DuckDB vectors are materialized directly to R values
+#>                                                                                                                                                                                                                                    notes
+#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it
 rducks_mode_semantics("vectorized")
 #>         mode      status            call_granularity
 #> 1 vectorized implemented one R call per DuckDB chunk
@@ -92,10 +92,10 @@ rducks_mode_semantics("vectorized")
 #> 1 return length must equal the number of evaluated rows in the chunk
 #>                                                                                                                                    error_semantics
 #> 1 R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query
-#>                                                                                                                                                                       threading
-#> 1 arrow_r and arrow_c vectorized work runs on the recorded main R thread; arrow_ipc + multiprocess_parallel offloads vectorized chunk work through the selected worker provider
-#>                                                                                                                                                                                                                                    copy_semantics
-#> 1 arrow_r vectorized chunks are exported/imported through Arrow C Data; arrow_c vectorized materializes supported DuckDB vectors directly in native C; arrow_ipc plans copy chunk/task payloads into Arrow IPC raw bytes before process transport
-#>                                                                                                                                               notes
-#> 1 batch/chunk call-shape used by arrow_r, direct arrow_c, and Arrow IPC worker-provider backends; zero-argument vectorized UDFs are not exposed yet
+#>                                                                                                       threading
+#> 1 direct vectorized work runs on the recorded main R thread; queued in-process calls are drained by that thread
+#>                                                       copy_semantics
+#> 1 DuckDB vectors are materialized directly to R vectors/list-columns
+#>                                                                                                         notes
+#> 1 batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet
 ```
