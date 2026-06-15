@@ -810,10 +810,14 @@ rducks_direct_sequence_child_supported <- function(type) {
 # build must expose a creatable VARIANT logical type in its C API, and the
 # extension must implement VARIANT materialization. The extension reports the
 # combined capability via the native rducks_variant_supported() surface; Rducks
-# caches it at rducks_enable() and the type gates below consult it. A session
-# links one DuckDB build, so a single process-level flag is sufficient. The
-# default (unset -> FALSE) keeps VARIANT rejected when capability is unknown, so
-# standalone gate calls and runtimes without VARIANT (e.g. 1.5.2) stay safe.
+# caches it at rducks_enable(). The direct-scalar mapping gate
+# (rducks_direct_mapping_supported) and the aggregate gate
+# (rducks_assert_variant_materializable) consult it; the wire (ipc) path rejects
+# VARIANT unconditionally (rducks_wire_supported_scalar_types omits it), since
+# the wire codec has no VARIANT support either. A session links one DuckDB
+# build, so a single process-level flag is sufficient. The default (unset ->
+# FALSE) keeps VARIANT rejected when capability is unknown, so standalone gate
+# calls and runtimes without VARIANT (e.g. 1.5.2) stay safe.
 rducks_runtime_caps <- new.env(parent = emptyenv())
 
 rducks_cache_variant_runtime_support <- function(con) {
