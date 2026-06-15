@@ -121,3 +121,30 @@ expect_error(
   pattern = "union tag references a non-existent member",
   info = "out-of-range union tag must be rejected"
 )
+
+# Top-level chunk object: duplicate fields must be rejected, not overwrite (and
+# leak) the row count / type array / column array. The single-INTEGER chunk is
+# rows(64 00 01) | types-field-101(65 00 01 + 5-byte INTEGER type) | columns...
+one_chunk <- Rducks:::rducks_wire_encode_values(list(INTEGER), list(42L), 1L)
+expect_equal(length(one_chunk), 28L, info = "single-INTEGER chunk layout precondition")
+expect_equal(as.integer(one_chunk[4:6]), c(0x65L, 0x00L, 0x01L),
+             info = "chunk types field (101) is where the layout precondition expects")
+dup_types <- c(one_chunk[1:11], one_chunk[4:11], one_chunk[12:28])  # field 101 twice
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(INTEGER), dup_types),
+  pattern = "duplicate types field in quack chunk object",
+  info = "duplicate chunk types field must be rejected"
+)
+
+# A vector advertising validity (field 100 flag = 1) but omitting the mask
+# (field 101) must error rather than leave a NULL mask. The vector's has-validity
+# flag value byte is at index 17 of this payload.
+expect_equal(as.integer(one_chunk[15:17]), c(0x64L, 0x00L, 0x00L),
+             info = "vector has-validity flag is where the layout precondition expects")
+bad_validity <- one_chunk
+bad_validity[17] <- as.raw(1L)  # advertise validity, but no mask field follows
+expect_error(
+  Rducks:::rducks_wire_decode_values(list(INTEGER), bad_validity),
+  pattern = "advertises validity but is missing its mask",
+  info = "has_validity without a mask must be rejected"
+)

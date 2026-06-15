@@ -1149,6 +1149,14 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             goto fail;
         }
     }
+    /* A vector that advertises validity (field 100 flag set) must carry a decoded
+     * validity mask (field 101); otherwise rdx_qk_vector_row_is_valid would read
+     * a NULL mask. The flag and the mask field both set has_validity, so this
+     * catches a payload that sets the flag but omits the mask. */
+    if (v->has_validity && v->rows > 0 && !v->validity) {
+        rdx_qk_set_error(err, "vector advertises validity but is missing its mask");
+        goto fail;
+    }
     /* Reject incomplete vector objects before publishing them. A malformed
      * payload (e.g. from an external ipc endpoint) may omit the payload field for
      * the vector's logical type, leaving the buffers NULL; R materialization and
@@ -1250,7 +1258,7 @@ int rdx_qk_chunk_decode(rdx_qk_reader *r, rdx_qk_chunk **out, rdx_qk_error *err)
     rdx_qk_chunk *c = NULL;
     uint16_t field;
     uint64_t rows = 0, value, i;
-    int seen_rows = 0;
+    int seen_rows = 0, seen_types = 0, seen_columns = 0;
     rdx_qk_type **types = NULL;
     uint64_t ntypes = 0;
     for (;;) {
@@ -1258,6 +1266,10 @@ int rdx_qk_chunk_decode(rdx_qk_reader *r, rdx_qk_chunk **out, rdx_qk_error *err)
         if (field == RDX_QK_OBJECT_END) break;
         switch (field) {
         case 100:
+            if (seen_rows) {
+                rdx_qk_set_error(err, "duplicate row-count field in quack chunk object");
+                goto fail;
+            }
             if (!rdx_qk_read_uleb(r, &rows, err)) goto fail;
             if (rows > RDX_QK_MAX_ROWS) {
                 rdx_qk_set_error(err, "quack chunk row count exceeds limit");
@@ -1266,6 +1278,11 @@ int rdx_qk_chunk_decode(rdx_qk_reader *r, rdx_qk_chunk **out, rdx_qk_error *err)
             seen_rows = 1;
             break;
         case 101:
+            if (seen_types) {
+                rdx_qk_set_error(err, "duplicate types field in quack chunk object");
+                goto fail;
+            }
+            seen_types = 1;
             if (!rdx_qk_read_uleb(r, &value, err)) goto fail;
             if (value > RDX_QK_MAX_COLUMNS) {
                 rdx_qk_set_error(err, "quack chunk column count exceeds limit");
@@ -1282,6 +1299,11 @@ int rdx_qk_chunk_decode(rdx_qk_reader *r, rdx_qk_chunk **out, rdx_qk_error *err)
             }
             break;
         case 102:
+            if (seen_columns) {
+                rdx_qk_set_error(err, "duplicate columns field in quack chunk object");
+                goto fail;
+            }
+            seen_columns = 1;
             if (!seen_rows || !types) {
                 rdx_qk_set_error(err, "quack chunk columns precede rows or types");
                 goto fail;

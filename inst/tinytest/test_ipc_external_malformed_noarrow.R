@@ -34,6 +34,7 @@ fake_worker <- function(ep) {
         ti <- which(vapply(seq_len(length(p) - length(pat)),
                            function(k) all(as.integer(p[k:(k + length(pat) - 1)]) == pat),
                            logical(1)))[1]
+        if (is.na(ti)) stop("fake endpoint: union tag byte pattern not found")
         p[ti + length(pat)] <- as.raw(255L)  # out-of-range union tag
         Rducks:::rducks_nng_wire_encode_response("ok", p)
       } else {
