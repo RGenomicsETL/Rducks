@@ -1,3 +1,7 @@
+# Rducks (development version)
+
+* `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs, matching `transport = "inproc"`. DuckDB resolves the concrete argument types per call site at bind; the native bind carries those resolved types to the worker in an `RDT1` dynamic payload (concrete arg tokens + the Quack chunk), so one registration serves call sites with different argument types. A type the wire codec cannot encode fails cleanly at the first chunk encode.
+
 # Rducks (development): Arrow removal
 
 * BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")`; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
