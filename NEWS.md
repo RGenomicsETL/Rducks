@@ -134,8 +134,8 @@
   `R_tryCatchError()` plus `R_UnwindProtect()` so unexpected
   marshalling/allocation errors are converted into DuckDB UDF errors without
   installing a fresh R top-level context inside DuckDB callbacks. RIPC cleanup
-  now releases preserved task/schema objects and decrements in-flight counters
-  on abnormal unwind.
+  now releases the worker client pool and decrements in-flight counters on
+  abnormal unwind.
 - Added direct native vectorized UDF support (`RCV`). Chunk arguments are
   materialized from DuckDB vectors in C, return rows are written back through the
   direct writer, and generated marshalling coverage verifies the selected native
