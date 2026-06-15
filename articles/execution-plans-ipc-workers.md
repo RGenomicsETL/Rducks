@@ -1,24 +1,24 @@
 # Execution Plans and IPC Workers
 
-Execution plans apply to DuckDB scalar UDFs. They choose how DuckDB
-chunks are marshalled to R and what concurrency contract is allowed.
+Execution plans apply to DuckDB scalar UDFs. They choose where a DuckDB
+chunk is evaluated and how it is carried to the R function.
 
-## Supported plan families
+## Supported transports
 
-- `arrow_r + serial`: reference path through DuckDB Arrow C Data and
-  nanoarrow/R materialization.
-- `arrow_c + serial`: native C materialization for the supported
-  scalar-UDF type subset.
-- `arrow_r + inproc_concurrent` and `arrow_c + inproc_concurrent`:
-  DuckDB worker callbacks can submit synchronous work to the
-  extension-owned in-process queue, but all R API work still runs on the
-  recorded R thread.
-- `arrow_ipc + multiprocess_parallel`: native NNG request/reply
-  transport with Arrow IPC request/result bytes and persistent R worker
-  processes.
+- `transport = "inproc"` (the default): DuckDB vectors are materialized
+  to SEXPs directly in extension C and the R function runs in the
+  current R process. DuckDB callbacks may arrive off the recorded R
+  thread; the in-process queued backend drains all R work on the
+  recorded R thread, so R API work is never concurrent. Maps to the
+  internal `direct_main_queue` engine.
+- `transport = "ipc"`: the extension encodes each input chunk to Quack
+  wire bytes (a DuckDB `BinarySerializer` `DataChunk` subset), ships it
+  to a persistent worker R process over NNG, and decodes the
+  wire-encoded result back into DuckDB. Maps to the internal
+  `ipc_nng_pool` engine.
 
 Unsupported combinations fail. Rducks does not silently fall back from
-one engine to another.
+one transport to another.
 
 ``` r
 
@@ -40,43 +40,47 @@ or deploy.
 
 rducks_set_execution_plan(
   con,
-  rducks_execution_plan("arrow_c", "serial")
+  rducks_execution_plan("inproc")
 )
 
 rducks_register_scalar_udf(
   con,
-  name = "r_plus_one_c",
+  name = "r_plus_one",
   fun = function(x) x + 1L,
   args = INTEGER,
   returns = INTEGER
 )
 #> <rducks_scalar_udf_registration>
 #>   registered:      yes
-#>   name:            r_plus_one_c
+#>   name:            r_plus_one
 #>   evaluation_mode: scalar
-#>   plan:            arrow_c+serial
-#>   signature:       r_plus_one_c(INTEGER) -> INTEGER
+#>   plan:            direct+inproc_concurrent
+#>   signature:       r_plus_one(INTEGER) -> INTEGER
 ```
 
-For concurrent execution demonstrations, set the matching plan again
-before query execution so the native runtime backend and DuckDB thread
-settings match the UDF metadata being exercised.
+For concurrent in-process execution, set the same plan again with wider
+DuckDB thread settings before running queries, so the native runtime
+backend matches the UDF metadata being exercised. R work still drains on
+the recorded R thread.
 
 ``` r
 
 rducks_set_execution_plan(
   con,
-  rducks_execution_plan("arrow_c", "inproc_concurrent"),
+  rducks_execution_plan("inproc"),
   threads = 4L,
   external_threads = 4L
 )
+dbGetQuery(con, "SELECT sum(r_plus_one((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
+#>      total
+#> 1 10010000
 ```
 
-## Arrow IPC worker plan
+## Worker-process (`ipc`) plan
 
-`arrow_ipc + multiprocess_parallel` starts or connects to persistent R
-workers that receive Arrow IPC-encoded chunks over NNG. Registration
-still happens under single-thread DuckDB settings; widen `threads` /
+`transport = "ipc"` starts or connects to persistent R workers that
+receive Quack wire-encoded chunks over NNG. Registration still happens
+under single-thread DuckDB settings; widen `threads` /
 `external_threads` afterwards for query execution. This vignette uses
 loopback TCP for the local NNG transport because it is the most portable
 choice for executed documentation builds; local IPC transports such as
@@ -97,8 +101,7 @@ tryCatch({
   rducks_set_execution_plan(
     con,
     rducks_execution_plan(
-      "arrow_ipc",
-      "multiprocess_parallel",
+      "ipc",
       ipc_workers = ipc_workers,
       ipc_transport = ipc_transport,
       ipc_timeout = ipc_timeout
@@ -123,8 +126,7 @@ tryCatch({
   rducks_set_execution_plan(
     con,
     rducks_execution_plan(
-      "arrow_ipc",
-      "multiprocess_parallel",
+      "ipc",
       ipc_workers = ipc_workers,
       ipc_transport = ipc_transport,
       ipc_timeout = ipc_timeout
@@ -144,7 +146,9 @@ workers, launches the NNG worker loop, pings each endpoint, then
 broadcasts the closure, type metadata, NULL/error policy, packages, and
 selected globals. If `ipc_endpoints` is supplied, those endpoints are
 caller-owned worker processes; Rducks connects to them but does not stop
-them.
+them. Set `ipc_globals_share = "mori"` to pass large selected globals to
+the workers through [mori](https://shikokuchuo.net/mori/) shared memory
+instead of serializing them.
 
 ## Inspect workers
 
@@ -164,7 +168,7 @@ if (isTRUE(ipc_available)) {
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:21069
+#>  tcp://127.0.0.1:35668
 ```
 
 The result is an R-side provider view: runtime token, provider key,

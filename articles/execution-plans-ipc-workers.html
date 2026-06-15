@@ -33,11 +33,11 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+<li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -69,30 +69,28 @@
 
     
     
-<p>Execution plans apply to DuckDB scalar UDFs. They choose how DuckDB
-chunks are marshalled to R and what concurrency contract is allowed.</p>
+<p>Execution plans apply to DuckDB scalar UDFs. They choose where a
+DuckDB chunk is evaluated and how it is carried to the R function.</p>
 <div class="section level2">
-<h2 id="supported-plan-families">Supported plan families<a class="anchor" aria-label="anchor" href="#supported-plan-families"></a>
+<h2 id="supported-transports">Supported transports<a class="anchor" aria-label="anchor" href="#supported-transports"></a>
 </h2>
 <ul>
 <li>
-<code>arrow_r + serial</code>: reference path through DuckDB Arrow C
-Data and nanoarrow/R materialization.</li>
+<code>transport = "inproc"</code> (the default): DuckDB vectors are
+materialized to SEXPs directly in extension C and the R function runs in
+the current R process. DuckDB callbacks may arrive off the recorded R
+thread; the in-process queued backend drains all R work on the recorded
+R thread, so R API work is never concurrent. Maps to the internal
+<code>direct_main_queue</code> engine.</li>
 <li>
-<code>arrow_c + serial</code>: native C materialization for the
-supported scalar-UDF type subset.</li>
-<li>
-<code>arrow_r + inproc_concurrent</code> and
-<code>arrow_c + inproc_concurrent</code>: DuckDB worker callbacks can
-submit synchronous work to the extension-owned in-process queue, but all
-R API work still runs on the recorded R thread.</li>
-<li>
-<code>arrow_ipc + multiprocess_parallel</code>: native NNG
-request/reply transport with Arrow IPC request/result bytes and
-persistent R worker processes.</li>
+<code>transport = "ipc"</code>: the extension encodes each input
+chunk to Quack wire bytes (a DuckDB <code>BinarySerializer</code>
+<code>DataChunk</code> subset), ships it to a persistent worker R
+process over NNG, and decodes the wire-encoded result back into DuckDB.
+Maps to the internal <code>ipc_nng_pool</code> engine.</li>
 </ul>
 <p>Unsupported combinations fail. Rducks does not silently fall back
-from one engine to another.</p>
+from one transport to another.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dbi.r-dbi.org" class="external-link">DBI</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r.duckdb.org/" class="external-link">duckdb</a></span><span class="op">)</span></span>
@@ -110,39 +108,43 @@ or deploy.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"serial"</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"inproc"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  name <span class="op">=</span> <span class="st">"r_plus_one_c"</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"r_plus_one"</span>,</span>
 <span>  fun <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span> <span class="op">+</span> <span class="fl">1L</span>,</span>
 <span>  args <span class="op">=</span> <span class="va">INTEGER</span>,</span>
 <span>  returns <span class="op">=</span> <span class="va">INTEGER</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt; &lt;rducks_scalar_udf_registration&gt;</span></span>
 <span><span class="co">#&gt;   registered:      yes</span></span>
-<span><span class="co">#&gt;   name:            r_plus_one_c</span></span>
+<span><span class="co">#&gt;   name:            r_plus_one</span></span>
 <span><span class="co">#&gt;   evaluation_mode: scalar</span></span>
-<span><span class="co">#&gt;   plan:            arrow_c+serial</span></span>
-<span><span class="co">#&gt;   signature:       r_plus_one_c(INTEGER) -&gt; INTEGER</span></span></code></pre></div>
-<p>For concurrent execution demonstrations, set the matching plan again
-before query execution so the native runtime backend and DuckDB thread
-settings match the UDF metadata being exercised.</p>
+<span><span class="co">#&gt;   plan:            direct+inproc_concurrent</span></span>
+<span><span class="co">#&gt;   signature:       r_plus_one(INTEGER) -&gt; INTEGER</span></span></code></pre></div>
+<p>For concurrent in-process execution, set the same plan again with
+wider DuckDB thread settings before running queries, so the native
+runtime backend matches the UDF metadata being exercised. R work still
+drains on the recorded R thread.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"inproc_concurrent"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"inproc"</span><span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">4L</span>,</span>
 <span>  external_threads <span class="op">=</span> <span class="fl">4L</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_plus_one((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      total</span></span>
+<span><span class="co">#&gt; 1 10010000</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="arrow-ipc-worker-plan">Arrow IPC worker plan<a class="anchor" aria-label="anchor" href="#arrow-ipc-worker-plan"></a>
+<h2 id="worker-process-ipc-plan">Worker-process (<code>ipc</code>) plan<a class="anchor" aria-label="anchor" href="#worker-process-ipc-plan"></a>
 </h2>
-<p><code>arrow_ipc + multiprocess_parallel</code> starts or connects to
-persistent R workers that receive Arrow IPC-encoded chunks over NNG.
-Registration still happens under single-thread DuckDB settings; widen
+<p><code>transport = "ipc"</code> starts or connects to persistent R
+workers that receive Quack wire-encoded chunks over NNG. Registration
+still happens under single-thread DuckDB settings; widen
 <code>threads</code> / <code>external_threads</code> afterwards for
 query execution. This vignette uses loopback TCP for the local NNG
 transport because it is the most portable choice for executed
@@ -162,8 +164,7 @@ slower there.</p>
 <span>  <span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>    <span class="va">con</span>,</span>
 <span>    <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>      <span class="st">"arrow_ipc"</span>,</span>
-<span>      <span class="st">"multiprocess_parallel"</span>,</span>
+<span>      <span class="st">"ipc"</span>,</span>
 <span>      ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
 <span>      ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
 <span>      ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
@@ -188,8 +189,7 @@ slower there.</p>
 <span>  <span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>    <span class="va">con</span>,</span>
 <span>    <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span></span>
-<span>      <span class="st">"arrow_ipc"</span>,</span>
-<span>      <span class="st">"multiprocess_parallel"</span>,</span>
+<span>      <span class="st">"ipc"</span>,</span>
 <span>      ipc_workers <span class="op">=</span> <span class="va">ipc_workers</span>,</span>
 <span>      ipc_transport <span class="op">=</span> <span class="va">ipc_transport</span>,</span>
 <span>      ipc_timeout <span class="op">=</span> <span class="va">ipc_timeout</span></span>
@@ -207,7 +207,9 @@ workers, launches the NNG worker loop, pings each endpoint, then
 broadcasts the closure, type metadata, NULL/error policy, packages, and
 selected globals. If <code>ipc_endpoints</code> is supplied, those
 endpoints are caller-owned worker processes; Rducks connects to them but
-does not stop them.</p>
+does not stop them. Set <code>ipc_globals_share = "mori"</code> to pass
+large selected globals to the workers through <a href="https://shikokuchuo.net/mori/" class="external-link">mori</a> shared memory instead of
+serializing them.</p>
 </div>
 <div class="section level2">
 <h2 id="inspect-workers">Inspect workers<a class="anchor" aria-label="anchor" href="#inspect-workers"></a>
@@ -226,7 +228,7 @@ each endpoint responds.</p>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
 <span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok</span></span>
 <span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:21069</span></span></code></pre></div>
+<span><span class="co">#&gt;  tcp://127.0.0.1:35668</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

@@ -160,23 +160,23 @@ identical(out_vec, out)
 The [`with()`](https://rdrr.io/r/base/with.html) method exposes the same
 choice as `rducks_mode`.
 
-## Execution plans: arrow_r, arrow_c, and IPC
+## Execution plans: in-process and worker-process
 
 Do not confuse `mode = "scalar"` / `"vectorized"` with the Rducks
 execution plan. The mode controls whether the R closure is called per
-row or per DuckDB chunk. The execution plan controls marshalling and
-concurrency (`arrow_r`, `arrow_c`, or `arrow_ipc`). The duckplyr bridge
-uses the current connection plan at the time it registers helpers.
+row or per DuckDB chunk. The execution plan controls the transport
+(`transport = "inproc"` in the current R process, or `transport = "ipc"`
+in worker R processes). The duckplyr bridge uses the current connection
+plan at the time it registers helpers.
 
-For example, this executed chunk switches to the direct
-`arrow_c + serial` plan before registering and evaluating a duckplyr
-helper:
+For example, this executed chunk pins the in-process plan before
+registering and evaluating a duckplyr helper:
 
 ``` r
 
 rducks_set_execution_plan(
   con,
-  rducks_execution_plan("arrow_c", "serial"),
+  rducks_execution_plan("inproc"),
   threads = 1L,
   external_threads = 1L
 )
@@ -204,13 +204,13 @@ rducks_with_duckplyr(
 #> 6     6    35
 ```
 
-IPC is the same axis: select an `arrow_ipc + multiprocess_parallel`
-execution plan before registering the helper. The current high-level
-duckplyr bridge registers helpers and evaluates the expression in one
-call, so it is best for simple IPC runs or for plans whose registration
-and execution thread settings are the same. If you need the full pattern
-of registering under single-thread DuckDB settings and then widening
-`threads` / `external_threads` for a parallel IPC query, register the
+Worker-process execution is the same axis: select a `transport = "ipc"`
+plan before registering the helper. The high-level duckplyr bridge
+registers helpers and evaluates the expression in one call, so it is
+best for simple runs or for plans whose registration and execution
+thread settings are the same. If you need the full pattern of
+registering under single-thread DuckDB settings and then widening
+`threads` / `external_threads` for a parallel `ipc` query, register the
 UDF explicitly with
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 and call it from duckplyr via duckplyr’s `dd$function_name(...)` SQL

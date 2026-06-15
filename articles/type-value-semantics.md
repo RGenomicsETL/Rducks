@@ -13,12 +13,12 @@ Three concepts are intentionally separate:
   function.
 - **Scalar-UDF evaluation mode**: `mode = "scalar"` calls R once per
   row; `mode = "vectorized"` calls R once per DuckDB chunk.
-- **Scalar-UDF execution plan**: `arrow_r`, `arrow_c`, or `arrow_ipc`
-  marshalling combined with an allowed concurrency model.
+- **Scalar-UDF execution plan**: in-process (`transport = "inproc"`) or
+  worker-process (`transport = "ipc"`) evaluation.
 
 Changing a connection’s default execution plan affects future scalar-UDF
 registrations and the matching native runtime backend; it does not
-rewrite an existing scalar UDF to a different marshalling engine.
+rewrite an existing scalar UDF to a different transport.
 
 ``` r
 
@@ -64,7 +64,7 @@ rducks_register_scalar_udf(
 #>   registered:      yes
 #>   name:            r_add_one
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       r_add_one(INTEGER) -> INTEGER
 ```
 
@@ -85,7 +85,7 @@ rducks_register_scalar_udf(
 #>   registered:      yes
 #>   name:            r_payload_label
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       r_payload_label(...) -> VARCHAR
 
 DBI::dbGetQuery(con, "
@@ -121,7 +121,7 @@ rducks_register_scalar_udf(
 #>   registered:      yes
 #>   name:            r_null_special
 #>   evaluation_mode: scalar
-#>   plan:            arrow_r+serial
+#>   plan:            direct+serial
 #>   signature:       r_null_special(INTEGER) -> INTEGER
 
 DBI::dbGetQuery(con, "SELECT r_null_special(NULL::INTEGER) AS x")

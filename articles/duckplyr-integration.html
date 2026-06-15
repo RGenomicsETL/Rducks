@@ -33,11 +33,11 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+<li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -215,22 +215,22 @@ bridge can register it with <code>mode = "vectorized"</code>:</p>
 <code>rducks_mode</code>.</p>
 </div>
 <div class="section level2">
-<h2 id="execution-plans-arrow_r-arrow_c-and-ipc">Execution plans: arrow_r, arrow_c, and IPC<a class="anchor" aria-label="anchor" href="#execution-plans-arrow_r-arrow_c-and-ipc"></a>
+<h2 id="execution-plans-in-process-and-worker-process">Execution plans: in-process and worker-process<a class="anchor" aria-label="anchor" href="#execution-plans-in-process-and-worker-process"></a>
 </h2>
 <p>Do not confuse <code>mode = "scalar"</code> /
 <code>"vectorized"</code> with the Rducks execution plan. The mode
 controls whether the R closure is called per row or per DuckDB chunk.
-The execution plan controls marshalling and concurrency
-(<code>arrow_r</code>, <code>arrow_c</code>, or <code>arrow_ipc</code>).
-The duckplyr bridge uses the current connection plan at the time it
-registers helpers.</p>
-<p>For example, this executed chunk switches to the direct
-<code>arrow_c + serial</code> plan before registering and evaluating a
-duckplyr helper:</p>
+The execution plan controls the transport
+(<code>transport = "inproc"</code> in the current R process, or
+<code>transport = "ipc"</code> in worker R processes). The duckplyr
+bridge uses the current connection plan at the time it registers
+helpers.</p>
+<p>For example, this executed chunk pins the in-process plan before
+registering and evaluating a duckplyr helper:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"arrow_c"</span>, <span class="st">"serial"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="../reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"inproc"</span><span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
 <span>  external_threads <span class="op">=</span> <span class="fl">1L</span></span>
 <span><span class="op">)</span></span>
@@ -256,17 +256,17 @@ duckplyr helper:</p>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span>     4    14</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span>     5    22</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">6</span>     6    35</span></span></code></pre></div>
-<p>IPC is the same axis: select an
-<code>arrow_ipc + multiprocess_parallel</code> execution plan before
-registering the helper. The current high-level duckplyr bridge registers
-helpers and evaluates the expression in one call, so it is best for
-simple IPC runs or for plans whose registration and execution thread
-settings are the same. If you need the full pattern of registering under
-single-thread DuckDB settings and then widening <code>threads</code> /
-<code>external_threads</code> for a parallel IPC query, register the UDF
-explicitly with <code><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and call it
-from duckplyr via duckplyr’s <code>dd$function_name(...)</code> SQL
-escape hatch, or wrap that two-phase pattern in your own helper.</p>
+<p>Worker-process execution is the same axis: select a
+<code>transport = "ipc"</code> plan before registering the helper. The
+high-level duckplyr bridge registers helpers and evaluates the
+expression in one call, so it is best for simple runs or for plans whose
+registration and execution thread settings are the same. If you need the
+full pattern of registering under single-thread DuckDB settings and then
+widening <code>threads</code> / <code>external_threads</code> for a
+parallel <code>ipc</code> query, register the UDF explicitly with
+<code><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and call it from duckplyr via
+duckplyr’s <code>dd$function_name(...)</code> SQL escape hatch, or wrap
+that two-phase pattern in your own helper.</p>
 </div>
 <div class="section level2">
 <h2 id="cleanup">Cleanup<a class="anchor" aria-label="anchor" href="#cleanup"></a>

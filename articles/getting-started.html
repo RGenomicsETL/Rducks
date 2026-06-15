@@ -33,11 +33,11 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+<li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -93,8 +93,10 @@ deterministic cleanup matters</li>
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></code></pre></div>
 <p><code>threads = "single"</code> is the safest registration setting.
-You can select a scalar-UDF execution plan before registration when you
-need a non-reference marshalling or concurrency backend.</p>
+You can select a scalar-UDF execution plan
+(<code>transport = "inproc"</code> or <code>transport = "ipc"</code>)
+before registration when you want worker-process evaluation instead of
+the in-process default.</p>
 </div>
 <div class="section level2">
 <h2 id="register-a-scalar-udf">Register a scalar UDF<a class="anchor" aria-label="anchor" href="#register-a-scalar-udf"></a>
@@ -229,12 +231,12 @@ a <code><a href="../reference/rducks_table_stream.html">rducks_table_stream()</a
 </h2>
 <p><code><a href="../reference/rducks_query_stream.html">rducks_query_stream()</a></code> is for R callers that want native
 DuckDB result chunks instead of eager <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code>
-materialization.</p>
+materialization. Each <code>next_batch()</code> materializes one DuckDB
+chunk into a data frame directly from DuckDB vectors.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  <span class="st">"SELECT i, i * i AS sq FROM range(10) tbl(i)"</span>,</span>
-<span>  batch_size <span class="op">=</span> <span class="fl">4L</span></span>
+<span>  <span class="st">"SELECT i, i * i AS sq FROM range(10) tbl(i)"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="kw">repeat</span> <span class="op">{</span></span>
@@ -242,19 +244,17 @@ materialization.</p>
 <span>  <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">batch</span><span class="op">)</span><span class="op">)</span> <span class="kw">break</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">batch</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
-<span><span class="co">#&gt;   i sq</span></span>
-<span><span class="co">#&gt; 1 0  0</span></span>
-<span><span class="co">#&gt; 2 1  1</span></span>
-<span><span class="co">#&gt; 3 2  4</span></span>
-<span><span class="co">#&gt; 4 3  9</span></span>
-<span><span class="co">#&gt;   i sq</span></span>
-<span><span class="co">#&gt; 1 4 16</span></span>
-<span><span class="co">#&gt; 2 5 25</span></span>
-<span><span class="co">#&gt; 3 6 36</span></span>
-<span><span class="co">#&gt; 4 7 49</span></span>
-<span><span class="co">#&gt;   i sq</span></span>
-<span><span class="co">#&gt; 1 8 64</span></span>
-<span><span class="co">#&gt; 2 9 81</span></span>
+<span><span class="co">#&gt;    i sq</span></span>
+<span><span class="co">#&gt; 1  0  0</span></span>
+<span><span class="co">#&gt; 2  1  1</span></span>
+<span><span class="co">#&gt; 3  2  4</span></span>
+<span><span class="co">#&gt; 4  3  9</span></span>
+<span><span class="co">#&gt; 5  4 16</span></span>
+<span><span class="co">#&gt; 6  5 25</span></span>
+<span><span class="co">#&gt; 7  6 36</span></span>
+<span><span class="co">#&gt; 8  7 49</span></span>
+<span><span class="co">#&gt; 9  8 64</span></span>
+<span><span class="co">#&gt; 10 9 81</span></span>
 <span></span>
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 </div>

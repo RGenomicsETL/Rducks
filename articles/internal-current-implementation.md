@@ -35,8 +35,8 @@ Rducks is split across R code and a loaded DuckDB extension:
   diagnostics.
 - The DuckDB extension registers SQL functions, stores native catalog
   metadata, owns extension-side connections, handles DuckDB callbacks,
-  and moves data through DuckDB vectors, Arrow C Data, or Arrow IPC
-  bytes.
+  and moves data through DuckDB vectors directly or through Quack
+  wire-codec byte payloads.
 
 DuckDB function kind, Rducks scalar-UDF evaluation mode, and scalar-UDF
 execution plan are separate axes. Aggregates and table functions do not
@@ -50,8 +50,8 @@ There are three important scopes:
   provider store, release queues, weak-reference finalizers, and
   diagnostic helpers.
 - **DuckDB database runtime/catalog scope**: SQL functions, evaluator
-  handles, preserved closures, scalar-UDF evaluator/marshalling
-  metadata, native runtime backend, and counters.
+  handles, preserved closures, scalar-UDF evaluator/transport metadata,
+  native runtime backend, and counters.
 - **DBI connection attachment scope**: default execution plan for future
   registrations, finalizer bookkeeping, and the R-side registry view.
 
@@ -79,7 +79,7 @@ registration, scalar-UDF execution, and metadata/stat queries.
 
 [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 creates DuckDB scalar UDF catalog entries and stores native metadata for
-the selected evaluator. Declared `args` pin the SQL input signature.
+the selected transport. Declared `args` pin the SQL input signature.
 Omitted `args` registers a DuckDB varargs `ANY` function; during DuckDB
 bind, Rducks records the concrete logical argument types for that call
 and uses those effective types during execution.
@@ -87,22 +87,20 @@ and uses those effective types during execution.
 The current scalar-UDF data paths are:
 
 ``` text
-arrow_r:
-  DuckDB chunk -> Arrow C Data -> nanoarrow/R materialization -> R closure
-  -> nanoarrow/R result -> DuckDB output
-
-arrow_c:
-  DuckDB chunk -> native C materialization -> R closure
+inproc (direct):
+  DuckDB chunk -> native C materialization to SEXP -> R closure
   -> native C result conversion -> DuckDB output
 
-arrow_ipc:
-  DuckDB chunk -> owned Arrow IPC request bytes -> NNG worker process
-  -> R closure in worker -> owned Arrow IPC result bytes -> DuckDB output
+ipc (wire):
+  DuckDB chunk -> Quack wire bytes -> NNG worker process
+  -> R closure in worker -> Quack wire result bytes -> DuckDB output
 ```
 
-The `arrow_r + serial` path is the reference implementation. Other
-supported plans must match its SQL type, NULL, error, and result
-semantics; unsupported combinations fail instead of falling back.
+The in-process `direct` path is the reference implementation. The `ipc`
+path must match its SQL type, NULL, error, and result semantics;
+unsupported combinations fail instead of falling back. Before any worker
+result is written back, the wire decoder validates the decoded column
+count and per-column types against the declared signature.
 
 ## Aggregates
 
@@ -124,12 +122,13 @@ those inputs as DuckDB `ANY`, converts actual SQL bind values to R
 values, and calls the R function during DuckDB bind on the recorded R
 thread.
 
-A finite result is imported once during bind through nanoarrow Arrow C
-Data. A
+A finite result is materialized once during bind by filling DuckDB
+output vectors directly from the returned R columns. A
 [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
 result uses a bind-time prototype for schema and a scan-time
-`next_batch(batch_size)` callback for successive batches. Projection
-aware copying writes only requested columns into DuckDB output chunks.
+`next_batch(batch_size)` callback for successive batches.
+Projection-aware copying writes only requested columns into DuckDB
+output chunks.
 
 ## Query streams
 
@@ -140,21 +139,17 @@ query-stream connection. That dedicated connection keeps query streaming
 separate from the runtime connection used for dynamic scalar, table, and
 aggregate registration.
 
-A query stream fetches DuckDB chunks and exports them through Arrow C
-Data. `format = "data.frame"` materializes through Rducks/nanoarrow
-helpers; `format = "record_batch"` returns owned nanoarrow record
-batches.
-
-The current implementation supports one active native query stream per
+A query stream fetches DuckDB chunks and materializes each one into a
+data-frame batch directly from DuckDB vectors. The current
+implementation supports one active native query stream per
 caller/runtime connection.
 
 ## IPC provider lifecycle
 
 The native IPC provider uses NNG for request/reply and local mirai
-processes for the default managed worker lifecycle. During
-`arrow_ipc + multiprocess_parallel` registration, Rducks starts workers,
-launches the worker loop, pings endpoints, and registers the UDF payload
-with each worker.
+processes for the default managed worker lifecycle. During `ipc`
+registration, Rducks starts workers, launches the worker loop, pings
+endpoints, and registers the UDF payload with each worker.
 
 Client pools are native extension objects; worker lifecycle is R-side
 provider state. `rducks_release(con)` closes local client pools when the
@@ -172,13 +167,13 @@ The implementation favors explicit ownership boundaries:
 
 - Borrowed DuckDB vectors and chunks are used only inside the callback
   frame that supplied them.
-- Arrow IPC payloads are owned byte buffers and are used for
+- Quack wire payloads are owned byte buffers and are used for
   process/transport boundaries.
 - R closures are preserved while native metadata can call them.
 - Same-host mori sharing is available only for selected long-lived
   globals, not for SQL chunk data.
-- Output arrays and record batches are copied into owned R or DuckDB
-  containers before the borrowed source lifetime ends.
+- Output vectors and chunks are copied into owned R or DuckDB containers
+  before the borrowed source lifetime ends.
 
 These rules are part of the package semantics. Changes that add
 allocations, thread hops, or zero-copy paths need a protection and

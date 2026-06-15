@@ -27,8 +27,9 @@ rducks_enable(con, threads = "single")
 ```
 
 `threads = "single"` is the safest registration setting. You can select
-a scalar-UDF execution plan before registration when you need a
-non-reference marshalling or concurrency backend.
+a scalar-UDF execution plan (`transport = "inproc"` or
+`transport = "ipc"`) before registration when you want worker-process
+evaluation instead of the in-process default.
 
 ## Register a scalar UDF
 
@@ -177,14 +178,14 @@ DBI::dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
 [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
 is for R callers that want native DuckDB result chunks instead of eager
 [`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
-materialization.
+materialization. Each `next_batch()` materializes one DuckDB chunk into
+a data frame directly from DuckDB vectors.
 
 ``` r
 
 stream <- rducks_query_stream(
   con,
-  "SELECT i, i * i AS sq FROM range(10) tbl(i)",
-  batch_size = 4L
+  "SELECT i, i * i AS sq FROM range(10) tbl(i)"
 )
 
 repeat {
@@ -192,19 +193,17 @@ repeat {
   if (is.null(batch)) break
   print(batch)
 }
-#>   i sq
-#> 1 0  0
-#> 2 1  1
-#> 3 2  4
-#> 4 3  9
-#>   i sq
-#> 1 4 16
-#> 2 5 25
-#> 3 6 36
-#> 4 7 49
-#>   i sq
-#> 1 8 64
-#> 2 9 81
+#>    i sq
+#> 1  0  0
+#> 2  1  1
+#> 3  2  4
+#> 4  3  9
+#> 5  4 16
+#> 6  5 25
+#> 7  6 36
+#> 8  7 49
+#> 9  8 64
+#> 10 9 81
 
 stream$close()
 ```

@@ -33,11 +33,11 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
+<li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
     <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
+    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
     <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
+    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -99,8 +99,8 @@ preserves R closures, starts managed IPC workers, and exposes
 diagnostics.</li>
 <li>The DuckDB extension registers SQL functions, stores native catalog
 metadata, owns extension-side connections, handles DuckDB callbacks, and
-moves data through DuckDB vectors, Arrow C Data, or Arrow IPC
-bytes.</li>
+moves data through DuckDB vectors directly or through Quack wire-codec
+byte payloads.</li>
 </ul>
 <p>DuckDB function kind, Rducks scalar-UDF evaluation mode, and
 scalar-UDF execution plan are separate axes. Aggregates and table
@@ -118,8 +118,7 @@ and diagnostic helpers.</li>
 <li>
 <strong>DuckDB database runtime/catalog scope</strong>: SQL
 functions, evaluator handles, preserved closures, scalar-UDF
-evaluator/marshalling metadata, native runtime backend, and
-counters.</li>
+evaluator/transport metadata, native runtime backend, and counters.</li>
 <li>
 <strong>DBI connection attachment scope</strong>: default execution
 plan for future registrations, finalizer bookkeeping, and the R-side
@@ -149,27 +148,25 @@ queries.</p>
 <h2 id="scalar-udf-registration-and-execution">Scalar UDF registration and execution<a class="anchor" aria-label="anchor" href="#scalar-udf-registration-and-execution"></a>
 </h2>
 <p><code><a href="../reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> creates DuckDB scalar UDF
-catalog entries and stores native metadata for the selected evaluator.
+catalog entries and stores native metadata for the selected transport.
 Declared <code>args</code> pin the SQL input signature. Omitted
 <code>args</code> registers a DuckDB varargs <code>ANY</code> function;
 during DuckDB bind, Rducks records the concrete logical argument types
 for that call and uses those effective types during execution.</p>
 <p>The current scalar-UDF data paths are:</p>
-<pre class="text"><code>arrow_r:
-  DuckDB chunk -&gt; Arrow C Data -&gt; nanoarrow/R materialization -&gt; R closure
-  -&gt; nanoarrow/R result -&gt; DuckDB output
-
-arrow_c:
-  DuckDB chunk -&gt; native C materialization -&gt; R closure
+<pre class="text"><code>inproc (direct):
+  DuckDB chunk -&gt; native C materialization to SEXP -&gt; R closure
   -&gt; native C result conversion -&gt; DuckDB output
 
-arrow_ipc:
-  DuckDB chunk -&gt; owned Arrow IPC request bytes -&gt; NNG worker process
-  -&gt; R closure in worker -&gt; owned Arrow IPC result bytes -&gt; DuckDB output</code></pre>
-<p>The <code>arrow_r + serial</code> path is the reference
-implementation. Other supported plans must match its SQL type, NULL,
+ipc (wire):
+  DuckDB chunk -&gt; Quack wire bytes -&gt; NNG worker process
+  -&gt; R closure in worker -&gt; Quack wire result bytes -&gt; DuckDB output</code></pre>
+<p>The in-process <code>direct</code> path is the reference
+implementation. The <code>ipc</code> path must match its SQL type, NULL,
 error, and result semantics; unsupported combinations fail instead of
-falling back.</p>
+falling back. Before any worker result is written back, the wire decoder
+validates the decoded column count and per-column types against the
+declared signature.</p>
 </div>
 <div class="section level2">
 <h2 id="aggregates">Aggregates<a class="anchor" aria-label="anchor" href="#aggregates"></a>
@@ -190,11 +187,12 @@ intentionally not controlled by scalar-UDF execution plans.</p>
 from the R function’s formals, registers those inputs as DuckDB
 <code>ANY</code>, converts actual SQL bind values to R values, and calls
 the R function during DuckDB bind on the recorded R thread.</p>
-<p>A finite result is imported once during bind through nanoarrow Arrow
-C Data. A <code><a href="../reference/rducks_table_stream.html">rducks_table_stream()</a></code> result uses a bind-time
-prototype for schema and a scan-time <code>next_batch(batch_size)</code>
-callback for successive batches. Projection aware copying writes only
-requested columns into DuckDB output chunks.</p>
+<p>A finite result is materialized once during bind by filling DuckDB
+output vectors directly from the returned R columns. A
+<code><a href="../reference/rducks_table_stream.html">rducks_table_stream()</a></code> result uses a bind-time prototype for
+schema and a scan-time <code>next_batch(batch_size)</code> callback for
+successive batches. Projection-aware copying writes only requested
+columns into DuckDB output chunks.</p>
 </div>
 <div class="section level2">
 <h2 id="query-streams">Query streams<a class="anchor" aria-label="anchor" href="#query-streams"></a>
@@ -205,21 +203,19 @@ through a dedicated extension-owned query-stream connection. That
 dedicated connection keeps query streaming separate from the runtime
 connection used for dynamic scalar, table, and aggregate
 registration.</p>
-<p>A query stream fetches DuckDB chunks and exports them through Arrow C
-Data. <code>format = "data.frame"</code> materializes through
-Rducks/nanoarrow helpers; <code>format = "record_batch"</code> returns
-owned nanoarrow record batches.</p>
-<p>The current implementation supports one active native query stream
-per caller/runtime connection.</p>
+<p>A query stream fetches DuckDB chunks and materializes each one into a
+data-frame batch directly from DuckDB vectors. The current
+implementation supports one active native query stream per
+caller/runtime connection.</p>
 </div>
 <div class="section level2">
 <h2 id="ipc-provider-lifecycle">IPC provider lifecycle<a class="anchor" aria-label="anchor" href="#ipc-provider-lifecycle"></a>
 </h2>
 <p>The native IPC provider uses NNG for request/reply and local mirai
 processes for the default managed worker lifecycle. During
-<code>arrow_ipc + multiprocess_parallel</code> registration, Rducks
-starts workers, launches the worker loop, pings endpoints, and registers
-the UDF payload with each worker.</p>
+<code>ipc</code> registration, Rducks starts workers, launches the
+worker loop, pings endpoints, and registers the UDF payload with each
+worker.</p>
 <p>Client pools are native extension objects; worker lifecycle is R-side
 provider state. <code>rducks_release(con)</code> closes local client
 pools when the last attachment to a runtime is released, then stops
@@ -237,12 +233,12 @@ more IPC UDFs.</p>
 <ul>
 <li>Borrowed DuckDB vectors and chunks are used only inside the callback
 frame that supplied them.</li>
-<li>Arrow IPC payloads are owned byte buffers and are used for
+<li>Quack wire payloads are owned byte buffers and are used for
 process/transport boundaries.</li>
 <li>R closures are preserved while native metadata can call them.</li>
 <li>Same-host mori sharing is available only for selected long-lived
 globals, not for SQL chunk data.</li>
-<li>Output arrays and record batches are copied into owned R or DuckDB
+<li>Output vectors and chunks are copied into owned R or DuckDB
 containers before the borrowed source lifetime ends.</li>
 </ul>
 <p>These rules are part of the package semantics. Changes that add
