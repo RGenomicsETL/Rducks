@@ -698,6 +698,7 @@ rducks_register_aggregate <- function(con, name, update = NULL, finalize = NULL,
     update_chunk = update_chunk, combine_chunk = combine_chunk, finalize_chunk = finalize_chunk,
     copy = copy, copy_chunk = copy_chunk
   )
+  rducks_assert_variant_materializable(c(spec$arg_types, list(spec$return_type)), "aggregate")
   rducks_assert_single_thread(con)
   rducks_attach_runtime_anchor(con)
   bundle <- list(

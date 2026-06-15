@@ -806,6 +806,60 @@ rducks_direct_sequence_child_supported <- function(type) {
   )
 }
 
+# Runtime capability cache. VARIANT support is conditional: the loaded DuckDB
+# build must expose a creatable VARIANT logical type in its C API, and the
+# extension must implement VARIANT materialization. The extension reports the
+# combined capability via the native rducks_variant_supported() surface; Rducks
+# caches it at rducks_enable(). The direct-scalar mapping gate
+# (rducks_direct_mapping_supported) and the aggregate gate
+# (rducks_assert_variant_materializable) consult it; the wire (ipc) path rejects
+# VARIANT unconditionally (rducks_wire_supported_scalar_types omits it), since
+# the wire codec has no VARIANT support either. A session links one DuckDB
+# build, so a single process-level flag is sufficient. The default (unset ->
+# FALSE) keeps VARIANT rejected when capability is unknown, so standalone gate
+# calls and runtimes without VARIANT (e.g. 1.5.2) stay safe.
+rducks_runtime_caps <- new.env(parent = emptyenv())
+
+rducks_cache_variant_runtime_support <- function(con) {
+  supported <- tryCatch(
+    isTRUE(DBI::dbGetQuery(con, "SELECT rducks_variant_supported() AS ok")$ok[[1L]]),
+    error = function(e) FALSE
+  )
+  rducks_runtime_caps$variant <- supported
+  invisible(supported)
+}
+
+rducks_variant_runtime_supported <- function() {
+  isTRUE(rducks_runtime_caps$variant)
+}
+
+# Recursively detect VARIANT anywhere in a (possibly nested) type.
+rducks_type_contains_variant <- function(type) {
+  type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
+  if (identical(rducks_type_kind(type), "scalar") && identical(rducks_type_token(type), "variant")) {
+    return(TRUE)
+  }
+  children <- tryCatch(rducks_type_children(type), error = function(e) list())
+  length(children) > 0L && any(vapply(children, rducks_type_contains_variant, logical(1)))
+}
+
+# Registration paths that do not run through the execution-plan type gates (e.g.
+# aggregates) must still reject VARIANT until the runtime reports VARIANT
+# materialization support, so VARIANT is refused consistently everywhere rather
+# than registering and then failing at execution on a VARIANT-capable runtime.
+rducks_assert_variant_materializable <- function(types, what) {
+  if (rducks_variant_runtime_supported()) {
+    return(invisible(NULL))
+  }
+  bad <- types[vapply(types, rducks_type_contains_variant, logical(1))]
+  if (length(bad)) {
+    stop("DuckDB ", what, " VARIANT marshalling is not implemented for: ",
+         paste(unique(vapply(bad, rducks_type_duckdb_sql, character(1))), collapse = ", "),
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 rducks_direct_mapping_supported <- function(type) {
   type <- if (rducks_type_inherits(type, "rducks_type")) type else rducks_type_object(type)
   kind <- rducks_type_kind(type)
@@ -813,7 +867,9 @@ rducks_direct_mapping_supported <- function(type) {
     return(TRUE)
   }
   if (identical(kind, "scalar")) {
-    return(rducks_type_token(type) %in% setdiff(rducks_all_scalar_type_names(), "variant"))
+    names <- rducks_all_scalar_type_names()
+    if (!rducks_variant_runtime_supported()) names <- setdiff(names, "variant")
+    return(rducks_type_token(type) %in% names)
   }
   if (kind %in% c("list", "array")) {
     return(rducks_direct_sequence_child_supported(rducks_type_children(type)[[1L]]))
