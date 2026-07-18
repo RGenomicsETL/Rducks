@@ -13,6 +13,13 @@ knitr::opts_chunk$set(
   comment = "#>",
   eval = TRUE
 )
+version_support_root <- if (file.exists(file.path("tools", "duckdb_version_support.R"))) {
+  "."
+} else {
+  ".."
+}
+source(file.path(version_support_root, "tools", "duckdb_version_support.R"))
+duckdb_version_range <- rducks_duckdb_version_range(version_support_root)
 ```
 
 `Rducks` is an R package plus a DuckDB extension for registering R functions as
@@ -40,8 +47,9 @@ rducks_enable(con, threads = "single")
 ```
 
 Rducks uses DuckDB's unstable C extension ABI. The installed package contains
-exact-version extension variants for DuckDB `v1.5.0` through `v1.5.4`, and
-`rducks_enable()` loads only the variant matching `SELECT version()` on `con`.
+exact-version extension variants for DuckDB `r duckdb_version_range`, generated
+from the build manifest, and `rducks_enable()` loads only the variant matching
+`SELECT version()` on `con`.
 There is no fallback to another patch release; see
 [DuckDB Version Compatibility](duckdb-version-compatibility.html) for details.
 

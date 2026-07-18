@@ -13,6 +13,8 @@ knitr::opts_chunk$set(
 )
 options(width = 80)
 library(Rducks)
+source("tools/duckdb_version_support.R")
+duckdb_version_range <- rducks_duckdb_version_range(".")
 ```
 
 # Rducks
@@ -68,8 +70,8 @@ the native bridge covers it.
 Rducks uses DuckDB's `C_STRUCT_UNSTABLE` extension ABI. The package therefore
 builds and installs a separate extension artifact for every supported exact
 DuckDB engine release instead of assuming patch releases are ABI-compatible.
-The current bundle covers `v1.5.0` through `v1.5.4`: the `v1.5.3` line, its three
-preceding patch releases, and the known next patch release.
+The current bundle covers `r duckdb_version_range`; that range is generated from
+the build manifest rather than maintained separately in the documentation.
 
 `rducks_enable()` queries `SELECT version()` on the target connection and loads
 only the artifact for that exact version. It never falls back to a nearby
@@ -609,8 +611,9 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 The source and vendored native dependencies used by `configure` live under
 `tools/ext/`. Rducks uses DuckDB's exact-version unstable C ABI, so installation
 builds one artifact per release declared in
-`tools/ext/duckdb_capi/versions.txt` (currently `v1.5.0` through `v1.5.4`), for
-example `inst/rducks_extension/build/v1.5.4/rducks.duckdb_extension`. At runtime,
+`tools/ext/duckdb_capi/versions.txt` (currently `r duckdb_version_range`), for
+example `inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
+At runtime,
 `rducks_enable()` queries the target connection's engine version and loads only
 the exact matching artifact; an unsupported version fails without fallback.
 `cleanup` removes only generated artifacts, not the source tree needed by

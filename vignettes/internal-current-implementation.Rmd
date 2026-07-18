@@ -13,6 +13,13 @@ knitr::opts_chunk$set(
   comment = "#>",
   eval = TRUE
 )
+version_support_root <- if (file.exists(file.path("tools", "duckdb_version_support.R"))) {
+  "."
+} else {
+  ".."
+}
+source(file.path(version_support_root, "tools", "duckdb_version_support.R"))
+duckdb_version_range <- rducks_duckdb_version_range(version_support_root)
 ```
 
 This article describes how Rducks works today. It is not the stable API
@@ -23,8 +30,9 @@ actual implementation.
 ## Source and installed layout
 
 The R package installs one runtime extension artifact for each declared exact
-DuckDB engine release (currently `v1.5.0` through `v1.5.4`) and selects the
-matching version at runtime. The user-facing policy and diagnostics are covered
+DuckDB engine release (currently `r duckdb_version_range`, generated from the
+build manifest) and selects the matching version at runtime. The user-facing
+policy and diagnostics are covered
 in [DuckDB Version Compatibility](duckdb-version-compatibility.html):
 
 ```text
