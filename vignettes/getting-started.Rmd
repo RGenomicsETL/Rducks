@@ -39,6 +39,12 @@ con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 ```
 
+Rducks uses DuckDB's unstable C extension ABI. The installed package contains
+exact-version extension variants for DuckDB `v1.5.0` through `v1.5.4`, and
+`rducks_enable()` loads only the variant matching `SELECT version()` on `con`.
+There is no fallback to another patch release; see
+[DuckDB Version Compatibility](duckdb-version-compatibility.html) for details.
+
 `threads = "single"` is the safest registration setting. You can select a
 scalar-UDF execution plan (`transport = "inproc"` or `transport = "ipc"`) before
 registration when you want worker-process evaluation instead of the in-process

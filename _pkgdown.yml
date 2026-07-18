@@ -1,3 +1,15 @@
 url: https://sounkou-bioinfo.github.io/Rducks/
 template:
   bootstrap: 5
+
+articles:
+  - title: Guides
+    contents:
+      - getting-started
+      - duckdb-version-compatibility
+      - type-value-semantics
+      - execution-plans-ipc-workers
+      - duckplyr-integration
+  - title: Internals
+    contents:
+      - internal-current-implementation
