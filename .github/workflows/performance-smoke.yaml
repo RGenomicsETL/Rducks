@@ -64,19 +64,41 @@ jobs:
             rm -rf "$libdir"
           }
 
+          source_duckdb_versions() {
+            local srcdir="$1"
+            local versions_file="$srcdir/tools/ext/duckdb_capi/versions.txt"
+            local legacy_metadata="$srcdir/tools/ext/duckdb_capi/duckdb_headers.json"
+            if [ -f "$versions_file" ]; then
+              sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$versions_file"
+            elif [ -f "$legacy_metadata" ]; then
+              awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "$legacy_metadata"
+            fi
+          }
+
+          runtime_duckdb_version="$(Rscript -e '
+            ns <- asNamespace("duckdb")
+            getter <- get0("get_duckdb_version", envir = ns, mode = "function", inherits = FALSE)
+            version <- if (is.null(getter)) get("duckdb_version", envir = ns) else getter()
+            version <- as.character(version)
+            cat(if (startsWith(version, "v")) version else paste0("v", version))
+          ')"
+          echo "Performance runtime uses DuckDB $runtime_duckdb_version"
+
+          # The current smoke and its absolute thresholds are authoritative even
+          # when an older source tree cannot load into today's DuckDB runtime.
+          run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+
           baseline_ref="HEAD^"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             baseline_ref="${{ github.event.pull_request.base.sha }}"
             git fetch --depth=1 origin "$baseline_ref"
           fi
           if ! git rev-parse --verify "$baseline_ref^{commit}" >/dev/null 2>&1; then
-            echo "No baseline commit available for performance comparison; running current smoke only."
-            run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+            echo "No baseline commit available for performance comparison; current smoke passed."
             exit 0
           fi
           if git show "$baseline_ref:DESCRIPTION" | grep -qi 'nanoarrow'; then
-            echo "Baseline still depends on nanoarrow; this PR is not performance-comparable to it. Running current smoke only."
-            run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
+            echo "Baseline still depends on nanoarrow; current smoke passed, but this change is not performance-comparable."
             exit 0
           fi
 
@@ -84,8 +106,14 @@ jobs:
           git worktree add --detach "$baseline_dir" "$baseline_ref"
           trap 'git worktree remove --force "$baseline_dir" 2>/dev/null || true; rm -rf "$baseline_dir"' EXIT
 
+          baseline_versions="$(source_duckdb_versions "$baseline_dir")"
+          if ! printf '%s\n' "$baseline_versions" | grep -Fqx "$runtime_duckdb_version"; then
+            echo "Baseline $baseline_ref supports DuckDB versions: ${baseline_versions:-unknown}."
+            echo "Current smoke passed; skipping an ABI-incompatible historical comparison against $runtime_duckdb_version."
+            exit 0
+          fi
+
           run_perf "$baseline_dir" "$GITHUB_WORKSPACE/performance-baseline.csv" false
-          run_perf "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/performance-current.csv" true
 
           RDUCKS_PERF_COMPARE_OUTPUT="$GITHUB_WORKSPACE/performance-compare.csv" \
           Rscript tools/performance_compare.R performance-baseline.csv performance-current.csv
