@@ -100,10 +100,10 @@ each header set. The current bundle contains:</p>
 </tr>
 </tbody>
 </table>
-<p>This window covers the <code>v1.5.3</code> line, its three preceding
-patch releases, and the known next patch release. The list is an
-explicit release policy, not an ABI compatibility claim for versions
-outside the table.</p>
+<p>This table is generated directly from
+<code>tools/ext/duckdb_capi/versions.txt</code>, the same manifest
+consumed by the native build. The list is an explicit release policy,
+not an ABI compatibility claim for versions outside the table.</p>
 </div>
 <div class="section level2">
 <h2 id="runtime-selection">Runtime selection<a class="anchor" aria-label="anchor" href="#runtime-selection"></a>
@@ -111,7 +111,7 @@ outside the table.</p>
 <p><code>rducks_enable(con)</code> asks the target connection for
 <code>SELECT version()</code>. It then loads only the artifact whose
 directory has that exact engine version:</p>
-<pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">v1.5.3</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
+<pre class="text"><code>rducks_extension/build/&lt;duckdb-version&gt;/rducks.duckdb_extension</code></pre>
 <p>The connection is authoritative. Selection does not assume that an
 installed R package version necessarily describes every DuckDB
 connection passed to Rducks. There is no nearest-version or same-minor
@@ -119,8 +119,7 @@ fallback.</p>
 <p>You can inspect the default artifact selected for the installed
 <code>duckdb</code> package:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_extension_path.html">rducks_extension_path</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/rducks_extension_path.html">rducks_extension_path</a></span><span class="op">(</span><span class="st">"v1.5.3"</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_extension_path.html">rducks_extension_path</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>An explicit <code>extension_path</code> remains available for
 development and custom builds, but it does not make incompatible
 binaries safe. DuckDB validates the unstable ABI metadata when it loads

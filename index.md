@@ -59,9 +59,9 @@ registration on the `ipc` plan until the native bridge covers it.
 Rducks uses DuckDB’s `C_STRUCT_UNSTABLE` extension ABI. The package
 therefore builds and installs a separate extension artifact for every
 supported exact DuckDB engine release instead of assuming patch releases
-are ABI-compatible. The current bundle covers `v1.5.0` through `v1.5.4`:
-the `v1.5.3` line, its three preceding patch releases, and the known
-next patch release.
+are ABI-compatible. The current bundle covers v1.5.0 through v1.5.4;
+that range is generated from the build manifest rather than maintained
+separately in the documentation.
 
 [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
 queries `SELECT version()` on the target connection and loads only the
@@ -444,7 +444,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            170         250
+#> 1 8e+06            170         251
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -482,7 +482,7 @@ data.frame(
   peak_rss_mb = peak
 )
 #>   bam_gb reads_streamed rss_at_open_mb peak_rss_mb
-#> 1   15.1       11366400            254         288
+#> 1   15.1       11114496            255         272
 ```
 
 ## Execution plans
@@ -644,9 +644,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.345
-#> 2          ipc (2 workers) 65961344       1.939
-#> 3   ipc + mori (2 workers) 65961344       1.933
+#> 1 inproc (single R thread) 65961344       3.350
+#> 2          ipc (2 workers) 65961344       1.935
+#> 3   ipc + mori (2 workers) 65961344       1.928
 ```
 
 ## duckplyr integration
@@ -706,10 +706,10 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 The source and vendored native dependencies used by `configure` live
 under `tools/ext/`. Rducks uses DuckDB’s exact-version unstable C ABI,
 so installation builds one artifact per release declared in
-`tools/ext/duckdb_capi/versions.txt` (currently `v1.5.0` through
-`v1.5.4`), for example
-`inst/rducks_extension/build/v1.5.4/rducks.duckdb_extension`. At
-runtime,
+`tools/ext/duckdb_capi/versions.txt` (currently v1.5.0 through v1.5.4),
+for example
+`inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
+At runtime,
 [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
 queries the target connection’s engine version and loads only the exact
 matching artifact; an unsupported version fails without fallback.

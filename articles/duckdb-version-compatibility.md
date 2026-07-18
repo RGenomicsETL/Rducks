@@ -21,10 +21,10 @@ header set. The current bundle contains:
 | `v1.5.3`              | yes               |
 | `v1.5.4`              | yes               |
 
-This window covers the `v1.5.3` line, its three preceding patch
-releases, and the known next patch release. The list is an explicit
-release policy, not an ABI compatibility claim for versions outside the
-table.
+This table is generated directly from
+`tools/ext/duckdb_capi/versions.txt`, the same manifest consumed by the
+native build. The list is an explicit release policy, not an ABI
+compatibility claim for versions outside the table.
 
 ## Runtime selection
 
@@ -33,7 +33,7 @@ It then loads only the artifact whose directory has that exact engine
 version:
 
 ``` text
-rducks_extension/build/v1.5.3/rducks.duckdb_extension
+rducks_extension/build/<duckdb-version>/rducks.duckdb_extension
 ```
 
 The connection is authoritative. Selection does not assume that an
@@ -47,7 +47,6 @@ package:
 ``` r
 
 rducks_extension_path()
-rducks_extension_path("v1.5.3")
 ```
 
 An explicit `extension_path` remains available for development and
