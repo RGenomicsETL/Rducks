@@ -1,0 +1,10 @@
+# Exact DuckDB engine releases supported by bundled C_STRUCT_UNSTABLE builds.
+# This rolling bundle spans the current duckdb-r line, three preceding patch
+# releases, and the next known patch release. Keep one vMAJOR.MINOR.PATCH per
+# line and vendor matching headers with tools/fetch_duckdb_headers.R before
+# adding a release here.
+v1.5.0
+v1.5.1
+v1.5.2
+v1.5.3
+v1.5.4

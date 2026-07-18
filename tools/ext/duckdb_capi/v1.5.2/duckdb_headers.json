@@ -1,9 +1,9 @@
 {
   "duckdb_ref": "v1.5.2",
-  "source": "/root/duckdb-r/src/duckdb",
+  "source": "https://github.com/duckdb/duckdb",
   "headers": {
     "duckdb.h": {
-      "path": "tools/ext/duckdb_capi/duckdb.h",
+      "path": "tools/ext/duckdb_capi/v1.5.2/duckdb.h",
       "md5": "1fd3511d8068be4ed384e80c099a4dd6",
       "repairs": {
       "duckdb_create_instance_cache": 1,
@@ -18,7 +18,7 @@
       }
     },
     "duckdb_extension.h": {
-      "path": "tools/ext/duckdb_capi/duckdb_extension.h",
+      "path": "tools/ext/duckdb_capi/v1.5.2/duckdb_extension.h",
       "md5": "ebb7a6ac14a48007db9757b933cf17a4",
       "repairs": {
       "duckdb_library_version": 1,

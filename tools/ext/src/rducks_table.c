@@ -344,6 +344,9 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
         return 0;
     }
     type_id = duckdb_get_type_id(type);
+    if ((int)type_id == RDUCKS_DUCKDB_TYPE_GEOMETRY_ID) {
+        return rducks_r_table_duckdb_value_blob_to_r(value, out, err, err_cap);
+    }
     switch (type_id) {
     case DUCKDB_TYPE_BOOLEAN:
         *out = Rf_ScalarLogical(duckdb_get_bool(value) ? TRUE : FALSE);
@@ -436,7 +439,6 @@ static int rducks_r_table_duckdb_value_to_r(duckdb_value value, SEXP *out, char 
         ok = rducks_r_table_duckdb_value_string_to_r(value, out, err, err_cap);
         break;
     case DUCKDB_TYPE_BLOB:
-    case DUCKDB_TYPE_GEOMETRY:
         ok = rducks_r_table_duckdb_value_blob_to_r(value, out, err, err_cap);
         break;
     case DUCKDB_TYPE_LIST:

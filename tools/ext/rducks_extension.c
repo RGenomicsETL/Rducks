@@ -6,13 +6,15 @@
 #endif
 #include "duckdb_extension.h"
 
-/* DuckDB exposed VARIANT in the C API after early 1.5 headers. Keep the numeric
- * id isolated here so Rducks can compile against those headers while still
- * recognizing VARIANT when loaded by a DuckDB runtime whose C API returns it.
- * Do not use the cast duckdb_type value in switch labels: older headers define
- * duckdb_type as an enum without value 41, and CRAN/CI compilers warn on such
- * case labels.
+/* DuckDB exposed GEOMETRY and VARIANT in the C API after early 1.5 headers.
+ * Keep their numeric ids isolated here so each exact-version build compiles
+ * against its matching header while still recognizing the runtime type ids.
+ * Do not use cast duckdb_type values in switch labels: older headers define
+ * duckdb_type as an enum without values 40/41, and CRAN/CI compilers warn on
+ * such case labels.
  */
+#define RDUCKS_DUCKDB_TYPE_GEOMETRY_ID 40
+#define RDUCKS_DUCKDB_TYPE_GEOMETRY ((duckdb_type)RDUCKS_DUCKDB_TYPE_GEOMETRY_ID)
 #define RDUCKS_DUCKDB_TYPE_VARIANT_ID 41
 #define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)RDUCKS_DUCKDB_TYPE_VARIANT_ID)
 

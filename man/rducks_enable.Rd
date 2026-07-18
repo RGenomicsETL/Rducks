@@ -4,16 +4,13 @@
 \alias{rducks_enable}
 \title{Enable Rducks on a DuckDB connection}
 \usage{
-rducks_enable(
-  con,
-  extension_path = rducks_extension_path(),
-  threads = c("unchanged", "single")
-)
+rducks_enable(con, extension_path = NULL, threads = c("unchanged", "single"))
 }
 \arguments{
 \item{con}{A \code{duckdb_connection}.}
 
-\item{extension_path}{Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.}
+\item{extension_path}{Optional explicit extension path. \code{NULL} selects the
+bundled artifact matching the exact engine version reported by \code{con}.}
 
 \item{threads}{Either \code{"unchanged"} or \code{"single"}.}
 }

@@ -2,15 +2,22 @@
 % Please edit documentation in R/connection.R
 \name{rducks_extension_path}
 \alias{rducks_extension_path}
-\title{Locate the built Rducks DuckDB extension}
+\title{Locate a version-matched Rducks DuckDB extension}
 \usage{
-rducks_extension_path()
+rducks_extension_path(duckdb_version = NULL)
+}
+\arguments{
+\item{duckdb_version}{Exact DuckDB engine version, with or without the \code{v}
+prefix (for example, \code{"v1.5.4"}). \code{NULL} uses the engine version reported
+by the installed \code{duckdb} package.}
 }
 \value{
-Character scalar path to \code{rducks.duckdb_extension}.
+Character scalar path to the matching \code{rducks.duckdb_extension}.
 }
 \description{
-Locate the built Rducks DuckDB extension
+Rducks uses DuckDB's unstable C extension ABI, so an extension built for one
+DuckDB engine release must not be loaded by another. This helper selects the
+bundled artifact for an exact engine version.
 }
 \examples{
 rducks_extension_path()

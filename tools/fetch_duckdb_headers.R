@@ -3,8 +3,12 @@
 #
 # This is an explicit vendoring tool, not an install-time network step.
 # Usage:
-#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.0
-#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.0
+#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.4
+#
+# Unless --dest is supplied, each exact version is written below
+# tools/ext/duckdb_capi/<ref>/. Keep tools/ext/duckdb_capi/versions.txt in sync
+# with the exact versions that configure should build.
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -34,12 +38,27 @@ if (!file.exists(file.path(repo_root, "DESCRIPTION"))) {
 }
 
 opts <- parse_args(args)
-ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.0")
-dest <- opts[["dest"]] %||% file.path(repo_root, "tools", "ext", "duckdb_capi")
+ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.4")
+if (!grepl("^v[0-9]+\\.[0-9]+\\.[0-9]+$", ref)) {
+  stop("--ref must be an exact DuckDB release such as v1.5.4", call. = FALSE)
+}
+dest_opt <- opts[["dest"]] %||% ""
+dest <- if (nzchar(dest_opt)) {
+  dest_opt
+} else {
+  file.path(repo_root, "tools", "ext", "duckdb_capi", ref)
+}
 source_repo <- opts[["repo"]] %||% ""
 
 dest <- normalizePath(dest, mustWork = FALSE)
 dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+
+repo_relative_path <- function(path) {
+  root <- normalizePath(repo_root, winslash = "/", mustWork = TRUE)
+  path <- normalizePath(path, winslash = "/", mustWork = FALSE)
+  prefix <- paste0(root, "/")
+  if (startsWith(path, prefix)) substring(path, nchar(prefix) + 1L) else path
+}
 
 header_paths <- c(
   duckdb = "src/include/duckdb.h",
@@ -211,7 +230,7 @@ for (filename in names(written)) {
   )
   file_entries <- c(file_entries, paste0(
     "    ", json_quote(filename), ": {\n",
-    "      \"path\": ", json_quote(file.path("tools", "ext", "duckdb_capi", filename)), ",\n",
+    "      \"path\": ", json_quote(repo_relative_path(path)), ",\n",
     "      \"md5\": ", json_quote(md5), ",\n",
     "      \"repairs\": {\n", repair_entries, "\n      }\n",
     "    }"

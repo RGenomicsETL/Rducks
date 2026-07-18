@@ -1,9 +1,16 @@
 # Programmatically derive the unstable DuckDB C extension ABI entries that
 # Rducks source code currently calls.
 
-rducks_read_duckdb_extension_api <- function(header = file.path(
-  "tools", "ext", "duckdb_capi", "duckdb_extension.h"
-)) {
+rducks_duckdb_capi_header <- function(root = ".") {
+  capi_root <- file.path(root, "tools", "ext", "duckdb_capi")
+  versions_file <- file.path(capi_root, "versions.txt")
+  versions <- trimws(sub("#.*$", "", readLines(versions_file, warn = FALSE)))
+  versions <- versions[nzchar(versions)]
+  if (!length(versions)) stop("DuckDB version manifest is empty", call. = FALSE)
+  file.path(capi_root, tail(versions, 1L), "duckdb_extension.h")
+}
+
+rducks_read_duckdb_extension_api <- function(header = rducks_duckdb_capi_header()) {
   lines <- readLines(header, warn = FALSE)
   current_group <- "stable"
   out <- list()
@@ -56,9 +63,7 @@ rducks_extension_source_files <- function(root = ".") {
 }
 
 rducks_used_duckdb_unstable_api <- function(root = ".") {
-  api <- rducks_read_duckdb_extension_api(file.path(
-    root, "tools", "ext", "duckdb_capi", "duckdb_extension.h"
-  ))
+  api <- rducks_read_duckdb_extension_api(rducks_duckdb_capi_header(root))
   unstable <- api[startsWith(api$abi_group, "unstable"), , drop = FALSE]
   if (!nrow(unstable)) return(unstable)
 

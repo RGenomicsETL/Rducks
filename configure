@@ -13,17 +13,16 @@ done
 
 EXT_SRC_DIR="${THIS_DIR}/tools/ext"
 EXT_INSTALL_DIR="${THIS_DIR}/inst/rducks_extension"
-DUCKDB_CAPI_HEADER="${EXT_SRC_DIR}/duckdb_capi/duckdb_extension.h"
+DUCKDB_CAPI_ROOT="${EXT_SRC_DIR}/duckdb_capi"
+DUCKDB_VERSIONS_FILE="${DUCKDB_CAPI_ROOT}/versions.txt"
 SRC_FILE="${EXT_SRC_DIR}/rducks_extension.c"
 BUILD_DIR="${EXT_INSTALL_DIR}/build"
-RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
-FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
 VENDOR_DIR="${EXT_SRC_DIR}/third_party"
 VENDOR_NNG_DIR="${VENDOR_DIR}/nng"
 VENDOR_MBEDTLS_DIR="${VENDOR_DIR}/mbedtls"
 
-if [ ! -f "${DUCKDB_CAPI_HEADER}" ]; then
-  echo "ERROR: DuckDB C API header not found at ${DUCKDB_CAPI_HEADER}"
+if [ ! -f "${DUCKDB_VERSIONS_FILE}" ]; then
+  echo "ERROR: DuckDB version manifest not found at ${DUCKDB_VERSIONS_FILE}"
   exit 1
 fi
 if [ ! -f "${SRC_FILE}" ]; then
@@ -68,28 +67,40 @@ if [ -z "${EXT_VERSION}" ]; then
   EXT_VERSION="0.0.0"
 fi
 
-DUCKDB_HEADERS_JSON="${EXT_SRC_DIR}/duckdb_capi/duckdb_headers.json"
-DUCKDB_VERSION=`awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "${DUCKDB_HEADERS_JSON}" 2>/dev/null || true`
-if [ -z "${DUCKDB_VERSION}" ]; then
-  DUCKDB_API_MAJOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MAJOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-  DUCKDB_API_MINOR=`awk '/DUCKDB_EXTENSION_API_VERSION_MINOR/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-  DUCKDB_API_PATCH=`awk '/DUCKDB_EXTENSION_API_VERSION_PATCH/ {print $3; exit}' "${DUCKDB_CAPI_HEADER}" || true`
-  if [ -n "${DUCKDB_API_MAJOR}" ] && [ -n "${DUCKDB_API_MINOR}" ] && [ -n "${DUCKDB_API_PATCH}" ]; then
-    DUCKDB_VERSION="v${DUCKDB_API_MAJOR}.${DUCKDB_API_MINOR}.${DUCKDB_API_PATCH}"
-  else
-    DUCKDB_VERSION="v1.2.0"
-  fi
-fi
-
 ABI_TYPE="C_STRUCT_UNSTABLE"
-UNSTABLE_CPPFLAGS=""
 if [ "${USE_UNSTABLE_C_API}" != "1" ]; then
   echo "ERROR: Rducks requires USE_UNSTABLE_C_API=1"
   exit 1
 fi
-if [ "${USE_UNSTABLE_C_API}" = "1" ]; then
-  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
+
+SUPPORTED_DUCKDB_VERSIONS=`sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "${DUCKDB_VERSIONS_FILE}"`
+BUILD_DUCKDB_VERSIONS="${RDUCKS_DUCKDB_VERSIONS:-${SUPPORTED_DUCKDB_VERSIONS}}"
+if [ -z "${BUILD_DUCKDB_VERSIONS}" ]; then
+  echo "ERROR: no DuckDB versions selected for the Rducks extension build"
+  exit 1
 fi
+for DUCKDB_VERSION in ${BUILD_DUCKDB_VERSIONS}; do
+  if ! printf '%s\n' "${DUCKDB_VERSION}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "ERROR: invalid DuckDB version '${DUCKDB_VERSION}'; expected vMAJOR.MINOR.PATCH"
+    exit 1
+  fi
+  if ! printf '%s\n' "${SUPPORTED_DUCKDB_VERSIONS}" | grep -Fqx "${DUCKDB_VERSION}"; then
+    echo "ERROR: DuckDB version '${DUCKDB_VERSION}' is not declared in ${DUCKDB_VERSIONS_FILE}"
+    exit 1
+  fi
+  DUCKDB_CAPI_DIR="${DUCKDB_CAPI_ROOT}/${DUCKDB_VERSION}"
+  DUCKDB_CAPI_HEADER="${DUCKDB_CAPI_DIR}/duckdb_extension.h"
+  DUCKDB_HEADERS_JSON="${DUCKDB_CAPI_DIR}/duckdb_headers.json"
+  if [ ! -f "${DUCKDB_CAPI_HEADER}" ] || [ ! -f "${DUCKDB_CAPI_DIR}/duckdb.h" ] || [ ! -f "${DUCKDB_HEADERS_JSON}" ]; then
+    echo "ERROR: vendored DuckDB headers are incomplete for ${DUCKDB_VERSION} under ${DUCKDB_CAPI_DIR}"
+    exit 1
+  fi
+  PINNED_DUCKDB_VERSION=`awk -F'"' '/"duckdb_ref"/ {print $4; exit}' "${DUCKDB_HEADERS_JSON}" 2>/dev/null || true`
+  if [ "${PINNED_DUCKDB_VERSION}" != "${DUCKDB_VERSION}" ]; then
+    echo "ERROR: header metadata under ${DUCKDB_CAPI_DIR} records '${PINNED_DUCKDB_VERSION}', expected '${DUCKDB_VERSION}'"
+    exit 1
+  fi
+done
 
 WASM_BUILD=no
 if echo "${CC}" | grep -q "emcc" || echo "${CC}" | grep -q "wasm"; then
@@ -126,6 +137,7 @@ if [ -z "${DUCKDB_PLATFORM}" ]; then
   exit 1
 fi
 
+rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
 if [ ! -f "${VENDOR_DIR}/CMakeLists.txt" ] || [ ! -f "${VENDOR_NNG_DIR}/include/nng/nng.h" ] || \
@@ -199,7 +211,7 @@ fi
 if [ "${OS_NAME}" != "Windows_NT" ]; then
   CFLAGS="${CFLAGS} -fvisibility=hidden"
 fi
-CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks ${UNSTABLE_CPPFLAGS} -I${THIS_DIR}/src -I${EXT_SRC_DIR}/duckdb_capi ${VENDOR_NNG_CPPFLAGS}"
+BASE_CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks -I${THIS_DIR}/src ${VENDOR_NNG_CPPFLAGS}"
 
 if [ "${WASM_BUILD}" = "yes" ]; then
   SHARED_FLAGS="-shared -fPIC"
@@ -224,26 +236,38 @@ if [ "${WASM_BUILD}" = "yes" ]; then
   R_LINK_FLAGS=""
 fi
 
-echo "---------- Building Rducks DuckDB extension ----------"
+echo "---------- Building Rducks DuckDB extensions ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
 echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
+echo "DuckDB versions: ${BUILD_DUCKDB_VERSIONS}"
 echo "WebAssembly build: ${WASM_BUILD}"
 echo "Vendored NNG support: 1"
 echo "CMake: ${RDUCKS_CMAKE}"
-${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} ${CONFIGURE_LDFLAGS} ${VENDOR_NNG_LINK_FLAGS} -o "${RAW_EXT_FILE}" \
-  ${EXT_EXPORT_FLAGS} \
-  "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LINK_FLAGS}
+for DUCKDB_VERSION in ${BUILD_DUCKDB_VERSIONS}; do
+  DUCKDB_CAPI_DIR="${DUCKDB_CAPI_ROOT}/${DUCKDB_VERSION}"
+  VERSION_BUILD_DIR="${BUILD_DIR}/${DUCKDB_VERSION}"
+  RAW_EXT_FILE="${VERSION_BUILD_DIR}/rducks.duckdb_extension.raw"
+  FINAL_EXT_FILE="${VERSION_BUILD_DIR}/rducks.duckdb_extension"
+  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
+  CPPFLAGS="${BASE_CPPFLAGS} ${UNSTABLE_CPPFLAGS} -I${DUCKDB_CAPI_DIR}"
+  mkdir -p "${VERSION_BUILD_DIR}"
+
+  echo "Building Rducks for DuckDB ${DUCKDB_VERSION}..."
+  ${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} ${CONFIGURE_LDFLAGS} ${VENDOR_NNG_LINK_FLAGS} -o "${RAW_EXT_FILE}" \
+    ${EXT_EXPORT_FLAGS} \
+    "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LINK_FLAGS}
+
+  echo "Appending DuckDB ${DUCKDB_VERSION} extension metadata..."
+  "${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
+    --library-file "${RAW_EXT_FILE}" \
+    --out-file "${FINAL_EXT_FILE}" \
+    --extension-name "rducks" \
+    --duckdb-platform "${DUCKDB_PLATFORM}" \
+    --duckdb-version "${DUCKDB_VERSION}" \
+    --extension-version "${EXT_VERSION}" \
+    --abi-type "${ABI_TYPE}"
+
+  rm -f "${RAW_EXT_FILE}"
+  echo "Built ${FINAL_EXT_FILE}"
+done
 rm -rf "${VENDOR_BUILD_DIR}"
-
-echo "Appending DuckDB extension metadata..."
-"${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
-  --library-file "${RAW_EXT_FILE}" \
-  --out-file "${FINAL_EXT_FILE}" \
-  --extension-name "rducks" \
-  --duckdb-platform "${DUCKDB_PLATFORM}" \
-  --duckdb-version "${DUCKDB_VERSION}" \
-  --extension-version "${EXT_VERSION}" \
-  --abi-type "${ABI_TYPE}"
-
-rm -f "${RAW_EXT_FILE}"
-echo "Built ${FINAL_EXT_FILE}"

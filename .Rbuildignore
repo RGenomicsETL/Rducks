@@ -1,6 +1,7 @@
 ^\.git$
 ^\.github$
 ^\.claude$
+^\.pi$
 ^Rducks\.Rproj$
 ^.*\.Rproj$
 ^\.Rproj\.user$

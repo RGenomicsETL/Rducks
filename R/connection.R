@@ -1,17 +1,83 @@
-#' Locate the built Rducks DuckDB extension
+#' Locate a version-matched Rducks DuckDB extension
 #'
-#' @return Character scalar path to `rducks.duckdb_extension`.
+#' Rducks uses DuckDB's unstable C extension ABI, so an extension built for one
+#' DuckDB engine release must not be loaded by another. This helper selects the
+#' bundled artifact for an exact engine version.
+#'
+#' @param duckdb_version Exact DuckDB engine version, with or without the `v`
+#'   prefix (for example, `"v1.5.4"`). `NULL` uses the engine version reported
+#'   by the installed `duckdb` package.
+#' @return Character scalar path to the matching `rducks.duckdb_extension`.
 #' @examples
 #' rducks_extension_path()
 #' @export
-rducks_extension_path <- function() {
-  system.file(
+rducks_extension_path <- function(duckdb_version = NULL) {
+  if (is.null(duckdb_version)) {
+    duckdb_version <- rducks_installed_duckdb_version()
+  }
+  duckdb_version <- rducks_normalize_duckdb_version(duckdb_version)
+  root <- system.file(
     "rducks_extension",
     "build",
-    "rducks.duckdb_extension",
     package = "Rducks",
     mustWork = TRUE
   )
+  path <- file.path(root, duckdb_version, "rducks.duckdb_extension")
+  if (!file.exists(path)) {
+    bundled <- rducks_bundled_duckdb_versions(root)
+    stop(
+      "Rducks has no bundled extension for DuckDB ", duckdb_version,
+      ". Bundled versions: ",
+      if (length(bundled)) paste(bundled, collapse = ", ") else "none",
+      ". Install an Rducks release that supports this exact DuckDB engine version",
+      " or supply extension_path explicitly.",
+      call. = FALSE
+    )
+  }
+  normalizePath(path, mustWork = TRUE)
+}
+
+rducks_normalize_duckdb_version <- function(version) {
+  version <- as.character(version)
+  if (length(version) != 1L || is.na(version) ||
+      !grepl("^v?[0-9]+\\.[0-9]+\\.[0-9]+$", version)) {
+    stop(
+      "DuckDB engine version must be an exact release such as 'v1.5.4'",
+      call. = FALSE
+    )
+  }
+  if (startsWith(version, "v")) version else paste0("v", version)
+}
+
+rducks_installed_duckdb_version <- function() {
+  ns <- asNamespace("duckdb")
+  getter <- get0("get_duckdb_version", envir = ns, mode = "function", inherits = FALSE)
+  if (!is.null(getter)) {
+    return(rducks_normalize_duckdb_version(getter()))
+  }
+  version <- get0("duckdb_version", envir = ns, inherits = FALSE)
+  if (!is.null(version)) {
+    return(rducks_normalize_duckdb_version(version))
+  }
+  stop(
+    "unable to determine the DuckDB engine version from the installed duckdb package",
+    call. = FALSE
+  )
+}
+
+rducks_bundled_duckdb_versions <- function(root) {
+  versions <- list.files(root, pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$")
+  versions <- versions[file.exists(file.path(root, versions, "rducks.duckdb_extension"))]
+  if (!length(versions)) return(character())
+  paste0("v", as.character(sort(numeric_version(sub("^v", "", versions)))))
+}
+
+rducks_connection_duckdb_version <- function(con) {
+  result <- DBI::dbGetQuery(con, "SELECT version() AS version")
+  if (!is.data.frame(result) || nrow(result) != 1L || !"version" %in% names(result)) {
+    stop("failed to query the DuckDB engine version", call. = FALSE)
+  }
+  rducks_normalize_duckdb_version(result$version[[1L]])
 }
 
 #' Enable Rducks on a DuckDB connection
@@ -24,7 +90,8 @@ rducks_extension_path <- function() {
 #' execution.
 #'
 #' @param con A `duckdb_connection`.
-#' @param extension_path Extension path. Defaults to \code{\link[=rducks_extension_path]{rducks_extension_path()}}.
+#' @param extension_path Optional explicit extension path. `NULL` selects the
+#'   bundled artifact matching the exact engine version reported by `con`.
 #' @param threads Either `"unchanged"` or `"single"`.
 #' @return `con`, invisibly.
 #' @examples
@@ -35,11 +102,18 @@ rducks_extension_path <- function() {
 #' DBI::dbDisconnect(db)
 #' }
 #' @export
-rducks_enable <- function(con, extension_path = rducks_extension_path(),
+rducks_enable <- function(con, extension_path = NULL,
                           threads = c("unchanged", "single")) {
   threads <- match.arg(threads)
   rducks_assert_duckdb_connection(con)
 
+  if (is.null(extension_path)) {
+    extension_path <- rducks_extension_path(rducks_connection_duckdb_version(con))
+  }
+  if (!is.character(extension_path) || length(extension_path) != 1L ||
+      is.na(extension_path) || !nzchar(extension_path)) {
+    stop("extension_path must be a non-empty character scalar or NULL", call. = FALSE)
+  }
   path_sql <- rducks_sql_string(normalizePath(extension_path, mustWork = TRUE))
   DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
 
