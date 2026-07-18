@@ -8,8 +8,10 @@ stay aligned with the actual implementation.
 ## Source and installed layout
 
 The R package installs one runtime extension artifact for each declared
-exact DuckDB engine release, and selects the matching version at
-runtime:
+exact DuckDB engine release (currently `v1.5.0` through `v1.5.4`) and
+selects the matching version at runtime. The user-facing policy and
+diagnostics are covered in [DuckDB Version
+Compatibility](https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.md):
 
 ``` text
 rducks_extension/build/v1.5.4/rducks.duckdb_extension

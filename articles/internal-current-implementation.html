@@ -30,16 +30,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/duckplyr-integration.html">duckplyr Integration</a></li>
-    <li><a class="dropdown-item" href="../articles/execution-plans-ipc-workers.html">Execution Plans and IPC Workers</a></li>
-    <li><a class="dropdown-item" href="../articles/getting-started.html">Getting Started with Rducks</a></li>
-    <li><a class="dropdown-item" href="../articles/internal-current-implementation.html">Internal Current Implementation Details</a></li>
-    <li><a class="dropdown-item" href="../articles/type-value-semantics.html">Type and Value Semantics</a></li>
-  </ul>
-</li>
+<li class="active nav-item"><a class="nav-link" href="../articles/index.html">Articles</a></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -77,8 +68,10 @@ stay aligned with the actual implementation.</p>
 <h2 id="source-and-installed-layout">Source and installed layout<a class="anchor" aria-label="anchor" href="#source-and-installed-layout"></a>
 </h2>
 <p>The R package installs one runtime extension artifact for each
-declared exact DuckDB engine release, and selects the matching version
-at runtime:</p>
+declared exact DuckDB engine release (currently <code>v1.5.0</code>
+through <code>v1.5.4</code>) and selects the matching version at
+runtime. The user-facing policy and diagnostics are covered in <a href="duckdb-version-compatibility.html">DuckDB Version
+Compatibility</a>:</p>
 <pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">v1.5.4</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
 <p>The source and vendored dependency inputs live in the source checkout
 under <code>tools/ext</code>, not under
