@@ -2,6 +2,13 @@
 
 ## Rducks (development version)
 
+- Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension
+  variants for DuckDB v1.5.0 through v1.5.4.
+  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+  queries the connection’s engine version and loads only the matching
+  artifact, so DuckDB package patch upgrades no longer try to load the
+  v1.5.2 build; unsupported versions fail explicitly without ABI
+  fallback.
 - `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs,
   matching `transport = "inproc"`. DuckDB resolves the concrete argument
   types per call site at bind; the native bind carries those resolved

@@ -7,10 +7,12 @@ stay aligned with the actual implementation.
 
 ## Source and installed layout
 
-The R package installs one runtime extension artifact:
+The R package installs one runtime extension artifact for each declared
+exact DuckDB engine release, and selects the matching version at
+runtime:
 
 ``` text
-rducks_extension/build/rducks.duckdb_extension
+rducks_extension/build/v1.5.4/rducks.duckdb_extension
 ```
 
 The source and vendored dependency inputs live in the source checkout
@@ -19,12 +21,16 @@ under `tools/ext`, not under `inst/rducks_extension`:
 ``` text
 tools/ext/rducks_extension.c
 tools/ext/src/*.c
-tools/ext/duckdb_capi/*.h
+tools/ext/duckdb_capi/v*/*.h
 tools/ext/third_party/*
 ```
 
-`configure` and `configure.win` build the extension from `tools/ext` and
-copy only the runtime artifact into the installed package footprint.
+`configure` and `configure.win` build the extension variants from
+`tools/ext` and copy only the runtime artifacts into the installed
+package footprint. Because Rducks uses `C_STRUCT_UNSTABLE`,
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+queries the target connection and loads only an artifact for that exact
+DuckDB engine version.
 
 ## Package and extension split
 

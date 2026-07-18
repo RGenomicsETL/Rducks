@@ -43,7 +43,7 @@
 - [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
   : Explain a registered Rducks scalar UDF
 - [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md)
-  : Locate the built Rducks DuckDB extension
+  : Locate a version-matched Rducks DuckDB extension
 - [`rducks_hugeint()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_hugeint.md)
   : Construct exact DuckDB HUGEINT values
 - [`rducks_inproc_self_test()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_self_test.md)

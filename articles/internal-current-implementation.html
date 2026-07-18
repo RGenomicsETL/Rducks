@@ -76,18 +76,23 @@ stay aligned with the actual implementation.</p>
 <div class="section level2">
 <h2 id="source-and-installed-layout">Source and installed layout<a class="anchor" aria-label="anchor" href="#source-and-installed-layout"></a>
 </h2>
-<p>The R package installs one runtime extension artifact:</p>
-<pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
+<p>The R package installs one runtime extension artifact for each
+declared exact DuckDB engine release, and selects the matching version
+at runtime:</p>
+<pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">v1.5.4</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
 <p>The source and vendored dependency inputs live in the source checkout
 under <code>tools/ext</code>, not under
 <code>inst/rducks_extension</code>:</p>
 <pre class="text"><code>tools/ext/rducks_extension.c
 tools/ext/src/*.c
-tools/ext/duckdb_capi/*.h
+tools/ext/duckdb_capi/v*/*.h
 tools/ext/third_party/*</code></pre>
 <p><code>configure</code> and <code>configure.win</code> build the
-extension from <code>tools/ext</code> and copy only the runtime artifact
-into the installed package footprint.</p>
+extension variants from <code>tools/ext</code> and copy only the runtime
+artifacts into the installed package footprint. Because Rducks uses
+<code>C_STRUCT_UNSTABLE</code>, <code><a href="../reference/rducks_enable.html">rducks_enable()</a></code> queries the
+target connection and loads only an artifact for that exact DuckDB
+engine version.</p>
 </div>
 <div class="section level2">
 <h2 id="package-and-extension-split">Package and extension split<a class="anchor" aria-label="anchor" href="#package-and-extension-split"></a>
@@ -256,7 +261,7 @@ lifetime audit.</p>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

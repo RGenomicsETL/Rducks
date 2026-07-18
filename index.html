@@ -600,8 +600,8 @@
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
-<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. During source-package installation, <code>configure</code> writes the generated artifact to <code>inst/rducks_extension/build/rducks.duckdb_extension</code> in the build tree; after installation the runtime path is <code>rducks_extension/build/rducks.duckdb_extension</code> inside the installed package. <code>cleanup</code> removes only the generated artifact, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. DuckDB C API headers are refreshed explicitly when the supported DuckDB version changes.</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.2</span></code></pre></div>
+<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. Rducks uses DuckDB’s exact-version unstable C ABI, so installation builds one artifact per release declared in <code>tools/ext/duckdb_capi/versions.txt</code>, for example <code>inst/rducks_extension/build/v1.5.4/rducks.duckdb_extension</code>. At runtime, <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries the target connection’s engine version and loads only the exact matching artifact; an unsupported version fails without fallback. <code>cleanup</code> removes only generated artifacts, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. Matching DuckDB C API headers are vendored explicitly for every declared version.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.4</span></code></pre></div>
 <p>The extension uses DuckDB’s <a href="https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md" class="external-link">C extension API</a> and unstable C extension ABI for connection/runtime access, scalar-function bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector helpers. This table is generated from <code>tools/used_duckdb_unstable_api.R</code> when <code>README.Rmd</code> is rendered:</p>
 <table class="table">
 <colgroup>
@@ -720,7 +720,7 @@
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

@@ -687,20 +687,23 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 ## Build notes
 
 The source and vendored native dependencies used by `configure` live
-under `tools/ext/`. During source-package installation, `configure`
-writes the generated artifact to
-`inst/rducks_extension/build/rducks.duckdb_extension` in the build tree;
-after installation the runtime path is
-`rducks_extension/build/rducks.duckdb_extension` inside the installed
-package. `cleanup` removes only the generated artifact, not the source
-tree needed by `R CMD build`. This package-bundled extension layout
-follows precedents such as
+under `tools/ext/`. Rducks uses DuckDB’s exact-version unstable C ABI,
+so installation builds one artifact per release declared in
+`tools/ext/duckdb_capi/versions.txt`, for example
+`inst/rducks_extension/build/v1.5.4/rducks.duckdb_extension`. At
+runtime,
+[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+queries the target connection’s engine version and loads only the exact
+matching artifact; an unsupported version fails without fallback.
+`cleanup` removes only generated artifacts, not the source tree needed
+by `R CMD build`. This package-bundled extension layout follows
+precedents such as
 [Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
-DuckDB C API headers are refreshed explicitly when the supported DuckDB
-version changes.
+Matching DuckDB C API headers are vendored explicitly for every declared
+version.
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.2
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
 ```
 
 The extension uses DuckDB’s [C extension

@@ -11,11 +11,7 @@ in-process execution.
 ## Usage
 
 ``` r
-rducks_enable(
-  con,
-  extension_path = rducks_extension_path(),
-  threads = c("unchanged", "single")
-)
+rducks_enable(con, extension_path = NULL, threads = c("unchanged", "single"))
 ```
 
 ## Arguments
@@ -26,8 +22,8 @@ rducks_enable(
 
 - extension_path:
 
-  Extension path. Defaults to
-  [`rducks_extension_path()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_extension_path.md).
+  Optional explicit extension path. `NULL` selects the bundled artifact
+  matching the exact engine version reported by `con`.
 
 - threads:
 
