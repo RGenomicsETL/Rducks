@@ -56,7 +56,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     }
 
     fn = duckdb_create_scalar_function();
-    return_logical_type = rducks_create_logical_type_for_desc(return_desc);
+    return_logical_type = rducks_create_logical_type_for_desc_runtime(runtime, return_desc);
     if (!fn || !return_logical_type) {
         if (!return_logical_type && rducks_type_desc_contains_scalar(return_desc, RDUCKS_TYPE_VARIANT)) {
             rducks_format_error_message(err, err_cap,
@@ -90,7 +90,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         duckdb_destroy_logical_type(&any_arg_type);
     } else {
         for (size_t i = 0; i < arity; i++) {
-            duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
+            duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc_runtime(runtime, arg_descs[i]);
             if (!arg_logical_type) {
                 if (rducks_type_desc_contains_scalar(arg_descs[i], RDUCKS_TYPE_VARIANT)) {
                     rducks_format_error_message(err, err_cap,

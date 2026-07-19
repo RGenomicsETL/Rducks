@@ -31,7 +31,9 @@ evaluated and how it is carried to the R function.
   into DuckDB. Maps to the internal `ipc_nng_pool` engine.
 
 Unsupported combinations fail. Rducks does not silently fall back from one
-transport to another.
+transport to another. Both plans support `VARIANT` only when the loaded DuckDB
+runtime passes Rducks' canonical logical-type and physical-vector-layout probe;
+an incompatible runtime rejects direct and `ipc` registrations.
 
 ```{r setup-connection}
 library(DBI)

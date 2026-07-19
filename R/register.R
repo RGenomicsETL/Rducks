@@ -134,7 +134,8 @@ rducks_assert_marshalling_supported <- function(spec) {
 #'   UDF. Otherwise use exported DuckDB-style type descriptors such as `INTEGER`,
 #'   `DOUBLE`, `GEOMETRY`, `VARIANT`, `INTEGER[]`, `INTEGER[3]`,
 #'   `STRUCT(a = INTEGER)`, or `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures
-#'   require a DuckDB runtime whose C API exposes VARIANT logical types.
+#'   require a DuckDB runtime that passes Rducks' canonical logical-type and
+#'   physical-vector-layout probe.
 #' @param returns Return type specification.
 #' @param mode Rducks evaluation mode for this DuckDB scalar UDF. `"scalar"`
 #'   calls the R function once per DuckDB row. `"vectorized"` calls the R

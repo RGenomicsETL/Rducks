@@ -106,7 +106,10 @@ static duckdb_type rducks_duckdb_type_id(rducks_type_id_t type) {
 static duckdb_logical_type rducks_create_logical_type_for_id(rducks_type_id_t type) {
     duckdb_type duckdb_type_id = rducks_duckdb_type_id(type);
     duckdb_logical_type out;
-    if (duckdb_type_id == DUCKDB_TYPE_INVALID) {
+    /* duckdb_create_logical_type(VARIANT) returns an id-only type without the
+     * physical child metadata required by DuckDB vectors. VARIANT must come
+     * from rducks_clone_runtime_variant_logical_type instead. */
+    if (duckdb_type_id == DUCKDB_TYPE_INVALID || type == RDUCKS_TYPE_VARIANT) {
         return NULL;
     }
     out = duckdb_create_logical_type(duckdb_type_id);
@@ -668,11 +671,78 @@ fail:
     return 0;
 }
 
-static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_t *desc) {
+/* VARIANT's current physical vector shape in DuckDB 1.5.x. The runtime probe
+ * validates this exact layout before exposing capability; these immutable
+ * descriptors then let the direct and wire adapters reuse the ordinary
+ * STRUCT/LIST/BLOB marshalling code without depending on DuckDB C++ symbols. */
+static rducks_type_desc_t rducks_variant_varchar_desc = {.kind = RDUCKS_KIND_SCALAR, .scalar = RDUCKS_TYPE_VARCHAR};
+static rducks_type_desc_t rducks_variant_u32_desc = {.kind = RDUCKS_KIND_SCALAR, .scalar = RDUCKS_TYPE_U32};
+static rducks_type_desc_t rducks_variant_u8_desc = {.kind = RDUCKS_KIND_SCALAR, .scalar = RDUCKS_TYPE_U8};
+static rducks_type_desc_t rducks_variant_blob_desc = {.kind = RDUCKS_KIND_SCALAR, .scalar = RDUCKS_TYPE_BLOB};
+static rducks_type_desc_t rducks_variant_keys_desc = {
+    .kind = RDUCKS_KIND_LIST, .child = &rducks_variant_varchar_desc
+};
+static char *rducks_variant_children_names[] = {"keys_index", "values_index"};
+static rducks_type_desc_t *rducks_variant_children_fields[] = {
+    &rducks_variant_u32_desc, &rducks_variant_u32_desc
+};
+static rducks_type_desc_t rducks_variant_children_struct_desc = {
+    .kind = RDUCKS_KIND_STRUCT, .field_count = 2,
+    .field_names = rducks_variant_children_names, .field_types = rducks_variant_children_fields
+};
+static rducks_type_desc_t rducks_variant_children_desc = {
+    .kind = RDUCKS_KIND_LIST, .child = &rducks_variant_children_struct_desc
+};
+static char *rducks_variant_values_names[] = {"type_id", "byte_offset"};
+static rducks_type_desc_t *rducks_variant_values_fields[] = {
+    &rducks_variant_u8_desc, &rducks_variant_u32_desc
+};
+static rducks_type_desc_t rducks_variant_values_struct_desc = {
+    .kind = RDUCKS_KIND_STRUCT, .field_count = 2,
+    .field_names = rducks_variant_values_names, .field_types = rducks_variant_values_fields
+};
+static rducks_type_desc_t rducks_variant_values_desc = {
+    .kind = RDUCKS_KIND_LIST, .child = &rducks_variant_values_struct_desc
+};
+static char *rducks_variant_storage_names[] = {"keys", "children", "values", "data"};
+static rducks_type_desc_t *rducks_variant_storage_fields[] = {
+    &rducks_variant_keys_desc, &rducks_variant_children_desc,
+    &rducks_variant_values_desc, &rducks_variant_blob_desc
+};
+static rducks_type_desc_t rducks_variant_storage_desc_value = {
+    .kind = RDUCKS_KIND_STRUCT, .field_count = 4,
+    .field_names = rducks_variant_storage_names, .field_types = rducks_variant_storage_fields
+};
+
+static const rducks_type_desc_t *rducks_variant_storage_desc(void) {
+    return &rducks_variant_storage_desc_value;
+}
+
+static duckdb_logical_type rducks_clone_runtime_variant_logical_type(rducks_runtime_entry_t *runtime) {
+    duckdb_logical_type wrapper = NULL;
+    duckdb_logical_type copy = NULL;
+    if (!runtime || !runtime->variant_logical_type) return NULL;
+    /* The C API has no logical-type clone operation. A temporary LIST copies
+     * the canonical child, and list_type_child_type returns an owned copy. */
+    wrapper = duckdb_create_list_type(runtime->variant_logical_type);
+    if (wrapper) copy = duckdb_list_type_child_type(wrapper);
+    if (wrapper) duckdb_destroy_logical_type(&wrapper);
+    if (!rducks_variant_logical_type_has_expected_layout(copy)) {
+        if (copy) duckdb_destroy_logical_type(&copy);
+        return NULL;
+    }
+    return copy;
+}
+
+static duckdb_logical_type rducks_create_logical_type_for_desc_runtime(rducks_runtime_entry_t *runtime,
+                                                                        rducks_type_desc_t *desc) {
     if (!desc) return NULL;
-    if (desc->kind == RDUCKS_KIND_SCALAR) return rducks_create_logical_type_for_id(desc->scalar);
+    if (desc->kind == RDUCKS_KIND_SCALAR) {
+        if (desc->scalar == RDUCKS_TYPE_VARIANT) return rducks_clone_runtime_variant_logical_type(runtime);
+        return rducks_create_logical_type_for_id(desc->scalar);
+    }
     if (desc->kind == RDUCKS_KIND_LIST) {
-        duckdb_logical_type child = rducks_create_logical_type_for_desc(desc->child);
+        duckdb_logical_type child = rducks_create_logical_type_for_desc_runtime(runtime, desc->child);
         duckdb_logical_type out;
         if (!child) return NULL;
         out = duckdb_create_list_type(child);
@@ -680,7 +750,7 @@ static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_
         return out;
     }
     if (desc->kind == RDUCKS_KIND_ARRAY) {
-        duckdb_logical_type child = rducks_create_logical_type_for_desc(desc->child);
+        duckdb_logical_type child = rducks_create_logical_type_for_desc_runtime(runtime, desc->child);
         duckdb_logical_type out;
         if (!child || desc->array_size == 0) {
             if (child) duckdb_destroy_logical_type(&child);
@@ -691,8 +761,8 @@ static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_
         return out;
     }
     if (desc->kind == RDUCKS_KIND_MAP) {
-        duckdb_logical_type key = rducks_create_logical_type_for_desc(desc->key);
-        duckdb_logical_type value = rducks_create_logical_type_for_desc(desc->value);
+        duckdb_logical_type key = rducks_create_logical_type_for_desc_runtime(runtime, desc->key);
+        duckdb_logical_type value = rducks_create_logical_type_for_desc_runtime(runtime, desc->value);
         duckdb_logical_type out = NULL;
         if (key && value) out = duckdb_create_map_type(key, value);
         if (key) duckdb_destroy_logical_type(&key);
@@ -706,7 +776,7 @@ static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_
         types = (duckdb_logical_type *)rducks_calloc_array(desc->field_count, sizeof(*types));
         if (!types) return NULL;
         for (size_t i = 0; i < desc->field_count; i++) {
-            types[i] = rducks_create_logical_type_for_desc(desc->field_types[i]);
+            types[i] = rducks_create_logical_type_for_desc_runtime(runtime, desc->field_types[i]);
             if (!types[i]) goto cleanup_struct;
         }
         out = duckdb_create_struct_type(types, (const char **)desc->field_names, (idx_t)desc->field_count);
@@ -722,9 +792,7 @@ cleanup_struct:
         duckdb_logical_type out;
         if (desc->field_count == 0) return NULL;
         out = duckdb_create_enum_type((const char **)desc->field_names, (idx_t)desc->field_count);
-        if (out) {
-            desc->enum_internal_type = duckdb_enum_internal_type(out);
-        }
+        if (out) desc->enum_internal_type = duckdb_enum_internal_type(out);
         return out;
     }
     if (desc->kind == RDUCKS_KIND_UNION) {
@@ -734,7 +802,7 @@ cleanup_struct:
         types = (duckdb_logical_type *)rducks_calloc_array(desc->field_count, sizeof(*types));
         if (!types) return NULL;
         for (size_t i = 0; i < desc->field_count; i++) {
-            types[i] = rducks_create_logical_type_for_desc(desc->field_types[i]);
+            types[i] = rducks_create_logical_type_for_desc_runtime(runtime, desc->field_types[i]);
             if (!types[i]) goto cleanup_union;
         }
         out = duckdb_create_union_type(types, (const char **)desc->field_names, (idx_t)desc->field_count);
@@ -744,6 +812,10 @@ cleanup_union:
         return out;
     }
     return NULL;
+}
+
+static duckdb_logical_type rducks_create_logical_type_for_desc(rducks_type_desc_t *desc) {
+    return rducks_create_logical_type_for_desc_runtime(NULL, desc);
 }
 
 typedef struct rducks_strbuf {

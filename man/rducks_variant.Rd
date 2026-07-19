@@ -17,6 +17,9 @@ rducks_variant(x)
 a named list with \code{keys}, \code{children}, \code{values}, and \code{data} fields. Most code
 receives this object from a VARIANT argument and returns it unchanged or after
 using DuckDB SQL functions such as \code{variant_extract()} before crossing into R.
+Validation covers field types, child/key/value indexes, logical type ids,
+byte offsets, nested child ranges, and fixed/variable payload bounds before
+storage can be written back into a DuckDB vector.
 }
 \examples{
 # VARIANT storage objects are normally produced by DuckDB at the R boundary.

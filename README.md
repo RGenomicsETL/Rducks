@@ -51,9 +51,11 @@ format](https://github.com/duckdb/duckdb-quack): DuckDB
 payloads, aligned with DuckDB’s native chunk model. The codec lives in
 `src/quack_core.c` with R glue in `src/quack_codec.c`. The worker path
 currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
-`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
-`LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at
-registration on the `ipc` plan until the native bridge covers it.
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, `VARIANT`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is enabled only
+when the loaded DuckDB runtime passes Rducks’ dynamic logical-type and
+vector-layout probe; otherwise direct and `ipc` registrations fail
+closed.
 
 ## DuckDB version compatibility
 
@@ -429,7 +431,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            170         251
+#> 1 8e+06            169         249
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -466,7 +468,7 @@ data.frame(
   peak_rss_mb = peak
 )
 #>   bam_gb reads_streamed rss_at_open_mb peak_rss_mb
-#> 1   15.1       11114496            255         272
+#> 1   15.1       10614784            255         297
 ```
 
 ## Execution plans
@@ -625,9 +627,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.350
-#> 2          ipc (2 workers) 65961344       1.935
-#> 3   ipc + mori (2 workers) 65961344       1.928
+#> 1 inproc (single R thread) 65961344       3.354
+#> 2          ipc (2 workers) 65961344       1.957
+#> 3   ipc + mori (2 workers) 65961344       1.932
 ```
 
 ## duckplyr integration

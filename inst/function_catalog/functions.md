@@ -27,7 +27,7 @@ Create an execution plan: the direct in-process plan ('inproc') or the worker-pr
 
 Notes:
 
-- The 'ipc' plan covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration.
+- The 'ipc' plan covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, runtime-probed VARIANT, and LIST/ARRAY/STRUCT of supported types; incompatible VARIANT layouts fail closed.
 
 ## `rducks_register_scalar_udf`
 

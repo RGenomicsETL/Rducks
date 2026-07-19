@@ -727,6 +727,16 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
             duckdb_scalar_function_bind_set_error(info, err_msg[0] ? err_msg : "failed to resolve dynamic Rducks argument types");
             return;
         }
+        if (!meta->runtime->variant_logical_type) {
+            for (size_t i = 0; i < state->arity; i++) {
+                if (rducks_type_desc_contains_scalar(state->args[i], RDUCKS_TYPE_VARIANT)) {
+                    rducks_r_scalar_bind_state_destroy(state);
+                    duckdb_scalar_function_bind_set_error(
+                        info, "DuckDB runtime does not expose the VARIANT vector layout required by Rducks");
+                    return;
+                }
+            }
+        }
     }
 
     duckdb_scalar_function_set_bind_data(info, state, rducks_r_scalar_bind_state_destroy);

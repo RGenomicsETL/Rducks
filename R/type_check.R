@@ -38,6 +38,7 @@ rducks_check_scalar_value <- function(token, x, size = NULL, what = "value") {
   }
   if (identical(token, "variant")) {
     rducks_check_value(rducks_variant_storage_type(), x, what = what)
+    rducks_validate_variant_storage(x, what = what)
     return(invisible(TRUE))
   }
   integer_ranges <- list(

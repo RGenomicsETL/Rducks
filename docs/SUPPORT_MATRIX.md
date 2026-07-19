@@ -44,9 +44,9 @@ temporary tables or views.
 The `direct` column covers the in-process `inproc` plan. The `wire` column
 covers the `ipc` worker-process Quack codec. `wire` is enabled, but the worker
 bridge currently covers fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
-`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
-`LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at
-registration on `transport = "ipc"` until the native bridge covers it.
+`INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, `VARIANT`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is available only when the
+loaded runtime passes the native logical-type and vector-layout probe.
 
 | Type family | Examples | `direct` | `wire` (`ipc`) | Notes |
 | --- | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ registration on `transport = "ipc"` until the native bridge covers it.
 | String/binary | `VARCHAR`, `BLOB` | yes | yes | Returned binary data is copied into DuckDB-owned output storage. |
 | Bit | `BIT` | yes | yes | `rducks_bits` (packed bits + length); transported as DuckDB's physical bit storage (padding-header byte + MSB-first bits). |
 | Geometry | `GEOMETRY` | yes | yes | `GEOMETRY` crosses the R boundary as its opaque physical `raw` bytes (WKB for a real geometry); it is physically a varlen blob and rides the wire as a BLOB column, reconstructed from its declared type. The bytes are transported verbatim, not parsed. |
-| Semi-structured | `VARIANT` | yes where DuckDB's C API exposes `VARIANT` logical types | rejected | Rducks exposes DuckDB's typed VARIANT storage struct as `rducks_variant`; construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Early DuckDB 1.5 builds (including 1.5.2) can parse VARIANT SQL but cannot register C API scalar UDFs with VARIANT signatures. |
+| Semi-structured | `VARIANT` | runtime-gated | runtime-gated | Rducks obtains a canonical logical type from DuckDB's SQL binder and enables the type only after a dynamic probe verifies the complete `STRUCT(keys, children, values, data)` vector layout. Direct and Quack paths expose that typed storage as `rducks_variant`; the wire path transports the same physical struct. R and native external-worker boundaries validate type ids, indexes, byte offsets, nested ranges, forward-only tree references, and payload bounds before writeback. Construct/extract semantic JSON-like values in SQL with DuckDB VARIANT functions. Incompatible or changed runtime layouts are rejected at registration. |
 | Temporal | `DATE`, `TIME`, `TIMESTAMP` | yes | yes | R-side shapes are defined by Rducks conversion helpers/value classes. |
 | Interval | `INTERVAL` | yes | yes | `rducks_interval` value class; transported as the 16-byte months/days/micros storage. |
 | Wide integers/UUID | `HUGEINT`, `UHUGEINT`, `UUID` | yes | yes | Uses Rducks value classes where base R has no exact scalar. |

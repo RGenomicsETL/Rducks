@@ -2,8 +2,9 @@ library(Rducks)
 
 # Native-path defenses against a malformed/buggy external ipc endpoint. Fake NNG
 # workers return results whose embedded indices are out of range (a union tag
-# past the member count, an enum code past the dictionary); the native writeback
-# must reject them rather than index a non-existent member / dictionary entry.
+# past the member count, an enum code past the dictionary, and a VARIANT byte
+# offset past its data blob); native writeback must reject them before DuckDB can
+# index a non-existent member/dictionary entry or dereference VARIANT metadata.
 # Gated (spawns mirai daemons + an NNG socket) like the other worker tests.
 if (!identical(tolower(Sys.getenv("RDUCKS_RUN_IPC_TESTS", "")), "true")) {
   exit_file("external-endpoint malformed test disabled (set RDUCKS_RUN_IPC_TESTS=true)")
@@ -105,3 +106,60 @@ run_external_malformed(
   expect_pattern = "enum result index is out of range",
   info = "native writeback rejects an out-of-range enum index from an external endpoint"
 )
+
+# VARIANT result with a byte offset beyond the row's data BLOB. Construct a
+# valid native array first, then corrupt its flattened physical metadata after R
+# validation and before Quack encoding to model a buggy external endpoint. Keep
+# this runtime-adaptive because an incompatible DuckDB layout must remain
+# fail-closed before registration.
+variant_supported <- local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  isTRUE(DBI::dbGetQuery(con, "SELECT rducks_variant_supported() AS ok")$ok[[1L]])
+})
+if (variant_supported) {
+  run_external_malformed(
+    make_result = function(n) {
+      value <- rducks_variant(list(
+        keys = character(), children = list(),
+        values = list(list(type_id = 5L, byte_offset = 0)),
+        data = as.raw(c(42, 0, 0, 0))
+      ))
+      array <- Rducks:::rducks_native_array_from_values(VARIANT, rep(list(value), n))
+      array$storage$fields$values$storage$child$storage$fields$byte_offset$storage$values[] <- 99
+      column <- Rducks:::rducks_quack_storage_from_array(array)
+      Rducks:::rducks_quack_encode_columns(list(VARIANT), list(column), n)
+    },
+    register = function(con) rducks_register_scalar_udf(
+      con, "v_ext", function(x) x, args = VARIANT, returns = VARIANT
+    ),
+    query = function(con) DBI::dbGetQuery(con, "SELECT v_ext(1::VARIANT) v FROM range(1) t(i)"),
+    expect_pattern = "VARIANT result contains invalid physical storage metadata",
+    info = "native writeback rejects an out-of-range VARIANT byte offset from an external endpoint"
+  )
+
+  run_external_malformed(
+    make_result = function(n) {
+      value <- rducks_variant(list(
+        keys = "a",
+        children = list(list(keys_index = 0, values_index = 1)),
+        values = list(
+          list(type_id = 29L, byte_offset = 0),
+          list(type_id = 5L, byte_offset = 2)
+        ),
+        data = as.raw(c(1, 0, 42, 0, 0, 0))
+      ))
+      array <- Rducks:::rducks_native_array_from_values(VARIANT, rep(list(value), n))
+      array$storage$fields$children$storage$child$storage$fields$values_index$storage$values[] <- 0
+      column <- Rducks:::rducks_quack_storage_from_array(array)
+      Rducks:::rducks_quack_encode_columns(list(VARIANT), list(column), n)
+    },
+    register = function(con) rducks_register_scalar_udf(
+      con, "v_cycle_ext", function(x) x, args = VARIANT, returns = VARIANT
+    ),
+    query = function(con) DBI::dbGetQuery(con, "SELECT v_cycle_ext({'a': 1}::VARIANT) v"),
+    expect_pattern = "VARIANT result contains invalid physical storage metadata",
+    info = "native writeback rejects cyclic VARIANT metadata from an external endpoint"
+  )
+}

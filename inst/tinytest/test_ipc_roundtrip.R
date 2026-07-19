@@ -28,6 +28,7 @@ local({
   # mixes a SQL NULL into the column. `IS DISTINCT FROM` checks both the value
   # roundtrip and NULL preservation in one predicate (NULL is not distinct from
   # NULL). Each case registers under threads=1 so the UDF is broadcast to workers.
+  variant_supported <- isTRUE(DBI::dbGetQuery(con, "SELECT rducks_variant_supported() AS ok")$ok[[1L]])
   cases <- list(
     list(name = "id_bool",   type = BOOLEAN,   expr = "(i % 2 = 0)"),
     list(name = "id_i8",     type = TINYINT,   expr = "((i % 120) - 60)::TINYINT"),
@@ -64,6 +65,22 @@ local({
     list(name = "id_bit",    type = BIT,
          expr = "(substr((mod(i, 255) + 1)::BIT::VARCHAR, 1, mod(i, 24) + 1))::BIT")
   )
+  if (variant_supported) {
+    cases <- c(cases, list(
+      list(
+        name = "id_variant", type = VARIANT,
+        expr = "({a: [i::INTEGER, NULL, (i + 1)::INTEGER], b: ('v' || i)}::VARIANT)"
+      ),
+      list(
+        name = "id_variant_primitive", type = VARIANT,
+        expr = paste0(
+          "(CASE mod(i, 5) WHEN 0 THEN TRUE::VARIANT ",
+          "WHEN 1 THEN i::BIGINT::VARIANT WHEN 2 THEN (i / 10.0)::DECIMAL(12,2)::VARIANT ",
+          "WHEN 3 THEN ('v' || i)::VARCHAR::VARIANT ELSE ('b' || i)::BLOB::VARIANT END)"
+        )
+      )
+    ))
+  }
   for (case in cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,
                                args = list(case$type), returns = case$type)
@@ -109,6 +126,26 @@ local({
     list(name = "n_mstruct", type = MAP(VARCHAR, STRUCT(a = INTEGER)), nullable = TRUE,
          expr = "MAP{('k' || i): {a: i::INTEGER}}")
   )
+  if (variant_supported) {
+    nested_cases <- c(nested_cases, list(
+      list(
+        name = "n_variant", type = STRUCT(id = INTEGER, value = VARIANT), nullable = TRUE,
+        expr = "{id: i::INTEGER, value: {a: [i::INTEGER, NULL], b: ('v' || i)}::VARIANT}"
+      ),
+      list(
+        name = "n_vlist", type = LIST(VARIANT), nullable = TRUE,
+        expr = "[i::VARIANT, {a: [i::INTEGER, NULL]}::VARIANT, NULL::VARIANT]"
+      ),
+      list(
+        name = "n_vmap", type = MAP(VARCHAR, VARIANT), nullable = TRUE,
+        expr = "MAP{'a': i::VARIANT, 'b': {x: ('v' || i)}::VARIANT}"
+      ),
+      list(
+        name = "n_vunion", type = UNION(a = VARIANT, b = INTEGER), nullable = TRUE,
+        expr = "union_value(a := {a: [i::INTEGER, NULL]}::VARIANT)"
+      )
+    ))
+  }
   for (case in nested_cases) {
     rducks_register_scalar_udf(con, case$name, function(x) x,
                                args = list(case$type), returns = case$type)
@@ -199,24 +236,23 @@ local({
     expect_equal(as.integer(mismatch), 0L, info = paste0("ipc roundtrip: ", case$name))
   }
 
-  # Gated types must be rejected at registration under the ipc plan, not fail
-  # later in a worker. The native bridge does not cover them yet. Reset to
-  # single-thread first: registration requires single-thread mode, so without
-  # this reset expect_error() could pass on the thread-state error instead of the
-  # wire-support rejection. The error-text assertion pins the real reason.
-  rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
-  rejected <- list(
-    list(name = "rej_variant",  type = VARIANT),
-    list(name = "rej_list_var", type = LIST(VARIANT)),
-    list(name = "rej_union_var", type = UNION(a = VARIANT))
-  )
-  for (case in rejected) {
-    expect_error(
-      rducks_register_scalar_udf(con, case$name, function(x) x,
-                                 args = list(case$type), returns = case$type),
-      pattern = "cannot use the Quack wire marshalling",
-      info = paste0("ipc registration must reject: ", case$name)
-    )
+  # An incompatible runtime must reject VARIANT at registration rather than
+  # launching a worker that will fail later. Capable runtimes exercised scalar
+  # and nested VARIANT above.
+  if (!variant_supported) {
+    rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+    for (case in list(
+      list(name = "rej_variant", type = VARIANT),
+      list(name = "rej_list_var", type = LIST(VARIANT)),
+      list(name = "rej_union_var", type = UNION(a = VARIANT))
+    )) {
+      expect_error(
+        rducks_register_scalar_udf(con, case$name, function(x) x,
+                                   args = list(case$type), returns = case$type),
+        pattern = "cannot use the Quack wire marshalling",
+        info = paste0("ipc registration must reject: ", case$name)
+      )
+    }
   }
 
   # Dynamic (omitted-args) UDFs are now supported on the wire: registration
@@ -226,4 +262,31 @@ local({
   expect_silent(
     rducks_register_scalar_udf(con, "accept_dynamic", function(...) 1L, returns = INTEGER)
   )
+  if (variant_supported) {
+    expect_silent(
+      rducks_register_scalar_udf(con, "variant_dynamic_ipc", function(x) x, returns = VARIANT)
+    )
+    dynamic_variant <- DBI::dbGetQuery(
+      con,
+      "SELECT variant_dynamic_ipc({a: [1, NULL, 3], b: 'x'}::VARIANT)::JSON::VARCHAR AS v"
+    )$v[[1L]]
+    expect_equal(dynamic_variant, '{"a":[1,null,3],"b":"x"}',
+                 info = "ipc dynamic bind resolves VARIANT")
+
+    expect_silent(
+      rducks_register_scalar_udf(
+        con, "variant_bad_ipc",
+        function(x) {
+          x$values[[1L]]$byte_offset <- 4294967295
+          x
+        },
+        args = VARIANT, returns = VARIANT
+      )
+    )
+    expect_error(
+      DBI::dbGetQuery(con, "SELECT variant_bad_ipc(1::VARIANT)"),
+      pattern = "byte_offset|payload exceeds",
+      info = "ipc rejects malformed VARIANT results before DuckDB writeback"
+    )
+  }
 })

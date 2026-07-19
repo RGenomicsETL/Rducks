@@ -206,6 +206,7 @@ static int rducks_rc_direct_sequence_child_supported(const rducks_type_desc_t *d
     case RDUCKS_TYPE_DATE:
     case RDUCKS_TYPE_TIME:
     case RDUCKS_TYPE_TIMESTAMP:
+    case RDUCKS_TYPE_VARIANT:
         return 1;
     default:
         return 0;
@@ -261,6 +262,7 @@ static int rducks_rc_direct_type_supported(const rducks_type_desc_t *desc) {
     case RDUCKS_TYPE_UUID:
     case RDUCKS_TYPE_INTERVAL:
     case RDUCKS_TYPE_BIT:
+    case RDUCKS_TYPE_VARIANT:
         return 1;
     default:
         return 0;
@@ -359,7 +361,7 @@ static int rducks_rc_direct_input_snapshot_chunk(rducks_r_scalar_meta_t *meta,
         return 0;
     }
     for (size_t col = 0; col < meta->arity; col++) {
-        types[col] = rducks_create_logical_type_for_desc(meta->args[col]);
+        types[col] = rducks_create_logical_type_for_desc_runtime(meta->runtime, meta->args[col]);
         if (!types[col]) {
             rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC input snapshot logical type");
             goto cleanup;
@@ -1199,6 +1201,15 @@ static int rducks_rc_any_duplicated(SEXP x, int *duplicated) {
     return 1;
 }
 
+static SEXP rducks_rc_make_variant_value(SEXP storage) {
+    SEXP cls;
+    PROTECT(storage);
+    cls = PROTECT(Rf_mkString("rducks_variant"));
+    Rf_setAttrib(storage, R_ClassSymbol, cls);
+    UNPROTECT(2);
+    return storage;
+}
+
 static SEXP rducks_rc_make_union_value(const char *tag, SEXP payload) {
     PROTECT(payload);
     SEXP out = PROTECT(Rf_allocVector(VECSXP, 2));
@@ -1458,6 +1469,13 @@ static SEXP rducks_rc_direct_arg(const rducks_type_desc_t *desc, const rducks_rc
         rducks_rc_direct_view_init(&member_view, member_vector);
         SEXP payload = PROTECT(rducks_rc_direct_arg(desc->field_types[tag], &member_view, row));
         out = PROTECT(rducks_rc_make_union_value(desc->field_names[tag], payload));
+        UNPROTECT(2);
+        return out;
+    }
+    if (desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        const rducks_type_desc_t *storage_desc = rducks_variant_storage_desc();
+        SEXP storage = PROTECT(rducks_rc_direct_arg(storage_desc, input, row));
+        out = PROTECT(rducks_rc_make_variant_value(storage));
         UNPROTECT(2);
         return out;
     }
@@ -2150,7 +2168,8 @@ static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SE
         if (TYPEOF(days) == INTSXP && XLENGTH(days) > 0 && INTEGER(days)[0] == NA_INTEGER) return 1;
         if (TYPEOF(micros) == STRSXP && XLENGTH(micros) > 0 && STRING_ELT(micros, 0) == NA_STRING) return 1;
     }
-    if (desc->scalar == RDUCKS_TYPE_BLOB || desc->scalar == RDUCKS_TYPE_GEOMETRY || desc->scalar == RDUCKS_TYPE_BIT) return 0;
+    if (desc->scalar == RDUCKS_TYPE_BLOB || desc->scalar == RDUCKS_TYPE_GEOMETRY ||
+        desc->scalar == RDUCKS_TYPE_BIT || desc->scalar == RDUCKS_TYPE_VARIANT) return 0;
     if (TYPEOF(value) == INTSXP && XLENGTH(value) > 0) return INTEGER(value)[0] == NA_INTEGER;
     if (TYPEOF(value) == LGLSXP && XLENGTH(value) > 0) return LOGICAL(value)[0] == NA_LOGICAL;
     if (TYPEOF(value) == REALSXP && XLENGTH(value) > 0) return ISNA(REAL(value)[0]);
@@ -2162,6 +2181,9 @@ static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
                                               idx_t row, char *err_msg, size_t err_cap) {
     if (!desc || !output) return 1;
     rducks_rc_output_set_null(output, row);
+    if (desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        return rducks_rc_write_null_direct_output(rducks_variant_storage_desc(), output, row, err_msg, err_cap);
+    }
     if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_MAP) {
         duckdb_list_entry *entries = (duckdb_list_entry *)output->data;
         if (entries) {
@@ -2234,6 +2256,13 @@ static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_
         return rducks_rc_write_null_direct_output(desc, output, row, err_msg, err_cap);
     }
     rducks_rc_output_set_valid_if_needed(output, row);
+    if (desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        if (TYPEOF(value) != VECSXP) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks VARIANT output must be an rducks_variant storage object");
+            return 0;
+        }
+        return rducks_rc_write_direct_output(rducks_variant_storage_desc(), output, row, value, err_msg, err_cap);
+    }
     if (desc->kind == RDUCKS_KIND_LIST) {
         R_xlen_t len = XLENGTH(value);
         idx_t offset = duckdb_list_vector_get_size(output->vector);
@@ -2920,7 +2949,7 @@ static duckdb_data_chunk rducks_rc_owned_result_chunk_new(rducks_r_scalar_meta_t
         rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk metadata missing");
         return NULL;
     }
-    type = rducks_create_logical_type_for_desc(meta->return_desc);
+    type = rducks_create_logical_type_for_desc_runtime(meta->runtime, meta->return_desc);
     if (!type) {
         rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks RC owned result logical type");
         return NULL;

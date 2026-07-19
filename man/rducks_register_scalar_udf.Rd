@@ -31,7 +31,8 @@ across scalar/vectorized direct evaluation. Use explicit \code{NULL} for a zero-
 UDF. Otherwise use exported DuckDB-style type descriptors such as \code{INTEGER},
 \code{DOUBLE}, \code{GEOMETRY}, \code{VARIANT}, \code{INTEGER[]}, \code{INTEGER[3]},
 \code{STRUCT(a = INTEGER)}, or \code{MAP(VARCHAR, INTEGER)}. \code{VARIANT} signatures
-require a DuckDB runtime whose C API exposes VARIANT logical types.}
+require a DuckDB runtime that passes Rducks' canonical logical-type and
+physical-vector-layout probe.}
 
 \item{returns}{Return type specification.}
 

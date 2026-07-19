@@ -643,12 +643,133 @@ rducks_variant_storage_type <- function() {
   )
 }
 
+rducks_variant_decode_varint <- function(data, offset, what) {
+  if (!is.raw(data) || length(offset) != 1L || is.na(offset) ||
+      offset < 0 || offset != trunc(offset) || offset >= length(data)) {
+    stop(what, " has an out-of-bounds VARIANT varint offset", call. = FALSE)
+  }
+  value <- 0
+  multiplier <- 1
+  for (i in seq_len(5L)) {
+    pos <- offset + i
+    if (pos > length(data)) stop(what, " contains a truncated VARIANT varint", call. = FALSE)
+    byte <- as.integer(data[[pos]])
+    if (i == 5L && bitwAnd(byte, 0xf0L) != 0L) {
+      stop(what, " contains an oversized VARIANT varint", call. = FALSE)
+    }
+    value <- value + bitwAnd(byte, 0x7fL) * multiplier
+    if (bitwAnd(byte, 0x80L) == 0L) return(list(value = value, next_offset = pos))
+    multiplier <- multiplier * 128
+  }
+  stop(what, " contains an oversized VARIANT varint", call. = FALSE)
+}
+
+rducks_validate_variant_storage <- function(x, what = "variant value") {
+  if (anyNA(x$keys)) stop(what, "$keys must not contain NULL", call. = FALSE)
+  if (!length(x$values)) stop(what, "$values must contain a root value", call. = FALSE)
+
+  child_key <- numeric(length(x$children))
+  child_value <- numeric(length(x$children))
+  for (i in seq_along(x$children)) {
+    child <- x$children[[i]]
+    if (length(child$keys_index) != 1L || length(child$values_index) != 1L) {
+      stop(what, "$children entries must contain scalar indexes", call. = FALSE)
+    }
+    child_key[[i]] <- as.numeric(child$keys_index)
+    child_value[[i]] <- as.numeric(child$values_index)
+  }
+  if (any(!is.na(child_key) & child_key >= length(x$keys))) {
+    stop(what, "$children contains an out-of-bounds keys_index", call. = FALSE)
+  }
+  if (anyNA(child_value) || any(child_value >= length(x$values))) {
+    stop(what, "$children contains an out-of-bounds values_index", call. = FALSE)
+  }
+
+  type_ids <- numeric(length(x$values))
+  offsets <- numeric(length(x$values))
+  for (i in seq_along(x$values)) {
+    value <- x$values[[i]]
+    if (length(value$type_id) != 1L || length(value$byte_offset) != 1L) {
+      stop(what, "$values entries must contain scalar metadata", call. = FALSE)
+    }
+    type_ids[[i]] <- as.numeric(value$type_id)
+    offsets[[i]] <- as.numeric(value$byte_offset)
+  }
+  if (anyNA(type_ids) || any(type_ids < 0 | type_ids > 33 | type_ids != trunc(type_ids))) {
+    stop(what, "$values contains an invalid type_id", call. = FALSE)
+  }
+  if (type_ids[[1L]] == 0) {
+    stop(what, "$values root must not use VARIANT_NULL; use SQL NULL for the row", call. = FALSE)
+  }
+  if (anyNA(offsets) || any(offsets < 0 | offsets > length(x$data) | offsets != trunc(offsets))) {
+    stop(what, "$values contains an out-of-bounds byte_offset", call. = FALSE)
+  }
+
+  # Minimum fixed payload widths for DuckDB VariantLogicalType ids 0..33.
+  fixed_sizes <- c(
+    0, 0, 0, 1, 2, 4, 8, 16, 1, 2, 4, 8, 16, 4, 8,
+    NA, NA, NA, 16, 4, 8, 8, 8, 8, 8, 8, 8, 8, 16,
+    NA, NA, NA, NA, NA
+  )
+  for (i in seq_along(type_ids)) {
+    type_id <- type_ids[[i]]
+    offset <- offsets[[i]]
+    fixed_size <- fixed_sizes[[type_id + 1L]]
+    if (!is.na(fixed_size) && offset + fixed_size > length(x$data)) {
+      stop(what, "$values[[", i, "]] fixed payload exceeds $data", call. = FALSE)
+    }
+    if (type_id == 15) {
+      width <- rducks_variant_decode_varint(x$data, offset, what)
+      scale <- rducks_variant_decode_varint(x$data, width$next_offset, what)
+      if (width$value < 1 || width$value > 38 || scale$value > width$value) {
+        stop(what, "$values[[", i, "]] has invalid DECIMAL metadata", call. = FALSE)
+      }
+      payload_size <- if (width$value <= 4) 2 else if (width$value <= 9) 4 else if (width$value <= 18) 8 else 16
+      if (scale$next_offset + payload_size > length(x$data)) {
+        stop(what, "$values[[", i, "]] DECIMAL payload exceeds $data", call. = FALSE)
+      }
+    } else if (type_id %in% c(16, 17, 31, 32, 33)) {
+      payload <- rducks_variant_decode_varint(x$data, offset, what)
+      if (payload$next_offset + payload$value > length(x$data)) {
+        stop(what, "$values[[", i, "]] variable payload exceeds $data", call. = FALSE)
+      }
+    } else if (type_id %in% c(29, 30)) {
+      nested <- rducks_variant_decode_varint(x$data, offset, what)
+      if (nested$value == 0) next
+      start <- rducks_variant_decode_varint(x$data, nested$next_offset, what)
+      first <- start$value + 1
+      last <- start$value + nested$value
+      if (last > length(x$children)) {
+        stop(what, "$values[[", i, "]] child range exceeds $children", call. = FALSE)
+      }
+      keys <- child_key[first:last]
+      nested_values <- child_value[first:last]
+      # DuckDB's canonical storage is a pre-order tree: every nested child
+      # references a later value. Enforcing forward edges rejects self/cyclic
+      # metadata before DuckDB's recursive VARIANT visitors can follow it.
+      if (any(nested_values <= i - 1L)) {
+        stop(what, "$values[[", i, "]] contains a cyclic or backward child reference", call. = FALSE)
+      }
+      if (type_id == 29 && anyNA(keys)) {
+        stop(what, "$values[[", i, "]] OBJECT children require keys", call. = FALSE)
+      }
+      if (type_id == 30 && any(!is.na(keys))) {
+        stop(what, "$values[[", i, "]] ARRAY children must not have keys", call. = FALSE)
+      }
+    }
+  }
+  invisible(TRUE)
+}
+
 #' Construct a DuckDB VARIANT storage object
 #'
 #' `VARIANT` values cross the Rducks boundary as DuckDB's typed storage object:
 #' a named list with `keys`, `children`, `values`, and `data` fields. Most code
 #' receives this object from a VARIANT argument and returns it unchanged or after
 #' using DuckDB SQL functions such as `variant_extract()` before crossing into R.
+#' Validation covers field types, child/key/value indexes, logical type ids,
+#' byte offsets, nested child ranges, and fixed/variable payload bounds before
+#' storage can be written back into a DuckDB vector.
 #'
 #' @param x Named list in DuckDB VARIANT storage shape.
 #' @return `x` with class `rducks_variant` after validation.
@@ -659,6 +780,7 @@ rducks_variant_storage_type <- function() {
 #' @export
 rducks_variant <- function(x) {
   rducks_check_value(rducks_variant_storage_type(), x, what = "variant value")
+  rducks_validate_variant_storage(x)
   structure(x, class = c("rducks_variant", setdiff(class(x), "rducks_variant")))
 }
 
@@ -800,24 +922,24 @@ rducks_direct_sequence_child_supported <- function(type) {
   if (kind %in% c("list", "array", "struct", "map", "union")) {
     return(rducks_direct_mapping_supported(type))
   }
-  identical(kind, "scalar") && rducks_type_token(type) %in% c(
+  if (!identical(kind, "scalar")) return(FALSE)
+  supported <- c(
     "bool", "i8", "u8", "i16", "u16", "i32", "u32",
     "f32", "f64", "varchar", "date", "time", "timestamp"
   )
+  if (rducks_variant_runtime_supported()) supported <- c(supported, "variant")
+  rducks_type_token(type) %in% supported
 }
 
 # Runtime capability cache. VARIANT support is conditional: the loaded DuckDB
-# build must expose a creatable VARIANT logical type in its C API, and the
-# extension must implement VARIANT materialization. The extension reports the
-# combined capability via the native rducks_variant_supported() surface; Rducks
-# caches it at rducks_enable(). The direct-scalar mapping gate
-# (rducks_direct_mapping_supported) and the aggregate gate
-# (rducks_assert_variant_materializable) consult it; the wire (ipc) path rejects
-# VARIANT unconditionally (rducks_wire_supported_scalar_types omits it), since
-# the wire codec has no VARIANT support either. A session links one DuckDB
-# build, so a single process-level flag is sufficient. The default (unset ->
-# FALSE) keeps VARIANT rejected when capability is unknown, so standalone gate
-# calls and runtimes without VARIANT (e.g. 1.5.2) stay safe.
+# build must let the extension obtain a canonical VARIANT logical type whose
+# complete physical STRUCT(keys, children, values, data) layout is accessible
+# through generic C APIs. The extension reports that dynamically probed
+# capability via rducks_variant_supported(), and Rducks caches it at
+# rducks_enable(). Direct, aggregate, and wire registration gates all consult
+# the same result. A session links one DuckDB build, so a single process-level
+# flag is sufficient. The default (unset -> FALSE) keeps VARIANT rejected when
+# capability is unknown or the runtime layout differs.
 rducks_runtime_caps <- new.env(parent = emptyenv())
 
 rducks_cache_variant_runtime_support <- function(con) {
@@ -844,16 +966,15 @@ rducks_type_contains_variant <- function(type) {
 }
 
 # Registration paths that do not run through the execution-plan type gates (e.g.
-# aggregates) must still reject VARIANT until the runtime reports VARIANT
-# materialization support, so VARIANT is refused consistently everywhere rather
-# than registering and then failing at execution on a VARIANT-capable runtime.
+# aggregates) must still reject VARIANT unless the loaded runtime passes the
+# native materialization probe, so VARIANT is refused consistently everywhere.
 rducks_assert_variant_materializable <- function(types, what) {
   if (rducks_variant_runtime_supported()) {
     return(invisible(NULL))
   }
   bad <- types[vapply(types, rducks_type_contains_variant, logical(1))]
   if (length(bad)) {
-    stop("DuckDB ", what, " VARIANT marshalling is not implemented for: ",
+    stop("DuckDB ", what, " VARIANT marshalling is unavailable on this runtime for: ",
          paste(unique(vapply(bad, rducks_type_duckdb_sql, character(1))), collapse = ", "),
          call. = FALSE)
   }

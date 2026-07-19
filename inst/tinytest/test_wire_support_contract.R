@@ -24,18 +24,18 @@ for (type in supported) {
   )
 }
 
-# Types the native worker bridge does not cover yet must report as unsupported
-# so registration under the ipc plan rejects them instead of failing in a worker.
-unsupported <- list(
-  VARIANT,
-  # A supported container with an unsupported (VARIANT) child is itself
-  # unsupported, recursively.
-  LIST(VARIANT), STRUCT(v = VARIANT), ARRAY(VARIANT, 2),
+# VARIANT and containers that contain it recursively follow the runtime probe.
+# The default before rducks_enable() is fail-closed; a capable loaded runtime
+# enables all of these signatures together.
+variant_supported <- Rducks:::rducks_variant_runtime_supported()
+variant_types <- list(
+  VARIANT, LIST(VARIANT), STRUCT(v = VARIANT), ARRAY(VARIANT, 2),
   MAP(INTEGER, VARIANT), UNION(a = VARIANT), LIST(STRUCT(v = VARIANT))
 )
-for (type in unsupported) {
-  expect_false(
+for (type in variant_types) {
+  expect_equal(
     Rducks:::rducks_wire_mapping_supported(type),
-    info = paste0("wire-unsupported: ", Rducks:::rducks_type_duckdb_sql(type))
+    variant_supported,
+    info = paste0("wire runtime-gated: ", Rducks:::rducks_type_duckdb_sql(type))
   )
 }

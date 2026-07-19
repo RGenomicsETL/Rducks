@@ -72,10 +72,12 @@ rducks_quack_enum_labels <- function(type) {
 
 rducks_quack_spec <- function(type) {
   kind <- rducks_quack_kind(type)
-  # VARIANT is not on the wire yet; reject up front so no half-built spec is
-  # constructed for it (registration already blocks it).
+  # VARIANT rides the wire as its validated physical
+  # STRUCT(keys, children, values, data). The declared VARIANT descriptor stays
+  # out-of-band in the worker registration metadata, analogous to GEOMETRY
+  # riding as BLOB and UNION riding as its physical STRUCT.
   if (kind == "variant") {
-    stop("Rducks quack bridge: VARIANT is not on the Rducks wire yet", call. = FALSE)
+    return(rducks_quack_spec(rducks_variant_storage_type()))
   }
   if (kind == "union") {
     # UNION rides the wire as DuckDB's physical STRUCT(tag UTINYINT, members...);
@@ -160,6 +162,7 @@ rducks_quack_storage_from_array <- function(array) {
     },
     array = list(child = rducks_quack_column_from_array(st$child)),
     struct = lapply(st$fields, rducks_quack_column_from_array),
+    variant = lapply(st$fields, rducks_quack_column_from_array),
     # UNION rides as STRUCT(tag UTINYINT, members...): child 0 is the 0-based tag
     # (native tags are 1-based; NULL union rows carry NA, marked null by the tag
     # column and the union-level validity), children 1..n are the member columns.
@@ -226,6 +229,15 @@ rducks_quack_array_from_storage <- function(type, column, rows) {
       fields <- Map(function(child_type, child_col) {
         rducks_quack_array_from_storage(child_type, child_col, as.integer(child_col$rows %||% rows))
       }, children, data)
+      list(fields = fields)
+    },
+    variant = {
+      storage_type <- rducks_variant_storage_type()
+      children <- rducks_type_children(storage_type)
+      fields <- Map(function(child_type, child_col) {
+        rducks_quack_array_from_storage(child_type, child_col, as.integer(child_col$rows %||% rows))
+      }, children, data)
+      names(fields) <- rducks_type_child_names(storage_type)
       list(fields = fields)
     },
     # UNION arrives as STRUCT(tag, members...): child 0 is the 0-based tag,

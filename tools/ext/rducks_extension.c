@@ -18,26 +18,12 @@
 #define RDUCKS_DUCKDB_TYPE_VARIANT_ID 41
 #define RDUCKS_DUCKDB_TYPE_VARIANT ((duckdb_type)RDUCKS_DUCKDB_TYPE_VARIANT_ID)
 
-/* End-to-end VARIANT support has two halves: (1) this extension implementing
- * VARIANT value materialization, and (2) the loaded DuckDB runtime C API
- * exposing a creatable VARIANT logical type. RDUCKS_VARIANT_MATERIALIZATION is
- * the compile-time half (probed together with the runtime half by
- * rducks_variant_supported); both must hold before Rducks accepts a VARIANT
- * scalar UDF, so on runtimes whose C API predates VARIANT (e.g. 1.5.2) VARIANT
- * stays rejected at registration regardless of this flag.
- *
- * The flag is 0 because the materialization half is not implementable with the
- * current C API: tested against duckdb 1.5.4-dev (which does create VARIANT
- * logical types and lets a VARIANT scalar UDF register), reading a VARIANT
- * argument vector fails with DuckDB's internal "optional pointer not set" --
- * duckdb_struct_vector_get_child does not work on a VARIANT vector, so the
- * storage-STRUCT routing used for UNION is not viable for VARIANT. Enabling it
- * needs DuckDB to expose a VARIANT vector accessor (or documented physical
- * layout) in the C extension API; until then the probe stays FALSE so VARIANT
- * is rejected at registration rather than registering and failing at execution. */
-#ifndef RDUCKS_VARIANT_MATERIALIZATION
-#define RDUCKS_VARIANT_MATERIALIZATION 0
-#endif
+/* VARIANT support is runtime-gated. duckdb_create_logical_type(41) creates an
+ * id-only type without DuckDB's physical child metadata, so Rducks obtains a
+ * canonical type from `SELECT NULL::VARIANT`, validates its complete
+ * STRUCT(keys, children, values, data) layout through generic C APIs, and only
+ * then enables direct and IPC marshalling. Older or layout-incompatible
+ * runtimes remain fail-closed. */
 
 #if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
 #error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
@@ -167,6 +153,11 @@ typedef struct rducks_runtime_entry {
     duckdb_connection connection;
     duckdb_connection query_stream_connection;
     int query_stream_connection_busy;
+    /* Canonical VARIANT type obtained from the runtime SQL binder. Unlike
+     * duckdb_create_logical_type(41), this carries DuckDB's required physical
+     * STRUCT children. A NULL handle means this runtime failed the dynamic
+     * layout probe and every VARIANT registration must remain rejected. */
+    duckdb_logical_type variant_logical_type;
     uint64_t runtime_id;
     uint64_t generation;
     int registration_surface_ready;
@@ -421,6 +412,154 @@ static int rducks_runtime_configure_connection(duckdb_connection connection, cha
     return 1;
 }
 
+static int rducks_variant_struct_child_matches(duckdb_logical_type type, idx_t index,
+                                                const char *name, duckdb_type expected_type) {
+    duckdb_logical_type child = NULL;
+    char *child_name = NULL;
+    int ok = 0;
+    if (!type || duckdb_struct_type_child_count(type) <= index) return 0;
+    child_name = duckdb_struct_type_child_name(type, index);
+    child = duckdb_struct_type_child_type(type, index);
+    ok = child_name && name && strcmp(child_name, name) == 0 && child &&
+         duckdb_get_type_id(child) == expected_type;
+    if (child_name) duckdb_free(child_name);
+    if (child) duckdb_destroy_logical_type(&child);
+    return ok;
+}
+
+static int rducks_variant_list_struct_matches(duckdb_logical_type list_type,
+                                               const char *first_name, duckdb_type first_type,
+                                               const char *second_name, duckdb_type second_type) {
+    duckdb_logical_type child = NULL;
+    int ok = 0;
+    if (!list_type || duckdb_get_type_id(list_type) != DUCKDB_TYPE_LIST) return 0;
+    child = duckdb_list_type_child_type(list_type);
+    if (!child) return 0;
+    ok = duckdb_get_type_id(child) == DUCKDB_TYPE_STRUCT &&
+         duckdb_struct_type_child_count(child) == 2 &&
+         rducks_variant_struct_child_matches(child, 0, first_name, first_type) &&
+         rducks_variant_struct_child_matches(child, 1, second_name, second_type);
+    duckdb_destroy_logical_type(&child);
+    return ok;
+}
+
+static int rducks_variant_logical_type_has_expected_layout(duckdb_logical_type type) {
+    duckdb_logical_type keys = NULL;
+    duckdb_logical_type children = NULL;
+    duckdb_logical_type values = NULL;
+    duckdb_logical_type keys_child = NULL;
+    int ok = 0;
+    if (!type || (int)duckdb_get_type_id(type) != RDUCKS_DUCKDB_TYPE_VARIANT_ID ||
+        duckdb_struct_type_child_count(type) != 4) {
+        return 0;
+    }
+    if (!rducks_variant_struct_child_matches(type, 0, "keys", DUCKDB_TYPE_LIST) ||
+        !rducks_variant_struct_child_matches(type, 1, "children", DUCKDB_TYPE_LIST) ||
+        !rducks_variant_struct_child_matches(type, 2, "values", DUCKDB_TYPE_LIST) ||
+        !rducks_variant_struct_child_matches(type, 3, "data", DUCKDB_TYPE_BLOB)) {
+        return 0;
+    }
+    keys = duckdb_struct_type_child_type(type, 0);
+    children = duckdb_struct_type_child_type(type, 1);
+    values = duckdb_struct_type_child_type(type, 2);
+    if (!keys || !children || !values) goto cleanup;
+    keys_child = duckdb_list_type_child_type(keys);
+    if (!keys_child || duckdb_get_type_id(keys_child) != DUCKDB_TYPE_VARCHAR) goto cleanup;
+    if (!rducks_variant_list_struct_matches(children, "keys_index", DUCKDB_TYPE_UINTEGER,
+                                             "values_index", DUCKDB_TYPE_UINTEGER)) goto cleanup;
+    if (!rducks_variant_list_struct_matches(values, "type_id", DUCKDB_TYPE_UTINYINT,
+                                             "byte_offset", DUCKDB_TYPE_UINTEGER)) goto cleanup;
+    ok = 1;
+cleanup:
+    if (keys_child) duckdb_destroy_logical_type(&keys_child);
+    if (keys) duckdb_destroy_logical_type(&keys);
+    if (children) duckdb_destroy_logical_type(&children);
+    if (values) duckdb_destroy_logical_type(&values);
+    return ok;
+}
+
+static int rducks_vector_has_type(duckdb_vector vector, duckdb_type expected_type) {
+    duckdb_logical_type type = NULL;
+    int ok = 0;
+    if (!vector) return 0;
+    type = duckdb_vector_get_column_type(vector);
+    ok = type && duckdb_get_type_id(type) == expected_type;
+    if (type) duckdb_destroy_logical_type(&type);
+    return ok;
+}
+
+static int rducks_variant_vector_has_expected_layout(duckdb_vector vector) {
+    duckdb_vector keys;
+    duckdb_vector children;
+    duckdb_vector values;
+    duckdb_vector data;
+    duckdb_vector keys_entry;
+    duckdb_vector children_entry;
+    duckdb_vector values_entry;
+    if (!vector) return 0;
+    keys = duckdb_struct_vector_get_child(vector, 0);
+    children = duckdb_struct_vector_get_child(vector, 1);
+    values = duckdb_struct_vector_get_child(vector, 2);
+    data = duckdb_struct_vector_get_child(vector, 3);
+    if (!rducks_vector_has_type(keys, DUCKDB_TYPE_LIST) ||
+        !rducks_vector_has_type(children, DUCKDB_TYPE_LIST) ||
+        !rducks_vector_has_type(values, DUCKDB_TYPE_LIST) ||
+        !rducks_vector_has_type(data, DUCKDB_TYPE_BLOB)) return 0;
+    keys_entry = duckdb_list_vector_get_child(keys);
+    children_entry = duckdb_list_vector_get_child(children);
+    values_entry = duckdb_list_vector_get_child(values);
+    if (!rducks_vector_has_type(keys_entry, DUCKDB_TYPE_VARCHAR) ||
+        !rducks_vector_has_type(children_entry, DUCKDB_TYPE_STRUCT) ||
+        !rducks_vector_has_type(values_entry, DUCKDB_TYPE_STRUCT)) return 0;
+    if (!rducks_vector_has_type(duckdb_struct_vector_get_child(children_entry, 0), DUCKDB_TYPE_UINTEGER) ||
+        !rducks_vector_has_type(duckdb_struct_vector_get_child(children_entry, 1), DUCKDB_TYPE_UINTEGER) ||
+        !rducks_vector_has_type(duckdb_struct_vector_get_child(values_entry, 0), DUCKDB_TYPE_UTINYINT) ||
+        !rducks_vector_has_type(duckdb_struct_vector_get_child(values_entry, 1), DUCKDB_TYPE_UINTEGER)) return 0;
+    return 1;
+}
+
+static duckdb_logical_type rducks_probe_variant_logical_type(duckdb_connection connection) {
+    duckdb_result result;
+    duckdb_logical_type type = NULL;
+    duckdb_data_chunk query_chunk = NULL;
+    duckdb_data_chunk owned_chunk = NULL;
+    duckdb_vector vector = NULL;
+    memset(&result, 0, sizeof(result));
+    /* Probe a populated query vector, not only a type-created empty vector: the
+     * former is the shape DuckDB passes to a real UDF callback and catches the
+     * historical failure where struct access worked on a synthetic type but not
+     * on an actual VARIANT argument vector. */
+    if (!connection || duckdb_query(connection, "SELECT {'rducks_probe': [1, NULL, 3]}::VARIANT", &result) != DuckDBSuccess) {
+        duckdb_destroy_result(&result);
+        return NULL;
+    }
+    /* result_get_chunk must not be mixed with legacy result column accessors;
+     * obtain the owned canonical logical type directly from its real vector. */
+    query_chunk = duckdb_result_get_chunk(result, 0);
+    if (!query_chunk || duckdb_data_chunk_get_size(query_chunk) != 1) goto fail;
+    vector = duckdb_data_chunk_get_vector(query_chunk, 0);
+    type = vector ? duckdb_vector_get_column_type(vector) : NULL;
+    if (!rducks_variant_logical_type_has_expected_layout(type) ||
+        !rducks_variant_vector_has_expected_layout(vector)) goto fail;
+
+    /* Also prove the canonical logical type can allocate the owned chunks used
+     * by queued direct snapshots/results and by UDF registration cloning. */
+    owned_chunk = duckdb_create_data_chunk(&type, 1);
+    if (!owned_chunk) goto fail;
+    vector = duckdb_data_chunk_get_vector(owned_chunk, 0);
+    if (!rducks_variant_vector_has_expected_layout(vector)) goto fail;
+    duckdb_destroy_data_chunk(&owned_chunk);
+    duckdb_destroy_data_chunk(&query_chunk);
+    duckdb_destroy_result(&result);
+    return type;
+fail:
+    if (owned_chunk) duckdb_destroy_data_chunk(&owned_chunk);
+    if (query_chunk) duckdb_destroy_data_chunk(&query_chunk);
+    duckdb_destroy_result(&result);
+    if (type) duckdb_destroy_logical_type(&type);
+    return NULL;
+}
+
 static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database database, duckdb_connection incoming_connection,
                                                             char *err, size_t err_cap) {
     rducks_runtime_entry_t *entry;
@@ -504,10 +643,15 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
         rducks_runtime_unlock();
         return NULL;
     }
+    /* Fail closed: only the SQL binder can currently construct a VARIANT
+     * logical type with its required ExtraTypeInfo. Keep the canonical type
+     * only if its complete physical layout is visible through generic C APIs. */
+    entry->variant_logical_type = rducks_probe_variant_logical_type(entry->connection);
     if (duckdb_connect(database, &entry->query_stream_connection) == DuckDBError || !entry->query_stream_connection) {
         g_runtime_connection_open_failed++;
         duckdb_disconnect(&entry->connection);
         g_runtime_connections_closed++;
+        if (entry->variant_logical_type) duckdb_destroy_logical_type(&entry->variant_logical_type);
         rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);
@@ -520,6 +664,7 @@ static rducks_runtime_entry_t *rducks_runtime_get_or_create(duckdb_database data
         duckdb_disconnect(&entry->query_stream_connection);
         duckdb_disconnect(&entry->connection);
         g_runtime_connections_closed += 2;
+        if (entry->variant_logical_type) duckdb_destroy_logical_type(&entry->variant_logical_type);
         rducks_runtime_queue_destroy_entry(entry);
         memset(entry, 0, sizeof(*entry));
         duckdb_free(entry);

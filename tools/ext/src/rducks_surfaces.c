@@ -223,32 +223,22 @@ static bool rducks_register_execution_backend_surface(duckdb_connection con, rdu
                                                       rducks_set_execution_backend_scalar);
 }
 
-/* TRUE only when Rducks can carry VARIANT end-to-end on the loaded runtime: the
- * extension implements VARIANT materialization (RDUCKS_VARIANT_MATERIALIZATION)
- * and the runtime C API can create a VARIANT logical type. On a runtime whose C
- * API predates VARIANT, duckdb_create_logical_type returns NULL and this is
- * FALSE, so Rducks keeps rejecting VARIANT at registration (no
- * register-then-fail-at-execution). The R side caches this at rducks_enable()
- * and gates VARIANT type support on it. */
-static bool rducks_runtime_variant_supported(void) {
-#if RDUCKS_VARIANT_MATERIALIZATION
-    duckdb_logical_type t = duckdb_create_logical_type(RDUCKS_DUCKDB_TYPE_VARIANT);
-    bool ok;
-    if (!t) return false;
-    ok = ((int)duckdb_get_type_id(t) == RDUCKS_DUCKDB_TYPE_VARIANT_ID);
-    duckdb_destroy_logical_type(&t);
-    return ok;
-#else
-    return false;
-#endif
+/* TRUE only after the runtime SQL binder produced a canonical VARIANT type and
+ * the dynamic probe verified every physical child through generic C APIs. This
+ * is stronger than checking type id 41: duckdb_create_logical_type(41) lacks
+ * the ExtraTypeInfo needed to allocate usable VARIANT vectors. */
+static bool rducks_runtime_variant_supported(rducks_runtime_entry_t *runtime) {
+    /* The handle is stored only after the complete logical-type and real-vector
+     * probe succeeds, so this is the cached end-to-end capability result. */
+    return runtime && runtime->variant_logical_type;
 }
 
 static void rducks_variant_supported_scalar(duckdb_function_info info, duckdb_data_chunk input,
                                             duckdb_vector output) {
-    (void)info;
+    rducks_runtime_entry_t *runtime = (rducks_runtime_entry_t *)duckdb_scalar_function_get_extra_info(info);
     idx_t n = duckdb_data_chunk_get_size(input);
     bool *out = (bool *)duckdb_vector_get_data(output);
-    bool supported = rducks_runtime_variant_supported();
+    bool supported = rducks_runtime_variant_supported(runtime);
     for (idx_t i = 0; i < n; i++) out[i] = supported;
 }
 

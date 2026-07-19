@@ -916,7 +916,7 @@ static bool rducks_register_r_aggregate(rducks_runtime_entry_t *runtime, const c
     }
 
     fn = duckdb_create_aggregate_function();
-    return_logical_type = rducks_create_logical_type_for_desc(return_desc);
+    return_logical_type = rducks_create_logical_type_for_desc_runtime(runtime, return_desc);
     if (!fn || !return_logical_type) {
         rducks_format_error_message(err, err_cap, "failed to allocate DuckDB aggregate function for Rducks UDF");
         if (fn) duckdb_destroy_aggregate_function(&fn);
@@ -929,7 +929,7 @@ static bool rducks_register_r_aggregate(rducks_runtime_entry_t *runtime, const c
 
     duckdb_aggregate_function_set_name(fn, name);
     for (size_t i = 0; i < arity; i++) {
-        duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc(arg_descs[i]);
+        duckdb_logical_type arg_logical_type = rducks_create_logical_type_for_desc_runtime(runtime, arg_descs[i]);
         if (!arg_logical_type) {
             rducks_format_error_message(err, err_cap, "failed to allocate DuckDB logical type for Rducks aggregate argument %zu", i + 1);
             duckdb_destroy_aggregate_function(&fn);

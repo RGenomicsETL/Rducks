@@ -164,9 +164,10 @@ rducks_validate_execution_plan_values <- function(marshalling, concurrency) {
 #' extension encodes each input chunk to wire bytes, the worker decodes them,
 #' runs the R function, and returns wire-encoded results that the extension
 #' writes back to DuckDB. Worker-process types currently cover fixed-width
-#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`, `MAP`, `UNION`, and
-#' `LIST`/`ARRAY`/`STRUCT` of supported types; `VARIANT` is rejected at registration until the
-#' native bridge covers it. It maps to the internal `"ipc_nng_pool"` engine.
+#' scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`, `BIT`, `GEOMETRY`,
+#' `MAP`, `UNION`, `VARIANT`, and `LIST`/`ARRAY`/`STRUCT` of supported types.
+#' `VARIANT` is runtime-probed and fail-closed. It maps to the internal
+#' `"ipc_nng_pool"` engine.
 #'
 #' @param transport Placement/transport. `"inproc"` evaluates in the current R
 #'   process with the in-process queued backend. `"ipc"` evaluates in persistent
@@ -593,14 +594,16 @@ rducks_assert_execution_plan_implemented <- function(plan) {
 # and decodes end-to-end, including BIT (transported as DuckDB's physical bit
 # storage; DECIMAL and ENUM are handled separately below, and LIST/ARRAY/STRUCT
 # recurse on their children; GEOMETRY rides as a BLOB column; MAP rides as
-# LIST(STRUCT(key, value)); UNION rides as the physical STRUCT(tag, members)).
-# VARIANT is not yet wired through the native bridge (and is unsupported on the
-# direct path of this DuckDB build), so it is rejected at registration
-# (strict-plan rule: no register-then-fail-at-execution).
+# LIST(STRUCT(key, value)); UNION rides as the physical STRUCT(tag, members));
+# VARIANT rides as STRUCT(keys, children, values, data) only after the loaded
+# runtime passes the native physical-layout probe. The default remains
+# fail-closed (strict-plan rule: no register-then-fail-at-execution).
 rducks_wire_supported_scalar_types <- function() {
-  c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
+  out <- c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
     "varchar", "blob", "bit", "geometry", "date", "time", "timestamp", "hugeint",
     "uhugeint", "uuid", "interval")
+  if (rducks_variant_runtime_supported()) out <- c(out, "variant")
+  out
 }
 
 rducks_wire_unsupported_types <- function(type) {

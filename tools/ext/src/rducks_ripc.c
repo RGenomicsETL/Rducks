@@ -375,13 +375,16 @@ static int rducks_ripc_parse_response(const uint8_t *response, size_t response_s
  * and enum storage, varchar/blob/bit, GEOMETRY (as opaque physical bytes via a
  * BLOB column), and the LIST/ARRAY/STRUCT/MAP/UNION containers (recursively, over
  * supported leaf types; MAP as LIST(STRUCT(key,value)), UNION as the physical
- * STRUCT(tag,members)). VARIANT is not yet supported on the wire path and fails
- * cleanly via build_type. The Quack IR is a DuckDB DataChunk subset, so the
+ * STRUCT(tag,members), and VARIANT as its validated physical
+ * STRUCT(keys,children,values,data)). The Quack IR is a DuckDB DataChunk subset, so the
  * fixed-width and validity copies are direct. */
 
 static rdx_qk_type *rducks_quack_build_type(const rducks_type_desc_t *desc) {
     uint32_t id = 0U;
     if (!desc) return NULL;
+    if (desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        desc = rducks_variant_storage_desc();
+    }
     if (desc->kind == RDUCKS_KIND_DECIMAL) {
         rdx_qk_type *t = rdx_qk_type_new(RDX_QK_LTYPE_DECIMAL);
         if (t) {
@@ -528,7 +531,11 @@ static int rducks_quack_is_varlen(const rducks_type_desc_t *desc) {
 
 static rdx_qk_vector *rducks_quack_vector_from_duckdb(const rdx_qk_type *t, const rducks_type_desc_t *desc,
                                                       duckdb_vector vec, idx_t rows, char *err, size_t cap) {
-    rdx_qk_vector *v = rdx_qk_vector_new(t, (uint64_t)rows);
+    rdx_qk_vector *v;
+    if (desc && desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        desc = rducks_variant_storage_desc();
+    }
+    v = rdx_qk_vector_new(t, (uint64_t)rows);
     uint64_t *validity;
     if (!v) {
         rducks_format_error_message(err, cap, "out of memory allocating Rducks wire vector");
@@ -839,8 +846,219 @@ static void rducks_quack_copy_validity_out(const rdx_qk_vector *v, duckdb_vector
     }
 }
 
+static uint32_t rducks_quack_u32_at(const rdx_qk_vector *vector, uint64_t row) {
+    uint32_t value = 0;
+    memcpy(&value, vector->data + row * sizeof(value), sizeof(value));
+    return value;
+}
+
+static int rducks_variant_read_u32_varint(const uint8_t *data, size_t size, size_t *offset, uint32_t *out) {
+    uint32_t value = 0;
+    unsigned shift = 0;
+    size_t pos;
+    if (!data || !offset || !out || *offset >= size) return 0;
+    pos = *offset;
+    for (unsigned i = 0; i < 5U; i++) {
+        uint8_t byte;
+        if (pos >= size) return 0;
+        byte = data[pos++];
+        if (i == 4U && (byte & 0xf0U) != 0U) return 0;
+        value |= (uint32_t)(byte & 0x7fU) << shift;
+        if ((byte & 0x80U) == 0U) {
+            *offset = pos;
+            *out = value;
+            return 1;
+        }
+        shift += 7U;
+    }
+    return 0;
+}
+
+static int rducks_quack_range_valid(uint64_t offset, uint64_t length, uint64_t total) {
+    return offset <= total && length <= total - offset;
+}
+
+static int rducks_quack_validate_variant_vector(const rdx_qk_vector *variant, char *err, size_t cap) {
+    static const uint8_t fixed_sizes[34] = {
+        0, 0, 0, 1, 2, 4, 8, 16, 1, 2, 4, 8, 16, 4, 8,
+        0, 0, 0, 16, 4, 8, 8, 8, 8, 8, 8, 8, 8, 16,
+        0, 0, 0, 0, 0
+    };
+    static const uint8_t has_fixed_size[34] = {
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0
+    };
+    const rdx_qk_vector *keys;
+    const rdx_qk_vector *children;
+    const rdx_qk_vector *values;
+    const rdx_qk_vector *blob;
+    const rdx_qk_vector *key_entries;
+    const rdx_qk_vector *child_entries;
+    const rdx_qk_vector *value_entries;
+    const rdx_qk_vector *key_index;
+    const rdx_qk_vector *value_index;
+    const rdx_qk_vector *type_id;
+    const rdx_qk_vector *byte_offset;
+    uint64_t row;
+    if (!variant || variant->nchildren != 4U || !variant->children) goto malformed;
+    keys = variant->children[0];
+    children = variant->children[1];
+    values = variant->children[2];
+    blob = variant->children[3];
+    if (!keys || !children || !values || !blob ||
+        keys->nchildren != 1U || children->nchildren != 1U || values->nchildren != 1U ||
+        !keys->children || !children->children || !values->children) goto malformed;
+    key_entries = keys->children[0];
+    child_entries = children->children[0];
+    value_entries = values->children[0];
+    if (!key_entries || !child_entries || !value_entries ||
+        child_entries->nchildren != 2U || value_entries->nchildren != 2U ||
+        !child_entries->children || !value_entries->children) goto malformed;
+    key_index = child_entries->children[0];
+    value_index = child_entries->children[1];
+    type_id = value_entries->children[0];
+    byte_offset = value_entries->children[1];
+    if (!key_index || !value_index || !type_id || !byte_offset ||
+        key_index->rows != child_entries->rows || value_index->rows != child_entries->rows ||
+        type_id->rows != value_entries->rows || byte_offset->rows != value_entries->rows ||
+        (key_index->rows && !key_index->data) || (value_index->rows && !value_index->data) ||
+        (type_id->rows && !type_id->data) || (byte_offset->rows && !byte_offset->data) ||
+        !keys->list_offsets || !keys->list_lengths ||
+        !children->list_offsets || !children->list_lengths ||
+        !values->list_offsets || !values->list_lengths ||
+        !blob->str_offsets || (blob->str_pool_size && !blob->str_pool)) goto malformed;
+
+    for (row = 0; row < variant->rows; row++) {
+        uint64_t keys_start, keys_count, children_start, children_count, values_start, values_count;
+        uint64_t data_start, data_end, j;
+        const uint8_t *data;
+        size_t data_size;
+        if (!rdx_qk_vector_row_is_valid(variant, row)) continue;
+        if (!rdx_qk_vector_row_is_valid(keys, row) ||
+            !rdx_qk_vector_row_is_valid(children, row) ||
+            !rdx_qk_vector_row_is_valid(values, row) ||
+            !rdx_qk_vector_row_is_valid(blob, row)) goto invalid;
+        keys_start = keys->list_offsets[row];
+        keys_count = keys->list_lengths[row];
+        children_start = children->list_offsets[row];
+        children_count = children->list_lengths[row];
+        values_start = values->list_offsets[row];
+        values_count = values->list_lengths[row];
+        if (!rducks_quack_range_valid(keys_start, keys_count, key_entries->rows) ||
+            !rducks_quack_range_valid(children_start, children_count, child_entries->rows) ||
+            !rducks_quack_range_valid(values_start, values_count, value_entries->rows) ||
+            values_count == 0U) goto invalid;
+        data_start = blob->str_offsets[row];
+        data_end = blob->str_offsets[row + 1U];
+        if (data_end < data_start || data_end > blob->str_pool_size ||
+            data_end - data_start > SIZE_MAX) goto invalid;
+        data = blob->str_pool ? blob->str_pool + (size_t)data_start : NULL;
+        data_size = (size_t)(data_end - data_start);
+        for (j = 0; j < keys_count; j++) {
+            if (!rdx_qk_vector_row_is_valid(key_entries, keys_start + j)) goto invalid;
+        }
+        for (j = 0; j < children_count; j++) {
+            uint64_t index = children_start + j;
+            uint32_t child_value;
+            if (!rdx_qk_vector_row_is_valid(child_entries, index) ||
+                !rdx_qk_vector_row_is_valid(value_index, index)) goto invalid;
+            if (rdx_qk_vector_row_is_valid(key_index, index) &&
+                rducks_quack_u32_at(key_index, index) >= keys_count) goto invalid;
+            child_value = rducks_quack_u32_at(value_index, index);
+            if (child_value >= values_count) goto invalid;
+        }
+        for (j = 0; j < values_count; j++) {
+            uint64_t index = values_start + j;
+            uint8_t id;
+            uint32_t offset;
+            size_t pos;
+            if (!rdx_qk_vector_row_is_valid(value_entries, index) ||
+                !rdx_qk_vector_row_is_valid(type_id, index) ||
+                !rdx_qk_vector_row_is_valid(byte_offset, index)) goto invalid;
+            id = type_id->data[index];
+            offset = rducks_quack_u32_at(byte_offset, index);
+            if (id > 33U || (j == 0U && id == 0U) || (uint64_t)offset > data_size) goto invalid;
+            if (has_fixed_size[id] && fixed_sizes[id] > data_size - (size_t)offset) goto invalid;
+            pos = (size_t)offset;
+            if (id == 15U) {
+                uint32_t width, scale;
+                size_t payload_size;
+                if (!rducks_variant_read_u32_varint(data, data_size, &pos, &width) ||
+                    !rducks_variant_read_u32_varint(data, data_size, &pos, &scale) ||
+                    width < 1U || width > 38U || scale > width) goto invalid;
+                payload_size = width <= 4U ? 2U : width <= 9U ? 4U : width <= 18U ? 8U : 16U;
+                if (payload_size > data_size - pos) goto invalid;
+            } else if (id == 16U || id == 17U || id == 31U || id == 32U || id == 33U) {
+                uint32_t payload_size;
+                if (!rducks_variant_read_u32_varint(data, data_size, &pos, &payload_size) ||
+                    (uint64_t)payload_size > data_size - pos) goto invalid;
+            } else if (id == 29U || id == 30U) {
+                uint32_t count, start;
+                uint64_t child;
+                if (!rducks_variant_read_u32_varint(data, data_size, &pos, &count)) goto invalid;
+                if (count == 0U) continue;
+                if (!rducks_variant_read_u32_varint(data, data_size, &pos, &start) ||
+                    !rducks_quack_range_valid(start, count, children_count)) goto invalid;
+                for (child = start; child < (uint64_t)start + count; child++) {
+                    uint64_t child_row = children_start + child;
+                    uint32_t child_value = rducks_quack_u32_at(value_index, child_row);
+                    int has_key = rdx_qk_vector_row_is_valid(key_index, child_row);
+                    if ((id == 29U && !has_key) || (id == 30U && has_key) || child_value <= j) goto invalid;
+                }
+            }
+        }
+    }
+    return 1;
+malformed:
+    rducks_format_error_message(err, cap, "RIPC VARIANT result is missing physical storage fields");
+    return 0;
+invalid:
+    rducks_format_error_message(err, cap, "RIPC VARIANT result contains invalid physical storage metadata");
+    return 0;
+}
+
+static int rducks_quack_validate_variant_results(const rdx_qk_vector *vector,
+                                                  const rducks_type_desc_t *desc,
+                                                  char *err, size_t cap) {
+    size_t i;
+    if (!vector || !desc) return 0;
+    if (desc->kind == RDUCKS_KIND_SCALAR) {
+        return desc->scalar != RDUCKS_TYPE_VARIANT ||
+               rducks_quack_validate_variant_vector(vector, err, cap);
+    }
+    if (desc->kind == RDUCKS_KIND_LIST || desc->kind == RDUCKS_KIND_ARRAY) {
+        return vector->nchildren == 1U && vector->children && vector->children[0] &&
+               rducks_quack_validate_variant_results(vector->children[0], desc->child, err, cap);
+    }
+    if (desc->kind == RDUCKS_KIND_STRUCT) {
+        if (vector->nchildren != desc->field_count || !vector->children) return 0;
+        for (i = 0; i < desc->field_count; i++) {
+            if (!rducks_quack_validate_variant_results(vector->children[i], desc->field_types[i], err, cap)) return 0;
+        }
+        return 1;
+    }
+    if (desc->kind == RDUCKS_KIND_MAP) {
+        const rdx_qk_vector *entry;
+        if (vector->nchildren != 1U || !vector->children || !(entry = vector->children[0]) ||
+            entry->nchildren != 2U || !entry->children) return 0;
+        return rducks_quack_validate_variant_results(entry->children[0], desc->key, err, cap) &&
+               rducks_quack_validate_variant_results(entry->children[1], desc->value, err, cap);
+    }
+    if (desc->kind == RDUCKS_KIND_UNION) {
+        if (vector->nchildren != desc->field_count + 1U || !vector->children) return 0;
+        for (i = 0; i < desc->field_count; i++) {
+            if (!rducks_quack_validate_variant_results(vector->children[i + 1U], desc->field_types[i], err, cap)) return 0;
+        }
+    }
+    return 1;
+}
+
 static int rducks_quack_write_vector_to_duckdb(const rdx_qk_vector *v, const rducks_type_desc_t *desc,
                                                duckdb_vector out, idx_t n, char *err, size_t cap) {
+    if (desc && desc->kind == RDUCKS_KIND_SCALAR && desc->scalar == RDUCKS_TYPE_VARIANT) {
+        desc = rducks_variant_storage_desc();
+    }
     if (desc->kind == RDUCKS_KIND_STRUCT) {
         size_t f;
         if (v->nchildren != (uint32_t)desc->field_count) {
@@ -1060,6 +1278,10 @@ static int rducks_quack_decode_result_to_vector(rducks_runtime_entry_t *runtime,
             rducks_format_error_message(err, cap, "RIPC worker returned a wire type that does not match the declared return type");
             goto done;
         }
+    }
+    if (!rducks_quack_validate_variant_results(chunk->columns[0], return_desc, err, cap)) {
+        if (!err[0]) rducks_format_error_message(err, cap, "RIPC worker returned malformed nested result storage");
+        goto done;
     }
     if (!rducks_quack_write_vector_to_duckdb(chunk->columns[0], return_desc, output, n, err, cap)) goto done;
     ok = 1;

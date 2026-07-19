@@ -164,7 +164,33 @@ rducks_native_scalar_to_storage <- function(type, values) {
   values
 }
 
+rducks_native_array_from_variant <- function(type, values) {
+  if (inherits(values, "rducks_variant")) values <- list(values)
+  if (!is.list(values)) stop("VARIANT values must be a list of rducks_variant storage objects", call. = FALSE)
+  values <- lapply(values, function(value) {
+    if (is.null(value)) return(NULL)
+    if (inherits(value, "rducks_variant")) value else rducks_variant(value)
+  })
+  storage_type <- rducks_variant_storage_type()
+  field_types <- rducks_type_children(storage_type)
+  field_names <- rducks_type_child_names(storage_type)
+  field_values <- lapply(field_names, function(name) {
+    lapply(values, function(value) if (is.null(value)) NULL else value[[name]])
+  })
+  fields <- Map(rducks_native_array_from_values, field_types, field_values)
+  names(fields) <- field_names
+  rducks_native_array(
+    type,
+    length(values),
+    !vapply(values, is.null, logical(1)),
+    list(kind = "variant", fields = fields)
+  )
+}
+
 rducks_native_array_from_scalar <- function(type, values) {
+  if (rducks_type_inherits(type, "rducks_variant_type")) {
+    return(rducks_native_array_from_variant(type, values))
+  }
   if (rducks_type_inherits(type, "rducks_interval_type") && is.list(values) && !inherits(values, "rducks_interval")) {
     # Row-wise scalar evaluation yields a list of per-row rducks_interval objects;
     # combine into a single rducks_interval vector (NULL -> NA).
@@ -395,6 +421,22 @@ rducks_native_array_to_values <- function(array) {
   }
   if (rducks_type_inherits(type, c("rducks_blob_type", "rducks_geometry_type", "rducks_bit_type"))) {
     return(rducks_native_scalar_normalize(type, storage$payloads))
+  }
+  if (rducks_type_inherits(type, "rducks_variant_type")) {
+    storage_type <- rducks_variant_storage_type()
+    field_types <- rducks_type_children(storage_type)
+    field_names <- rducks_type_child_names(storage_type)
+    field_values <- lapply(storage$fields, rducks_native_array_to_values)
+    out <- vector("list", n)
+    for (i in seq_len(n)) {
+      if (!isTRUE(array$valid[[i]])) next
+      row <- stats::setNames(vector("list", length(field_names)), field_names)
+      for (j in seq_along(field_names)) {
+        row[j] <- list(rducks_native_sequence_value_at(field_types[[j]], field_values[[j]], i))
+      }
+      out[[i]] <- rducks_variant(row)
+    }
+    return(out)
   }
   if (rducks_type_inherits(type, "rducks_scalar_type")) {
     return(rducks_native_scalar_normalize(type, storage$values))
