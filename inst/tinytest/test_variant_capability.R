@@ -11,7 +11,11 @@ local({
   if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
     exit_file("duckdb/DBI not available")
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(
+    allow_unsigned_extensions = "true",
+    autoload_known_extensions = "false",
+    autoinstall_known_extensions = "false"
+  )))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
 
@@ -29,16 +33,15 @@ local({
 
   if (isTRUE(supported)) {
     source <- "{'a': [1, NULL, 3], 'b': 'x'}::VARIANT"
-    expected_json <- '{"a":[1,null,3],"b":"x"}'
 
     expect_silent(
       rducks_register_scalar_udf(con, "r_variant_id", function(x) x, args = VARIANT, returns = VARIANT)
     )
     scalar <- DBI::dbGetQuery(
       con,
-      sprintf("SELECT r_variant_id(%s)::JSON::VARCHAR AS v, r_variant_id(NULL::VARIANT) IS NULL AS n", source)
+      sprintf("SELECT r_variant_id(%s) IS NOT DISTINCT FROM %s AS v, r_variant_id(NULL::VARIANT) IS NULL AS n", source, source)
     )
-    expect_equal(scalar$v[[1L]], expected_json, info = "direct scalar VARIANT preserves nested values")
+    expect_true(scalar$v[[1L]], info = "direct scalar VARIANT preserves nested values")
     expect_true(scalar$n[[1L]], info = "direct scalar VARIANT preserves SQL NULL")
 
     primitive_exprs <- c(
@@ -69,9 +72,9 @@ local({
     )
     dynamic <- DBI::dbGetQuery(
       con,
-      sprintf("SELECT r_variant_dynamic(%s)::JSON::VARCHAR AS v", source)
+      sprintf("SELECT r_variant_dynamic(%s) IS NOT DISTINCT FROM %s AS v", source, source)
     )
-    expect_equal(dynamic$v[[1L]], expected_json, info = "dynamic direct bind resolves VARIANT")
+    expect_true(dynamic$v[[1L]], info = "dynamic direct bind resolves VARIANT")
 
     expect_silent(
       rducks_register_scalar_udf(
@@ -108,9 +111,9 @@ local({
     )
     nested <- DBI::dbGetQuery(
       con,
-      sprintf("SELECT (r_variant_nested({v: %s})).v::JSON::VARCHAR AS v", source)
+      sprintf("SELECT (r_variant_nested({v: %s})).v IS NOT DISTINCT FROM %s AS v", source, source)
     )
-    expect_equal(nested$v[[1L]], expected_json, info = "nested direct VARIANT round trip")
+    expect_true(nested$v[[1L]], info = "nested direct VARIANT round trip")
 
     container_cases <- list(
       list(name = "r_variant_list", type = LIST(VARIANT),
@@ -145,9 +148,9 @@ local({
     )
     aggregate <- DBI::dbGetQuery(
       con,
-      sprintf("SELECT r_variant_first(v)::JSON::VARCHAR AS v FROM (VALUES (%s), (2::VARIANT)) t(v)", source)
+      sprintf("SELECT r_variant_first(v) IS NOT DISTINCT FROM %s AS v FROM (VALUES (%s), (2::VARIANT)) t(v)", source, source)
     )
-    expect_equal(aggregate$v[[1L]], expected_json, info = "aggregate VARIANT result round trip")
+    expect_true(aggregate$v[[1L]], info = "aggregate VARIANT result round trip")
   } else {
     # Every registration path must reject VARIANT consistently, not just the
     # scalar direct path: nested VARIANT, and the aggregate path (which has no

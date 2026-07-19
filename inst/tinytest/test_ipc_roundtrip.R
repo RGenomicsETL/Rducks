@@ -13,7 +13,11 @@ if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quie
 }
 
 local({
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(
+    allow_unsigned_extensions = "true",
+    autoload_known_extensions = "false",
+    autoinstall_known_extensions = "false"
+  )))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
@@ -268,10 +272,12 @@ local({
     )
     dynamic_variant <- DBI::dbGetQuery(
       con,
-      "SELECT variant_dynamic_ipc({a: [1, NULL, 3], b: 'x'}::VARIANT)::JSON::VARCHAR AS v"
+      paste0(
+        "SELECT variant_dynamic_ipc({a: [1, NULL, 3], b: 'x'}::VARIANT) ",
+        "IS NOT DISTINCT FROM {a: [1, NULL, 3], b: 'x'}::VARIANT AS v"
+      )
     )$v[[1L]]
-    expect_equal(dynamic_variant, '{"a":[1,null,3],"b":"x"}',
-                 info = "ipc dynamic bind resolves VARIANT")
+    expect_true(dynamic_variant, info = "ipc dynamic bind resolves VARIANT")
 
     expect_silent(
       rducks_register_scalar_udf(
