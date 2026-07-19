@@ -27,7 +27,7 @@ con <- DBI::dbConnect(
   dbdir = ":memory:"
 )
 #> duckdb is keeping downloaded extensions in a temporary directory:
-#> ℹ /tmp/Rtmp00neLR/duckdb/extensions
+#> ℹ /tmp/RtmpjGiO8v/duckdb/extensions
 #> This is removed when the R session ends, so extensions are re-downloaded each session.
 #> ℹ To keep them, point `options(duckdb.extension_directory =)` or the `DUCKDB_EXTENSION_DIRECTORY` environment variable at a permanent path.
 rducks_enable(con, threads = "single")

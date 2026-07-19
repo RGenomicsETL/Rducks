@@ -16,6 +16,12 @@
   tokens + the Quack chunk), so one registration serves call sites with
   different argument types. A type the wire codec cannot encode fails
   cleanly at the first chunk encode.
+- `VARIANT` now works in direct scalar/vectorized UDFs, nested
+  descriptors, aggregates, dynamic binds, and the Quack/NNG `ipc` path.
+  Rducks obtains a canonical VARIANT logical type from the runtime SQL
+  binder, verifies its full physical vector layout with a real
+  data-chunk probe, and fails closed on runtimes whose layout is
+  unavailable or incompatible.
 
 ## Rducks 0.1.1
 

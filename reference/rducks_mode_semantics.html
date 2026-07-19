@@ -107,9 +107,9 @@ semantics for each scalar-UDF evaluation mode.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                                                       copy_semantics</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1               DuckDB vectors are materialized directly to R values</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2 DuckDB vectors are materialized directly to R vectors/list-columns</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                                                                                                                                                    notes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                                                                            batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                                                                                                                                 notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, VARIANT, and LIST/ARRAY/STRUCT of supported types; VARIANT is runtime-probed and fail-closed</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                                                                                         batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet</span>
 <span class="r-in"><span><span class="fu">rducks_mode_semantics</span><span class="op">(</span><span class="st">"scalar"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>     mode      status   call_granularity</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1 scalar implemented one R call per row</span>
@@ -127,8 +127,8 @@ semantics for each scalar-UDF evaluation mode.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1 direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                                         copy_semantics</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1 DuckDB vectors are materialized directly to R values</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                                                                                                                                                    notes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                                                                                                                                                 notes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, VARIANT, and LIST/ARRAY/STRUCT of supported types; VARIANT is runtime-probed and fail-closed</span>
 <span class="r-in"><span><span class="fu">rducks_mode_semantics</span><span class="op">(</span><span class="st">"vectorized"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>         mode      status            call_granularity</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1 vectorized implemented one R call per DuckDB chunk</span>

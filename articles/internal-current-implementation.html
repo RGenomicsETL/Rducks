@@ -165,6 +165,17 @@ error, and result semantics; unsupported combinations fail instead of
 falling back. Before any worker result is written back, the wire decoder
 validates the decoded column count and per-column types against the
 declared signature.</p>
+<p><code>VARIANT</code> is runtime-gated rather than version-gated. The
+extension asks the SQL binder for the canonical type
+(<code>SELECT NULL::VARIANT</code>), validates its physical
+<code>STRUCT(keys, children, values, data)</code> metadata, inspects a
+populated query-produced VARIANT chunk, and creates an owned chunk to
+verify that generic struct/list vector accessors expose every nested
+child on both execution shapes. The canonical type is cloned for UDF
+signatures; both direct and wire marshallers reuse a synthetic
+descriptor for the validated physical storage. A missing or changed
+layout leaves the capability disabled, including for nested and dynamic
+signatures.</p>
 </div>
 <div class="section level2">
 <h2 id="aggregates">Aggregates<a class="anchor" aria-label="anchor" href="#aggregates"></a>

@@ -4,7 +4,10 @@
 object: a named list with `keys`, `children`, `values`, and `data`
 fields. Most code receives this object from a VARIANT argument and
 returns it unchanged or after using DuckDB SQL functions such as
-`variant_extract()` before crossing into R.
+`variant_extract()` before crossing into R. Validation covers field
+types, child/key/value indexes, logical type ids, byte offsets, nested
+child ranges, and fixed/variable payload bounds before storage can be
+written back into a DuckDB vector.
 
 ## Usage
 

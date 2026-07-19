@@ -41,6 +41,11 @@
 <ul><li>Acceptance: repeated connect/register/disconnect/reconnect loops cannot leak unbounded native runtime entries or retain stale native backend state.</li>
 </ul></li>
 <li>
+<label><input type="checkbox">Replace the generic physical-layout VARIANT adapter if DuckDB publishes dedicated stable C extension accessors.</label>
+<ul><li>Current: Rducks obtains the canonical logical type from the SQL binder, dynamically probes every physical child with generic struct/list APIs, and fails closed when the runtime layout differs.</li>
+<li>Acceptance: dedicated upstream accessors cover canonical type cloning plus direct and IPC vector reads/writes without weakening exact-version ABI or registration gates; retain the current scalar/vectorized, nested, aggregate, dynamic-bind, NULL, malformed-storage, and worker round-trip tests.</li>
+</ul></li>
+<li>
 <label><input type="checkbox">Improve batching beyond small waves for typical DuckDB physical scans.</label>
 <ul><li>The <code>ipc</code> worker pool already has provider-level backpressure (<code>ipc_max_pending</code>), collect-any result handling so ready payloads are written back as they arrive, and an opportunistic post-collect drain of the extension-owned queue. What remains is larger physical-scan batching beyond the set of simultaneously active callbacks.</li>
 </ul></li>

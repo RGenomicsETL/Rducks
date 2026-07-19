@@ -49,7 +49,8 @@ rducks_register_scalar_udf(
   DuckDB-style type descriptors such as `INTEGER`, `DOUBLE`, `GEOMETRY`,
   `VARIANT`, `INTEGER[]`, `INTEGER[3]`, `STRUCT(a = INTEGER)`, or
   `MAP(VARCHAR, INTEGER)`. `VARIANT` signatures require a DuckDB runtime
-  whose C API exposes VARIANT logical types.
+  that passes Rducks' canonical logical-type and physical-vector-layout
+  probe.
 
 - returns:
 

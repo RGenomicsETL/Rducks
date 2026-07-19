@@ -57,9 +57,9 @@ rducks_mode_semantics()
 #>                                                       copy_semantics
 #> 1               DuckDB vectors are materialized directly to R values
 #> 2 DuckDB vectors are materialized directly to R vectors/list-columns
-#>                                                                                                                                                                                                                                    notes
-#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it
-#> 2                                                                                                                            batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet
+#>                                                                                                                                                                                                                 notes
+#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, VARIANT, and LIST/ARRAY/STRUCT of supported types; VARIANT is runtime-probed and fail-closed
+#> 2                                                                                                         batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet
 rducks_mode_semantics("scalar")
 #>     mode      status   call_granularity
 #> 1 scalar implemented one R call per row
@@ -77,8 +77,8 @@ rducks_mode_semantics("scalar")
 #> 1 direct in-process R API work runs on the recorded main R thread; queued in-process calls are drained by that thread
 #>                                         copy_semantics
 #> 1 DuckDB vectors are materialized directly to R values
-#>                                                                                                                                                                                                                                    notes
-#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, and LIST/ARRAY/STRUCT of supported types; VARIANT is rejected at registration until the native bridge covers it
+#>                                                                                                                                                                                                                 notes
+#> 1 the ipc (wire) transport covers fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, VARIANT, and LIST/ARRAY/STRUCT of supported types; VARIANT is runtime-probed and fail-closed
 rducks_mode_semantics("vectorized")
 #>         mode      status            call_granularity
 #> 1 vectorized implemented one R call per DuckDB chunk

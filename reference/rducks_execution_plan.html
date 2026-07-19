@@ -170,9 +170,10 @@ Quack-style binary chunk payloads (a DuckDB BinarySerializer subset): the
 extension encodes each input chunk to wire bytes, the worker decodes them,
 runs the R function, and returns wire-encoded results that the extension
 writes back to DuckDB. Worker-process types currently cover fixed-width
-scalars, <code>VARCHAR</code>/<code>BLOB</code>, <code>DECIMAL</code>, <code>INTERVAL</code>, <code>ENUM</code>, <code>BIT</code>, <code>GEOMETRY</code>, <code>MAP</code>, <code>UNION</code>, and
-<code>LIST</code>/<code>ARRAY</code>/<code>STRUCT</code> of supported types; <code>VARIANT</code> is rejected at registration until the
-native bridge covers it. It maps to the internal <code>"ipc_nng_pool"</code> engine.</p>
+scalars, <code>VARCHAR</code>/<code>BLOB</code>, <code>DECIMAL</code>, <code>INTERVAL</code>, <code>ENUM</code>, <code>BIT</code>, <code>GEOMETRY</code>,
+<code>MAP</code>, <code>UNION</code>, <code>VARIANT</code>, and <code>LIST</code>/<code>ARRAY</code>/<code>STRUCT</code> of supported types.
+<code>VARIANT</code> is runtime-probed and fail-closed. It maps to the internal
+<code>"ipc_nng_pool"</code> engine.</p>
     </div>
 
     <div class="section level2">

@@ -93,7 +93,8 @@ across scalar/vectorized direct evaluation. Use explicit <code>NULL</code> for a
 UDF. Otherwise use exported DuckDB-style type descriptors such as <code>INTEGER</code>,
 <code>DOUBLE</code>, <code>GEOMETRY</code>, <code>VARIANT</code>, <code>INTEGER[]</code>, <code>INTEGER[3]</code>,
 <code>STRUCT(a = INTEGER)</code>, or <code>MAP(VARCHAR, INTEGER)</code>. <code>VARIANT</code> signatures
-require a DuckDB runtime whose C API exposes VARIANT logical types.</p></dd>
+require a DuckDB runtime that passes Rducks' canonical logical-type and
+physical-vector-layout probe.</p></dd>
 
 
 <dt id="arg-returns">returns<a class="anchor" aria-label="anchor" href="#arg-returns"></a></dt>

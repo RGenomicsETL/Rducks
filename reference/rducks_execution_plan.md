@@ -121,9 +121,9 @@ the extension encodes each input chunk to wire bytes, the worker decodes
 them, runs the R function, and returns wire-encoded results that the
 extension writes back to DuckDB. Worker-process types currently cover
 fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`, `ENUM`,
-`BIT`, `GEOMETRY`, `MAP`, `UNION`, and `LIST`/`ARRAY`/`STRUCT` of
-supported types; `VARIANT` is rejected at registration until the native
-bridge covers it. It maps to the internal `"ipc_nng_pool"` engine.
+`BIT`, `GEOMETRY`, `MAP`, `UNION`, `VARIANT`, and
+`LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is runtime-probed
+and fail-closed. It maps to the internal `"ipc_nng_pool"` engine.
 
 ## Examples
 
