@@ -94,14 +94,14 @@ UDF remains registered in DuckDB even if this object is discarded.
 Registration requires `external_threads=1` plus `PRAGMA threads=1` so
 native registration and the default scalar evaluation path stay on the
 calling R thread. The active
-[`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
+[`rducks_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.md)
 selects and freezes the marshalling/concurrency implementation for this
 registration; unsupported plan/evaluation-mode/type combinations fail
 instead of switching engines. If a later call registers the same SQL
 name/signature, the callable implementation is replaced in the shared
 DuckDB database catalog rather than being tied to the registering DBI
 connection. Choose the desired execution plan before registration with
-[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md);
+[`rducks_set_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_set_execution_plan.md);
 the selected evaluator/marshalling metadata is then stored with the
 native catalog entry. R-backed UDF registrations are live DuckDB-runtime
 catalog entries, not durable schema objects: they are visible to sibling
@@ -114,6 +114,14 @@ fully closed and reopened.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db, threads = "single")
 rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
   args = list(INTEGER), returns = INTEGER)

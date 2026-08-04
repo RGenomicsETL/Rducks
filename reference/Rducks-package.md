@@ -13,15 +13,19 @@ and scalar or vectorized function execution over DuckDB chunks.
 
 Useful links:
 
-- <https://github.com/sounkou-bioinfo/Rducks>
+- <https://github.com/RGenomicsETL/Rducks>
 
-- <https://sounkou-bioinfo.github.io/Rducks/>
+- <https://rgenomicsetl.github.io/Rducks/>
 
-- Report bugs at <https://github.com/sounkou-bioinfo/Rducks/issues>
+- Report bugs at <https://github.com/RGenomicsETL/Rducks/issues>
 
 ## Author
 
 **Maintainer**: Sounkou Mahamane Toure <sounkoutoure@gmail.com>
+
+Authors:
+
+- Sounkou Mahamane Toure <sounkoutoure@gmail.com>
 
 Other contributors:
 

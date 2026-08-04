@@ -41,7 +41,7 @@ Rducks cleanup; weak-reference finalizers provide only best-effort
 cleanup if the connection object is garbage-collected.
 
 Call
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+[`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 again before using `con` for further Rducks registrations or
 connection-local plan changes.
 
@@ -50,6 +50,14 @@ connection-local plan changes.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db)
 rducks_release(db)
 DBI::dbDisconnect(db)

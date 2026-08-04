@@ -20,7 +20,7 @@ rducks_reset_udf_counters(con, name = NULL)
 - name:
 
   Optional SQL scalar-UDF function name registered with
-  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
+  [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md).
   If `NULL`, reset counters for all native Rducks scalar UDFs in the
   database runtime.
 
@@ -33,6 +33,14 @@ Invisibly `TRUE` on success.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db, threads = "single")
 rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
   args = list(INTEGER), returns = INTEGER)

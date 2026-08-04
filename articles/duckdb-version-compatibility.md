@@ -20,6 +20,7 @@ header set. The current bundle contains:
 | `v1.5.2`              | yes               |
 | `v1.5.3`              | yes               |
 | `v1.5.4`              | yes               |
+| `v1.5.5`              | yes               |
 
 This table is generated directly from
 `tools/ext/duckdb_capi/versions.txt`, the same manifest consumed by the
@@ -56,7 +57,7 @@ validates the unstable ABI metadata when it loads the file.
 ## Unsupported versions
 
 If the target engine is outside the bundled set,
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+[`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 fails before `LOAD` and reports the versions available in the installed
 Rducks package. This is intentional: silently loading an artifact
 compiled for another unstable ABI could produce incorrect calls through
@@ -82,7 +83,7 @@ Before adding a release, vendor its exact headers and provenance
 metadata:
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
 `configure` and `configure.win` validate every declared header set,

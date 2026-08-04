@@ -1,7 +1,7 @@
 # Create a streaming result for an Rducks table function
 
 Return this object from a function registered with
-[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+[`rducks_register_table()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_table.md)
 to expose a finite table without materializing all rows during DuckDB
 bind. The `prototype` supplies the output column names and types. During
 scan, Rducks repeatedly calls `next_batch(n)` and imports each returned
@@ -74,7 +74,7 @@ stream
 #> <0 rows> (or 0-length row.names)
 #> 
 #> $state
-#> <environment: 0x55cd14b08620>
+#> <environment: 0x5630d1ea6dd8>
 #> 
 #> attr(,"class")
 #> [1] "rducks_table_stream"

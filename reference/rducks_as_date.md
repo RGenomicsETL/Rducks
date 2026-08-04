@@ -51,7 +51,7 @@ rducks_interval_between(start, end, tz = "UTC")
 
   Numeric and `difftime` intervals are rounded to the nearest
   microsecond before constructing
-  [`rducks_interval()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_interval.md).
+  [`rducks_interval()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_interval.md).
 
 ## Value
 

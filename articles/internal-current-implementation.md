@@ -8,13 +8,13 @@ stay aligned with the actual implementation.
 ## Source and installed layout
 
 The R package installs one runtime extension artifact for each declared
-exact DuckDB engine release (currently v1.5.0 through v1.5.4, generated
+exact DuckDB engine release (currently v1.5.0 through v1.5.5, generated
 from the build manifest) and selects the matching version at runtime.
 The user-facing policy and diagnostics are covered in [DuckDB Version
-Compatibility](https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.md):
+Compatibility](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.md):
 
 ``` text
-rducks_extension/build/v1.5.4/rducks.duckdb_extension
+rducks_extension/build/v1.5.5/rducks.duckdb_extension
 ```
 
 The source and vendored dependency inputs live in the source checkout
@@ -30,7 +30,7 @@ tools/ext/third_party/*
 `configure` and `configure.win` build the extension variants from
 `tools/ext` and copy only the runtime artifacts into the installed
 package footprint. Because Rducks uses `C_STRUCT_UNSTABLE`,
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+[`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 queries the target connection and loads only an artifact for that exact
 DuckDB engine version.
 
@@ -85,7 +85,7 @@ registration, scalar-UDF execution, and metadata/stat queries.
 
 ## Scalar UDF registration and execution
 
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 creates DuckDB scalar UDF catalog entries and stores native metadata for
 the selected transport. Declared `args` pin the SQL input signature.
 Omitted `args` registers a DuckDB varargs `ANY` function; during DuckDB
@@ -123,7 +123,7 @@ signatures.
 
 ## Aggregates
 
-[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+[`rducks_register_aggregate()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_aggregate.md)
 registers DuckDB aggregate functions. Aggregate state is an R object
 preserved by the extension, not an untyped pointer to R memory inside
 DuckDB. Row-wise callbacks use `update(state, ...)`,
@@ -135,7 +135,7 @@ intentionally not controlled by scalar-UDF execution plans.
 
 ## Table functions
 
-[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+[`rducks_register_table()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_table.md)
 infers the SQL argument count from the R function’s formals, registers
 those inputs as DuckDB `ANY`, converts actual SQL bind values to R
 values, and calls the R function during DuckDB bind on the recorded R
@@ -143,7 +143,7 @@ thread.
 
 A finite result is materialized once during bind by filling DuckDB
 output vectors directly from the returned R columns. A
-[`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+[`rducks_table_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_table_stream.md)
 result uses a bind-time prototype for schema and a scan-time
 `next_batch(batch_size)` callback for successive batches.
 Projection-aware copying writes only requested columns into DuckDB
@@ -151,7 +151,7 @@ output chunks.
 
 ## Query streams
 
-[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+[`rducks_query_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_query_stream.md)
 is an R-side consumer API, not a table function. It uses DuckDB’s native
 streaming-result/data-chunk APIs through a dedicated extension-owned
 query-stream connection. That dedicated connection keeps query streaming

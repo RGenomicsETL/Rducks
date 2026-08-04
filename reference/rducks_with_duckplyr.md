@@ -55,7 +55,7 @@ with(
 - null_handling, exception_handling, side_effects:
 
   Passed to
-  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
+  [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md).
 
 - mode:
 
@@ -100,10 +100,10 @@ are written as row-wise scalar functions. Set `mode = "vectorized"` only
 for helpers that accept full vectors/chunks and return a vector of the
 same length. The selected Rducks execution plan is still taken from
 `con`, so the in-process plan from
-[`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
+[`rducks_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.md)
 applies; set it with
-[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
+[`rducks_set_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_set_execution_plan.md)
 before evaluating the duckplyr expression. Use explicit `args` in
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 when you need Rducks' declared composite, exotic, or special-NULL input
 semantics.

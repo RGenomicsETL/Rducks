@@ -37,7 +37,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/sounkou-bioinfo/Rducks/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/RGenomicsETL/Rducks/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -54,7 +54,7 @@
       <h1>Internal Current Implementation Details</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/sounkou-bioinfo/Rducks/blob/main/vignettes/internal-current-implementation.Rmd" class="external-link"><code>vignettes/internal-current-implementation.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/RGenomicsETL/Rducks/blob/main/vignettes/internal-current-implementation.Rmd" class="external-link"><code>vignettes/internal-current-implementation.Rmd</code></a></small>
       <div class="d-none name"><code>internal-current-implementation.Rmd</code></div>
     </div>
 
@@ -68,11 +68,11 @@ stay aligned with the actual implementation.</p>
 <h2 id="source-and-installed-layout">Source and installed layout<a class="anchor" aria-label="anchor" href="#source-and-installed-layout"></a>
 </h2>
 <p>The R package installs one runtime extension artifact for each
-declared exact DuckDB engine release (currently v1.5.0 through v1.5.4,
+declared exact DuckDB engine release (currently v1.5.0 through v1.5.5,
 generated from the build manifest) and selects the matching version at
 runtime. The user-facing policy and diagnostics are covered in <a href="duckdb-version-compatibility.html">DuckDB Version
 Compatibility</a>:</p>
-<pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">v1.5.4</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
+<pre class="text"><code><span><span class="va">rducks_extension</span><span class="op">/</span><span class="va">build</span><span class="op">/</span><span class="va">v1.5.5</span><span class="op">/</span><span class="va">rducks.duckdb_extension</span></span></code></pre>
 <p>The source and vendored dependency inputs live in the source checkout
 under <code>tools/ext</code>, not under
 <code>inst/rducks_extension</code>:</p>

@@ -39,7 +39,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/sounkou-bioinfo/Rducks/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/RGenomicsETL/Rducks/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -50,7 +50,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
 </h1></div>
-<p><a href="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://sounkou-bioinfo.r-universe.dev/Rducks" class="external-link"><img src="https://sounkou-bioinfo.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
+<p><a href="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://rgenomicsetl.r-universe.dev/Rducks" class="external-link"><img src="https://rgenomicsetl.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed <a href="https://duckdb.org/docs/stable/extensions/overview" class="external-link">DuckDB C extension</a>. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks. It is built around explicit type descriptors, direct DuckDB-vector marshalling, and a strict rule that R object work runs on the recorded R thread.</p>
 <p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, and execution plan. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Two execution transports are available: in-process (<code>transport = "inproc"</code>) and worker-process (<code>transport = "ipc"</code>, native <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> request/reply, default local workers launched by <a href="https://mirai.r-lib.org/" class="external-link">mirai</a>, optional <a href="https://shikokuchuo.net/mori/" class="external-link">mori</a> sharing for selected globals). Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>.</p>
 <div class="section level2">
@@ -63,8 +63,8 @@
 <div class="section level2">
 <h2 id="duckdb-version-compatibility">DuckDB version compatibility<a class="anchor" aria-label="anchor" href="#duckdb-version-compatibility"></a>
 </h2>
-<p>Rducks uses DuckDB’s <code>C_STRUCT_UNSTABLE</code> extension ABI. The package therefore builds and installs a separate extension artifact for every supported exact DuckDB engine release instead of assuming patch releases are ABI-compatible. The current bundle covers v1.5.0 through v1.5.4; that range is generated from the build manifest rather than maintained separately in the documentation.</p>
-<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries <code>SELECT version()</code> on the target connection and loads only the artifact for that exact version. It never falls back to a nearby version. An unsupported engine fails before <code>LOAD</code> and reports the bundled versions. See the <a href="https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.html">DuckDB version compatibility article</a> for the installed layout, diagnostics, and maintainer update workflow.</p>
+<p>Rducks uses DuckDB’s <code>C_STRUCT_UNSTABLE</code> extension ABI. The package therefore builds and installs a separate extension artifact for every supported exact DuckDB engine release instead of assuming patch releases are ABI-compatible. The current bundle covers v1.5.0 through v1.5.5; that range is generated from the build manifest rather than maintained separately in the documentation.</p>
+<p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries <code>SELECT version()</code> on the target connection and loads only the artifact for that exact version. It never falls back to a nearby version. An unsupported engine fails before <code>LOAD</code> and reports the bundled versions. See the <a href="https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html">DuckDB version compatibility article</a> for the installed layout, diagnostics, and maintainer update workflow.</p>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
@@ -72,7 +72,7 @@
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dbi.r-dbi.org" class="external-link">DBI</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r.duckdb.org/" class="external-link">duckdb</a></span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/sounkou-bioinfo/Rducks" class="external-link">Rducks</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/RGenomicsETL/Rducks" class="external-link">Rducks</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
@@ -351,11 +351,10 @@
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>rows <span class="op">=</span> <span class="va">rows</span>, rss_at_open_mb <span class="op">=</span> <span class="va">rss_at_open</span>, peak_rss_mb <span class="op">=</span> <span class="va">peak</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    rows rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1 8e+06            169         249</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 8e+06            170         249</span></span></code></pre></div>
 <p>The same streaming holds over arbitrary scans, including external table-function extensions. The chunk below streams a 15 GB BAM through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling; resident memory stays a few hundred MB no matter how many reads are pulled. It runs only when the BAM is present locally.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"LOAD './duckhts.duckdb_extension'"</span><span class="op">)</span>   <span class="co"># locally built duckhts</span></span>
-<span><span class="co">#&gt; [1] 0</span></span>
 <span></span>
 <span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
@@ -378,9 +377,7 @@
 <span>  reads_streamed <span class="op">=</span> <span class="va">reads</span>,</span>
 <span>  rss_at_open_mb <span class="op">=</span> <span class="va">bam_open</span>,</span>
 <span>  peak_rss_mb <span class="op">=</span> <span class="va">peak</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt;   bam_gb reads_streamed rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1   15.1       10614784            255         297</span></span></code></pre></div>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -420,7 +417,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>rducks_enable(con)</code> selects the in-process backend; <code>rducks_enable_inproc(con, threads = 4, external_threads = 1)</code> keeps R work on the recorded R thread while DuckDB workers run concurrently and queue their callbacks to it.</p>
+<p><code>rducks_enable(con)</code> selects the in-process backend; <code>rducks_enable_inproc(con, threads = 2, external_threads = 2)</code> keeps R work on the recorded R thread while DuckDB workers run concurrently and queue their callbacks to it.</p>
 <p>For <code>transport = "ipc"</code>, register single-threaded under the plan (this starts the worker processes and broadcasts the UDF), then raise DuckDB threads so off-main callbacks fan out to the workers:</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">plan</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_execution_plan.html">rducks_execution_plan</a></span><span class="op">(</span><span class="st">"ipc"</span>, ipc_workers <span class="op">=</span> <span class="fl">2L</span><span class="op">)</span></span>
@@ -457,7 +454,7 @@
 <span><span class="co">#&gt;   evaluation_mode: vectorized</span></span>
 <span><span class="co">#&gt;   plan:            direct+serial</span></span>
 <span><span class="co">#&gt;   signature:       r_inc(INTEGER) -&gt; INTEGER</span></span>
-<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="fl">4L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/rducks_set_execution_plan.html">rducks_set_execution_plan</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">plan</span>, threads <span class="op">=</span> <span class="fl">2L</span>, external_threads <span class="op">=</span> <span class="fl">2L</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">dbGetQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT sum(r_inc((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)"</span><span class="op">)</span></span>
 <span><span class="co">#&gt;      total</span></span>
 <span><span class="co">#&gt; 1 10010000</span></span>
@@ -546,9 +543,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.354</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.957</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.932</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.445</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       2.112</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       2.087</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -597,9 +594,9 @@
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
-<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. Rducks uses DuckDB’s exact-version unstable C ABI, so installation builds one artifact per release declared in <code>tools/ext/duckdb_capi/versions.txt</code> (currently v1.5.0 through v1.5.4), for example <code>inst/rducks_extension/build/&lt;duckdb-version&gt;/rducks.duckdb_extension</code>. At runtime, <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries the target connection’s engine version and loads only the exact matching artifact; an unsupported version fails without fallback. <code>cleanup</code> removes only generated artifacts, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. Matching DuckDB C API headers are vendored explicitly for every declared version.</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.4</span></code></pre></div>
-<p>The extension uses DuckDB’s <a href="https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md" class="external-link">C extension API</a> and unstable C extension ABI for connection/runtime access, scalar-function bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector helpers. This table is generated from <code>tools/used_duckdb_unstable_api.R</code> when <code>README.Rmd</code> is rendered:</p>
+<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. Rducks uses DuckDB’s exact-version unstable C ABI, so installation builds one artifact per release declared in <code>tools/ext/duckdb_capi/versions.txt</code> (currently v1.5.0 through v1.5.5), for example <code>inst/rducks_extension/build/&lt;duckdb-version&gt;/rducks.duckdb_extension</code>. At runtime, <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries the target connection’s engine version and loads only the exact matching artifact; an unsupported version fails without fallback. <code>cleanup</code> removes only generated artifacts, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. Matching DuckDB C API headers are vendored explicitly for every declared version.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.5</span></code></pre></div>
+<p>The extension uses DuckDB’s <a href="https://duckdb.org/docs/stable/clients/c/overview.html" class="external-link">C extension API</a> and unstable C extension ABI for connection/runtime access, scalar-function bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector helpers. This table is generated from <code>tools/used_duckdb_unstable_api.R</code> when <code>README.Rmd</code> is rendered:</p>
 <table class="table">
 <colgroup>
 <col width="13%">
@@ -615,9 +612,9 @@
 <tr>
 <td><code>unstable_deprecated</code></td>
 <td>
-<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_stream_fetch_chunk</code>
+<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_get_chunk</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_stream_fetch_chunk</code>
 </td>
-<td align="right">3</td>
+<td align="right">4</td>
 </tr>
 <tr>
 <td><code>unstable_new_expression_functions</code></td>
@@ -666,7 +663,7 @@
 </h2>
 <ul>
 <li><a href="https://duckdb.org/docs/stable/extensions/overview" class="external-link">DuckDB extension overview</a></li>
-<li><a href="https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md" class="external-link">DuckDB C extension API notes</a></li>
+<li><a href="https://duckdb.org/docs/stable/clients/c/overview.html" class="external-link">DuckDB C extension API notes</a></li>
 <li><a href="https://nng.nanomsg.org/" class="external-link">NNG C library</a></li>
 <li><a href="https://mirai.r-lib.org/" class="external-link">nanonext and mirai</a></li>
 <li><a href="https://shikokuchuo.net/mori/" class="external-link">mori shared objects for R</a></li>
@@ -678,8 +675,8 @@
   </main><aside class="col-md-3"><div class="links">
 <h2 data-toc-skip>Links</h2>
 <ul class="list-unstyled">
-<li><a href="https://github.com/sounkou-bioinfo/Rducks/" class="external-link">Browse source code</a></li>
-<li><a href="https://github.com/sounkou-bioinfo/Rducks/issues" class="external-link">Report a bug</a></li>
+<li><a href="https://github.com/RGenomicsETL/Rducks/" class="external-link">Browse source code</a></li>
+<li><a href="https://github.com/RGenomicsETL/Rducks/issues" class="external-link">Report a bug</a></li>
 </ul>
 </div>
 

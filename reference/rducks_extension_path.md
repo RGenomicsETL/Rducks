@@ -15,7 +15,7 @@ rducks_extension_path(duckdb_version = NULL)
 - duckdb_version:
 
   Exact DuckDB engine version, with or without the `v` prefix (for
-  example, `"v1.5.4"`). `NULL` uses the engine version reported by the
+  example, `"v1.5.5"`). `NULL` uses the engine version reported by the
   installed `duckdb` package.
 
 ## Value
@@ -26,5 +26,5 @@ Character scalar path to the matching `rducks.duckdb_extension`.
 
 ``` r
 rducks_extension_path()
-#> [1] "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/v1.5.4/rducks.duckdb_extension"
+#> [1] "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/v1.5.5/rducks.duckdb_extension"
 ```

@@ -20,7 +20,7 @@ rducks_enable_inproc(con, threads = NULL, external_threads = NULL)
 - con:
 
   A `duckdb_connection` already enabled with
-  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md).
+  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md).
 
 - threads:
 
@@ -41,7 +41,7 @@ rducks_enable_inproc(con, threads = NULL, external_threads = NULL)
 ## Details
 
 This is a helper for the direct in-process queue. New code can call
-[`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md)
+[`rducks_set_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_set_execution_plan.md)
 directly with `rducks_execution_plan("inproc")`. Select the plan before
 registering scalar UDFs whose reported execution plan should be the
 queued in-process path.
@@ -51,6 +51,14 @@ queued in-process path.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db)
 rducks_enable_inproc(db)
 rducks_release(db)

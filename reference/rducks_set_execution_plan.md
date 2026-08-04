@@ -1,7 +1,7 @@
 # Set the Rducks execution plan for a connection
 
 Stores the R-side default execution plan used by subsequent
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 calls through this connection and updates the native runtime backend
 needed by that plan. Scalar-UDF registration still defines Rducks
 evaluation semantics such as scalar row calls versus vectorized chunk
@@ -25,12 +25,12 @@ rducks_set_execution_plan(
 - con:
 
   A `duckdb_connection` already enabled with
-  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md).
+  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md).
 
 - plan:
 
   An
-  [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md)
+  [`rducks_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.md)
   object.
 
 - threads:
@@ -54,6 +54,14 @@ rducks_set_execution_plan(
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db)
 rducks_set_execution_plan(db, rducks_execution_plan("inproc"))
 rducks_release(db)

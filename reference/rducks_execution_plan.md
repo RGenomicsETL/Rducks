@@ -4,7 +4,7 @@ An execution plan describes where Rducks evaluates registered scalar-UDF
 chunks: in the current R process (`transport = "inproc"`) or in
 persistent worker R processes (`transport = "ipc"`). When stored on a
 connection it is the default for future
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 calls and updates the native runtime backend used for matching
 concurrent execution; the resolved transport metadata is frozen into
 each registered scalar UDF's database-catalog metadata. It is separate

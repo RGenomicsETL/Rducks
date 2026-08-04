@@ -1,9 +1,9 @@
 # Rducks DuckDB type descriptors and constructors
 
 Use these descriptors and constructors in
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 and
-[`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+[`rducks_register_aggregate()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_aggregate.md)
 to avoid quoted type specifications. Examples include `args = INTEGER`,
 `args = c(INTEGER, DOUBLE)`, `args = INTEGER[]`, `args = INTEGER[3]`,
 `args = STRUCT(a = INTEGER, b = VARCHAR)`, and

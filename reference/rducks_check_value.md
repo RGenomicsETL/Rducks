@@ -20,7 +20,7 @@ rducks_check_return(type, x)
 
   A `rducks_type` descriptor such as `INTEGER`, `INTEGER[]`,
   `STRUCT(a = INTEGER)`, or a character scalar token accepted by
-  [`rducks_type_normalize()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_type_normalize.md).
+  [`rducks_type_normalize()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_type_normalize.md).
 
 - x:
 

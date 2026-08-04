@@ -16,7 +16,7 @@ input/output storage, so running-timeout cancellation is intentionally
 not supported and is reported via `running_timeout_supported = FALSE`.
 This is a runtime queue summary; for per-scalar-UDF execution detail
 such as selected evaluator and direct input/result counters, use
-[`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md).
+[`rducks_explain_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.md).
 
 ## Usage
 
@@ -39,6 +39,14 @@ A one-row data frame with queue diagnostic columns.
 ``` r
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpwFko0t/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(db)
 rducks_inproc_stats(db)
 #>   submitted executed timeouts pending_current pending_max running_current

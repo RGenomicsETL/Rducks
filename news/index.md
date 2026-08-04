@@ -2,9 +2,12 @@
 
 ## Rducks (development version)
 
+- Added native Quack property tests with shrinking, coverage-guided
+  fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested
+  type metadata and bounds input-driven allocation more tightly.
 - Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension
-  variants for DuckDB v1.5.0 through v1.5.4.
-  [`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+  variants for DuckDB v1.5.0 through v1.5.5.
+  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
   queries the connection’s engine version and loads only the matching
   artifact, so DuckDB package patch upgrades no longer try to load the
   v1.5.2 build; unsupported versions fail explicitly without ABI
@@ -65,26 +68,26 @@
   aggregate state ownership, and expanded tests for IPC, duckplyr, query
   streams, and table-stream cardinality.
 - Added dynamic-argument scalar UDF registration: omitting `args` in
-  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+  [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   registers a DuckDB varargs `ANY` function while keeping the return
   type explicit. DuckDB now resolves the concrete argument types at bind
   time, and Rducks uses those effective types for scalar and vectorized
   evaluation, including composite, exotic, and special-NULL inputs.
   Added
-  [`rducks_with_duckplyr()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+  [`rducks_with_duckplyr()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_with_duckplyr.md)
   and a
-  [`with.duckdb_connection()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+  [`with.duckdb_connection()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_with_duckplyr.md)
   method that register named R helpers and rewrite matching duckplyr
   calls so stingy duckplyr pipelines can stay in DuckDB rather than
   falling back to dplyr.
 - Renamed the scalar-function registration API to
-  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+  [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
   and clarified terminology across the user documentation: DuckDB
   function kind (scalar UDF, aggregate function, table function), Rducks
   scalar-UDF evaluation mode, and Rducks execution plan are distinct
   concepts.
 - Added
-  [`rducks_register_aggregate()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_aggregate.md)
+  [`rducks_register_aggregate()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_aggregate.md)
   for R-backed DuckDB aggregate functions. Aggregate state can now be an
   arbitrary preserved R object rather than only serialized `raw` bytes,
   row-wise callbacks use `update(state, ...)` / `combine(left, right)` /
@@ -95,14 +98,14 @@
   top-level NULL inputs, and execution is explicitly restricted to the
   recorded calling R thread.
 - Added
-  [`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+  [`rducks_register_table()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_table.md)
   support for both finite and streaming R-backed table functions. The
   native table-function path infers positional SQL argument count from
   the R function formals, registers those inputs as DuckDB `ANY`,
   converts actual SQL bind values to R values, and calls the R function
   during DuckDB bind on the recorded calling R thread. Finite results
   infer the output schema from a returned data frame/list, while
-  [`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+  [`rducks_table_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_table_stream.md)
   adds a scan-time `next_batch()` path driven by a bind-time prototype,
   optional cardinality metadata, and projection-aware output copying.
 - Added vendored NNG/Mbed TLS source management for the native
@@ -111,11 +114,11 @@
   NNG client shim, and dev/test SQL diagnostics expose
   `rducks_nng_version()` and `rducks_nng_self_test()`.
 - Added
-  [`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+  [`rducks_query_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_query_stream.md)
   as a connection-bound R-side streaming query object with explicit
   `next_batch()`, [`close()`](https://rdrr.io/r/base/connections.html),
   schema/prototype metadata, finalizer cleanup, and
-  [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+  [`rducks_release()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_release.md)
   integration. Query streams now use DuckDB’s native streaming
   result/data-chunk APIs through a dedicated extension-owned
   query-stream connection, keeping dynamic scalar, table, and aggregate
@@ -128,26 +131,26 @@
   default, supports explicit `ipc_endpoints`, and errors rather than
   changing to generic process backends, same-process execution, or R
   serialization.
-- [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+- [`rducks_explain_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.md)
   now reports queue-pending and worker-process (RIPC) diagnostic
   counters for future native provider work.
 - Added
-  [`rducks_reset_udf_counters()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_reset_udf_counters.md)
+  [`rducks_reset_udf_counters()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_reset_udf_counters.md)
   to reset one UDF’s diagnostic counters or all native UDF counters in
   the current database runtime without unregistering catalog functions.
 - UDF stat field discovery now comes from native
   `rducks_udf_stat_fields()`; the R-side field vector is only a
   documented compatibility list for sessions where that optional native
   discovery helper is unavailable.
-- [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+- [`rducks_explain_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.md)
   and
-  [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
+  [`rducks_list_udfs()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_list_udfs.md)
   now include `r_side_record` to make detached/missing R-side scalar-UDF
   registry metadata explicit. Native per-UDF hot-path counters are
   updated with atomics rather than the process-global runtime registry
   lock.
 - Added
-  [`rducks_native_execution_backend()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_native_execution_backend.md)
+  [`rducks_native_execution_backend()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_native_execution_backend.md)
   to cross-check the native database-scoped execution backend against
   the R-side current/default execution plan.
 - The worker-process (ipc) path defaults to one-time scalar-UDF global
@@ -158,7 +161,7 @@
   vector, or a named list to override the behavior.
 - Execution plans carry a concrete `engine_id`, and
   `rducks_as_execution_plan()` accepts the current engine-id shortcuts.
-- [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+- [`rducks_inproc_stats()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_stats.md)
   now reports main-thread drain attempts, non-empty drain batches, and
   maximum drain batch size in addition to pending/running queue pressure
   and timeout semantics.
@@ -194,17 +197,17 @@
 - Scalar-UDF evaluation uses direct DuckDB-vector marshalling for
   row-wise and vectorized modes; unsupported signatures fail explicitly.
 - Added
-  [`rducks_explain_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_explain_udf.md)
+  [`rducks_explain_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.md)
   and
-  [`rducks_list_udfs()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_list_udfs.md)
+  [`rducks_list_udfs()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_list_udfs.md)
   with native per-UDF execution counters so users can inspect
   registration metadata and verify that chunks ran through the requested
   evaluator. Added
-  [`rducks_release_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release_stats.md)
+  [`rducks_release_stats()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_release_stats.md)
   to inspect process-local counters for preserved R objects queued by
   off-main DuckDB metadata destructors and drained later on the recorded
   main R thread. Added
-  [`rducks_runtime_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_runtime_stats.md)
+  [`rducks_runtime_stats()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_runtime_stats.md)
   to inspect native runtime registry and extension-owned connection
   accounting.
 - Added an R-universe badge to the README and lowered the package R
@@ -214,15 +217,15 @@
   extension entrypoint, plus a `Dockerfile.webr-test` helper for local
   rwasm builds and a local browser smoke harness under `scripts/`.
 - Added explicit execution-plan helpers
-  [`rducks_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_execution_plan.md),
-  [`rducks_set_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_set_execution_plan.md),
+  [`rducks_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.md),
+  [`rducks_set_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_set_execution_plan.md),
   and
-  [`rducks_current_execution_plan()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_current_execution_plan.md)
+  [`rducks_current_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_current_execution_plan.md)
   to separate scalar-UDF semantics from connection-level
   marshalling/concurrency policy. Unsupported execution-plan
   combinations fail explicitly through plan validation.
 - Removed per-registration evaluator selection from
-  [`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
+  [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md).
   The evaluator is now derived from the active execution plan, so
   conformance tests compare plan-native registrations instead of mixing
   evaluator choices inside a single registration call.
@@ -232,17 +235,17 @@
   row-wise marshalling path, enforces return length, defines default vs
   special NULL handling, and is covered by runtime tests.
 - Added an official in-process queued execution API for scalar UDFs:
-  [`rducks_enable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable_inproc.md),
-  [`rducks_disable_inproc()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_disable_inproc.md),
-  [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md),
+  [`rducks_enable_inproc()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable_inproc.md),
+  [`rducks_disable_inproc()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_disable_inproc.md),
+  [`rducks_inproc_stats()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_stats.md),
   and
-  [`rducks_inproc_self_test()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_self_test.md).
+  [`rducks_inproc_self_test()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_self_test.md).
   The backend keeps all R API work on the recorded main R thread and
   uses an extension-owned queue with timeout/error paths rather than a
   package-side pump or hidden progress callback.
 - Added native queue diagnostics and tests covering main-thread queue
   draining and scalar-UDF execution through the queued path.
-  [`rducks_inproc_stats()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_inproc_stats.md)
+  [`rducks_inproc_stats()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_stats.md)
   now reports the configured pending-request timeout and explicitly
   reports that running queued requests cannot be cancelled safely while
   they borrow DuckDB callback storage.

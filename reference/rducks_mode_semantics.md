@@ -2,7 +2,7 @@
 
 `rducks_mode_semantics()` is the package-level schema for Rducks
 evaluation modes used by DuckDB scalar UDFs registered with
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md).
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md).
 This is distinct from DuckDB function kind (scalar, aggregate, or table)
 and from Rducks execution plans. `mode = "scalar"` calls the R function
 once for each DuckDB row. `mode = "vectorized"` calls the R function

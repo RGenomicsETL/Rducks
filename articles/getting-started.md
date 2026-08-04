@@ -11,7 +11,7 @@ The usual workflow is:
 3.  register R-backed SQL functions
 4.  query them through DuckDB
 5.  call
-    [`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+    [`rducks_release()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_release.md)
     before disconnecting when deterministic cleanup matters
 
 ## Enable Rducks
@@ -23,20 +23,24 @@ library(duckdb)
 library(Rducks)
 
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
-#> duckdb is keeping downloaded extensions in a temporary directory:
-#> ℹ /tmp/RtmpBFbIKy/duckdb/extensions
-#> This is removed when the R session ends, so extensions are re-downloaded each session.
-#> ℹ To keep them, point `options(duckdb.extension_directory =)` or the `DUCKDB_EXTENSION_DIRECTORY` environment variable at a permanent path.
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpLLvFb0/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(con, threads = "single")
 ```
 
 Rducks uses DuckDB’s unstable C extension ABI. The installed package
 contains exact-version extension variants for DuckDB v1.5.0 through
-v1.5.4, generated from the build manifest, and
-[`rducks_enable()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_enable.md)
+v1.5.5, generated from the build manifest, and
+[`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 loads only the variant matching `SELECT version()` on `con`. There is no
 fallback to another patch release; see [DuckDB Version
-Compatibility](https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.md)
+Compatibility](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.md)
 for details.
 
 `threads = "single"` is the safest registration setting. You can select
@@ -125,11 +129,11 @@ DBI::dbGetQuery(
 
 ## Register a table function
 
-[`rducks_register_table()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_table.md)
+[`rducks_register_table()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_table.md)
 infers the SQL argument count from the R function formals and registers
 those inputs as DuckDB `ANY`. The R function can return a finite data
 frame/list or a
-[`rducks_table_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_table_stream.md)
+[`rducks_table_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_table_stream.md)
 for scan-time batches.
 
 ``` r
@@ -188,7 +192,7 @@ DBI::dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream_rows(5)")
 
 ## Stream query results back to R
 
-[`rducks_query_stream()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_query_stream.md)
+[`rducks_query_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_query_stream.md)
 is for R callers that want native DuckDB result chunks instead of eager
 [`DBI::dbGetQuery()`](https://dbi.r-dbi.org/reference/dbGetQuery.html)
 materialization. Each `next_batch()` materializes one DuckDB chunk into
@@ -229,7 +233,7 @@ rducks_release(con)
 DBI::dbDisconnect(con, shutdown = TRUE)
 ```
 
-[`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+[`rducks_release()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_release.md)
 detaches the connection-local Rducks view and, when this is the last
 Rducks attachment to the DuckDB runtime, stops Rducks-managed local IPC
 workers. It does not unregister DuckDB catalog functions.

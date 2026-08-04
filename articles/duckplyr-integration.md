@@ -26,10 +26,14 @@ con <- DBI::dbConnect(
   duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
   dbdir = ":memory:"
 )
-#> duckdb is keeping downloaded extensions in a temporary directory:
-#> ℹ /tmp/Rtmp4reUqt/duckdb/extensions
-#> This is removed when the R session ends, so extensions are re-downloaded each session.
-#> ℹ To keep them, point `options(duckdb.extension_directory =)` or the `DUCKDB_EXTENSION_DIRECTORY` environment variable at a permanent path.
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpchdUy0/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(con, threads = "single")
 
 input <- data.frame(
@@ -59,7 +63,7 @@ local_score <- function(x, label) {
   as.double(x + bonus)
 }
 
-blocked <- tryCatch({
+blocked <- with_duckplyr_fallback_disabled(tryCatch({
   scores |>
     mutate(score = local_score(x, label)) |>
     collect()
@@ -67,7 +71,7 @@ blocked <- tryCatch({
 }, error = function(e) {
   message("fallback blocked: ", conditionMessage(e))
   TRUE
-})
+}))
 #> fallback blocked: This operation cannot be carried out by DuckDB, and the input is a
 #> stingy duckplyr frame.
 #> ℹ Use `compute(prudence = "lavish")` to materialize to temporary storage and
@@ -80,7 +84,7 @@ stopifnot(isTRUE(blocked))
 
 ## Register selected R helpers for duckplyr
 
-[`rducks_with_duckplyr()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+[`rducks_with_duckplyr()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_with_duckplyr.md)
 captures the duckplyr expression, registers the named R helpers as
 dynamic-argument Rducks scalar UDFs, rewrites matching calls to
 DuckDB-function calls, and evaluates the rewritten expression. DuckDB
@@ -107,7 +111,7 @@ out
 ```
 
 The
-[`with.duckdb_connection()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_with_duckplyr.md)
+[`with.duckdb_connection()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_with_duckplyr.md)
 method is equivalent when `rducks_returns` is supplied:
 
 ``` r
@@ -216,7 +220,7 @@ thread settings are the same. If you need the full pattern of
 registering under single-thread DuckDB settings and then widening
 `threads` / `external_threads` for a parallel `ipc` query, register the
 UDF explicitly with
-[`rducks_register_scalar_udf()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_register_scalar_udf.md)
+[`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 and call it from duckplyr via duckplyr’s `dd$function_name(...)` SQL
 escape hatch, or wrap that two-phase pattern in your own helper.
 
@@ -226,5 +230,4 @@ escape hatch, or wrap that two-phase pattern in your own helper.
 
 rducks_release(con)
 DBI::dbDisconnect(con, shutdown = TRUE)
-restore_duckplyr_env()
 ```

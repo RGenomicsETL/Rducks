@@ -30,10 +30,14 @@ library(duckdb)
 library(Rducks)
 
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
-#> duckdb is keeping downloaded extensions in a temporary directory:
-#> ℹ /tmp/RtmpzUnGcf/duckdb/extensions
-#> This is removed when the R session ends, so extensions are re-downloaded each session.
-#> ℹ To keep them, point `options(duckdb.extension_directory =)` or the `DUCKDB_EXTENSION_DIRECTORY` environment variable at a permanent path.
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/Rtmp0RYYZ3/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
 rducks_enable(con, threads = "single")
 ```
 
@@ -75,8 +79,8 @@ the recorded R thread.
 rducks_set_execution_plan(
   con,
   rducks_execution_plan("inproc"),
-  threads = 4L,
-  external_threads = 4L
+  threads = 2L,
+  external_threads = 2L
 )
 dbGetQuery(con, "SELECT sum(r_plus_one((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
 #>      total
@@ -159,7 +163,7 @@ instead of serializing them.
 
 ## Inspect workers
 
-[`rducks_ipc_workers()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_ipc_workers.md)
+[`rducks_ipc_workers()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_ipc_workers.md)
 lists IPC providers known to the current R process. With `ping = TRUE`,
 it also checks whether each endpoint responds.
 
@@ -175,7 +179,7 @@ if (isTRUE(ipc_available)) {
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:35260
+#>  tcp://127.0.0.1:38609
 ```
 
 The result is an R-side provider view: runtime token, provider key,
@@ -189,7 +193,7 @@ also gives native code a safe main-thread point to release preserved R
 objects that had to be queued by off-main destructors.
 
 If this connection is the last Rducks attachment to the DuckDB runtime,
-[`rducks_release()`](https://sounkou-bioinfo.github.io/Rducks/reference/rducks_release.md)
+[`rducks_release()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_release.md)
 additionally:
 
 1.  asks the native extension to close local NNG client pools for that
