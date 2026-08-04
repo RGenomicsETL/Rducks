@@ -2,6 +2,11 @@
 
 ## Rducks (development version)
 
+- Fixed Windows ARM64 source builds with LLVM’s MinGW linker by
+  retaining `--exclude-all-symbols` without passing its unsupported
+  `--exclude-libs` option. Vendored NNG symbols remain excluded from
+  automatic DLL exports, and the build no longer emits an
+  unused-function warning for a stale multiprocess backend helper.
 - Added native Quack property tests with shrinking, coverage-guided
   fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested
   type metadata and bounds input-driven allocation more tightly.
