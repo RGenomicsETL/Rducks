@@ -154,7 +154,10 @@ VENDOR_NNG_LIBS="${VENDOR_BUILD_DIR}/nng/libnng.a -lws2_32 -lmswsock -ladvapi32"
 
 CFLAGS="${R_CFLAGS} ${R_CPICFLAGS} -O2"
 BASE_CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME=rducks -I${THIS_DIR}/src ${VENDOR_NNG_CPPFLAGS}"
-SHARED_FLAGS="-shared -Wl,--exclude-all-symbols -Wl,--exclude-libs,ALL"
+# Disable MinGW automatic exports while retaining DuckDB's explicit
+# __declspec(dllexport) entrypoint. LLVM's MinGW linker on Windows ARM64 does
+# not support --exclude-libs; it is redundant once automatic exports are off.
+SHARED_FLAGS="-shared -Wl,--exclude-all-symbols"
 
 echo "---------- Building Rducks DuckDB extensions (Windows) ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"

@@ -1,5 +1,6 @@
 # Rducks (development version)
 
+* Fixed Windows ARM64 source builds with LLVM's MinGW linker by retaining `--exclude-all-symbols` without passing its unsupported `--exclude-libs` option. Vendored NNG symbols remain excluded from automatic DLL exports, and the build no longer emits an unused-function warning for a stale multiprocess backend helper.
 * Added native Quack property tests with shrinking, coverage-guided fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested type metadata and bounds input-driven allocation more tightly.
 * Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension variants for DuckDB v1.5.0 through v1.5.5. `rducks_enable()` queries the connection's engine version and loads only the matching artifact, so DuckDB package patch upgrades no longer try to load the v1.5.2 build; unsupported versions fail explicitly without ABI fallback.
 * `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs, matching `transport = "inproc"`. DuckDB resolves the concrete argument types per call site at bind; the native bind carries those resolved types to the worker in an `RDT1` dynamic payload (concrete arg tokens + the Quack chunk), so one registration serves call sites with different argument types. A type the wire codec cannot encode fails cleanly at the first chunk encode.

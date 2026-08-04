@@ -53,10 +53,6 @@ static int rducks_concurrent_inproc_enabled(rducks_runtime_entry_t *runtime) {
     return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_CONCURRENT_INPROC;
 }
 
-static int rducks_multiprocess_parallel_enabled(rducks_runtime_entry_t *runtime) {
-    return rducks_get_execution_backend(runtime) == RDUCKS_BACKEND_MULTIPROCESS_PARALLEL;
-}
-
 static uint64_t rducks_runtime_udf_name_hash(const char *text) {
     const unsigned char *p = (const unsigned char *)(text ? text : "");
     uint64_t h = 1469598103934665603ULL;
