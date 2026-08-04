@@ -60,8 +60,8 @@ jobs:
         r-version: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.r_version) || '["release","devel"]') }}
     name: Windows ${{ matrix.r-version }}
     env:
-      UNIVERSE_NAME: sounkou-bioinfo
-      MY_UNIVERSE: https://sounkou-bioinfo.r-universe.dev
+      UNIVERSE_NAME: rgenomicsetl
+      MY_UNIVERSE: https://rgenomicsetl.r-universe.dev
       CRAN_VERSION: ""
       USE_UNSTABLE_C_API: "1"
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE

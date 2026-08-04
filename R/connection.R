@@ -5,7 +5,7 @@
 #' bundled artifact for an exact engine version.
 #'
 #' @param duckdb_version Exact DuckDB engine version, with or without the `v`
-#'   prefix (for example, `"v1.5.4"`). `NULL` uses the engine version reported
+#'   prefix (for example, `"v1.5.5"`). `NULL` uses the engine version reported
 #'   by the installed `duckdb` package.
 #' @return Character scalar path to the matching `rducks.duckdb_extension`.
 #' @examples
@@ -42,7 +42,7 @@ rducks_normalize_duckdb_version <- function(version) {
   if (length(version) != 1L || is.na(version) ||
       !grepl("^v?[0-9]+\\.[0-9]+\\.[0-9]+$", version)) {
     stop(
-      "DuckDB engine version must be an exact release such as 'v1.5.4'",
+      "DuckDB engine version must be an exact release such as 'v1.5.5'",
       call. = FALSE
     )
   }

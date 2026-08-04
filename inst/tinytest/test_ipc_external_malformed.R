@@ -62,6 +62,21 @@ run_external_malformed <- function(make_result, register, query, expect_pattern,
   expect_error(query(con), pattern = expect_pattern, info = info)
 }
 
+# A complete result followed by another byte must not be accepted as the same
+# message. The native worker path owns the entire response payload.
+run_external_malformed(
+  make_result = function(n) {
+    p <- Rducks:::rducks_wire_encode_values(list(INTEGER), list(seq_len(n)), n)
+    c(p, as.raw(0x00L))
+  },
+  register = function(con) rducks_register_scalar_udf(
+    con, "trailing_ext", function(x) x, args = INTEGER, returns = INTEGER
+  ),
+  query = function(con) DBI::dbGetQuery(con, "SELECT trailing_ext(i::INTEGER) v FROM range(1) t(i)"),
+  expect_pattern = "trailing byte",
+  info = "native writeback rejects trailing worker result bytes"
+)
+
 # UNION result with a tag past the member count.
 run_external_malformed(
   make_result = function(n) {

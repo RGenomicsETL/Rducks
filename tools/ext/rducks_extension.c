@@ -724,7 +724,8 @@ static int rducks_ripc_execute(rducks_runtime_entry_t *runtime, rducks_r_scalar_
                                char *err_msg, size_t err_cap);
 #include "src/rducks_scalar_dispatch.c"
 #include "src/rducks_rc.c"
-#include "src/quack_core.c"
+/* One Quack authority is shared with the R package native bridge. */
+#include "../../src/quack_core.c"
 #include "src/rducks_ripc.c"
 #include "src/rducks_worker_queue.c"
 #include "src/rducks_parallel.c"

@@ -7,6 +7,7 @@ extension artifact is loaded by `rducks_enable()`.
 
 - `tools/ext/rducks_extension.c`
 - native sources under `tools/ext/src/`
+- the shared Quack core under `src/quack_core.c` and `src/quack_core.h`
 - exact-version vendored DuckDB C API headers under `tools/ext/duckdb_capi/v*/`
 - `tools/ext/duckdb_capi/versions.txt`, the supported engine-version manifest
 - vendored NNG and Mbed TLS sources under `tools/ext/third_party/`
@@ -35,7 +36,7 @@ Refresh DuckDB headers explicitly, once for each release listed in
 `tools/ext/duckdb_capi/versions.txt`:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
 The script writes to `tools/ext/duckdb_capi/<ref>/` and fetches:
@@ -48,7 +49,7 @@ It records the source ref, file hashes, and local prototype repairs in
 DuckDB checkout, use:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.5
 ```
 
 ## Install-time build
@@ -57,7 +58,7 @@ Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.4
 and write one build-tree payload per declared exact engine version:
 
 ```text
-inst/rducks_extension/build/v1.5.4/rducks.duckdb_extension
+inst/rducks_extension/build/v1.5.5/rducks.duckdb_extension
 ```
 
 The NNG/Mbed TLS static dependency is built once per package installation and
@@ -90,8 +91,8 @@ RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE
 Each variant defines its own pinned unstable DuckDB version, for example:
 
 ```sh
--DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.5.4
--DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"v1.5.4\"
+-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.5.5
+-DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"v1.5.5\"
 ```
 
 A stable `C_STRUCT` footer is not a compatibility workaround. If the extension

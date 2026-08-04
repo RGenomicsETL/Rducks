@@ -3,8 +3,8 @@
 
 # Rducks
 
-[![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
-[![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
+[![R-CMD-check](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml)
+[![R-universe](https://rgenomicsetl.r-universe.dev/badges/Rducks)](https://rgenomicsetl.r-universe.dev/Rducks)
 [![Lifecycle:
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 
@@ -62,7 +62,7 @@ closed.
 Rducks uses DuckDB’s `C_STRUCT_UNSTABLE` extension ABI. The package
 therefore builds and installs a separate extension artifact for every
 supported exact DuckDB engine release instead of assuming patch releases
-are ABI-compatible. The current bundle covers v1.5.0 through v1.5.4;
+are ABI-compatible. The current bundle covers v1.5.0 through v1.5.5;
 that range is generated from the build manifest rather than maintained
 separately in the documentation.
 
@@ -70,7 +70,7 @@ separately in the documentation.
 and loads only the artifact for that exact version. It never falls back
 to a nearby version. An unsupported engine fails before `LOAD` and
 reports the bundled versions. See the [DuckDB version compatibility
-article](https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.html)
+article](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html)
 for the installed layout, diagnostics, and maintainer update workflow.
 
 ## Quick start
@@ -431,7 +431,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            169         249
+#> 1 8e+06            170         249
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -443,7 +443,6 @@ how many reads are pulled. It runs only when the BAM is present locally.
 
 ``` r
 DBI::dbExecute(con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
-#> [1] 0
 
 stream <- rducks_query_stream(
   con,
@@ -467,8 +466,6 @@ data.frame(
   rss_at_open_mb = bam_open,
   peak_rss_mb = peak
 )
-#>   bam_gb reads_streamed rss_at_open_mb peak_rss_mb
-#> 1   15.1       10614784            255         297
 ```
 
 ## Execution plans
@@ -482,7 +479,7 @@ placement/concurrency backend for the recorded R thread.
 | `ipc` (`wire + multiprocess_parallel`)  | `ipc_nng_pool`      | yes         | yes             | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, enum, bit, and list/array/struct of supported types |
 
 `rducks_enable(con)` selects the in-process backend;
-`rducks_enable_inproc(con, threads = 4, external_threads = 1)` keeps R
+`rducks_enable_inproc(con, threads = 2, external_threads = 2)` keeps R
 work on the recorded R thread while DuckDB workers run concurrently and
 queue their callbacks to it.
 
@@ -527,7 +524,7 @@ rducks_register_scalar_udf(
 #>   evaluation_mode: vectorized
 #>   plan:            direct+serial
 #>   signature:       r_inc(INTEGER) -> INTEGER
-rducks_set_execution_plan(con, plan, threads = 4L, external_threads = 1L)
+rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 2L)
 dbGetQuery(con, "SELECT sum(r_inc((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
 #>      total
 #> 1 10010000
@@ -627,9 +624,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.354
-#> 2          ipc (2 workers) 65961344       1.957
-#> 3   ipc + mori (2 workers) 65961344       1.932
+#> 1 inproc (single R thread) 65961344       3.445
+#> 2          ipc (2 workers) 65961344       2.112
+#> 3   ipc + mori (2 workers) 65961344       2.087
 ```
 
 ## duckplyr integration
@@ -685,7 +682,7 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 The source and vendored native dependencies used by `configure` live
 under `tools/ext/`. Rducks uses DuckDB’s exact-version unstable C ABI,
 so installation builds one artifact per release declared in
-`tools/ext/duckdb_capi/versions.txt` (currently v1.5.0 through v1.5.4),
+`tools/ext/duckdb_capi/versions.txt` (currently v1.5.0 through v1.5.5),
 for example
 `inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
 At runtime, `rducks_enable()` queries the target connection’s engine
@@ -698,19 +695,19 @@ Matching DuckDB C API headers are vendored explicitly for every declared
 version.
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
 The extension uses DuckDB’s [C extension
-API](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
-and unstable C extension ABI for connection/runtime access,
-scalar-function bind/init/state hooks, dynamic bind-time argument
-inspection, and selection-vector helpers. This table is generated from
+API](https://duckdb.org/docs/stable/clients/c/overview.html) and
+unstable C extension ABI for connection/runtime access, scalar-function
+bind/init/state hooks, dynamic bind-time argument inspection, and
+selection-vector helpers. This table is generated from
 `tools/used_duckdb_unstable_api.R` when `README.Rmd` is rendered:
 
 | ABI group                                      | Functions used                                                                                                                                                                                                                                                                                              | Count |
 |------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
-| `unstable_deprecated`                          | `duckdb_pending_prepared_streaming`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                                              |     3 |
+| `unstable_deprecated`                          | `duckdb_pending_prepared_streaming`, `duckdb_result_get_chunk`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                   |     4 |
 | `unstable_new_expression_functions`            | `duckdb_destroy_expression`, `duckdb_expression_return_type`                                                                                                                                                                                                                                                |     2 |
 | `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` |     7 |
 | `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init`                                                          |     6 |
@@ -725,7 +722,7 @@ See `docs/BUILD.md` for the build and ABI details.
 - [DuckDB extension
   overview](https://duckdb.org/docs/stable/extensions/overview)
 - [DuckDB C extension API
-  notes](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+  notes](https://duckdb.org/docs/stable/clients/c/overview.html)
 - [NNG C library](https://nng.nanomsg.org/)
 - [nanonext and mirai](https://mirai.r-lib.org/)
 - [mori shared objects for R](https://shikokuchuo.net/mori/)

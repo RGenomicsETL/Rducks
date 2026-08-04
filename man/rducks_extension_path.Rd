@@ -8,7 +8,7 @@ rducks_extension_path(duckdb_version = NULL)
 }
 \arguments{
 \item{duckdb_version}{Exact DuckDB engine version, with or without the \code{v}
-prefix (for example, \code{"v1.5.4"}). \code{NULL} uses the engine version reported
+prefix (for example, \code{"v1.5.5"}). \code{NULL} uses the engine version reported
 by the installed \code{duckdb} package.}
 }
 \value{

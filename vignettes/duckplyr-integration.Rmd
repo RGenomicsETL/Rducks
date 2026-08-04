@@ -19,24 +19,29 @@ if (length(missing)) {
   message("Skipping executable duckplyr vignette because packages are missing: ", paste(missing, collapse = ", "))
   knitr::knit_exit()
 }
-old_duckplyr_env <- Sys.getenv(
-  c("DUCKPLYR_FALLBACK_COLLECT", "DUCKPLYR_FALLBACK_INFO", "DUCKPLYR_FALLBACK_AUTOUPLOAD"),
-  unset = NA_character_
-)
-restore_duckplyr_env <- function() {
-  for (name in names(old_duckplyr_env)) {
-    if (is.na(old_duckplyr_env[[name]])) {
-      Sys.unsetenv(name)
-    } else {
-      do.call(Sys.setenv, stats::setNames(list(old_duckplyr_env[[name]]), name))
+with_duckplyr_fallback_disabled <- function(expr) {
+  names <- c(
+    "DUCKPLYR_FALLBACK_COLLECT",
+    "DUCKPLYR_FALLBACK_INFO",
+    "DUCKPLYR_FALLBACK_AUTOUPLOAD"
+  )
+  old <- Sys.getenv(names, unset = NA_character_)
+  on.exit({
+    for (name in names) {
+      if (is.na(old[[name]])) {
+        Sys.unsetenv(name)
+      } else {
+        do.call(Sys.setenv, stats::setNames(list(old[[name]]), name))
+      }
     }
-  }
+  }, add = TRUE)
+  Sys.setenv(
+    DUCKPLYR_FALLBACK_COLLECT = "0",
+    DUCKPLYR_FALLBACK_INFO = "0",
+    DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
+  )
+  force(expr)
 }
-Sys.setenv(
-  DUCKPLYR_FALLBACK_COLLECT = "0",
-  DUCKPLYR_FALLBACK_INFO = "0",
-  DUCKPLYR_FALLBACK_AUTOUPLOAD = "0"
-)
 ```
 
 Rducks can make selected ordinary R calls inside a duckplyr pipeline available as
@@ -91,7 +96,7 @@ local_score <- function(x, label) {
   as.double(x + bonus)
 }
 
-blocked <- tryCatch({
+blocked <- with_duckplyr_fallback_disabled(tryCatch({
   scores |>
     mutate(score = local_score(x, label)) |>
     collect()
@@ -99,7 +104,7 @@ blocked <- tryCatch({
 }, error = function(e) {
   message("fallback blocked: ", conditionMessage(e))
   TRUE
-})
+}))
 stopifnot(isTRUE(blocked))
 ```
 
@@ -223,5 +228,4 @@ pattern in your own helper.
 ```{r cleanup}
 rducks_release(con)
 DBI::dbDisconnect(con, shutdown = TRUE)
-restore_duckplyr_env()
 ```

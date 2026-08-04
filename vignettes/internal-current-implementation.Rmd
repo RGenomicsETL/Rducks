@@ -36,7 +36,7 @@ policy and diagnostics are covered
 in [DuckDB Version Compatibility](duckdb-version-compatibility.html):
 
 ```text
-rducks_extension/build/v1.5.4/rducks.duckdb_extension
+rducks_extension/build/v1.5.5/rducks.duckdb_extension
 ```
 
 The source and vendored dependency inputs live in the source checkout under

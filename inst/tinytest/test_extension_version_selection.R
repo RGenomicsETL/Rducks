@@ -8,7 +8,13 @@ local({
 
   expect_true(file.exists(path))
   expect_identical(basename(dirname(path)), current)
-  expect_identical(bundled, paste0("v1.5.", 0:4))
+  selected <- trimws(Sys.getenv("RDUCKS_DUCKDB_VERSIONS", unset = ""))
+  expected <- if (nzchar(selected)) {
+    strsplit(selected, "\\s+")[[1L]]
+  } else {
+    paste0("v1.5.", 0:5)
+  }
+  expect_identical(bundled, expected)
   expect_identical(rducks_extension_path(current), path)
   expect_identical(rducks_extension_path(sub("^v", "", current)), path)
   expect_error(

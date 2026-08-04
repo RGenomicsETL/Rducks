@@ -14,7 +14,11 @@ static void rdx_qk_set_error(rdx_qk_error *err, const char *msg) {
 }
 
 size_t rdx_qk_validity_bytes(uint64_t rows) {
-    return (size_t)(((rows + 63u) / 64u) * 8u);
+    uint64_t words;
+    if (rows > RDX_QK_MAX_ROWS) return SIZE_MAX;
+    words = (rows + 63u) / 64u;
+    if (words > SIZE_MAX / 8u) return SIZE_MAX;
+    return (size_t)words * 8u;
 }
 
 /* ---------------- type tree ---------------- */
@@ -42,7 +46,9 @@ void rdx_qk_type_free(rdx_qk_type *t) {
 }
 
 static char *rdx_qk_strdup_n(const char *s, size_t n) {
-    char *out = (char *)malloc(n + 1);
+    char *out;
+    if (n == SIZE_MAX || (n > 0 && !s)) return NULL;
+    out = (char *)malloc(n + 1u);
     if (!out) return NULL;
     if (n) memcpy(out, s, n);
     out[n] = '\0';
@@ -52,11 +58,14 @@ static char *rdx_qk_strdup_n(const char *s, size_t n) {
 int rdx_qk_type_add_child(rdx_qk_type *t, rdx_qk_type *child, const char *name) {
     rdx_qk_type **children;
     char **names;
-    if (!t || !child) return 0;
-    children = (rdx_qk_type **)realloc(t->children, (t->nchildren + 1) * sizeof(*children));
+    size_t count;
+    if (!t || !child || t->nchildren >= RDX_QK_MAX_COLUMNS) return 0;
+    count = (size_t)t->nchildren + 1u;
+    if (count > SIZE_MAX / sizeof(*children) || count > SIZE_MAX / sizeof(*names)) return 0;
+    children = (rdx_qk_type **)realloc(t->children, count * sizeof(*children));
     if (!children) return 0;
     t->children = children;
-    names = (char **)realloc(t->names, (t->nchildren + 1) * sizeof(*names));
+    names = (char **)realloc(t->names, count * sizeof(*names));
     if (!names) return 0;
     t->names = names;
     t->names[t->nchildren] = name ? rdx_qk_strdup_n(name, strlen(name)) : rdx_qk_strdup_n("", 0);
@@ -68,10 +77,12 @@ int rdx_qk_type_add_child(rdx_qk_type *t, rdx_qk_type *child, const char *name) 
 
 int rdx_qk_type_set_enum_labels(rdx_qk_type *t, const char *const *labels, uint32_t n) {
     uint32_t i;
-    if (!t) return 0;
-    t->enum_labels = (char **)calloc(n ? n : 1, sizeof(char *));
+    if (!t || n > RDX_QK_MAX_ENUM_VALUES || (n > 0 && !labels) ||
+        t->enum_labels || t->enum_count) return 0;
+    t->enum_labels = (char **)calloc(n ? (size_t)n : 1u, sizeof(char *));
     if (!t->enum_labels) return 0;
     for (i = 0; i < n; i++) {
+        if (!labels[i]) return 0;
         t->enum_labels[i] = rdx_qk_strdup_n(labels[i], strlen(labels[i]));
         if (!t->enum_labels[i]) return 0;
         t->enum_count = i + 1;
@@ -87,6 +98,7 @@ static size_t rdx_qk_enum_physical_width(uint32_t enum_count) {
 }
 
 size_t rdx_qk_type_fixed_width(const rdx_qk_type *t) {
+    if (!t) return 0;
     switch (t->id) {
     case RDX_QK_LTYPE_BOOLEAN: return 1;
     case RDX_QK_LTYPE_TINYINT: case RDX_QK_LTYPE_UTINYINT: return 1;
@@ -125,14 +137,17 @@ int rdx_qk_type_equal(const rdx_qk_type *a, const rdx_qk_type *b) {
         a->enum_count != b->enum_count) {
         return 0;
     }
+    if (a->nchildren && (!a->children || !b->children)) return 0;
     for (i = 0; i < a->nchildren; i++) {
         const char *an = (a->names && a->names[i]) ? a->names[i] : "";
         const char *bn = (b->names && b->names[i]) ? b->names[i] : "";
         if (strcmp(an, bn) != 0) return 0;
         if (!rdx_qk_type_equal(a->children[i], b->children[i])) return 0;
     }
+    if (a->enum_count && (!a->enum_labels || !b->enum_labels)) return 0;
     for (i = 0; i < a->enum_count; i++) {
-        if (strcmp(a->enum_labels[i], b->enum_labels[i]) != 0) return 0;
+        if (!a->enum_labels[i] || !b->enum_labels[i] ||
+            strcmp(a->enum_labels[i], b->enum_labels[i]) != 0) return 0;
     }
     return 1;
 }
@@ -140,7 +155,9 @@ int rdx_qk_type_equal(const rdx_qk_type *a, const rdx_qk_type *b) {
 /* ---------------- vector model ---------------- */
 
 rdx_qk_vector *rdx_qk_vector_new(const rdx_qk_type *type, uint64_t rows) {
-    rdx_qk_vector *v = (rdx_qk_vector *)calloc(1, sizeof(rdx_qk_vector));
+    rdx_qk_vector *v;
+    if (!type || rows > RDX_QK_MAX_ROWS) return NULL;
+    v = (rdx_qk_vector *)calloc(1, sizeof(rdx_qk_vector));
     if (!v) return NULL;
     v->type = type;
     v->rows = rows;
@@ -162,7 +179,10 @@ void rdx_qk_vector_free(rdx_qk_vector *v) {
 }
 
 int rdx_qk_vector_alloc_validity(rdx_qk_vector *v) {
-    size_t n = rdx_qk_validity_bytes(v->rows);
+    size_t n;
+    if (!v) return 0;
+    n = rdx_qk_validity_bytes(v->rows);
+    if (n == SIZE_MAX) return 0;
     if (v->validity) return 1;
     v->validity = (uint8_t *)malloc(n ? n : 1);
     if (!v->validity) return 0;
@@ -172,17 +192,21 @@ int rdx_qk_vector_alloc_validity(rdx_qk_vector *v) {
 }
 
 void rdx_qk_vector_set_null(rdx_qk_vector *v, uint64_t row) {
+    if (!v || row >= v->rows) return;
     if (!v->validity && !rdx_qk_vector_alloc_validity(v)) return;
     v->validity[row >> 3] &= (uint8_t)~(1u << (row & 7u));
 }
 
 int rdx_qk_vector_row_is_valid(const rdx_qk_vector *v, uint64_t row) {
+    if (!v || row >= v->rows) return 0;
     if (!v->has_validity || !v->validity) return 1;
     return (v->validity[row >> 3] >> (row & 7u)) & 1u;
 }
 
 int rdx_qk_vector_alloc_fixed(rdx_qk_vector *v) {
-    size_t width = rdx_qk_type_fixed_width(v->type);
+    size_t width;
+    if (!v || v->data) return 0;
+    width = rdx_qk_type_fixed_width(v->type);
     size_t n;
     if (width == 0) return 0;
     if (v->rows > SIZE_MAX / width) return 0;
@@ -194,7 +218,11 @@ int rdx_qk_vector_alloc_fixed(rdx_qk_vector *v) {
 }
 
 int rdx_qk_vector_alloc_strings(rdx_qk_vector *v, size_t pool_bytes) {
-    v->str_offsets = (uint64_t *)calloc((size_t)v->rows + 1, sizeof(uint64_t));
+    size_t count;
+    if (!v || v->str_offsets || v->str_pool || v->rows > RDX_QK_MAX_ROWS ||
+        v->rows > (uint64_t)(SIZE_MAX / sizeof(uint64_t) - 1u)) return 0;
+    count = (size_t)v->rows + 1u;
+    v->str_offsets = (uint64_t *)calloc(count, sizeof(uint64_t));
     if (!v->str_offsets) return 0;
     v->str_pool = (uint8_t *)malloc(pool_bytes ? pool_bytes : 1);
     if (!v->str_pool) return 0;
@@ -203,15 +231,21 @@ int rdx_qk_vector_alloc_strings(rdx_qk_vector *v, size_t pool_bytes) {
 }
 
 int rdx_qk_vector_alloc_list(rdx_qk_vector *v, uint64_t child_rows) {
-    v->list_offsets = (uint64_t *)calloc((size_t)v->rows ? (size_t)v->rows : 1, sizeof(uint64_t));
-    v->list_lengths = (uint64_t *)calloc((size_t)v->rows ? (size_t)v->rows : 1, sizeof(uint64_t));
+    size_t count;
+    if (!v || v->list_offsets || v->list_lengths || v->rows > RDX_QK_MAX_ROWS ||
+        child_rows > RDX_QK_MAX_ROWS || v->rows > SIZE_MAX / sizeof(uint64_t)) return 0;
+    count = v->rows ? (size_t)v->rows : 1u;
+    v->list_offsets = (uint64_t *)calloc(count, sizeof(uint64_t));
+    v->list_lengths = (uint64_t *)calloc(count, sizeof(uint64_t));
     if (!v->list_offsets || !v->list_lengths) return 0;
     v->list_child_rows = child_rows;
     return 1;
 }
 
 rdx_qk_chunk *rdx_qk_chunk_new(uint64_t rows, uint32_t ncolumns) {
-    rdx_qk_chunk *c = (rdx_qk_chunk *)calloc(1, sizeof(rdx_qk_chunk));
+    rdx_qk_chunk *c;
+    if (rows > RDX_QK_MAX_ROWS || ncolumns > RDX_QK_MAX_COLUMNS) return NULL;
+    c = (rdx_qk_chunk *)calloc(1, sizeof(rdx_qk_chunk));
     if (!c) return NULL;
     c->rows = rows;
     c->ncolumns = ncolumns;
@@ -475,6 +509,10 @@ static int rdx_qk_child_pair_encode(rdx_qk_writer *w, const char *name, const rd
 static int rdx_qk_type_encode_depth(rdx_qk_writer *w, const rdx_qk_type *t,
                                     unsigned depth, rdx_qk_error *err) {
     uint32_t i;
+    if (!w || !t) {
+        rdx_qk_set_error(err, "quack wire logical type is missing");
+        return 0;
+    }
     if (depth > RDX_QK_MAX_NESTING) {
         rdx_qk_set_error(err, "quack wire logical type exceeds nesting limit");
         return 0;
@@ -512,6 +550,11 @@ static int rdx_qk_type_encode_depth(rdx_qk_writer *w, const rdx_qk_type *t,
             break;
         case RDX_QK_LTYPE_STRUCT:
         case RDX_QK_LTYPE_UNION:
+            if (t->nchildren > RDX_QK_MAX_COLUMNS ||
+                (t->nchildren > 0 && !t->children)) {
+                rdx_qk_set_error(err, "STRUCT/UNION logical type has invalid children");
+                return 0;
+            }
             rdx_qk_write_field(w, 100);
             rdx_qk_write_uleb(w, RDX_QK_XINFO_STRUCT);
             rdx_qk_write_field(w, 200);
@@ -522,6 +565,11 @@ static int rdx_qk_type_encode_depth(rdx_qk_writer *w, const rdx_qk_type *t,
             }
             break;
         case RDX_QK_LTYPE_ENUM:
+            if (t->enum_count > RDX_QK_MAX_ENUM_VALUES ||
+                (t->enum_count > 0 && !t->enum_labels)) {
+                rdx_qk_set_error(err, "ENUM logical type has an invalid dictionary");
+                return 0;
+            }
             rdx_qk_write_field(w, 100);
             rdx_qk_write_uleb(w, RDX_QK_XINFO_ENUM);
             rdx_qk_write_field(w, 200);
@@ -619,6 +667,19 @@ fail:
     return 0;
 }
 
+static uint32_t rdx_qk_expected_info_kind(uint32_t type_id) {
+    switch (type_id) {
+    case RDX_QK_LTYPE_DECIMAL: return RDX_QK_XINFO_DECIMAL;
+    case RDX_QK_LTYPE_LIST:
+    case RDX_QK_LTYPE_MAP: return RDX_QK_XINFO_LIST;
+    case RDX_QK_LTYPE_STRUCT:
+    case RDX_QK_LTYPE_UNION: return RDX_QK_XINFO_STRUCT;
+    case RDX_QK_LTYPE_ENUM: return RDX_QK_XINFO_ENUM;
+    case RDX_QK_LTYPE_ARRAY: return RDX_QK_XINFO_ARRAY;
+    default: return RDX_QK_XINFO_INVALID;
+    }
+}
+
 static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
                                    unsigned depth, rdx_qk_error *err) {
     uint16_t field;
@@ -629,7 +690,50 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
     uint32_t seen = 0; /* reject duplicate type-info fields */
     for (;;) {
         if (!rdx_qk_read_field(r, &field, err)) return 0;
-        if (field == RDX_QK_OBJECT_END) return 1;
+        if (field == RDX_QK_OBJECT_END) {
+            if (!(seen & 1u)) {
+                rdx_qk_set_error(err, "type info object is missing its kind");
+                return 0;
+            }
+            switch (t->id) {
+            case RDX_QK_LTYPE_DECIMAL:
+                if (t->width == 0u || t->scale > t->width) {
+                    rdx_qk_set_error(err, "decimal type info has invalid width or scale");
+                    return 0;
+                }
+                break;
+            case RDX_QK_LTYPE_LIST:
+            case RDX_QK_LTYPE_MAP:
+                if (t->nchildren != 1u) {
+                    rdx_qk_set_error(err, "LIST/MAP type info is missing its child");
+                    return 0;
+                }
+                break;
+            case RDX_QK_LTYPE_STRUCT:
+            case RDX_QK_LTYPE_UNION:
+                if (!(seen & (1u << 5))) {
+                    rdx_qk_set_error(err, "STRUCT/UNION type info is missing its members");
+                    return 0;
+                }
+                break;
+            case RDX_QK_LTYPE_ENUM:
+                if (!(seen & (1u << 5)) || !(seen & (1u << 6)) ||
+                    (t->enum_count > 0u && !t->enum_labels)) {
+                    rdx_qk_set_error(err, "ENUM type info is missing its dictionary");
+                    return 0;
+                }
+                break;
+            case RDX_QK_LTYPE_ARRAY:
+                if (t->nchildren != 1u || t->array_size == 0u) {
+                    rdx_qk_set_error(err, "ARRAY type info is missing its child or size");
+                    return 0;
+                }
+                break;
+            default:
+                break;
+            }
+            return 1;
+        }
         /* A duplicate field 200/201 would re-add children or overwrite the enum
          * label / decimal-width allocation without freeing the first (a C heap
          * leak), or mutate a width/scale; reject duplicates. */
@@ -642,8 +746,12 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
             seen |= bit;
         }
         switch (field) {
-        case 100: /* extra info kind: validated against the logical id */
+        case 100: /* extra info kind */
             if (!rdx_qk_read_uleb(r, &value, err)) return 0;
+            if (value != rdx_qk_expected_info_kind(t->id)) {
+                rdx_qk_set_error(err, "logical type and extra type info kind disagree");
+                return 0;
+            }
             break;
         case 101: /* alias */
             if (!rdx_qk_read_string(r, &ptr, &len, err)) return 0;
@@ -683,8 +791,8 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
             case RDX_QK_LTYPE_STRUCT:
             case RDX_QK_LTYPE_UNION:
                 if (!rdx_qk_read_uleb(r, &count, err)) return 0;
-                if (count > RDX_QK_MAX_COLUMNS) {
-                    rdx_qk_set_error(err, "struct member count exceeds limit");
+                if (count > RDX_QK_MAX_COLUMNS || count > r->size - r->pos) {
+                    rdx_qk_set_error(err, "struct member count exceeds its payload bound");
                     return 0;
                 }
                 for (i = 0; i < count; i++) {
@@ -704,6 +812,10 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
                 if (!rdx_qk_read_uleb(r, &value, err)) return 0;
                 if (value > RDX_QK_MAX_ENUM_VALUES) {
                     rdx_qk_set_error(err, "enum dictionary size exceeds limit");
+                    return 0;
+                }
+                if (t->enum_labels && value != t->enum_count) {
+                    rdx_qk_set_error(err, "enum values list disagrees with values_count");
                     return 0;
                 }
                 t->enum_count = (uint32_t)value;
@@ -738,12 +850,16 @@ static int rdx_qk_type_info_decode(rdx_qk_reader *r, rdx_qk_type *t,
                     rdx_qk_set_error(err, "enum values list disagrees with values_count");
                     return 0;
                 }
-                if (n > RDX_QK_MAX_ENUM_VALUES) {
-                    rdx_qk_set_error(err, "enum dictionary size exceeds limit");
+                if (n > RDX_QK_MAX_ENUM_VALUES || n > r->size - r->pos) {
+                    rdx_qk_set_error(err, "enum dictionary size exceeds its payload bound");
                     return 0;
                 }
                 t->enum_count = (uint32_t)n;
-                t->enum_labels = (char **)calloc((size_t)n ? (size_t)n : 1, sizeof(char *));
+                if ((size_t)n > SIZE_MAX / sizeof(char *)) {
+                    rdx_qk_set_error(err, "enum dictionary allocation exceeds address space");
+                    return 0;
+                }
+                t->enum_labels = (char **)calloc((size_t)n ? (size_t)n : 1u, sizeof(char *));
                 if (!t->enum_labels) {
                     rdx_qk_set_error(err, "out of memory decoding enum labels");
                     return 0;
@@ -777,6 +893,7 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
     uint64_t value;
     int seen_id = 0;
     int seen_info = 0;
+    int info_present = 0;
     if (depth > RDX_QK_MAX_NESTING) {
         rdx_qk_set_error(err, "quack wire logical type exceeds nesting limit");
         return 0;
@@ -796,6 +913,10 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
                 goto fail;
             }
             if (!rdx_qk_read_uleb(r, &value, err)) goto fail;
+            if (value > UINT32_MAX) {
+                rdx_qk_set_error(err, "logical type id exceeds 32 bits");
+                goto fail;
+            }
             t->id = (uint32_t)value;
             seen_id = 1;
             break;
@@ -811,9 +932,12 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
             }
             seen_info = 1;
             if (!rdx_qk_read_u8(r, &present, err)) goto fail;
-            if (present) {
-                if (!rdx_qk_type_info_decode(r, t, depth, err)) goto fail;
+            if (present > 1u) {
+                rdx_qk_set_error(err, "logical type info presence flag is not boolean");
+                goto fail;
             }
+            info_present = present != 0u;
+            if (info_present && !rdx_qk_type_info_decode(r, t, depth, err)) goto fail;
             break;
         }
         default:
@@ -823,6 +947,10 @@ static int rdx_qk_type_decode_depth(rdx_qk_reader *r, rdx_qk_type **out,
     }
     if (!seen_id) {
         rdx_qk_set_error(err, "logical type object is missing its id");
+        goto fail;
+    }
+    if (rdx_qk_type_needs_info(t) && (!seen_info || !info_present)) {
+        rdx_qk_set_error(err, "nested logical type is missing its type info");
         goto fail;
     }
     *out = t;
@@ -848,9 +976,14 @@ static int rdx_qk_vector_is_varlen(const rdx_qk_type *t) {
 
 static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
                                       unsigned depth, rdx_qk_error *err) {
-    const rdx_qk_type *t = v->type;
+    const rdx_qk_type *t;
     uint64_t row;
     uint32_t i;
+    if (!w || !v || !v->type || v->rows > RDX_QK_MAX_ROWS) {
+        rdx_qk_set_error(err, "quack wire vector is invalid or too large");
+        return 0;
+    }
+    t = v->type;
     if (depth > RDX_QK_MAX_NESTING) {
         rdx_qk_set_error(err, "quack wire vector exceeds nesting limit");
         return 0;
@@ -859,8 +992,13 @@ static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
     rdx_qk_write_field(w, 100);
     rdx_qk_write_u8(w, v->has_validity ? 1 : 0);
     if (v->has_validity) {
+        size_t validity_size = rdx_qk_validity_bytes(v->rows);
+        if (!v->validity || validity_size == SIZE_MAX) {
+            rdx_qk_set_error(err, "vector validity storage is invalid");
+            return 0;
+        }
         rdx_qk_write_field(w, 101);
-        rdx_qk_write_data(w, v->validity, rdx_qk_validity_bytes(v->rows));
+        rdx_qk_write_data(w, v->validity, validity_size);
     }
     if (rdx_qk_vector_is_varlen(t)) {
         if (!v->str_offsets) {
@@ -886,7 +1024,8 @@ static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
             rdx_qk_write_object_end(w);
         }
     } else if (t->id == RDX_QK_LTYPE_LIST || t->id == RDX_QK_LTYPE_MAP) {
-        if (!v->list_offsets || v->nchildren != 1) {
+        if (!v->list_offsets || !v->list_lengths || !v->children || !v->children[0] ||
+            v->nchildren != 1 || v->list_child_rows > RDX_QK_MAX_ROWS) {
             rdx_qk_set_error(err, "list vector is missing its entries or child");
             return 0;
         }
@@ -905,8 +1044,9 @@ static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
         if (!rdx_qk_vector_encode_depth(w, v->children[0], depth + 1, err)) return 0;
         rdx_qk_write_object_end(w);
     } else if (t->id == RDX_QK_LTYPE_ARRAY) {
-        if (v->nchildren != 1) {
-            rdx_qk_set_error(err, "array vector is missing its child");
+        if (v->nchildren != 1 || !v->children || !v->children[0] ||
+            (t->array_size > 0 && v->rows > RDX_QK_MAX_ROWS / t->array_size)) {
+            rdx_qk_set_error(err, "array vector is missing its child or exceeds the row limit");
             return 0;
         }
         rdx_qk_write_field(w, 103);
@@ -920,7 +1060,7 @@ static int rdx_qk_vector_encode_depth(rdx_qk_writer *w, const rdx_qk_vector *v,
             rdx_qk_set_error(err, "fixed-width vector is missing its data payload");
             return 0;
         }
-        if (v->data_size != width * (size_t)v->rows) {
+        if (v->rows > SIZE_MAX / width || v->data_size != width * (size_t)v->rows) {
             rdx_qk_set_error(err, "fixed-width vector payload size mismatch");
             return 0;
         }
@@ -976,7 +1116,15 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
         case 100: { /* has_validity */
             uint8_t flag;
             if (!rdx_qk_read_u8(r, &flag, err)) goto fail;
-            v->has_validity = flag ? 1 : 0;
+            if (flag > 1u) {
+                rdx_qk_set_error(err, "vector validity flag is not boolean");
+                goto fail;
+            }
+            if (v->validity && flag == 0u) {
+                rdx_qk_set_error(err, "vector validity flag disagrees with its mask");
+                goto fail;
+            }
+            v->has_validity = flag;
             break;
         }
         case 101: { /* validity mask */
@@ -1004,7 +1152,12 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
                     rdx_qk_set_error(err, "varlen vector row payload count mismatch");
                     goto fail;
                 }
-                /* Two-pass: bound the pool by the remaining payload size. */
+                /* Every encoded string needs at least one length byte. Bound
+                 * the offsets allocation by bytes still present in the input. */
+                if (count > r->size - r->pos) {
+                    rdx_qk_set_error(err, "varlen vector row count exceeds its payload bytes");
+                    goto fail;
+                }
                 if (!rdx_qk_vector_alloc_strings(v, r->size - r->pos)) {
                     rdx_qk_set_error(err, "out of memory decoding string vector");
                     goto fail;
@@ -1075,7 +1228,12 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
                 }
                 v->list_child_rows = value;
             } else if (t->id == RDX_QK_LTYPE_ARRAY) {
-                uint64_t child_rows = (uint64_t)t->array_size * rows;
+                uint64_t child_rows;
+                if (t->array_size > 0 && rows > RDX_QK_MAX_ROWS / t->array_size) {
+                    rdx_qk_set_error(err, "array child cardinality exceeds limit");
+                    goto fail;
+                }
+                child_rows = (uint64_t)t->array_size * rows;
                 v->children = (rdx_qk_vector **)calloc(1, sizeof(*v->children));
                 if (!v->children) {
                     rdx_qk_set_error(err, "out of memory decoding array child");
@@ -1101,6 +1259,10 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             if (!rdx_qk_read_uleb(r, &count, err)) goto fail;
             if (count != rows) {
                 rdx_qk_set_error(err, "list entries count disagrees with row count");
+                goto fail;
+            }
+            if (count > r->size - r->pos) {
+                rdx_qk_set_error(err, "list entry count exceeds its payload bytes");
                 goto fail;
             }
             if (!rdx_qk_vector_alloc_list(v, v->list_child_rows)) {
@@ -1162,7 +1324,7 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
      * validity mask (field 101); otherwise rdx_qk_vector_row_is_valid would read
      * a NULL mask. The flag and the mask field both set has_validity, so this
      * catches a payload that sets the flag but omits the mask. */
-    if (v->has_validity && v->rows > 0 && !v->validity) {
+    if (v->has_validity && !v->validity) {
         rdx_qk_set_error(err, "vector advertises validity but is missing its mask");
         goto fail;
     }
@@ -1198,7 +1360,7 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             rdx_qk_set_error(err, "list/map child row count disagrees with the declared cardinality");
             goto fail;
         }
-        if (v->rows > 0 && (!v->list_offsets || !v->list_lengths)) {
+        if (!v->list_offsets || !v->list_lengths) {
             rdx_qk_set_error(err, "list/map vector is missing offsets or lengths");
             goto fail;
         }
@@ -1216,7 +1378,7 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             goto fail;
         }
     } else if (rdx_qk_vector_is_varlen(t)) {
-        if (v->rows > 0 && !v->str_offsets) {
+        if (!v->str_offsets) {
             rdx_qk_set_error(err, "varlen vector is missing its string offsets");
             goto fail;
         }
@@ -1226,7 +1388,8 @@ static int rdx_qk_vector_decode_depth(rdx_qk_reader *r, const rdx_qk_type *t, ui
             rdx_qk_set_error(err, "vector has an unsupported logical type");
             goto fail;
         }
-        if (v->rows > 0 && (!v->data || v->data_size != width * (size_t)v->rows)) {
+        if (v->rows > SIZE_MAX / width || !v->data ||
+            v->data_size != width * (size_t)v->rows) {
             rdx_qk_set_error(err, "fixed-width vector is missing or wrong-sized data");
             goto fail;
         }
@@ -1242,6 +1405,11 @@ fail:
 
 int rdx_qk_chunk_encode(rdx_qk_writer *w, const rdx_qk_chunk *c, rdx_qk_error *err) {
     uint32_t i;
+    if (!w || !c || c->rows > RDX_QK_MAX_ROWS || c->ncolumns > RDX_QK_MAX_COLUMNS ||
+        (c->ncolumns > 0 && (!c->types || !c->columns))) {
+        rdx_qk_set_error(err, "quack chunk is invalid or too large");
+        return 0;
+    }
     rdx_qk_write_field(w, 100);
     rdx_qk_write_uleb(w, c->rows);
     rdx_qk_write_field(w, 101);
@@ -1293,8 +1461,8 @@ int rdx_qk_chunk_decode(rdx_qk_reader *r, rdx_qk_chunk **out, rdx_qk_error *err)
             }
             seen_types = 1;
             if (!rdx_qk_read_uleb(r, &value, err)) goto fail;
-            if (value > RDX_QK_MAX_COLUMNS) {
-                rdx_qk_set_error(err, "quack chunk column count exceeds limit");
+            if (value > RDX_QK_MAX_COLUMNS || value > r->size - r->pos) {
+                rdx_qk_set_error(err, "quack chunk column count exceeds its payload bound");
                 goto fail;
             }
             ntypes = value;

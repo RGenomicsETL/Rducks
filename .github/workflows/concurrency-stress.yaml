@@ -49,9 +49,10 @@ jobs:
           tarball <- sprintf("%s_%s.tar.gz", pkg[1, "Package"], pkg[1, "Version"])
           status <- system2("R", c("CMD", "build", "--no-build-vignettes", "."))
           if (!identical(status, 0L)) quit(status = status)
-          lib <- tempfile("rducks-lib-")
+          lib <- file.path(getwd(), ".rducks-test-libdir")
+          unlink(lib, recursive = TRUE, force = TRUE)
           dir.create(lib)
-          writeLines(lib, ".rducks-test-lib")
+          writeLines(normalizePath(lib), ".rducks-test-lib")
           status <- system2("R", c("CMD", "INSTALL", "-l", lib, tarball))
           if (!identical(status, 0L)) quit(status = status)
         shell: Rscript {0}
@@ -64,3 +65,8 @@ jobs:
           tinytest::run_test_file("inst/tinytest/test_duckdb_runtime_concurrent_queue.R")
           tinytest::run_test_file("inst/tinytest/test_zzzy_duckdb_runtime_nng_transports.R")
         shell: Rscript {0}
+
+      - name: Clean concurrency stress library
+        if: always()
+        run: rm -rf .rducks-test-libdir .rducks-test-lib
+        shell: bash

@@ -1,0 +1,34 @@
+name: Native C fuzzing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Inputs per sanitizer"
+        required: false
+        default: "250000"
+  schedule:
+    - cron: "29 4 * * 1"
+
+permissions: read-all
+
+jobs:
+  quack-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native fuzz toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang
+
+      - name: Run Quack properties under ASan and UBSan
+        run: make prop-sanitize PROP_TRIALS=10000
+
+      - name: Fuzz Quack under ASan and UBSan
+        run: make fuzz FUZZ_RUNS=${{ github.event.inputs.runs || '250000' }}

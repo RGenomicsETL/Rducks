@@ -17,14 +17,19 @@ or vectorized function execution over DuckDB chunks.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/sounkou-bioinfo/Rducks}
-  \item \url{https://sounkou-bioinfo.github.io/Rducks/}
-  \item Report bugs at \url{https://github.com/sounkou-bioinfo/Rducks/issues}
+  \item \url{https://github.com/RGenomicsETL/Rducks}
+  \item \url{https://rgenomicsetl.github.io/Rducks/}
+  \item Report bugs at \url{https://github.com/RGenomicsETL/Rducks/issues}
 }
 
 }
 \author{
 \strong{Maintainer}: Sounkou Mahamane Toure \email{sounkoutoure@gmail.com}
+
+Authors:
+\itemize{
+  \item Sounkou Mahamane Toure \email{sounkoutoure@gmail.com}
+}
 
 Other contributors:
 \itemize{

@@ -1,6 +1,7 @@
 # Rducks (development version)
 
-* Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension variants for DuckDB v1.5.0 through v1.5.4. `rducks_enable()` queries the connection's engine version and loads only the matching artifact, so DuckDB package patch upgrades no longer try to load the v1.5.2 build; unsupported versions fail explicitly without ABI fallback.
+* Added native Quack property tests with shrinking, coverage-guided fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested type metadata and bounds input-driven allocation more tightly.
+* Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension variants for DuckDB v1.5.0 through v1.5.5. `rducks_enable()` queries the connection's engine version and loads only the matching artifact, so DuckDB package patch upgrades no longer try to load the v1.5.2 build; unsupported versions fail explicitly without ABI fallback.
 * `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs, matching `transport = "inproc"`. DuckDB resolves the concrete argument types per call site at bind; the native bind carries those resolved types to the worker in an `RDT1` dynamic payload (concrete arg tokens + the Quack chunk), so one registration serves call sites with different argument types. A type the wire codec cannot encode fails cleanly at the first chunk encode.
 * `VARIANT` now works in direct scalar/vectorized UDFs, nested descriptors, aggregates, dynamic binds, and the Quack/NNG `ipc` path. Rducks obtains a canonical VARIANT logical type from the runtime SQL binder, verifies its full physical vector layout with a real data-chunk probe, and fails closed on runtimes whose layout is unavailable or incompatible.
 

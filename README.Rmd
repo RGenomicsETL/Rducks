@@ -19,8 +19,8 @@ duckdb_version_range <- rducks_duckdb_version_range(".")
 
 # Rducks
 
-[![R-CMD-check](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/sounkou-bioinfo/Rducks/actions/workflows/R-CMD-check.yaml)
-[![R-universe](https://sounkou-bioinfo.r-universe.dev/badges/Rducks)](https://sounkou-bioinfo.r-universe.dev/Rducks)
+[![R-CMD-check](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml)
+[![R-universe](https://rgenomicsetl.r-universe.dev/badges/Rducks)](https://rgenomicsetl.r-universe.dev/Rducks)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 
 Rducks registers R functions as DuckDB SQL functions using a package-managed
@@ -78,7 +78,7 @@ the build manifest rather than maintained separately in the documentation.
 only the artifact for that exact version. It never falls back to a nearby
 version. An unsupported engine fails before `LOAD` and reports the bundled
 versions. See the
-[DuckDB version compatibility article](https://sounkou-bioinfo.github.io/Rducks/articles/duckdb-version-compatibility.html)
+[DuckDB version compatibility article](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html)
 for the installed layout, diagnostics, and maintainer update workflow.
 
 ## Quick start
@@ -438,7 +438,7 @@ placement/concurrency backend for the recorded R thread.
 | `ipc` (`wire + multiprocess_parallel`) | `ipc_nng_pool` | yes | yes | the extension marshals each chunk to a worker R process over NNG using the Quack wire codec; fixed-width scalars, varchar/blob, decimal, interval, enum, bit, and list/array/struct of supported types |
 
 `rducks_enable(con)` selects the in-process backend; `rducks_enable_inproc(con,
-threads = 4, external_threads = 1)` keeps R work on the recorded R thread while
+threads = 2, external_threads = 2)` keeps R work on the recorded R thread while
 DuckDB workers run concurrently and queue their callbacks to it.
 
 For `transport = "ipc"`, register single-threaded under the plan (this starts the
@@ -468,7 +468,7 @@ rducks_register_scalar_udf(
   returns = INTEGER,
   mode = "vectorized"
 )
-rducks_set_execution_plan(con, plan, threads = 4L, external_threads = 1L)
+rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 2L)
 dbGetQuery(con, "SELECT sum(r_inc((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
 rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
 ```
@@ -623,11 +623,11 @@ the exact matching artifact; an unsupported version fails without fallback.
 DuckDB C API headers are vendored explicitly for every declared version.
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
 The extension uses DuckDB's
-[C extension API](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+[C extension API](https://duckdb.org/docs/stable/clients/c/overview.html)
 and unstable C extension ABI for connection/runtime access, scalar-function
 bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector
 helpers. This table is generated from `tools/used_duckdb_unstable_api.R` when
@@ -643,7 +643,7 @@ See `docs/BUILD.md` for the build and ABI details.
 ## References
 
 - [DuckDB extension overview](https://duckdb.org/docs/stable/extensions/overview)
-- [DuckDB C extension API notes](https://github.com/duckdb/duckdb/blob/main/src/include/duckdb/main/capi/header_generation/README.md)
+- [DuckDB C extension API notes](https://duckdb.org/docs/stable/clients/c/overview.html)
 - [NNG C library](https://nng.nanomsg.org/)
 - [nanonext and mirai](https://mirai.r-lib.org/)
 - [mori shared objects for R](https://shikokuchuo.net/mori/)

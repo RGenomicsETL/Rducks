@@ -17,10 +17,12 @@
 ^Rducks_query_stream_.*\.patch$
 ^review[0-9]*\.md$
 ^cran-readiness\.md$
+^cran-comments\.md$
 ^optim\.txt$
 ^REVIEW_FOLLOWUP_CHECKLIST\.md$
 ^claude_review\.md$
 ^scripts$
+^test$
 ^inst/rducks_extension/build$
 ^_pkgdown\.yml$
 ^docs$

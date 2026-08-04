@@ -43,5 +43,5 @@ Suggests:
     rmarkdown,
     tinytest
 VignetteBuilder: knitr
-URL: https://github.com/sounkou-bioinfo/Rducks, https://sounkou-bioinfo.github.io/Rducks/
-BugReports: https://github.com/sounkou-bioinfo/Rducks/issues
+URL: https://github.com/RGenomicsETL/Rducks, https://rgenomicsetl.github.io/Rducks/
+BugReports: https://github.com/RGenomicsETL/Rducks/issues

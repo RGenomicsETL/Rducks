@@ -72,8 +72,8 @@ the UDF metadata being exercised. R work still drains on the recorded R thread.
 rducks_set_execution_plan(
   con,
   rducks_execution_plan("inproc"),
-  threads = 4L,
-  external_threads = 4L
+  threads = 2L,
+  external_threads = 2L
 )
 dbGetQuery(con, "SELECT sum(r_plus_one((i % 1000)::INTEGER)) AS total FROM range(20000) t(i)")
 ```

@@ -3,8 +3,8 @@
 #
 # This is an explicit vendoring tool, not an install-time network step.
 # Usage:
-#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
-#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.4
+#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
+#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.5
 #
 # Unless --dest is supplied, each exact version is written below
 # tools/ext/duckdb_capi/<ref>/. Keep tools/ext/duckdb_capi/versions.txt in sync
@@ -38,9 +38,9 @@ if (!file.exists(file.path(repo_root, "DESCRIPTION"))) {
 }
 
 opts <- parse_args(args)
-ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.4")
+ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.5")
 if (!grepl("^v[0-9]+\\.[0-9]+\\.[0-9]+$", ref)) {
-  stop("--ref must be an exact DuckDB release such as v1.5.4", call. = FALSE)
+  stop("--ref must be an exact DuckDB release such as v1.5.5", call. = FALSE)
 }
 dest_opt <- opts[["dest"]] %||% ""
 dest <- if (nzchar(dest_opt)) {

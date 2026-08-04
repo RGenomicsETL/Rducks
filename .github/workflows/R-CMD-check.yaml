@@ -24,6 +24,8 @@ jobs:
         config:
           - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
+          # Exercise the native build on the GitHub-hosted Windows ARM64 runner.
+          - {os: windows-11-arm, r: 'release'}
           # R-devel coverage lives in fedora-cran-check.yaml, where pak can use
           # the CRAN-like Fedora/R-devel binary resolver for heavy dependencies
           # such as duckdb. Ubuntu R-devel builds duckdb from source and times

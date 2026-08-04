@@ -11,7 +11,7 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  eval = FALSE
+  eval = TRUE
 )
 version_support_root <- if (file.exists(file.path("tools", "duckdb_version_support.R"))) {
   "."
@@ -89,7 +89,7 @@ Supported versions are declared in
 headers and provenance metadata:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.4
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
 `configure` and `configure.win` validate every declared header set, build the

@@ -1262,6 +1262,10 @@ static int rducks_quack_decode_result_to_vector(rducks_runtime_entry_t *runtime,
         rducks_format_error_message(err, cap, "Rducks wire decode failed: %s", qerr.message[0] ? qerr.message : "unknown error");
         return 0;
     }
+    if (rd.pos != rd.size) {
+        rducks_format_error_message(err, cap, "RIPC worker returned %zu trailing byte(s) after the wire result", rd.size - rd.pos);
+        goto done;
+    }
     if (chunk->ncolumns != 1U || chunk->rows != (uint64_t)n) {
         rducks_format_error_message(err, cap, "RIPC result shape does not match the expected output");
         goto done;
