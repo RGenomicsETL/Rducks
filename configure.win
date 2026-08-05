@@ -94,19 +94,16 @@ for DUCKDB_VERSION in ${BUILD_DUCKDB_VERSIONS}; do
   fi
 done
 
-OS_NAME=`uname -s`
-ARCH_NAME=`uname -m`
+# The shell can run under x64 emulation on an ARM64 Windows host. The R
+# installation and its compiler target—not uname—determine the extension ABI.
+R_ARCH_NAME=`"${R_HOME}/bin/Rscript" -e 'cat(R.version$arch)'`
 DUCKDB_PLATFORM=""
-case "${OS_NAME}" in
-  *MINGW*|*MSYS*|*CYGWIN*)
-    case "${ARCH_NAME}" in
-      x86_64) DUCKDB_PLATFORM="windows_amd64_mingw";;
-      aarch64|arm64) DUCKDB_PLATFORM="windows_arm64_mingw";;
-    esac
-    ;;
+case "${R_ARCH_NAME}" in
+  x86_64|amd64) DUCKDB_PLATFORM="windows_amd64_mingw";;
+  aarch64|arm64) DUCKDB_PLATFORM="windows_arm64_mingw";;
 esac
 if [ -z "${DUCKDB_PLATFORM}" ]; then
-  echo "ERROR: Unsupported Windows platform: ${OS_NAME}/${ARCH_NAME}"
+  echo "ERROR: Unsupported Windows R architecture: ${R_ARCH_NAME}"
   exit 1
 fi
 

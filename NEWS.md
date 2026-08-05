@@ -1,5 +1,7 @@
 # Rducks (development version)
 
+* Fixed Windows ARM64 extension metadata when the configure shell runs under x64 emulation by deriving the DuckDB platform from R's compiler target.
+
 * Fixed Windows ARM64 source builds with LLVM's MinGW linker by retaining `--exclude-all-symbols` without passing its unsupported `--exclude-libs` option. Vendored NNG symbols remain excluded from automatic DLL exports, and the build no longer emits an unused-function warning for a stale multiprocess backend helper.
 * Added native Quack property tests with shrinking, coverage-guided fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested type metadata and bounds input-driven allocation more tightly.
 * Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension variants for DuckDB v1.5.0 through v1.5.5. `rducks_enable()` queries the connection's engine version and loads only the matching artifact, so DuckDB package patch upgrades no longer try to load the v1.5.2 build; unsupported versions fail explicitly without ABI fallback.
