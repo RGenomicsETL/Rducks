@@ -92,7 +92,7 @@ rejects direct and <code>ipc</code> registrations.</p>
 <span></span>
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; duckdb keeps downloaded extensions and secrets in a temporary directory:</span></span>
-<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/RtmpHtOg8W/duckdb</span></span>
+<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/RtmpgAJdeM/duckdb</span></span>
 <span><span class="co">#&gt; This is removed when the R session ends.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Secrets are lost.</span></span>
@@ -230,7 +230,7 @@ each endpoint responds.</p>
 <span><span class="co">#&gt;             runtime backend transport worker started task_state ping</span></span>
 <span><span class="co">#&gt;  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok</span></span>
 <span><span class="co">#&gt;               endpoint</span></span>
-<span><span class="co">#&gt;  tcp://127.0.0.1:57171</span></span></code></pre></div>
+<span><span class="co">#&gt;  tcp://127.0.0.1:38054</span></span></code></pre></div>
 <p>The result is an R-side provider view: runtime token, provider key,
 backend, transport, endpoint, compute name, worker index, task state,
 and optional ping status. It is not a DuckDB catalog listing.</p>

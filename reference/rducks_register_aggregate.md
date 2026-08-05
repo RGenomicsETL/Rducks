@@ -149,7 +149,7 @@ receive the declared type's R missing-value shape for NULL inputs.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpuLcEWY/duckdb
+#> ℹ /tmp/RtmpY861Yl/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
