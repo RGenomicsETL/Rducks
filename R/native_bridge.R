@@ -92,6 +92,6 @@ rducks_make_rc_vectorized_bundle <- function(fun, spec,
     exception_handling = exception_handling,
     plan = plan,
     engine = engine,
-    eval_rows = rducks_vectorized_eval_prepared_chunk
+    eval_rows = rducks_vectorized_eval_prepared_chunk_direct
   )
 }

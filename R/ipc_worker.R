@@ -6,22 +6,10 @@ rducks_ipc_worker_check_n <- function(n) {
   as.integer(n)
 }
 
-# Scalar tokens whose decoded wire storage is already the canonical R value
-# (logical, integer, double, character with NA for NULL) and whose canonical R
-# value is already the wire storage. For these the worker can skip the native
-# array IR, the S7 type dispatch, and the per-row result list entirely.
-rducks_ipc_fast_scalar_tokens <- c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64", "varchar")
-
-rducks_ipc_fast_na_template <- function(token) {
-  switch(token,
-    bool = NA,
-    i8 = , u8 = , i16 = , u16 = , i32 = NA_integer_,
-    u32 = , f32 = , f64 = NA_real_,
-    varchar = NA_character_,
-    stop("no fast NA template for token ", token, call. = FALSE)
-  )
-}
-
+# The ipc fast set is the shared fast-atomic set: decoded wire storage for these
+# tokens is already the canonical R value and vice versa.
+rducks_ipc_fast_scalar_tokens <- rducks_fast_atomic_tokens
+rducks_ipc_fast_na_template <- rducks_fast_na_template
 rducks_ipc_fast_scalar_token <- function(type) {
   if (!identical(rducks_type_kind(type), "scalar")) return(NA_character_)
   rducks_type_token(type)
@@ -39,11 +27,12 @@ rducks_ipc_worker_fast_plan <- function(rec) {
   arg_tokens <- vapply(arg_types, rducks_ipc_fast_scalar_token, character(1L))
   if (anyNA(arg_tokens) || !all(arg_tokens %in% rducks_ipc_fast_scalar_tokens)) return(NULL)
   return_token <- rducks_ipc_fast_scalar_token(return_type)
-  if (is.na(return_token)) return(NULL)
-  return_kind <- if (return_token %in% rducks_ipc_fast_scalar_tokens) {
+  return_kind <- if (!is.na(return_token) && return_token %in% rducks_ipc_fast_scalar_tokens) {
     "scalar"
-  } else if (return_token %in% c("blob", "geometry")) {
+  } else if (!is.na(return_token) && return_token %in% c("blob", "geometry")) {
     "blob"
+  } else if (rducks_ipc_fast_struct_type(return_type)) {
+    "struct"
   } else {
     return(NULL)
   }
@@ -57,11 +46,66 @@ rducks_ipc_worker_fast_plan <- function(rec) {
   )
 }
 
+# A STRUCT return is fast when every field is a fast atomic scalar, a
+# BLOB/GEOMETRY, or such a struct again: the columnar result maps directly onto
+# the quack struct column (one child column per field).
+rducks_ipc_fast_struct_type <- function(type) {
+  if (!rducks_type_inherits(type, "rducks_struct_type")) return(FALSE)
+  for (child in rducks_type_children(type)) {
+    token <- rducks_fast_atomic_token(child)
+    if (!is.na(token)) next
+    if (rducks_type_inherits(child, c("rducks_blob_type", "rducks_geometry_type"))) next
+    if (rducks_ipc_fast_struct_type(child)) next
+    return(FALSE)
+  }
+  TRUE
+}
+
+# Turn an "rducks_columnar_result" (see rducks_vectorized_columnar_struct) into
+# the quack struct wire column: list(valid, data = list(child columns)).
+rducks_ipc_fast_struct_wire_column <- function(type, columns, n) {
+  children <- rducks_type_children(type)
+  data <- vector("list", length(children))
+  for (i in seq_along(children)) {
+    child <- children[[i]]
+    col <- columns[[i]]
+    data[[i]] <- if (inherits(col, "rducks_columnar_result")) {
+      rducks_ipc_fast_struct_wire_column(child, col, n)
+    } else if (is.list(col)) {
+      list(valid = !.Call(RDUCKS_list_is_null, col), data = col)
+    } else {
+      storage <- rducks_native_scalar_to_storage(child, col)
+      list(valid = !is.na(storage), data = storage)
+    }
+  }
+  row_null <- attr(columns, "rducks_row_null", exact = TRUE)
+  list(valid = if (is.null(row_null)) NULL else !row_null, data = data)
+}
+
 rducks_ipc_fast_encode_column <- function(plan, n, valid, storage) {
   .Call(RDUCKS_quack_encode_chunk, as.numeric(n), plan$return_spec, list(list(valid = valid, data = storage)))
 }
 
+rducks_ipc_fast_all_null_struct_column <- function(type, n) {
+  children <- rducks_type_children(type)
+  data <- lapply(children, function(child) {
+    token <- rducks_fast_atomic_token(child)
+    if (!is.na(token)) {
+      list(valid = rep(FALSE, n), data = rep(rducks_fast_na_template(token), n))
+    } else if (rducks_type_inherits(child, "rducks_struct_type")) {
+      rducks_ipc_fast_all_null_struct_column(child, n)
+    } else {
+      list(valid = rep(FALSE, n), data = vector("list", n))
+    }
+  })
+  list(valid = rep(FALSE, n), data = data)
+}
+
 rducks_ipc_fast_encode_all_null <- function(plan, n) {
+  if (identical(plan$return_kind, "struct")) {
+    column <- rducks_ipc_fast_all_null_struct_column(plan$return_type, n)
+    return(.Call(RDUCKS_quack_encode_chunk, as.numeric(n), plan$return_spec, list(column)))
+  }
   storage <- if (identical(plan$return_kind, "scalar")) rep(plan$na_template, n) else vector("list", n)
   rducks_ipc_fast_encode_column(plan, n, rep(FALSE, n), storage)
 }
@@ -116,6 +160,14 @@ rducks_ipc_worker_eval_fast <- function(input_payload, n, fun, plan, null_handli
     return(rducks_ipc_fast_encode_all_null(plan, n))
   }
 
+  if (identical(plan$return_kind, "struct")) {
+    columns <- rducks_vectorized_columnar_struct(plan$return_type, value, n, eval_rows)
+    if (is.null(columns)) {
+      return(rducks_ipc_fast_generic_result(plan, value, n, eval_rows))
+    }
+    column <- rducks_ipc_fast_struct_wire_column(plan$return_type, columns, n)
+    return(.Call(RDUCKS_quack_encode_chunk, as.numeric(n), plan$return_spec, list(column)))
+  }
   if (identical(plan$return_kind, "scalar")) {
     if (is.null(.Call(RDUCKS_vectorized_fast_scalar_check, plan$return_type, value, n_eval))) {
       return(rducks_ipc_fast_generic_result(plan, value, n, eval_rows))

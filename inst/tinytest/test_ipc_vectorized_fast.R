@@ -94,3 +94,42 @@ local({
   expect_true(q1(sprintf("SELECT bool_and(ipcf_dbl(v) IS NOT DISTINCT FROM v * 2) FROM %s", src)))
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
 })
+
+# STRUCT results over the worker transport: columnar fast path with NULL rows,
+# NULL fields, nested structs, and a blob field; must match the generic path.
+local({
+  con <- DBI::dbConnect(duckdb::duckdb(config = list(
+    allow_unsigned_extensions = "true",
+    autoload_known_extensions = "false",
+    autoinstall_known_extensions = "false"
+  )))
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  rducks_enable(con, threads = "single")
+  on.exit(rducks_release(con), add = TRUE)
+  plan <- rducks_execution_plan("ipc", ipc_workers = 2L, ipc_timeout = 60)
+  rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
+  q1 <- function(sql) DBI::dbGetQuery(con, sql)[[1L]][[1L]]
+  src <- "(SELECT i, CASE WHEN i % 3 = 0 THEN NULL ELSE i * 0.5 END AS v FROM range(5000) t(i))"
+  fast_plan <- getFromNamespace("rducks_ipc_worker_fast_plan", "Rducks")
+  expect_identical(fast_plan(list(mode = "vectorized", arg_types = list(DOUBLE, DOUBLE), return_type = STRUCT(x = DOUBLE, y = DOUBLE)))$return_kind, "struct")
+  expect_null(fast_plan(list(mode = "vectorized", arg_types = list(DOUBLE), return_type = STRUCT(x = DOUBLE, d = DATE))))
+
+  rducks_register_scalar_udf(con, "ipcf_point", function(x, y) list(x = x, y = y),
+    args = list(DOUBLE, DOUBLE), returns = STRUCT(x = DOUBLE, y = DOUBLE), mode = "vectorized")
+  expect_true(q1(sprintf("SELECT bool_and(ipcf_point(v, v * 2) IS NOT DISTINCT FROM CASE WHEN v IS NULL THEN NULL ELSE {'x': v, 'y': v * 2} END) FROM %s", src)))
+  rducks_register_scalar_udf(con, "ipcf_point_na", function(x, y) data.frame(x = x, y = ifelse(x > 2, NA_real_, y)),
+    args = list(DOUBLE, DOUBLE), returns = STRUCT(x = DOUBLE, y = DOUBLE), mode = "vectorized")
+  expect_true(q1("SELECT ipcf_point_na(3.0, 1.0).y IS NULL AND ipcf_point_na(3.0, 1.0) IS NOT NULL AND ipcf_point_na(1.0, 1.0).y = 1.0"))
+  rducks_register_scalar_udf(con, "ipcf_nested", function(x) list(a = x, inner = list(b = as.integer(x), c = paste0("s", x))),
+    args = list(DOUBLE), returns = STRUCT(a = DOUBLE, inner = STRUCT(b = INTEGER, c = VARCHAR)), mode = "vectorized")
+  expect_true(q1("SELECT bool_and(ipcf_nested(i * 1.0) IS NOT DISTINCT FROM {'a': i * 1.0, 'inner': {'b': i::INTEGER, 'c': 's' || i}}) FROM range(3000) t(i)"))
+  rducks_register_scalar_udf(con, "ipcf_struct_blob", function(x) list(k = x, b = lapply(x, function(v) as.raw(c(0x01, 0x02)))),
+    args = list(DOUBLE), returns = STRUCT(k = DOUBLE, b = BLOB), mode = "vectorized")
+  expect_true(q1("SELECT bool_and(ipcf_struct_blob(i * 1.0) IS NOT DISTINCT FROM {'k': i * 1.0, 'b': '\\x01\\x02'::BLOB}) FROM range(3000) t(i)"))
+  rducks_register_scalar_udf(con, "ipcf_struct_null_on_error", function(x) stop("boom"),
+    args = list(DOUBLE), returns = STRUCT(x = DOUBLE, y = DOUBLE), mode = "vectorized", exception_handling = "return_null")
+  expect_identical(q1("SELECT count(*) FROM (SELECT ipcf_struct_null_on_error(i * 1.0) AS r FROM range(3000) t(i)) WHERE r IS NULL"), q1("SELECT 3000::BIGINT"))
+  rducks_register_scalar_udf(con, "ipcf_struct_missing", function(x) list(x = x),
+    args = list(DOUBLE), returns = STRUCT(x = DOUBLE, y = DOUBLE), mode = "vectorized")
+  expect_error(q1("SELECT ipcf_struct_missing(i * 1.0) FROM range(10) t(i)"), pattern = "missing|not compatible|marshal error|failed|must have length")
+})
