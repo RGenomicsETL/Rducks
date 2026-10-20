@@ -6,6 +6,143 @@ rducks_ipc_worker_check_n <- function(n) {
   as.integer(n)
 }
 
+# Scalar tokens whose decoded wire storage is already the canonical R value
+# (logical, integer, double, character with NA for NULL) and whose canonical R
+# value is already the wire storage. For these the worker can skip the native
+# array IR, the S7 type dispatch, and the per-row result list entirely.
+rducks_ipc_fast_scalar_tokens <- c("bool", "i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64", "varchar")
+
+rducks_ipc_fast_na_template <- function(token) {
+  switch(token,
+    bool = NA,
+    i8 = , u8 = , i16 = , u16 = , i32 = NA_integer_,
+    u32 = , f32 = , f64 = NA_real_,
+    varchar = NA_character_,
+    stop("no fast NA template for token ", token, call. = FALSE)
+  )
+}
+
+rducks_ipc_fast_scalar_token <- function(type) {
+  if (!identical(rducks_type_kind(type), "scalar")) return(NA_character_)
+  rducks_type_token(type)
+}
+
+# Precompute, once per registered UDF, everything the worker would otherwise
+# rebuild on every chunk: resolved types, quack wire specs, and the result
+# shape. NULL means "use the generic path" (dynamic args, scalar mode, or a
+# type outside the fast set).
+rducks_ipc_worker_fast_plan <- function(rec) {
+  if (!identical(rducks_match_mode(rec$mode), "vectorized")) return(NULL)
+  if (is.null(rec$arg_types) || !length(rec$arg_types)) return(NULL)
+  arg_types <- lapply(rec$arg_types, rducks_as_type)
+  return_type <- rducks_as_type(rec$return_type)
+  arg_tokens <- vapply(arg_types, rducks_ipc_fast_scalar_token, character(1L))
+  if (anyNA(arg_tokens) || !all(arg_tokens %in% rducks_ipc_fast_scalar_tokens)) return(NULL)
+  return_token <- rducks_ipc_fast_scalar_token(return_type)
+  if (is.na(return_token)) return(NULL)
+  return_kind <- if (return_token %in% rducks_ipc_fast_scalar_tokens) {
+    "scalar"
+  } else if (return_token %in% c("blob", "geometry")) {
+    "blob"
+  } else {
+    return(NULL)
+  }
+  list(
+    arg_types = arg_types,
+    return_type = return_type,
+    arg_specs = lapply(arg_types, rducks_quack_spec),
+    return_spec = list(rducks_quack_spec(return_type)),
+    return_kind = return_kind,
+    na_template = if (identical(return_kind, "scalar")) rducks_ipc_fast_na_template(return_token) else NULL
+  )
+}
+
+rducks_ipc_fast_encode_column <- function(plan, n, valid, storage) {
+  .Call(RDUCKS_quack_encode_chunk, as.numeric(n), plan$return_spec, list(list(valid = valid, data = storage)))
+}
+
+rducks_ipc_fast_encode_all_null <- function(plan, n) {
+  storage <- if (identical(plan$return_kind, "scalar")) rep(plan$na_template, n) else vector("list", n)
+  rducks_ipc_fast_encode_column(plan, n, rep(FALSE, n), storage)
+}
+
+# Generic conversion of one vectorized result for the rows that were evaluated,
+# used when the result does not have the fast shape (for example a list where
+# an atomic vector was expected). Semantics are exactly the generic path's.
+rducks_ipc_fast_generic_result <- function(plan, value, n, eval_rows) {
+  rows <- rducks_vectorized_result_to_rows(plan$return_type, value, if (is.null(eval_rows)) n else length(eval_rows))
+  results <- if (is.null(eval_rows)) rows else {
+    full <- vector("list", n)
+    full[eval_rows] <- rows
+    full
+  }
+  rducks_quack_results_payload(plan$return_type, results, n)
+}
+
+rducks_ipc_worker_eval_fast <- function(input_payload, n, fun, plan, null_handling, exception_handling) {
+  decoded <- rducks_quack_decode_payload(input_payload, plan$arg_specs)
+  if (!identical(as.integer(decoded$rows), n)) {
+    stop("Rducks wire payload row count disagrees with the task row count", call. = FALSE)
+  }
+  columns <- decoded$columns
+  if (length(columns) != length(plan$arg_specs)) {
+    stop("Rducks wire payload column count disagrees with the registered signature", call. = FALSE)
+  }
+  args <- vector("list", length(columns))
+  top_null <- NULL
+  for (j in seq_along(columns)) {
+    data <- columns[[j]]$data
+    valid <- columns[[j]]$valid
+    if (!is.null(valid)) {
+      invalid <- !valid
+      if (any(invalid)) {
+        data[invalid] <- NA
+        top_null <- if (is.null(top_null)) invalid else top_null | invalid
+      }
+    }
+    args[[j]] <- data
+  }
+
+  eval_rows <- NULL
+  if (!is.null(top_null) && identical(null_handling, "default")) {
+    eval_rows <- which(!top_null)
+    if (!length(eval_rows)) return(rducks_ipc_fast_encode_all_null(plan, n))
+    args <- lapply(args, function(a) a[eval_rows])
+  }
+  n_eval <- if (is.null(eval_rows)) n else length(eval_rows)
+
+  value <- rducks_vectorized_eval_one(fun, args, n_eval, exception_handling)
+  if (is.null(value) || inherits(value, "rducks_return_null")) {
+    return(rducks_ipc_fast_encode_all_null(plan, n))
+  }
+
+  if (identical(plan$return_kind, "scalar")) {
+    if (is.null(.Call(RDUCKS_vectorized_fast_scalar_check, plan$return_type, value, n_eval))) {
+      return(rducks_ipc_fast_generic_result(plan, value, n, eval_rows))
+    }
+    storage <- rducks_native_scalar_to_storage(plan$return_type, value)
+    if (!is.null(eval_rows)) {
+      full <- rep(plan$na_template, n)
+      full[eval_rows] <- storage
+      storage <- full
+    }
+    valid <- !is.na(storage)
+  } else {
+    rows <- .Call(RDUCKS_vectorized_fast_scalar_rows, plan$return_type, value, n_eval)
+    if (is.null(rows)) {
+      return(rducks_ipc_fast_generic_result(plan, value, n, eval_rows))
+    }
+    if (!is.null(eval_rows)) {
+      full <- vector("list", n)
+      full[eval_rows] <- rows
+      rows <- full
+    }
+    valid <- !.Call(RDUCKS_list_is_null, rows)
+    storage <- rows
+  }
+  rducks_ipc_fast_encode_column(plan, n, valid, storage)
+}
+
 rducks_ipc_worker_eval_quack_chunk <- function(input_payload,
                                                n,
                                                fun,
@@ -14,8 +151,12 @@ rducks_ipc_worker_eval_quack_chunk <- function(input_payload,
                                                null_handling,
                                                exception_handling,
                                                mode,
-                                               dynamic_arg_tokens = NULL) {
+                                               dynamic_arg_tokens = NULL,
+                                               plan = NULL) {
   n <- rducks_ipc_worker_check_n(n)
+  if (!is.null(plan) && is.null(dynamic_arg_tokens)) {
+    return(rducks_ipc_worker_eval_fast(input_payload, n, fun, plan, null_handling, exception_handling))
+  }
   mode <- rducks_match_mode(mode)
   arg_types <- rducks_resolve_dynamic_arg_types(arg_types, dynamic_arg_tokens)
   decoded <- rducks_wire_decode_values(arg_types, input_payload)

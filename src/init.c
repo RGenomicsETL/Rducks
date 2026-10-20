@@ -45,6 +45,10 @@ SEXP RDUCKS_quack_encode_chunk(SEXP rows, SEXP types, SEXP columns);
 SEXP RDUCKS_quack_decode_chunk(SEXP payload, SEXP expected);
 SEXP RDUCKS_type_inherits_names(SEXP x, SEXP names);
 SEXP RDUCKS_vectorized_fast_scalar_rows(SEXP type, SEXP value, SEXP n_sexp);
+SEXP RDUCKS_vectorized_fast_scalar_check(SEXP type, SEXP value, SEXP n_sexp);
+SEXP RDUCKS_nng_wire_decode_request_fast(SEXP buf);
+SEXP RDUCKS_nng_wire_encode_response_fast(SEXP status_code, SEXP payload, SEXP error);
+SEXP RDUCKS_list_is_null(SEXP x);
 
 #ifdef _WIN32
 #include <windows.h>
@@ -116,6 +120,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_quack_decode_chunk", (DL_FUNC) &RDUCKS_quack_decode_chunk, 2},
     {"RDUCKS_type_inherits_names", (DL_FUNC) &RDUCKS_type_inherits_names, 2},
     {"RDUCKS_vectorized_fast_scalar_rows", (DL_FUNC) &RDUCKS_vectorized_fast_scalar_rows, 3},
+    {"RDUCKS_vectorized_fast_scalar_check", (DL_FUNC) &RDUCKS_vectorized_fast_scalar_check, 3},
+    {"RDUCKS_nng_wire_decode_request_fast", (DL_FUNC) &RDUCKS_nng_wire_decode_request_fast, 1},
+    {"RDUCKS_nng_wire_encode_response_fast", (DL_FUNC) &RDUCKS_nng_wire_encode_response_fast, 3},
+    {"RDUCKS_list_is_null", (DL_FUNC) &RDUCKS_list_is_null, 1},
     {NULL, NULL, 0}
 };
 
