@@ -12,7 +12,7 @@ local({
   expected <- if (nzchar(selected)) {
     strsplit(selected, "\\s+")[[1L]]
   } else {
-    paste0("v1.5.", 0:5)
+    paste0("v1.5.", 0:6)
   }
   expect_identical(bundled, expected)
   expect_identical(rducks_extension_path(current), path)

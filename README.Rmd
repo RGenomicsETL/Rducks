@@ -626,11 +626,16 @@ DuckDB C API headers are vendored explicitly for every declared version.
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
-The extension uses DuckDB's
+The extension builds against DuckDB's
 [C extension API](https://duckdb.org/docs/stable/clients/c/overview.html)
-and unstable C extension ABI for connection/runtime access, scalar-function
-bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector
-helpers. This table is generated from `tools/used_duckdb_unstable_api.R` when
+with the `C_STRUCT_UNSTABLE` ABI because it uses entries outside the v1.2.0
+stable surface: scalar-function bind/init/state hooks, bind-time argument
+inspection, selection-vector helpers, and the deprecated streaming-result
+functions. The table below lists those entries, grouped by the header's
+unstable group (DuckDB headers before 1.5.6) or by the API version band that
+first stabilized them (1.5.6 headers, where `deprecated` marks entries that
+need `DUCKDB_API_ALLOW_DEPRECATED`). It is generated from
+`tools/used_duckdb_unstable_api.R` against the newest vendored header when
 `README.Rmd` is rendered:
 
 ```{r unstable-api-table, echo=FALSE, results='asis'}

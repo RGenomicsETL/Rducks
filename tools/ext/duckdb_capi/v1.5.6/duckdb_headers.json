@@ -1,0 +1,36 @@
+{
+  "duckdb_ref": "v1.5.6",
+  "source": "https://github.com/duckdb/duckdb",
+  "headers": {
+    "duckdb.h": {
+      "path": "tools/ext/duckdb_capi/v1.5.6/duckdb.h",
+      "md5": "201ccf4d4eb9dbb12f17b4bf081ddc67",
+      "repairs": {
+      "duckdb_create_instance_cache": 1,
+      "duckdb_library_version": 1,
+      "duckdb_config_count": 1,
+      "duckdb_vector_size": 1,
+      "duckdb_create_null_value": 1,
+      "duckdb_create_scalar_function": 1,
+      "duckdb_create_aggregate_function": 1,
+      "duckdb_create_table_function": 1,
+      "duckdb_create_cast_function": 1
+      }
+    },
+    "duckdb_extension.h": {
+      "path": "tools/ext/duckdb_capi/v1.5.6/duckdb_extension.h",
+      "md5": "7c3305b1ce9f72bcd7909391456a4b67",
+      "repairs": {
+      "duckdb_library_version": 1,
+      "duckdb_config_count": 1,
+      "duckdb_vector_size": 1,
+      "duckdb_create_null_value": 1,
+      "duckdb_create_scalar_function": 1,
+      "duckdb_create_aggregate_function": 1,
+      "duckdb_create_table_function": 1,
+      "duckdb_create_cast_function": 1,
+      "duckdb_create_instance_cache": 1
+      }
+    }
+  }
+}

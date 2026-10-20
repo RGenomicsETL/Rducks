@@ -62,7 +62,7 @@ closed.
 Rducks uses DuckDB’s `C_STRUCT_UNSTABLE` extension ABI. The package
 therefore builds and installs a separate extension artifact for every
 supported exact DuckDB engine release instead of assuming patch releases
-are ABI-compatible. The current bundle covers v1.5.0 through v1.5.5;
+are ABI-compatible. The current bundle covers v1.5.0 through v1.5.6;
 that range is generated from the build manifest rather than maintained
 separately in the documentation.
 
@@ -431,7 +431,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            170         249
+#> 1 8e+06            170         255
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -624,9 +624,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.445
-#> 2          ipc (2 workers) 65961344       2.112
-#> 3   ipc + mori (2 workers) 65961344       2.087
+#> 1 inproc (single R thread) 65961344       3.440
+#> 2          ipc (2 workers) 65961344       2.122
+#> 3   ipc + mori (2 workers) 65961344       2.075
 ```
 
 ## duckplyr integration
@@ -682,7 +682,7 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 The source and vendored native dependencies used by `configure` live
 under `tools/ext/`. Rducks uses DuckDB’s exact-version unstable C ABI,
 so installation builds one artifact per release declared in
-`tools/ext/duckdb_capi/versions.txt` (currently v1.5.0 through v1.5.5),
+`tools/ext/duckdb_capi/versions.txt` (currently v1.5.0 through v1.5.6),
 for example
 `inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
 At runtime, `rducks_enable()` queries the target connection’s engine
@@ -698,22 +698,22 @@ version.
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
-The extension uses DuckDB’s [C extension
-API](https://duckdb.org/docs/stable/clients/c/overview.html) and
-unstable C extension ABI for connection/runtime access, scalar-function
-bind/init/state hooks, dynamic bind-time argument inspection, and
-selection-vector helpers. This table is generated from
-`tools/used_duckdb_unstable_api.R` when `README.Rmd` is rendered:
+The extension builds against DuckDB’s [C extension
+API](https://duckdb.org/docs/stable/clients/c/overview.html) with the
+`C_STRUCT_UNSTABLE` ABI because it uses entries outside the v1.2.0
+stable surface: scalar-function bind/init/state hooks, bind-time
+argument inspection, selection-vector helpers, and the deprecated
+streaming-result functions. The table below lists those entries, grouped
+by the header’s unstable group (DuckDB headers before 1.5.6) or by the
+API version band that first stabilized them (1.5.6 headers, where
+`deprecated` marks entries that need `DUCKDB_API_ALLOW_DEPRECATED`). It
+is generated from `tools/used_duckdb_unstable_api.R` against the newest
+vendored header when `README.Rmd` is rendered:
 
-| ABI group                                      | Functions used                                                                                                                                                                                                                                                                                              | Count |
-|------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
-| `unstable_deprecated`                          | `duckdb_pending_prepared_streaming`, `duckdb_result_get_chunk`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                   |     4 |
-| `unstable_new_expression_functions`            | `duckdb_destroy_expression`, `duckdb_expression_return_type`                                                                                                                                                                                                                                                |     2 |
-| `unstable_new_scalar_function_functions`       | `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy` |     7 |
-| `unstable_new_scalar_function_state_functions` | `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_init`                                                          |     6 |
-| `unstable_new_string_functions`                | `duckdb_value_to_string`                                                                                                                                                                                                                                                                                    |     1 |
-| `unstable_new_value_functions`                 | `duckdb_get_time_ns`                                                                                                                                                                                                                                                                                        |     1 |
-| `unstable_new_vector_functions`                | `duckdb_create_selection_vector`, `duckdb_destroy_selection_vector`, `duckdb_selection_vector_get_data_ptr`, `duckdb_vector_copy_sel`                                                                                                                                                                       |     4 |
+| ABI group    | Functions used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Count |
+|--------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------:|
+| `deprecated` | `duckdb_pending_prepared_streaming`, `duckdb_result_get_chunk`, `duckdb_result_is_streaming`, `duckdb_stream_fetch_chunk`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |     4 |
+| `v1.5.6`     | `duckdb_create_selection_vector`, `duckdb_destroy_expression`, `duckdb_destroy_selection_vector`, `duckdb_expression_return_type`, `duckdb_get_time_ns`, `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy`, `duckdb_scalar_function_set_init`, `duckdb_selection_vector_get_data_ptr`, `duckdb_value_to_string`, `duckdb_vector_copy_sel` |    21 |
 
 See `docs/BUILD.md` for the build and ABI details.
 
