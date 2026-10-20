@@ -83,6 +83,10 @@ static int rducks_token_is_fast_scalar(const char *token) {
            rducks_streq(token, "timestamp");
 }
 
+static int rducks_token_is_varlen_blob(const char *token) {
+    return token && (rducks_streq(token, "blob") || rducks_streq(token, "geometry"));
+}
+
 static int rducks_value_is_numeric(SEXP value) {
     return TYPEOF(value) == INTSXP || TYPEOF(value) == REALSXP;
 }
@@ -180,10 +184,41 @@ static void rducks_validate_fast_scalar_value(const char *token, SEXP value) {
     }
 }
 
+/* BLOB/GEOMETRY vectorized results arrive as one list element per row: a raw
+ * vector, or NULL for SQL NULL. Validate the whole list here instead of running
+ * the generic per-row R return check, and hand back a plain list copy so any
+ * class/attributes on the input list (for example wk_wkb) are dropped while the
+ * raw elements themselves are shared, not copied. */
+static SEXP rducks_fast_blob_rows(const char *token, SEXP value, SEXP n_sexp) {
+    const char *sql = rducks_streq(token, "blob") ? "BLOB" : "GEOMETRY";
+    R_xlen_t n;
+    SEXP out;
+    if (TYPEOF(value) != VECSXP || Rf_inherits(value, "data.frame")) return R_NilValue;
+    n = (R_xlen_t)Rf_asInteger(n_sexp);
+    if (n < 0) Rf_error("vectorized return length is invalid");
+    if (XLENGTH(value) != n) {
+        Rf_error("vectorized return value must have length %lld, got %lld",
+                 (long long)n, (long long)XLENGTH(value));
+    }
+    for (R_xlen_t i = 0; i < n; i++) {
+        SEXP elt = VECTOR_ELT(value, i);
+        if (elt != R_NilValue && TYPEOF(elt) != RAWSXP) {
+            Rf_error("return value is not compatible with %s", sql);
+        }
+    }
+    out = PROTECT(Rf_allocVector(VECSXP, n));
+    for (R_xlen_t i = 0; i < n; i++) {
+        SET_VECTOR_ELT(out, i, VECTOR_ELT(value, i));
+    }
+    UNPROTECT(1);
+    return out;
+}
+
 SEXP RDUCKS_vectorized_fast_scalar_rows(SEXP type, SEXP value, SEXP n_sexp) {
     const char *token = rducks_type_scalar_token(type);
     R_xlen_t n;
     SEXP out;
+    if (rducks_token_is_varlen_blob(token)) return rducks_fast_blob_rows(token, value, n_sexp);
     if (!rducks_token_is_fast_scalar(token)) return R_NilValue;
     if (TYPEOF(value) == VECSXP) return R_NilValue;
     n = (R_xlen_t)Rf_asInteger(n_sexp);

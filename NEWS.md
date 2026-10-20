@@ -1,5 +1,7 @@
 # Rducks (development version)
 
+* Vectorized scalar UDFs returning `BLOB` or `GEOMETRY` now validate the list-of-raw result in C instead of running the generic per-row return check, which made those results about 60x slower than numeric results (for example roughly 19 s per million rows for a `DOUBLE, DOUBLE -> GEOMETRY` point builder). A classed list such as `wk_wkb` is accepted as-is; `NULL` elements still map to SQL NULL and a non-raw element still fails.
+
 * Fixed Windows ARM64 extension metadata when the configure shell runs under x64 emulation by deriving the DuckDB platform from R's compiler target.
 
 * Fixed Windows ARM64 source builds with LLVM's MinGW linker by retaining `--exclude-all-symbols` without passing its unsupported `--exclude-libs` option. Vendored NNG symbols remain excluded from automatic DLL exports, and the build no longer emits an unused-function warning for a stale multiprocess backend helper.
