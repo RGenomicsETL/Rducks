@@ -2895,16 +2895,42 @@ static int rducks_rc_direct_scalar_eval_on_r_thread(rducks_r_scalar_meta_t *meta
     return 1;
 }
 
+typedef struct rducks_rc_direct_scalar_context {
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk input;
+    duckdb_vector output;
+    char *err_msg;
+    size_t err_cap;
+    rducks_rc_direct_scalar_frame_t frame;
+    int ok;
+} rducks_rc_direct_scalar_context_t;
+
+static SEXP rducks_rc_direct_scalar_body(void *data) {
+    rducks_rc_direct_scalar_context_t *ctx = (rducks_rc_direct_scalar_context_t *)data;
+    if (rducks_rc_direct_scalar_snapshot_views(ctx->meta, ctx->input, ctx->output,
+                                               &ctx->frame, ctx->err_msg, ctx->err_cap)) {
+        ctx->ok = rducks_rc_direct_scalar_eval_on_r_thread(ctx->meta, &ctx->frame, ctx->err_msg, ctx->err_cap);
+    }
+    return R_NilValue;
+}
+
+static void rducks_rc_direct_scalar_cleanup(void *data, Rboolean jump) {
+    rducks_rc_direct_scalar_context_t *ctx = (rducks_rc_direct_scalar_context_t *)data;
+    if (jump) ctx->ok = 0;
+    rducks_rc_direct_scalar_frame_cleanup(&ctx->frame);
+}
+
 static int rducks_rc_direct_scalar_execute(rducks_r_scalar_meta_t *meta, duckdb_data_chunk input, duckdb_vector output,
                                            char *err_msg, size_t err_cap) {
-    rducks_rc_direct_scalar_frame_t frame;
-    int ok = 0;
-    if (!rducks_rc_direct_scalar_snapshot_views(meta, input, output, &frame, err_msg, err_cap)) {
-        return 0;
-    }
-    ok = rducks_rc_direct_scalar_eval_on_r_thread(meta, &frame, err_msg, err_cap);
-    rducks_rc_direct_scalar_frame_cleanup(&frame);
-    return ok;
+    rducks_rc_direct_scalar_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.meta = meta;
+    ctx.input = input;
+    ctx.output = output;
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    (void)R_UnwindProtect(rducks_rc_direct_scalar_body, &ctx, rducks_rc_direct_scalar_cleanup, &ctx, NULL);
+    return ctx.ok;
 }
 
 static SEXP rducks_rc_vectorized_prepare_inputs_on_r_thread(rducks_r_scalar_meta_t *meta,
@@ -3230,6 +3256,7 @@ fail_vectorized:
 static int rducks_rc_scalar_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                          duckdb_data_chunk input, duckdb_vector output,
                                          char *err_msg, size_t err_cap) {
+    (void)runtime;
     if (!meta || !meta->fun || meta->fun == R_NilValue) {
         rducks_format_error_message(err_msg, err_cap, "Rducks RC scalar metadata missing");
         return 0;
@@ -3302,10 +3329,10 @@ static SEXP rducks_rc_execute_error_handler(SEXP condition, void *data) {
 /* Direct callbacks run from inside DuckDB scalar UDF callbacks, not
  * from an R prompt. Do not install a fresh top-level context here.
  * R_tryCatchError() catches R allocation/marshalling errors that would otherwise
- * longjmp across DuckDB, while R_UnwindProtect() marks abnormal unwinds and is
- * the place to add deterministic cleanup if later direct sections
- * acquire native malloc/DuckDB handles. The current impl bodies only
- * borrow callback vectors and use R PROTECT/UNPROTECT-managed SEXPs.
+ * longjmp across DuckDB, while R_UnwindProtect() marks abnormal unwinds.
+ * Native resources such as scalar input views and queued owned result chunks
+ * install their cleanup before allocation; R restores SEXP protection on an
+ * unwind. Borrowed callback vectors remain owned by DuckDB throughout.
  */
 static int rducks_rc_execute_with_error_boundary(rducks_rc_execute_context_t *ctx,
                                                  rducks_rc_execute_fn_t execute,
@@ -3383,6 +3410,78 @@ static duckdb_data_chunk rducks_rc_owned_result_chunk_new(rducks_r_scalar_meta_t
     return chunk;
 }
 
+typedef struct rducks_rc_owned_execute_context {
+    rducks_rc_execute_context_t eval;
+    rducks_rc_batch_t batch;
+    rducks_rc_batch_t *saved_batch;
+    SEXP (*body)(void *);
+    int active_batch;
+} rducks_rc_owned_execute_context_t;
+
+/* Allocation and evaluation share one R error/unwind boundary. A managed pump
+ * catches interrupts outside this frame; cleanup must run before that handler
+ * can finish the queued requests. */
+static void rducks_rc_owned_execute_cleanup(void *data, Rboolean jump) {
+    rducks_rc_owned_execute_context_t *ctx = (rducks_rc_owned_execute_context_t *)data;
+    rducks_rc_execute_unwind_cleanup(&ctx->eval, jump);
+    if (ctx->active_batch) {
+        g_rducks_rc_active_batch = ctx->saved_batch;
+        ctx->active_batch = 0;
+    }
+    if (!ctx->eval.ok) {
+        for (size_t k = 0; k < ctx->batch.count; k++) {
+            if (ctx->batch.chunks[k]) duckdb_destroy_data_chunk(&ctx->batch.chunks[k]);
+        }
+    }
+}
+
+static SEXP rducks_rc_owned_execute_try_body(void *data) {
+    rducks_rc_owned_execute_context_t *ctx = (rducks_rc_owned_execute_context_t *)data;
+    return R_UnwindProtect(ctx->body, ctx, rducks_rc_owned_execute_cleanup, ctx, NULL);
+}
+
+static int rducks_rc_owned_execute_with_error_boundary(rducks_rc_owned_execute_context_t *ctx,
+                                                        SEXP (*body)(void *),
+                                                        rducks_rc_execute_fn_t execute,
+                                                        const char *default_error) {
+    ctx->body = body;
+    ctx->eval.execute = execute;
+    ctx->eval.default_error = default_error;
+    ctx->eval.ok = 0;
+    ctx->eval.jumped = 0;
+    if (ctx->eval.err_msg && ctx->eval.err_cap > 0U) ctx->eval.err_msg[0] = '\0';
+    (void)R_tryCatchError(rducks_rc_owned_execute_try_body, ctx,
+                          rducks_rc_execute_error_handler, &ctx->eval);
+    return ctx->eval.ok;
+}
+
+static SEXP rducks_rc_vectorized_owned_batch_body(void *data) {
+    rducks_rc_owned_execute_context_t *ctx = (rducks_rc_owned_execute_context_t *)data;
+    rducks_rc_execute_context_t *eval = &ctx->eval;
+    rducks_rc_batch_t *batch = &ctx->batch;
+    for (size_t k = 0; k < batch->count; k++) {
+        idx_t n_k = duckdb_data_chunk_get_size(batch->inputs[k]);
+        if (!rducks_rc_idx_add(batch->total, n_k, &batch->total)) {
+            rducks_format_error_message(eval->err_msg, eval->err_cap, "Rducks RC batch row count overflow");
+            return R_NilValue;
+        }
+        batch->chunks[k] = rducks_rc_owned_result_chunk_new(eval->meta, n_k, eval->err_msg, eval->err_cap);
+        if (!batch->chunks[k] || !duckdb_data_chunk_get_vector(batch->chunks[k], 0)) {
+            if (!eval->err_msg[0]) {
+                rducks_format_error_message(eval->err_msg, eval->err_cap, "Rducks RC owned result chunk has no output vector");
+            }
+            return R_NilValue;
+        }
+        rducks_udf_record_evaluator(eval->meta, n_k);
+    }
+    eval->input = batch->inputs[0];
+    eval->output = duckdb_data_chunk_get_vector(batch->chunks[0], 0);
+    ctx->saved_batch = g_rducks_rc_active_batch;
+    ctx->active_batch = 1;
+    g_rducks_rc_active_batch = batch;
+    return rducks_rc_execute_unwind_body(eval);
+}
+
 /* Evaluate `count` queued chunks of one vectorized UDF with a single R call.
  * On success every chunks_out[k] holds that chunk's owned result; on failure
  * none does and err_msg describes the error for all of them. */
@@ -3392,53 +3491,23 @@ static int rducks_rc_vectorized_execute_batch_to_owned_chunks(rducks_runtime_ent
                                                               duckdb_data_chunk *chunks_out,
                                                               size_t count,
                                                               char *err_msg, size_t err_cap) {
-    rducks_rc_batch_t batch;
-    rducks_rc_batch_t *saved;
-    rducks_rc_execute_context_t ctx;
-    int ok;
+    rducks_rc_owned_execute_context_t ctx;
     if (!inputs || !chunks_out || count == 0 || !rducks_rc_batch_supported(meta)) {
         rducks_format_error_message(err_msg, err_cap, "Rducks RC batch evaluation is not available for this UDF");
         return 0;
     }
-    memset(&batch, 0, sizeof(batch));
-    batch.inputs = inputs;
-    batch.chunks = chunks_out;
-    batch.count = count;
-    for (size_t k = 0; k < count; k++) {
-        idx_t n_k = duckdb_data_chunk_get_size(inputs[k]);
-        chunks_out[k] = NULL;
-        if (!rducks_rc_idx_add(batch.total, n_k, &batch.total)) {
-            rducks_format_error_message(err_msg, err_cap, "Rducks RC batch row count overflow");
-            for (size_t j = 0; j < k; j++) duckdb_destroy_data_chunk(&chunks_out[j]);
-            return 0;
-        }
-        chunks_out[k] = rducks_rc_owned_result_chunk_new(meta, n_k, err_msg, err_cap);
-        if (!chunks_out[k] || !duckdb_data_chunk_get_vector(chunks_out[k], 0)) {
-            if (chunks_out[k]) duckdb_destroy_data_chunk(&chunks_out[k]);
-            if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
-            for (size_t j = 0; j < k; j++) duckdb_destroy_data_chunk(&chunks_out[j]);
-            return 0;
-        }
-        rducks_udf_record_evaluator(meta, n_k);
-    }
     memset(&ctx, 0, sizeof(ctx));
-    ctx.runtime = runtime;
-    ctx.meta = meta;
-    ctx.input = inputs[0];
-    ctx.output = duckdb_data_chunk_get_vector(chunks_out[0], 0);
-    ctx.err_msg = err_msg;
-    ctx.err_cap = err_cap;
-    saved = g_rducks_rc_active_batch;
-    g_rducks_rc_active_batch = &batch;
-    ok = rducks_rc_execute_with_error_boundary(&ctx, rducks_rc_vectorized_batch_execute_impl,
-                                               "Rducks RC vectorized R function or marshal error");
-    g_rducks_rc_active_batch = saved;
-    if (!ok) {
-        for (size_t k = 0; k < count; k++) {
-            if (chunks_out[k]) duckdb_destroy_data_chunk(&chunks_out[k]);
-        }
-        return 0;
-    }
+    ctx.eval.runtime = runtime;
+    ctx.eval.meta = meta;
+    ctx.eval.err_msg = err_msg;
+    ctx.eval.err_cap = err_cap;
+    ctx.batch.inputs = inputs;
+    ctx.batch.chunks = chunks_out;
+    ctx.batch.count = count;
+    for (size_t k = 0; k < count; k++) chunks_out[k] = NULL;
+    if (!rducks_rc_owned_execute_with_error_boundary(&ctx, rducks_rc_vectorized_owned_batch_body,
+                                                       rducks_rc_vectorized_batch_execute_impl,
+                                                       "Rducks RC vectorized R function or marshal error")) return 0;
     for (size_t k = 0; k < count; k++) rducks_udf_record_direct_owned_result_chunk(meta);
     return 1;
 }
@@ -3482,14 +3551,29 @@ static int rducks_rc_owned_result_chunk_writeback(duckdb_data_chunk chunk,
     return 1;
 }
 
+static SEXP rducks_rc_scalar_owned_chunk_body(void *data) {
+    rducks_rc_owned_execute_context_t *ctx = (rducks_rc_owned_execute_context_t *)data;
+    rducks_rc_execute_context_t *eval = &ctx->eval;
+    duckdb_data_chunk *chunk = &ctx->batch.chunks[0];
+    *chunk = rducks_rc_owned_result_chunk_new(eval->meta, duckdb_data_chunk_get_size(eval->input),
+                                              eval->err_msg, eval->err_cap);
+    if (!*chunk) return R_NilValue;
+    eval->output = duckdb_data_chunk_get_vector(*chunk, 0);
+    if (!eval->output) {
+        rducks_format_error_message(eval->err_msg, eval->err_cap, "Rducks RC owned result chunk has no output vector");
+        return R_NilValue;
+    }
+    return rducks_rc_execute_unwind_body(eval);
+}
+
 static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runtime,
                                                    rducks_r_scalar_meta_t *meta,
                                                    duckdb_data_chunk input,
                                                    duckdb_vector output,
                                                    duckdb_data_chunk *chunk_out,
                                                    char *err_msg, size_t err_cap) {
-    duckdb_data_chunk chunk;
-    duckdb_vector chunk_output;
+    duckdb_data_chunk chunk = NULL;
+    rducks_rc_owned_execute_context_t ctx;
     int ok;
     (void)output;
     if (chunk_out) *chunk_out = NULL;
@@ -3497,23 +3581,24 @@ static int rducks_rc_scalar_execute_to_owned_chunk(rducks_runtime_entry_t *runti
         rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk is not implemented for this return type");
         return 0;
     }
-    chunk = rducks_rc_owned_result_chunk_new(meta, duckdb_data_chunk_get_size(input), err_msg, err_cap);
-    if (!chunk) return 0;
-    chunk_output = duckdb_data_chunk_get_vector(chunk, 0);
-    if (!chunk_output) {
-        duckdb_destroy_data_chunk(&chunk);
-        rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
-        return 0;
-    }
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.eval.runtime = runtime;
+    ctx.eval.meta = meta;
+    ctx.eval.input = input;
+    ctx.eval.err_msg = err_msg;
+    ctx.eval.err_cap = err_cap;
+    ctx.batch.chunks = &chunk;
+    ctx.batch.count = 1;
     if (meta->eval_mode == RDUCKS_EVAL_RCV) {
-        ok = rducks_rc_vectorized_execute(runtime, meta, input, chunk_output, err_msg, err_cap);
+        ok = rducks_rc_owned_execute_with_error_boundary(&ctx, rducks_rc_scalar_owned_chunk_body,
+                                                          rducks_rc_vectorized_execute_impl,
+                                                          "Rducks RC vectorized R function or marshal error");
     } else {
-        ok = rducks_rc_scalar_execute(runtime, meta, input, chunk_output, err_msg, err_cap);
+        ok = rducks_rc_owned_execute_with_error_boundary(&ctx, rducks_rc_scalar_owned_chunk_body,
+                                                          rducks_rc_scalar_execute_impl,
+                                                          "Rducks RC scalar R function or marshal error");
     }
-    if (!ok) {
-        duckdb_destroy_data_chunk(&chunk);
-        return 0;
-    }
+    if (!ok) return 0;
     rducks_udf_record_direct_owned_result_chunk(meta);
     *chunk_out = chunk;
     return 1;
