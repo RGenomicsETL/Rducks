@@ -214,6 +214,26 @@ static SEXP rducks_fast_blob_rows(const char *token, SEXP value, SEXP n_sexp) {
     return out;
 }
 
+/* Validation-only twin of RDUCKS_vectorized_fast_scalar_rows for callers that
+ * keep the atomic result vector (the ipc worker encodes it straight to the
+ * wire). Returns TRUE when the value is a valid fast-scalar vectorized result
+ * of length n, NULL when the type or value shape is outside the fast path, and
+ * errors exactly like the row-splitting variant otherwise. */
+SEXP RDUCKS_vectorized_fast_scalar_check(SEXP type, SEXP value, SEXP n_sexp) {
+    const char *token = rducks_type_scalar_token(type);
+    R_xlen_t n;
+    if (!rducks_token_is_fast_scalar(token)) return R_NilValue;
+    if (TYPEOF(value) == VECSXP) return R_NilValue;
+    n = (R_xlen_t)Rf_asInteger(n_sexp);
+    if (n < 0) Rf_error("vectorized return length is invalid");
+    if (XLENGTH(value) != n) {
+        Rf_error("vectorized return value must have length %lld, got %lld",
+                 (long long)n, (long long)XLENGTH(value));
+    }
+    rducks_validate_fast_scalar_value(token, value);
+    return Rf_ScalarLogical(1);
+}
+
 SEXP RDUCKS_vectorized_fast_scalar_rows(SEXP type, SEXP value, SEXP n_sexp) {
     const char *token = rducks_type_scalar_token(type);
     R_xlen_t n;

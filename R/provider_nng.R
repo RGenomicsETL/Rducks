@@ -285,6 +285,9 @@ rducks_nng_worker_loop <- function(endpoint) {
           list2env(rec$globals, envir = fun_env)
           environment(rec$fun) <- fun_env
         }
+        # A failed plan build must never fail registration: fall back to the
+        # generic per-chunk path for that UDF.
+        rec$fast_plan <- tryCatch(rducks_ipc_worker_fast_plan(rec), error = function(e) NULL)
         assign(req$udf_id, rec, envir = registry)
         registry_order <- c(registry_order[registry_order != req$udf_id], req$udf_id)
         while (length(registry_order) > registry_max) {
@@ -306,7 +309,8 @@ rducks_nng_worker_loop <- function(endpoint) {
           null_handling = rec$null_handling,
           exception_handling = rec$exception_handling,
           mode = rec$mode,
-          dynamic_arg_tokens = req$dynamic_arg_tokens
+          dynamic_arg_tokens = req$dynamic_arg_tokens,
+          plan = rec$fast_plan
         )
         rducks_nng_wire_encode_response("ok", output)
       } else {
