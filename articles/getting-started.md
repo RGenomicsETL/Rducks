@@ -24,7 +24,7 @@ library(Rducks)
 
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/Rtmpw7aNA8/duckdb
+#> ℹ /tmp/RtmplOcuTT/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -36,7 +36,7 @@ rducks_enable(con, threads = "single")
 
 Rducks uses DuckDB’s unstable C extension ABI. The installed package
 contains exact-version extension variants for DuckDB v1.5.0 through
-v1.5.5, generated from the build manifest, and
+v1.5.6, generated from the build manifest, and
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 loads only the variant matching `SELECT version()` on `con`. There is no
 fallback to another patch release; see [DuckDB Version

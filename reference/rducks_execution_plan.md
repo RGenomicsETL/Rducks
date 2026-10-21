@@ -74,10 +74,9 @@ rducks_execution_plan(
 
   How selected IPC globals are represented before worker broadcast.
   `"none"` serializes them into the registration payload. `"mori"`
-  applies
-  [`mori::share()`](https://shikokuchuo.net/mori/reference/share.html)
-  to each selected global before serialization, which can turn large
-  atomic vectors, lists, and data frames into same-host shared-memory
+  applies [`mori::share()`](https://rdrr.io/pkg/mori/man/share.html) to
+  each selected global before serialization, which can turn large atomic
+  vectors, lists, and data frames into same-host shared-memory
   references. This requires the optional mori package and workers on the
   same machine.
 

@@ -26,5 +26,5 @@ Character scalar path to the matching `rducks.duckdb_extension`.
 
 ``` r
 rducks_extension_path()
-#> [1] "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/v1.5.5/rducks.duckdb_extension"
+#> [1] "/home/runner/work/_temp/Library/Rducks/rducks_extension/build/v1.5.6/rducks.duckdb_extension"
 ```

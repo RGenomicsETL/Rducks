@@ -128,7 +128,7 @@ and <code>"ipc"</code> elsewhere.</p></dd>
 <dt id="arg-ipc-globals-share">ipc_globals_share<a class="anchor" aria-label="anchor" href="#arg-ipc-globals-share"></a></dt>
 <dd><p>How selected IPC globals are represented before
 worker broadcast. <code>"none"</code> serializes them into the registration payload.
-<code>"mori"</code> applies <code><a href="https://shikokuchuo.net/mori/reference/share.html" class="external-link">mori::share()</a></code> to each selected global before
+<code>"mori"</code> applies <code><a href="https://rdrr.io/pkg/mori/man/share.html" class="external-link">mori::share()</a></code> to each selected global before
 serialization, which can turn large atomic vectors, lists, and data frames
 into same-host shared-memory references. This requires the optional mori
 package and workers on the same machine.</p></dd>

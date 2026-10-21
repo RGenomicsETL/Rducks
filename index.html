@@ -63,7 +63,7 @@
 <div class="section level2">
 <h2 id="duckdb-version-compatibility">DuckDB version compatibility<a class="anchor" aria-label="anchor" href="#duckdb-version-compatibility"></a>
 </h2>
-<p>Rducks uses DuckDB’s <code>C_STRUCT_UNSTABLE</code> extension ABI. The package therefore builds and installs a separate extension artifact for every supported exact DuckDB engine release instead of assuming patch releases are ABI-compatible. The current bundle covers v1.5.0 through v1.5.5; that range is generated from the build manifest rather than maintained separately in the documentation.</p>
+<p>Rducks uses DuckDB’s <code>C_STRUCT_UNSTABLE</code> extension ABI. The package therefore builds and installs a separate extension artifact for every supported exact DuckDB engine release instead of assuming patch releases are ABI-compatible. The current bundle covers v1.5.0 through v1.5.6; that range is generated from the build manifest rather than maintained separately in the documentation.</p>
 <p><code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries <code>SELECT version()</code> on the target connection and loads only the artifact for that exact version. It never falls back to a nearby version. An unsupported engine fails before <code>LOAD</code> and reports the bundled versions. See the <a href="https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html">DuckDB version compatibility article</a> for the installed layout, diagnostics, and maintainer update workflow.</p>
 </div>
 <div class="section level2">
@@ -351,7 +351,7 @@
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>rows <span class="op">=</span> <span class="va">rows</span>, rss_at_open_mb <span class="op">=</span> <span class="va">rss_at_open</span>, peak_rss_mb <span class="op">=</span> <span class="va">peak</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    rows rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1 8e+06            170         249</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 8e+06            170         255</span></span></code></pre></div>
 <p>The same streaming holds over arbitrary scans, including external table-function extensions. The chunk below streams a 15 GB BAM through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling; resident memory stays a few hundred MB no matter how many reads are pulled. It runs only when the BAM is present locally.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"LOAD './duckhts.duckdb_extension'"</span><span class="op">)</span>   <span class="co"># locally built duckhts</span></span>
@@ -543,9 +543,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.445</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       2.112</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       2.087</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.440</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       2.122</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       2.075</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -594,14 +594,14 @@
 <div class="section level2">
 <h2 id="build-notes">Build notes<a class="anchor" aria-label="anchor" href="#build-notes"></a>
 </h2>
-<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. Rducks uses DuckDB’s exact-version unstable C ABI, so installation builds one artifact per release declared in <code>tools/ext/duckdb_capi/versions.txt</code> (currently v1.5.0 through v1.5.5), for example <code>inst/rducks_extension/build/&lt;duckdb-version&gt;/rducks.duckdb_extension</code>. At runtime, <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries the target connection’s engine version and loads only the exact matching artifact; an unsupported version fails without fallback. <code>cleanup</code> removes only generated artifacts, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. Matching DuckDB C API headers are vendored explicitly for every declared version.</p>
+<p>The source and vendored native dependencies used by <code>configure</code> live under <code>tools/ext/</code>. Rducks uses DuckDB’s exact-version unstable C ABI, so installation builds one artifact per release declared in <code>tools/ext/duckdb_capi/versions.txt</code> (currently v1.5.0 through v1.5.6), for example <code>inst/rducks_extension/build/&lt;duckdb-version&gt;/rducks.duckdb_extension</code>. At runtime, <code><a href="reference/rducks_enable.html">rducks_enable()</a></code> queries the target connection’s engine version and loads only the exact matching artifact; an unsupported version fails without fallback. <code>cleanup</code> removes only generated artifacts, not the source tree needed by <code>R CMD build</code>. This package-bundled extension layout follows precedents such as <a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts</a>. Matching DuckDB C API headers are vendored explicitly for every declared version.</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="ex">Rscript</span> tools/fetch_duckdb_headers.R <span class="at">--ref</span> v1.5.5</span></code></pre></div>
-<p>The extension uses DuckDB’s <a href="https://duckdb.org/docs/stable/clients/c/overview.html" class="external-link">C extension API</a> and unstable C extension ABI for connection/runtime access, scalar-function bind/init/state hooks, dynamic bind-time argument inspection, and selection-vector helpers. This table is generated from <code>tools/used_duckdb_unstable_api.R</code> when <code>README.Rmd</code> is rendered:</p>
+<p>The extension builds against DuckDB’s <a href="https://duckdb.org/docs/stable/clients/c/overview.html" class="external-link">C extension API</a> with the <code>C_STRUCT_UNSTABLE</code> ABI because it uses entries outside the v1.2.0 stable surface: scalar-function bind/init/state hooks, bind-time argument inspection, selection-vector helpers, and the deprecated streaming-result functions. The table below lists those entries, grouped by the header’s unstable group (DuckDB headers before 1.5.6) or by the API version band that first stabilized them (1.5.6 headers, where <code>deprecated</code> marks entries that need <code>DUCKDB_API_ALLOW_DEPRECATED</code>). It is generated from <code>tools/used_duckdb_unstable_api.R</code> against the newest vendored header when <code>README.Rmd</code> is rendered:</p>
 <table class="table">
 <colgroup>
-<col width="13%">
-<col width="84%">
 <col width="1%">
+<col width="97%">
+<col width="0%">
 </colgroup>
 <thead><tr>
 <th>ABI group</th>
@@ -610,49 +610,18 @@
 </tr></thead>
 <tbody>
 <tr>
-<td><code>unstable_deprecated</code></td>
+<td><code>deprecated</code></td>
 <td>
 <code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_get_chunk</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_stream_fetch_chunk</code>
 </td>
 <td align="right">4</td>
 </tr>
 <tr>
-<td><code>unstable_new_expression_functions</code></td>
+<td><code>v1.5.6</code></td>
 <td>
-<code>duckdb_destroy_expression</code>, <code>duckdb_expression_return_type</code>
+<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_expression</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_expression_return_type</code>, <code>duckdb_get_time_ns</code>, <code>duckdb_scalar_function_bind_get_argument</code>, <code>duckdb_scalar_function_bind_get_argument_count</code>, <code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>, <code>duckdb_scalar_function_set_init</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_value_to_string</code>, <code>duckdb_vector_copy_sel</code>
 </td>
-<td align="right">2</td>
-</tr>
-<tr>
-<td><code>unstable_new_scalar_function_functions</code></td>
-<td>
-<code>duckdb_scalar_function_bind_get_argument</code>, <code>duckdb_scalar_function_bind_get_argument_count</code>, <code>duckdb_scalar_function_bind_get_extra_info</code>, <code>duckdb_scalar_function_bind_set_error</code>, <code>duckdb_scalar_function_set_bind</code>, <code>duckdb_scalar_function_set_bind_data</code>, <code>duckdb_scalar_function_set_bind_data_copy</code>
-</td>
-<td align="right">7</td>
-</tr>
-<tr>
-<td><code>unstable_new_scalar_function_state_functions</code></td>
-<td>
-<code>duckdb_scalar_function_get_state</code>, <code>duckdb_scalar_function_init_get_bind_data</code>, <code>duckdb_scalar_function_init_get_extra_info</code>, <code>duckdb_scalar_function_init_set_error</code>, <code>duckdb_scalar_function_init_set_state</code>, <code>duckdb_scalar_function_set_init</code>
-</td>
-<td align="right">6</td>
-</tr>
-<tr>
-<td><code>unstable_new_string_functions</code></td>
-<td><code>duckdb_value_to_string</code></td>
-<td align="right">1</td>
-</tr>
-<tr>
-<td><code>unstable_new_value_functions</code></td>
-<td><code>duckdb_get_time_ns</code></td>
-<td align="right">1</td>
-</tr>
-<tr>
-<td><code>unstable_new_vector_functions</code></td>
-<td>
-<code>duckdb_create_selection_vector</code>, <code>duckdb_destroy_selection_vector</code>, <code>duckdb_selection_vector_get_data_ptr</code>, <code>duckdb_vector_copy_sel</code>
-</td>
-<td align="right">4</td>
+<td align="right">21</td>
 </tr>
 </tbody>
 </table>

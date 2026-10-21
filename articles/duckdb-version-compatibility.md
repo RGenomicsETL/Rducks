@@ -21,6 +21,7 @@ header set. The current bundle contains:
 | `v1.5.3`              | yes               |
 | `v1.5.4`              | yes               |
 | `v1.5.5`              | yes               |
+| `v1.5.6`              | yes               |
 
 This table is generated directly from
 `tools/ext/duckdb_capi/versions.txt`, the same manifest consumed by the
