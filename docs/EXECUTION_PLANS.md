@@ -114,17 +114,63 @@ Unsupported combinations must fail. They must not silently switch:
   this promise. Request/task identity is retained; queue arrival does not
   establish source row order. `rducks_explain_udf()` reports the registration's
   coalescing option.
-  Liveness caveat: the R thread drains only while it is inside a UDF callback
-  of its own (plus a short idle window afterwards), because duckdb-r blocks it in
-  DuckDB's `Execute()` otherwise. A query whose UDF chunks all land on worker
-  threads, including small `range()` queries, one-row-group tables, and query
-  tails, can time out. A parallel source does not guarantee progress. Explicit
-  single-threaded execution avoids this queue starvation; the package does not
-  change the execution plan automatically. A structural fix must keep the R
-  thread available through execution, streaming fetch, and error cleanup.
+  `rducks_query_stream()` provides a managed driver for this plan, subject to
+  the dependency and source restrictions below. Ordinary DBI execution still
+  blocks the R thread in duckdb-r's `Execute()`: it drains the queue only during
+  its own Rducks callbacks and a short idle window afterwards. All-worker
+  callback placement, small sources, and query tails can therefore time out.
+  A parallel source does not guarantee progress. Explicit single-threaded
+  execution avoids that starvation; Rducks does not change plans automatically.
 - `multiprocess_parallel`: chunk work is sent to persistent worker processes
   over the NNG provider (`ipc_nng_pool`). Backs the public `transport = "ipc"`
   plan for the supported wire types.
+
+## Managed in-process query streams
+
+With the concurrent `inproc` plan, `rducks_query_stream()` uses one persistent
+native helper for preparation, pending execution, fetching and teardown. The
+recorded R thread stays in a service loop, evaluates queued scalar callbacks,
+and checks interrupts while a native command runs. The handoff holds at most
+one fetched DuckDB chunk; R materializes that chunk directly on its own thread.
+Native execution may retain additional operator state as required by the query.
+
+Each stream has a reference-counted query owner. Queued requests retain their
+original task identity and result destination. The pump selects only that
+owner's work, and coalescing also requires the same owner and queue generation.
+It does not wait for lower task ordinals or establish source-row callback order.
+Pausing between batches is permitted: managed pending requests are governed by
+their query owner's cancellation state, rather than the legacy queue deadline.
+Ordinary queued requests still use an elapsed monotonic deadline, independent
+of condition-variable notification counts.
+
+Cancellation closes admission before interrupting the native connection.
+Pending requests finish with an error; a running request retains its callback
+state until it reaches `DONE`. The R thread services shutdown until native
+resources are destroyed and the helper is joined. Native query errors, end of
+input, explicit close, handle garbage collection, and release of the last Rducks
+runtime anchor all close the stream. Use `$close()` after early exit, including
+an error while processing or assembling a returned R batch. R operations that
+do not cooperate with interrupts cannot be forcibly preempted safely.
+
+Only one stream may be open per database runtime. Recursive stream calls and
+release from a callback are rejected; plan and scheduler changes are rejected
+while a stream is open, including through a sibling DBI connection. Existing
+serial and IPC stream paths remain synchronous.
+
+Managed startup requires duckdb-r's versioned off-main R-source guard capability.
+The pinned [companion patch and installer](../tools/compat/README.md) provide
+version 1 for duckdb-r 1.5.6. Stock builds without it fail before helper startup.
+The guard rejects R-backed environment/Arrow replacement scans, Arrow factories,
+and R data-frame binding before they enter R from the helper. Rducks R table and
+aggregate callbacks are also unsupported in this mode. Native sources and the
+queued Rducks scalar-UDF path are supported.
+
+The stream uses an extension-owned database connection. It does not share the
+caller's temporary tables/views, uncommitted transaction or connection-local
+settings. Last-anchor release for a file-backed database closes the internal
+connections; disconnect and reconnect before enabling that database again.
+Ordinary DBI integration with the caller's actual connection remains separate
+work. The companion guard does not supply that integration.
 
 ## Scalar-UDF engines
 

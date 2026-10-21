@@ -52,3 +52,116 @@ jobs:
             print(summary(result))
             if (!all(as.logical(result))) stop('Failed: ', file)
           }
+
+  managed-driver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      RDUCKS_DEV_SURFACES: 'true'
+      RDUCKS_DUCKDB_VERSIONS: v1.5.6
+      USE_UNSTABLE_C_API: '1'
+      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
+      MAKEFLAGS: -j2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: |
+            any::tinytest
+            duckdb@1.5.6
+          needs: check
+      - name: Record separate package and guarded libraries
+        run: |
+          Rscript --vanilla - <<'RSCRIPT'
+          root <- Sys.getenv('RUNNER_TEMP')
+          paths <- c(
+            RDUCKS_PACKAGE_LIBRARY = file.path(root, 'rducks-package-library'),
+            RDUCKS_GUARDED_LIBRARY = file.path(root, 'rducks-guarded-library'),
+            RDUCKS_GUARDED_BUILD = file.path(root, 'duckdb-guarded-build'),
+            RDUCKS_MANAGED_LOGS = file.path(root, 'rducks-managed-logs')
+          )
+          for (path in paths) dir.create(path, recursive = TRUE, showWarnings = FALSE)
+          settings <- c(paths, RDUCKS_DEPENDENCY_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
+          cat(paste0(names(settings), '=', settings, '\n'), sep = '',
+              file = Sys.getenv('GITHUB_ENV'), append = TRUE)
+          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          RSCRIPT
+      - name: Build Rducks against stock DuckDB v1.5.6
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          timeout --kill-after=30s 9m env -u R_LIBS \
+            R_LIBS_USER="$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
+            R CMD INSTALL --library="$RDUCKS_PACKAGE_LIBRARY" . \
+            2>&1 | tee "$RDUCKS_MANAGED_LOGS/rducks-install.log"
+      - name: Check stock capability absence
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          timeout --kill-after=10s 120s env -u R_LIBS \
+            R_LIBS_USER="$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
+            Rscript --vanilla - <<'RSCRIPT' 2>&1 | tee "$RDUCKS_MANAGED_LOGS/stock-capability.log"
+          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          result <- tinytest::run_test_file('inst/tinytest/test_query_stream_driver.R')
+          print(summary(result))
+          checks <- as.data.frame(result)$result
+          # Exactly the rejection and ordinary-query reuse assertions must run.
+          stopifnot(length(checks) == 2L, all(checks))
+          RSCRIPT
+      - name: Install pinned guarded duckdb-r into its own library
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          timeout --kill-after=30s 14m env -u R_LIBS \
+            R_LIBS_USER="$RDUCKS_DEPENDENCY_LIBS" \
+            tools/compat/install-guarded-duckdb.sh \
+            "$RDUCKS_GUARDED_LIBRARY" "$RDUCKS_GUARDED_BUILD" \
+            2>&1 | tee "$RDUCKS_MANAGED_LOGS/guarded-install.log"
+      - name: Check guarded lifecycle, host, and runtime behavior
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          # Each test starts a new R process; never try to replace a loaded
+          # stock duckdb namespace by changing .libPaths() in that process.
+          # R_LIBS precedes R_LIBS_USER, so clear any setup-r override too.
+          for file in test_query_stream_driver.R test_query_stream_host_guards.R test_query_stream_runtime_guards.R; do
+            timeout --kill-after=10s 180s env -u R_LIBS \
+              R_LIBS_USER="$RDUCKS_GUARDED_LIBRARY:$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
+              Rscript --vanilla - "$file" <<'RSCRIPT' 2>&1 | tee "$RDUCKS_MANAGED_LOGS/$file.log"
+          file <- commandArgs(trailingOnly = TRUE)[[1L]]
+          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          stopifnot(normalizePath(getNamespaceInfo(asNamespace('duckdb'), 'path')) ==
+            normalizePath(file.path(Sys.getenv('RDUCKS_GUARDED_LIBRARY'), 'duckdb')))
+          result <- tinytest::run_test_file(file.path('inst', 'tinytest', file))
+          print(summary(result))
+          checks <- as.data.frame(result)$result
+          minimum <- if (identical(file, 'test_query_stream_driver.R')) 3L else 1L
+          stopifnot(length(checks) >= minimum, all(checks))
+          RSCRIPT
+          done
+      - name: Exercise real SIGINT during native and R callback execution
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          timeout --kill-after=10s 240s env -u R_LIBS \
+            R_LIBS_USER="$RDUCKS_GUARDED_LIBRARY:$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
+            python3 test/native/run_managed_stream_interrupt.py \
+            2>&1 | tee "$RDUCKS_MANAGED_LOGS/interrupts.log"
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-driver-failure-logs
+          path: |
+            ${{ runner.temp }}/rducks-managed-logs
+            ${{ runner.temp }}/duckdb-guarded-build/install.log
+            ${{ runner.temp }}/duckdb-guarded-build/guard-probe.log
+          if-no-files-found: ignore
+          retention-days: 7

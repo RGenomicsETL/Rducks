@@ -106,9 +106,10 @@ R_LIBS_USER="$rducks_library:$guarded_library:$ordinary_library" \
 `test_query_stream_host_guards.R` covers missing-name replacement and persistent
 R data-frame view rejection, main-thread access, and reuse after failed binding.
 It also covers registered Arrow input when the optional Arrow package is
-installed. `test_query_stream_runtime_guards.R` checks a second connection cannot
-change runtime configuration under a live stream, and final-anchor release joins
-the driver. The lifecycle test covers scalar queue execution, error/reentrancy,
+installed. `test_query_stream_runtime_guards.R` checks bootstrap after manual
+extension loading, configuration guards for a second connection, final-anchor
+release, and file-backed shutdown followed by stale-handle close/GC and reopen.
+The lifecycle test covers scalar queue execution, error/reentrancy,
 early close, garbage collection and reuse. The native SIGINT harness provides
 separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt.py`.
 
