@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SIGINT integration checks for the managed driver, each in a fresh R process.
 
-Run after installing Rducks and duckdb-r with off-main guard capability v1.
+Run after installing Rducks and duckdb-r with off-main guard capability v2.
 R_LIBS_USER is inherited. A timeout is a test failure, and the child is always
 reaped. No compiler or implementation-derived test substitute is used here.
 """

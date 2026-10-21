@@ -42,7 +42,7 @@ settings.
 
 | Stream path | Execution and R callbacks | Requirements and limits |
 | --- | --- | --- |
-| Concurrent `inproc` | Persistent native helper prepares, executes, fetches and tears down; the recorded R thread services queued scalar callbacks and interrupts. | Requires duckdb-r off-main R-source guard capability v1 or newer. Native sources and queued Rducks scalar UDFs are supported. R-backed source binding, R table functions and R aggregates are rejected. |
+| Concurrent `inproc` | Persistent native helper prepares, executes, fetches and tears down; the recorded R thread services queued scalar callbacks and interrupts. | Requires duckdb-r off-main R-source and scheduler-lease capability v2 or newer. Native sources and queued Rducks scalar UDFs are supported. R-backed source binding, R table functions and R aggregates are rejected. Raw scheduler `SET`/`RESET`/`PRAGMA`, including aliases and sibling connections, are rejected until the stream closes. |
 | Serial / `ipc` | Existing synchronous native stream path. | No managed-helper capability requirement; the selected plan's existing restrictions apply. |
 | Ordinary DBI query | duckdb-r's synchronous query path. | Concurrent in-process callbacks still depend on callback-driven queue service and can starve when the R thread is blocked in native execution. |
 

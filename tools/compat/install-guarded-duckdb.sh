@@ -35,7 +35,7 @@ Rscript --vanilla -e 'stopifnot(getRversion() >= "4.2.0", requireNamespace("DBI"
 
 source_sha=92a9b45b2994568d8d3f0173ecc3a085698f1241177719b79d7e3b4bcca5b0c9
 library_sha=b845005f5132a7d8180057c35e14a7626632258782f871a90861b19c1c03841b
-patch_sha=9dd26bac02f4408106c41844b53e0387bcd1ab71807ad086346fe540fd674445
+patch_sha=2169fc562d0b48bf24f9c4da11c68288599da26319f9d6324d52552cfa9e6df9
 printf '%s  %s\n' "$patch_sha" "$patch_file" | sha256sum --check --status ||
   fail 'Companion patch checksum does not match this installer.'
 
@@ -93,6 +93,17 @@ SEXP rducks_guard_probe_version(void) {
     version_fn version = (version_fn) R_GetCCallable("duckdb", "duckdb_r_off_main_guard_version");
     return Rf_ScalarInteger((int) version());
 }
+SEXP rducks_guard_probe_lease(void) {
+    typedef uint64_t (*reserve_fn)(void);
+    typedef int (*lease_fn)(uint64_t);
+    reserve_fn reserve = (reserve_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_reserve");
+    lease_fn validate = (lease_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_validate");
+    lease_fn release = (lease_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_release");
+    uint64_t id = reserve();
+    int ok = id != 0 && validate(id) == 0;
+    if (id) ok = release(id) == 1 && validate(id) == 0 && ok;
+    return Rf_ScalarLogical(ok);
+}
 C
 if ! R CMD SHLIB -o "$build_dir/guard_probe.so" "$build_dir/guard_probe.c" \
   > "$build_dir/guard-probe.log" 2>&1; then
@@ -109,7 +120,8 @@ local({
   stopifnot(DBI::dbGetQuery(con, "SELECT version() AS version")$version == "v1.5.6")
   stopifnot(DBI::dbGetQuery(con, "SELECT 42::INTEGER AS answer")$answer == 42L)
   dyn.load(file.path(args[[2L]], "guard_probe.so"))
-  stopifnot(.Call("rducks_guard_probe_version") == 1L)
+  stopifnot(.Call("rducks_guard_probe_version") == 2L)
+  stopifnot(.Call("rducks_guard_probe_lease"))
 })
 R
 printf 'Guarded duckdb installed in %s\n' "$output_library"

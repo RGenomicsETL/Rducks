@@ -67,12 +67,18 @@ rducks_query_stream_driver_available <- function(con) {
 #' scalar callbacks. Requests keep their original task identity and result
 #' destination; no source-row ordering is promised. R table and aggregate
 #' callbacks are unsupported in this managed mode and fail before off-thread R
-#' access. This mode requires a duckdb-r build exposing version 1 of its
-#' off-main R-source guard capability; ordinary builds without that capability
-#' fail with an explicit error. Serial and IPC plans retain their synchronous
-#' execution paths.
+#' access. This mode requires a duckdb-r build exposing version 2 of its
+#' off-main R-source guard and scheduler-lease capability; ordinary builds
+#' without that capability fail with an explicit error. Serial and IPC plans
+#' retain their synchronous execution paths.
 #' Only one stream can be open for a database runtime at a time. Recursive
 #' stream operations, release, and plan changes during callbacks are rejected.
+#' While a managed stream is open, native configuration guards also reject
+#' direct SQL changes to \code{threads} (including aliases),
+#' \code{external_threads}, and the guard's configuration controls on every
+#' connection to the database. The original configuration restrictions are
+#' restored after the native driver has stopped. Close the stream before
+#' changing those settings.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param sql A non-empty SQL query string.

@@ -23,7 +23,7 @@ local({
     expect_error(rducks_query_stream(con, "SELECT 1 AS i"),
       pattern = "require duckdb-r off-main R-source guards")
     expect_equal(DBI::dbGetQuery(con, "SELECT 1 AS i")$i, 1L)
-    exit_file("managed driver requires duckdb-r off-main guard capability v1")
+    exit_file("managed driver requires duckdb-r off-main guard capability v2")
     return(invisible(NULL))
   }
 

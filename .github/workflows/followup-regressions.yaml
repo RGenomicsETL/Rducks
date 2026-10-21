@@ -146,6 +146,14 @@ jobs:
           stopifnot(length(checks) >= minimum, all(checks))
           RSCRIPT
           done
+      - name: Reject raw scheduler changes with callbacks pending
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          timeout --kill-after=10s 360s env -u R_LIBS \
+            R_LIBS_USER="$RDUCKS_GUARDED_LIBRARY:$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
+            python3 test/native/run_scheduler_guard.py \
+            2>&1 | tee "$RDUCKS_MANAGED_LOGS/scheduler-guard.log"
       - name: Exercise real SIGINT during native and R callback execution
         timeout-minutes: 5
         run: |

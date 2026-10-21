@@ -157,9 +157,21 @@ release from a callback are rejected; plan and scheduler changes are rejected
 while a stream is open, including through a sibling DBI connection. Existing
 serial and IPC stream paths remain synchronous.
 
+The scheduler guard is an execution-time database configuration lease, not SQL
+text screening. It rejects direct `SET`, `RESET` and `PRAGMA` changes to `threads`
+(including `worker_threads`), `external_threads`, `lock_configuration` and
+`allowed_configs`, including cached prepared statements. The lease preserves a
+pre-existing configuration lock and its allowlist without widening either. For
+an initially unlocked database, other already registered settings remain
+configurable; settings added by newly loaded extensions fail closed until the
+stream ends. The original lock value/presence and allowlist are restored only
+after the helper is joined. This does not intercept arbitrary third-party
+native extensions that mutate engine internals directly.
+
 Managed startup requires duckdb-r's versioned off-main R-source guard capability.
 The pinned [companion patch and installer](../tools/compat/README.md) provide
-version 1 for duckdb-r 1.5.6. Stock builds without it fail before helper startup.
+version 2 for duckdb-r 1.5.6. Stock builds and version-1 companions fail before
+helper startup. Version 2 adds the native scheduler lease to the source guards.
 The guard rejects R-backed environment/Arrow replacement scans, Arrow factories,
 and R data-frame binding before they enter R from the helper. Rducks R table and
 aggregate callbacks are also unsupported in this mode. Native sources and the

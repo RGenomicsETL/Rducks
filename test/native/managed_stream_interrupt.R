@@ -9,7 +9,7 @@ con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "
 rducks_enable(con, threads = "single")
 rducks_enable_inproc(con, threads = 1L, external_threads = 1L)
 if (!Rducks:::rducks_query_stream_driver_available(con)) {
-  stop("interrupt integration test requires duckdb-r off-main guard capability v1")
+  stop("interrupt integration test requires duckdb-r off-main guard capability v2")
 }
 ready <- function() writeLines("ready", ready_file)
 stream <- NULL
