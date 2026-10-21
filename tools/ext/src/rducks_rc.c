@@ -277,6 +277,10 @@ static int rducks_rc_direct_supported(rducks_r_scalar_meta_t *meta) {
     return 1;
 }
 
+/* Defined later in this file; used by the batch predicate and writers. */
+static int rducks_rc_owned_result_chunk_supported(rducks_r_scalar_meta_t *meta);
+static int rducks_rc_atomic_result_supported(const rducks_type_desc_t *desc);
+
 typedef struct rducks_rc_direct_vector_view {
     duckdb_vector vector;
     void *data;
@@ -2118,22 +2122,227 @@ static SEXP rducks_rc_direct_prepare_inputs(rducks_r_scalar_meta_t *meta, duckdb
 static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
                                          idx_t row, SEXP value, char *err_msg, size_t err_cap);
 
-static int rducks_rc_write_direct_results(rducks_r_scalar_meta_t *meta, SEXP results,
-                                          duckdb_vector output, idx_t n,
-                                          char *err_msg, size_t err_cap) {
-    if (TYPEOF(results) != VECSXP || XLENGTH(results) != (R_xlen_t)n) {
+/* Bulk writeback for a vectorized result that arrives as one atomic R vector
+ * of length n (the direct path's fast result shape for plain scalar returns).
+ * NULL detection and value conversion follow the per-row writer exactly:
+ * NA_LOGICAL / NA_INTEGER / ISNA / NA_STRING are SQL NULL (a NaN double is a
+ * value), integer targets take an integer or an already range-checked double,
+ * UINTEGER takes a double, VARCHAR is translated to UTF-8. */
+static int rducks_rc_atomic_result_supported(const rducks_type_desc_t *desc) {
+    if (!desc || desc->kind != RDUCKS_KIND_SCALAR) return 0;
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL:
+    case RDUCKS_TYPE_I8:
+    case RDUCKS_TYPE_U8:
+    case RDUCKS_TYPE_I16:
+    case RDUCKS_TYPE_U16:
+    case RDUCKS_TYPE_I32:
+    case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_F32:
+    case RDUCKS_TYPE_F64:
+    case RDUCKS_TYPE_VARCHAR:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int rducks_rc_atomic_row_is_null(SEXP value, R_xlen_t row) {
+    switch (TYPEOF(value)) {
+    case LGLSXP: return LOGICAL(value)[row] == NA_LOGICAL;
+    case INTSXP: return INTEGER(value)[row] == NA_INTEGER;
+    case REALSXP: return ISNA(REAL(value)[row]);
+    case STRSXP: return STRING_ELT(value, row) == NA_STRING;
+    default: return 0;
+    }
+}
+
+static double rducks_rc_atomic_real_at(SEXP value, R_xlen_t row) {
+    if (TYPEOF(value) == INTSXP) return (double)INTEGER(value)[row];
+    return REAL(value)[row];
+}
+
+static int rducks_rc_atomic_int_at(SEXP value, R_xlen_t row) {
+    if (TYPEOF(value) == INTSXP) return INTEGER(value)[row];
+    return (int)REAL(value)[row];
+}
+
+static int rducks_rc_write_direct_results_atomic(const rducks_type_desc_t *desc, SEXP value,
+                                                 duckdb_vector output, idx_t n, idx_t src_offset,
+                                                 char *err_msg, size_t err_cap) {
+    rducks_rc_direct_vector_view_t view;
+    SEXPTYPE t = TYPEOF(value);
+    int shape_ok;
+    if (!rducks_rc_atomic_result_supported(desc) || (uint64_t)XLENGTH(value) < (uint64_t)src_offset + (uint64_t)n) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return 0;
+    }
+    if (desc->scalar == RDUCKS_TYPE_VARCHAR) {
+        shape_ok = t == STRSXP;
+    } else if (desc->scalar == RDUCKS_TYPE_BOOL) {
+        shape_ok = t == LGLSXP;
+    } else {
+        shape_ok = t == INTSXP || t == REALSXP;
+    }
+    if (!shape_ok) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return 0;
+    }
+    rducks_rc_direct_view_init(&view, output);
+    for (idx_t row = 0; row < n; row++) {
+        R_xlen_t i = (R_xlen_t)(src_offset + row);
+        if (rducks_rc_atomic_row_is_null(value, i)) {
+            rducks_rc_output_set_null(&view, row);
+            continue;
+        }
+        rducks_rc_output_set_valid_if_needed(&view, row);
+        switch (desc->scalar) {
+        case RDUCKS_TYPE_BOOL:
+            ((bool *)view.data)[row] = LOGICAL(value)[i] == TRUE;
+            break;
+        case RDUCKS_TYPE_I8:
+            ((int8_t *)view.data)[row] = (int8_t)rducks_rc_atomic_int_at(value, i);
+            break;
+        case RDUCKS_TYPE_U8:
+            ((uint8_t *)view.data)[row] = (uint8_t)rducks_rc_atomic_int_at(value, i);
+            break;
+        case RDUCKS_TYPE_I16:
+            ((int16_t *)view.data)[row] = (int16_t)rducks_rc_atomic_int_at(value, i);
+            break;
+        case RDUCKS_TYPE_U16:
+            ((uint16_t *)view.data)[row] = (uint16_t)rducks_rc_atomic_int_at(value, i);
+            break;
+        case RDUCKS_TYPE_I32:
+            ((int32_t *)view.data)[row] = (int32_t)rducks_rc_atomic_int_at(value, i);
+            break;
+        case RDUCKS_TYPE_U32:
+            ((uint32_t *)view.data)[row] = (uint32_t)rducks_rc_atomic_real_at(value, i);
+            break;
+        case RDUCKS_TYPE_F32:
+            ((float *)view.data)[row] = (float)rducks_rc_atomic_real_at(value, i);
+            break;
+        case RDUCKS_TYPE_F64:
+            ((double *)view.data)[row] = rducks_rc_atomic_real_at(value, i);
+            break;
+        case RDUCKS_TYPE_VARCHAR: {
+            const char *ptr = Rf_translateCharUTF8(STRING_ELT(value, i));
+            duckdb_vector_assign_string_element_len(output, row, ptr, (idx_t)strlen(ptr));
+            break;
+        }
+        default:
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int rducks_rc_write_direct_output(const rducks_type_desc_t *desc, rducks_rc_direct_vector_view_t *output,
+                                         idx_t row, SEXP value, char *err_msg, size_t err_cap);
+static int rducks_rc_write_null_direct_output(const rducks_type_desc_t *desc,
+                                              rducks_rc_direct_vector_view_t *output,
+                                              idx_t row, char *err_msg, size_t err_cap);
+
+/* Columnar writeback for a STRUCT result: a list with one entry per declared
+ * field, in declared order, classed "rducks_columnar_result". Each entry is an
+ * atomic vector (bulk scalar writeback), a nested columnar result, or a
+ * per-row list for that field (written through the per-row writer). The
+ * optional logical attribute rducks_row_null marks rows that are NULL at the
+ * struct level (rows the R function did not evaluate). */
+static int rducks_rc_write_direct_results_columnar(const rducks_type_desc_t *desc, SEXP columns,
+                                                   duckdb_vector output, idx_t n, idx_t src_offset,
+                                                   char *err_msg, size_t err_cap) {
+    rducks_rc_direct_vector_view_t view;
+    SEXP row_null;
+    if (!desc || desc->kind != RDUCKS_KIND_STRUCT || TYPEOF(columns) != VECSXP ||
+        XLENGTH(columns) != (R_xlen_t)desc->field_count) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return 0;
+    }
+    for (size_t i = 0; i < desc->field_count; i++) {
+        duckdb_vector child = duckdb_struct_vector_get_child(output, (idx_t)i);
+        SEXP col = VECTOR_ELT(columns, (R_xlen_t)i);
+        const rducks_type_desc_t *child_desc = desc->field_types[i];
+        if (!child || !child_desc) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+            return 0;
+        }
+        if (TYPEOF(col) != VECSXP) {
+            if (!rducks_rc_write_direct_results_atomic(child_desc, col, child, n, src_offset, err_msg, err_cap)) return 0;
+        } else if (Rf_inherits(col, "rducks_columnar_result")) {
+            if (!rducks_rc_write_direct_results_columnar(child_desc, col, child, n, src_offset, err_msg, err_cap)) return 0;
+        } else {
+            rducks_rc_direct_vector_view_t child_view;
+            if ((uint64_t)XLENGTH(col) < (uint64_t)src_offset + (uint64_t)n) {
+                rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+                return 0;
+            }
+            rducks_rc_direct_view_init(&child_view, child);
+            for (idx_t row = 0; row < n; row++) {
+                if (!rducks_rc_write_direct_output(child_desc, &child_view, row, VECTOR_ELT(col, (R_xlen_t)(src_offset + row)),
+                                                   err_msg, err_cap)) {
+                    return 0;
+                }
+            }
+        }
+    }
+    row_null = Rf_getAttrib(columns, Rf_install("rducks_row_null"));
+    rducks_rc_direct_view_init(&view, output);
+    if (row_null != R_NilValue) {
+        if (TYPEOF(row_null) != LGLSXP || (uint64_t)XLENGTH(row_null) < (uint64_t)src_offset + (uint64_t)n) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+            return 0;
+        }
+        for (idx_t row = 0; row < n; row++) {
+            if (LOGICAL(row_null)[(R_xlen_t)(src_offset + row)] == TRUE) {
+                if (!rducks_rc_write_null_direct_output(desc, &view, row, err_msg, err_cap)) return 0;
+            } else {
+                rducks_rc_output_set_valid_if_needed(&view, row);
+            }
+        }
+    } else {
+        for (idx_t row = 0; row < n; row++) rducks_rc_output_set_valid_if_needed(&view, row);
+    }
+    return 1;
+}
+
+/* Write rows [src_offset, src_offset + n) of a vectorized result into output
+ * rows [0, n). src_offset is 0 for a single chunk; a coalesced batch writes one
+ * result into several owned chunks. */
+static int rducks_rc_write_direct_results_slice(rducks_r_scalar_meta_t *meta, SEXP results,
+                                                duckdb_vector output, idx_t n, idx_t src_offset,
+                                                char *err_msg, size_t err_cap) {
+    if (TYPEOF(results) != VECSXP) {
+        return rducks_rc_write_direct_results_atomic(meta->return_desc, results, output, n, src_offset, err_msg, err_cap);
+    }
+    if (Rf_inherits(results, "rducks_columnar_result")) {
+        return rducks_rc_write_direct_results_columnar(meta->return_desc, results, output, n, src_offset, err_msg, err_cap);
+    }
+    if ((uint64_t)XLENGTH(results) < (uint64_t)src_offset + (uint64_t)n) {
         rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
         return 0;
     }
     rducks_rc_direct_vector_view_t output_view;
     rducks_rc_direct_view_init(&output_view, output);
     for (idx_t row = 0; row < n; row++) {
-        SEXP value = VECTOR_ELT(results, (R_xlen_t)row);
+        SEXP value = VECTOR_ELT(results, (R_xlen_t)(src_offset + row));
         if (!rducks_rc_write_direct_output(meta->return_desc, &output_view, row, value, err_msg, err_cap)) {
             return 0;
         }
     }
     return 1;
+}
+
+static int rducks_rc_write_direct_results(rducks_r_scalar_meta_t *meta, SEXP results,
+                                          duckdb_vector output, idx_t n,
+                                          char *err_msg, size_t err_cap) {
+    R_xlen_t len = (TYPEOF(results) == VECSXP && Rf_inherits(results, "rducks_columnar_result"))
+                       ? (R_xlen_t)n : XLENGTH(results);
+    if (len != (R_xlen_t)n) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        return 0;
+    }
+    return rducks_rc_write_direct_results_slice(meta, results, output, n, 0, err_msg, err_cap);
 }
 
 static int rducks_rc_value_is_null_for_output(const rducks_type_desc_t *desc, SEXP value) {
@@ -2736,6 +2945,214 @@ static int rducks_rc_vectorized_writeback_from_sexp_on_r_thread(rducks_r_scalar_
     return rducks_rc_write_direct_results(meta, results, output, n, err_msg, err_cap);
 }
 
+/* Coalesced evaluation: several queued chunks of the same vectorized UDF are
+ * materialized into one set of R argument vectors, the R function runs once,
+ * and the result is sliced back into each chunk's owned result chunk. Only
+ * static-signature UDFs whose inputs are plain scalars take this path; the
+ * result may be any direct-supported shape. */
+static int rducks_rc_batch_input_supported(const rducks_type_desc_t *desc) {
+    return rducks_rc_atomic_result_supported(desc);
+}
+
+static int rducks_rc_batch_supported(rducks_r_scalar_meta_t *meta) {
+    if (!meta || meta->eval_mode != RDUCKS_EVAL_RCV || meta->dynamic_args || meta->arity == 0) return 0;
+    if (!rducks_rc_owned_result_chunk_supported(meta)) return 0;
+    for (size_t i = 0; i < meta->arity; i++) {
+        if (!rducks_rc_batch_input_supported(meta->args[i])) return 0;
+    }
+    return 1;
+}
+
+typedef struct rducks_rc_batch {
+    duckdb_data_chunk *inputs;
+    duckdb_data_chunk *chunks;
+    size_t count;
+    idx_t total;
+} rducks_rc_batch_t;
+
+/* The error boundary passes only (input, output); the active batch travels in
+ * this slot. Direct evaluation runs on the recorded R thread, and a nested
+ * evaluation (an R function that itself queries DuckDB) saves and restores it. */
+static rducks_rc_batch_t *g_rducks_rc_active_batch = NULL;
+
+static int rducks_rc_append_column_piece(SEXP dst, idx_t at, SEXP piece, idx_t n) {
+    if (TYPEOF(dst) != TYPEOF(piece) || (uint64_t)XLENGTH(piece) != (uint64_t)n) return 0;
+    switch (TYPEOF(dst)) {
+    case REALSXP:
+        if (n) memcpy(REAL(dst) + at, REAL(piece), (size_t)n * sizeof(double));
+        return 1;
+    case INTSXP:
+        if (n) memcpy(INTEGER(dst) + at, INTEGER(piece), (size_t)n * sizeof(int));
+        return 1;
+    case LGLSXP:
+        if (n) memcpy(LOGICAL(dst) + at, LOGICAL(piece), (size_t)n * sizeof(int));
+        return 1;
+    case STRSXP:
+        for (idx_t i = 0; i < n; i++) SET_STRING_ELT(dst, (R_xlen_t)(at + i), STRING_ELT(piece, (R_xlen_t)i));
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* R vector type that rducks_rc_direct_column_values() produces for a batchable
+ * (plain scalar) input descriptor. */
+static SEXPTYPE rducks_rc_batch_input_sexptype(const rducks_type_desc_t *desc) {
+    switch (desc->scalar) {
+    case RDUCKS_TYPE_BOOL: return LGLSXP;
+    case RDUCKS_TYPE_I8:
+    case RDUCKS_TYPE_U8:
+    case RDUCKS_TYPE_I16:
+    case RDUCKS_TYPE_U16:
+    case RDUCKS_TYPE_I32: return INTSXP;
+    case RDUCKS_TYPE_U32:
+    case RDUCKS_TYPE_F32:
+    case RDUCKS_TYPE_F64: return REALSXP;
+    case RDUCKS_TYPE_VARCHAR: return STRSXP;
+    default: return NILSXP;
+    }
+}
+
+static SEXP rducks_rc_direct_prepare_inputs_batch(rducks_r_scalar_meta_t *meta, const rducks_rc_batch_t *batch,
+                                                  int *protect_count, char *err_msg, size_t err_cap) {
+    SEXP prepared, columns, nulls, top_level_null, n_sexp, dynamic_arg_tokens, names;
+    idx_t total = batch->total;
+
+    if (total > (idx_t)R_XLEN_T_MAX) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks batch is too large to materialize in R");
+        return R_NilValue;
+    }
+    prepared = PROTECT(Rf_allocVector(VECSXP, 5));
+    (*protect_count)++;
+    columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
+    (*protect_count)++;
+    nulls = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)meta->arity));
+    (*protect_count)++;
+    top_level_null = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)total));
+    (*protect_count)++;
+    n_sexp = PROTECT(Rf_ScalarReal((double)total));
+    (*protect_count)++;
+    dynamic_arg_tokens = PROTECT(rducks_dynamic_arg_tokens_sexp(meta));
+    (*protect_count)++;
+    names = PROTECT(Rf_allocVector(STRSXP, 5));
+    (*protect_count)++;
+    for (idx_t row = 0; row < total; row++) LOGICAL(top_level_null)[(R_xlen_t)row] = FALSE;
+
+    for (size_t col = 0; col < meta->arity; col++) {
+        SEXPTYPE vtype = rducks_rc_batch_input_sexptype(meta->args[col]);
+        SEXP values;
+        SEXP col_nulls;
+        idx_t at = 0;
+        if (vtype == NILSXP) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks batch input type is not batchable");
+            return R_NilValue;
+        }
+        /* Both whole-column vectors are protected before the per-chunk loop so
+         * each iteration's PROTECT/UNPROTECT pair is self-contained (LIFO). */
+        values = PROTECT(Rf_allocVector(vtype, (R_xlen_t)total));
+        col_nulls = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)total));
+        for (size_t k = 0; k < batch->count; k++) {
+            duckdb_vector vector = duckdb_data_chunk_get_vector(batch->inputs[k], (idx_t)col);
+            idx_t n_k = duckdb_data_chunk_get_size(batch->inputs[k]);
+            rducks_rc_direct_vector_view_t view;
+            SEXP piece_nulls;
+            SEXP piece;
+            rducks_rc_direct_view_init(&view, vector);
+            piece_nulls = PROTECT(rducks_rc_direct_column_nulls(&view, n_k));
+            piece = PROTECT(rducks_rc_direct_column_values(meta->args[col], vector, n_k, err_msg, err_cap));
+            if (err_msg[0]) {
+                UNPROTECT(4);
+                return R_NilValue;
+            }
+            if (!rducks_rc_append_column_piece(values, at, piece, n_k)) {
+                UNPROTECT(4);
+                rducks_format_error_message(err_msg, err_cap, "Rducks batch input materialization produced an unexpected column shape");
+                return R_NilValue;
+            }
+            for (idx_t row = 0; row < n_k; row++) {
+                int is_null = LOGICAL(piece_nulls)[(R_xlen_t)row] == TRUE;
+                LOGICAL(col_nulls)[(R_xlen_t)(at + row)] = is_null ? TRUE : FALSE;
+                if (is_null) LOGICAL(top_level_null)[(R_xlen_t)(at + row)] = TRUE;
+            }
+            at += n_k;
+            UNPROTECT(2);
+        }
+        SET_VECTOR_ELT(columns, (R_xlen_t)col, values);
+        SET_VECTOR_ELT(nulls, (R_xlen_t)col, col_nulls);
+        UNPROTECT(2);
+    }
+
+    SET_VECTOR_ELT(prepared, 0, columns);
+    SET_VECTOR_ELT(prepared, 1, nulls);
+    SET_VECTOR_ELT(prepared, 2, top_level_null);
+    SET_VECTOR_ELT(prepared, 3, n_sexp);
+    SET_VECTOR_ELT(prepared, 4, dynamic_arg_tokens);
+    SET_STRING_ELT(names, 0, Rf_mkChar("columns"));
+    SET_STRING_ELT(names, 1, Rf_mkChar("nulls"));
+    SET_STRING_ELT(names, 2, Rf_mkChar("top_level_null"));
+    SET_STRING_ELT(names, 3, Rf_mkChar("n"));
+    SET_STRING_ELT(names, 4, Rf_mkChar("dynamic_arg_tokens"));
+    Rf_setAttrib(prepared, R_NamesSymbol, names);
+    return prepared;
+}
+
+static int rducks_rc_vectorized_batch_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
+                                                   duckdb_data_chunk input, duckdb_vector output,
+                                                   char *err_msg, size_t err_cap) {
+    (void)runtime;
+    (void)input;
+    (void)output;
+    rducks_rc_batch_t *batch = g_rducks_rc_active_batch;
+    int protect_count = 0;
+    int r_err = 0;
+    SEXP bundle, fun, arg_types, return_type, eval_rows_fun, prepared;
+    SEXP null_handling_sexp, exception_handling_sexp, results;
+    idx_t offset = 0;
+
+    if (!batch || !meta || !meta->fun || meta->fun == R_NilValue) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC batch metadata missing");
+        return 0;
+    }
+    bundle = meta->fun;
+    if (!rducks_rc_bundle_valid(bundle)) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized metadata bundle is invalid");
+        return 0;
+    }
+    fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_FUN);
+    arg_types = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_ARG_TYPES);
+    return_type = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_RETURN_TYPE);
+    eval_rows_fun = VECTOR_ELT(bundle, RDUCKS_RC_BUNDLE_EVAL_ROWS);
+
+    prepared = rducks_rc_direct_prepare_inputs_batch(meta, batch, &protect_count, err_msg, err_cap);
+    if (prepared == R_NilValue) goto fail_batch;
+    null_handling_sexp = PROTECT(rducks_rc_null_handling_sexp(meta->null_handling));
+    protect_count++;
+    exception_handling_sexp = PROTECT(rducks_rc_exception_handling_sexp(meta->exception_handling));
+    protect_count++;
+    results = rducks_rc_vectorized_eval_on_r_thread(eval_rows_fun, fun, arg_types, return_type, prepared,
+                                                    null_handling_sexp, exception_handling_sexp,
+                                                    &protect_count, &r_err);
+    if (r_err) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized R function or marshal error");
+        goto fail_batch;
+    }
+    for (size_t k = 0; k < batch->count; k++) {
+        idx_t n_k = duckdb_data_chunk_get_size(batch->inputs[k]);
+        duckdb_vector out_k = duckdb_data_chunk_get_vector(batch->chunks[k], 0);
+        if (!out_k || !rducks_rc_write_direct_results_slice(meta, results, out_k, n_k, offset, err_msg, err_cap)) {
+            if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "Rducks RC vectorized result writeback failed");
+            goto fail_batch;
+        }
+        offset += n_k;
+    }
+    UNPROTECT(protect_count);
+    return 1;
+
+fail_batch:
+    UNPROTECT(protect_count);
+    return 0;
+}
+
 static int rducks_rc_vectorized_execute_impl(rducks_runtime_entry_t *runtime, rducks_r_scalar_meta_t *meta,
                                              duckdb_data_chunk input, duckdb_vector output,
                                              char *err_msg, size_t err_cap) {
@@ -2962,6 +3379,66 @@ static duckdb_data_chunk rducks_rc_owned_result_chunk_new(rducks_r_scalar_meta_t
     }
     duckdb_data_chunk_set_size(chunk, n);
     return chunk;
+}
+
+/* Evaluate `count` queued chunks of one vectorized UDF with a single R call.
+ * On success every chunks_out[k] holds that chunk's owned result; on failure
+ * none does and err_msg describes the error for all of them. */
+static int rducks_rc_vectorized_execute_batch_to_owned_chunks(rducks_runtime_entry_t *runtime,
+                                                              rducks_r_scalar_meta_t *meta,
+                                                              duckdb_data_chunk *inputs,
+                                                              duckdb_data_chunk *chunks_out,
+                                                              size_t count,
+                                                              char *err_msg, size_t err_cap) {
+    rducks_rc_batch_t batch;
+    rducks_rc_batch_t *saved;
+    rducks_rc_execute_context_t ctx;
+    int ok;
+    if (!inputs || !chunks_out || count == 0 || !rducks_rc_batch_supported(meta)) {
+        rducks_format_error_message(err_msg, err_cap, "Rducks RC batch evaluation is not available for this UDF");
+        return 0;
+    }
+    memset(&batch, 0, sizeof(batch));
+    batch.inputs = inputs;
+    batch.chunks = chunks_out;
+    batch.count = count;
+    for (size_t k = 0; k < count; k++) {
+        idx_t n_k = duckdb_data_chunk_get_size(inputs[k]);
+        chunks_out[k] = NULL;
+        if (!rducks_rc_idx_add(batch.total, n_k, &batch.total)) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks RC batch row count overflow");
+            for (size_t j = 0; j < k; j++) duckdb_destroy_data_chunk(&chunks_out[j]);
+            return 0;
+        }
+        chunks_out[k] = rducks_rc_owned_result_chunk_new(meta, n_k, err_msg, err_cap);
+        if (!chunks_out[k] || !duckdb_data_chunk_get_vector(chunks_out[k], 0)) {
+            if (chunks_out[k]) duckdb_destroy_data_chunk(&chunks_out[k]);
+            if (!err_msg[0]) rducks_format_error_message(err_msg, err_cap, "Rducks RC owned result chunk has no output vector");
+            for (size_t j = 0; j < k; j++) duckdb_destroy_data_chunk(&chunks_out[j]);
+            return 0;
+        }
+        rducks_udf_record_evaluator(meta, n_k);
+    }
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.runtime = runtime;
+    ctx.meta = meta;
+    ctx.input = inputs[0];
+    ctx.output = duckdb_data_chunk_get_vector(chunks_out[0], 0);
+    ctx.err_msg = err_msg;
+    ctx.err_cap = err_cap;
+    saved = g_rducks_rc_active_batch;
+    g_rducks_rc_active_batch = &batch;
+    ok = rducks_rc_execute_with_error_boundary(&ctx, rducks_rc_vectorized_batch_execute_impl,
+                                               "Rducks RC vectorized R function or marshal error");
+    g_rducks_rc_active_batch = saved;
+    if (!ok) {
+        for (size_t k = 0; k < count; k++) {
+            if (chunks_out[k]) duckdb_destroy_data_chunk(&chunks_out[k]);
+        }
+        return 0;
+    }
+    for (size_t k = 0; k < count; k++) rducks_udf_record_direct_owned_result_chunk(meta);
+    return 1;
 }
 
 static int rducks_rc_owned_result_chunk_writeback(duckdb_data_chunk chunk,
