@@ -1,0 +1,127 @@
+diff --git a/src/database.cpp b/src/database.cpp
+index 0b8ba04..7c77f7c 100644
+--- a/src/database.cpp
++++ b/src/database.cpp
+@@ -24,6 +24,7 @@ static bool CastRstringToVarchar(Vector &source, Vector &result, idx_t count, Ca
+ 	// Hard stop when poisoned: every DuckDB session starts here, so this single
+ 	// guard ensures no test or example can reach the C++ engine on CRAN.
+ 	DUCKDB_R_POISON_GUARD();
++	InitializeRApiThread();
+ 
+ 	const char *dbdirchar;
+ 
+diff --git a/src/include/rapi.hpp b/src/include/rapi.hpp
+index 77e704f..cf32d3a 100644
+--- a/src/include/rapi.hpp
++++ b/src/include/rapi.hpp
+@@ -108,6 +108,11 @@ private:
+ [[noreturn]] void rapi_error_with_context(const std::string &context, const std::exception &e);
+ [[noreturn]] void rapi_error_with_context(const std::string &context, const duckdb::ErrorData &error_data);
+ 
++// Record R's thread before a database exposes callbacks to native clients.
++// A failed thread check throws a native exception without entering R.
++void InitializeRApiThread();
++void RequireRApiThread(const char *operation);
++
+ namespace duckdb {
+ 
+ typedef unordered_map<std::string, cpp11::list> arrow_scans_t;
+diff --git a/src/register.cpp b/src/register.cpp
+index 870b97c..45f5ffa 100644
+--- a/src/register.cpp
++++ b/src/register.cpp
+@@ -72,6 +72,7 @@ using namespace duckdb;
+ 
+ unique_ptr<TableRef> duckdb::EnvironmentScanReplacement(ClientContext &context, ReplacementScanInput &input,
+                                                         optional_ptr<ReplacementScanData> data_p) {
++	RequireRApiThread("environment replacement scan");
+ 	auto &data = (ReplacementDataDBWrapper &)*data_p;
+ 	auto db_wrapper = data.wrapper;
+ 
+@@ -133,6 +134,7 @@ public:
+ 	}
+ 
+ 	static unique_ptr<ArrowArrayStreamWrapper> Produce(uintptr_t factory_p, ArrowStreamParameters &parameters) {
++		RequireRApiThread("R Arrow stream production");
+ 		auto res = make_uniq<ArrowArrayStreamWrapper>();
+ 		auto factory = (RArrowTabularStreamFactory *)factory_p;
+ 		cpp11::sexp stream_ptr_sexp =
+@@ -157,7 +159,7 @@ public:
+ 	}
+ 
+ 	static void GetSchema(uintptr_t factory_p, ArrowSchemaWrapper &schema) {
+-
++		RequireRApiThread("R Arrow schema binding");
+ 		auto res = make_uniq<ArrowArrayStreamWrapper>();
+ 		auto factory = (RArrowTabularStreamFactory *)factory_p;
+ 		cpp11::sexp schema_ptr_sexp =
+@@ -351,6 +353,7 @@ unique_ptr<TableRef> duckdb::ArrowScanReplacement(ClientContext &context, Replac
+ 	lock_guard<mutex> arrow_scans_lock(db_wrapper->lock);
+ 	const auto &arrow_scans = db_wrapper->arrow_scans;
+ 	for (auto e = arrow_scans.find(table_name); e != arrow_scans.end(); ++e) {
++		RequireRApiThread("Arrow replacement scan");
+ 		auto table_function = make_uniq<TableFunctionRef>();
+ 		vector<duckdb::unique_ptr<ParsedExpression>> children;
+ 		children.push_back(make_uniq<ConstantExpression>(Value::POINTER((uintptr_t)R_ExternalPtrAddr(e->second[0]))));
+diff --git a/src/scan.cpp b/src/scan.cpp
+index 801e500..c0042d4 100644
+--- a/src/scan.cpp
++++ b/src/scan.cpp
+@@ -602,6 +602,7 @@ struct DataFrameLocalState : public LocalTableFunctionState {
+ 
+ static duckdb::unique_ptr<FunctionData> DataFrameScanBind(ClientContext &context, TableFunctionBindInput &input,
+                                                           vector<LogicalType> &return_types, vector<string> &names) {
++	RequireRApiThread("R data-frame binding");
+ 	data_frame df((SEXP)input.inputs[0].GetPointer());
+ 
+ 	auto integer64 = get_integer64_param(input.named_parameters);
+diff --git a/src/utils.cpp b/src/utils.cpp
+index 597194f..db7ac0d 100644
+--- a/src/utils.cpp
++++ b/src/utils.cpp
+@@ -6,12 +6,45 @@
+ #include "rapi.hpp"
+ #include "typesr.hpp"
+ 
++#include <R_ext/Rdynload.h>
++#include <cstdint>
++#include <mutex>
++#include <thread>
++
+ // Avoid clash with TRUE and FALSE macros in older rtools
+ #undef TRUE
+ #undef FALSE
+ 
+ using namespace duckdb;
+ 
++static std::once_flag r_api_thread_once;
++static std::thread::id r_api_thread;
++static std::atomic<bool> r_api_thread_initialized {false};
++
++// C-callable capability, uint32_t(void), registered after database startup.
++// Version 1 guards R-backed binding, replacement scans and Arrow factories.
++static uint32_t OffMainGuardVersion() {
++	return 1;
++}
++
++void InitializeRApiThread() {
++	std::call_once(r_api_thread_once, [] {
++		r_api_thread = std::this_thread::get_id();
++		r_api_thread_initialized.store(true, std::memory_order_release);
++	});
++	RequireRApiThread("database startup");
++	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_off_main_guard_version",
++	                                reinterpret_cast<DL_FUNC>(OffMainGuardVersion));
++}
++
++void RequireRApiThread(const char *operation) {
++	if (!r_api_thread_initialized.load(std::memory_order_acquire) ||
++	    std::this_thread::get_id() != r_api_thread) {
++		throw InvalidInputException("%s requires R's recorded thread; R-backed inputs are unsupported in a native "
++		                            "query driver", operation);
++	}
++}
++
+ [[cpp11::register]] SEXP rapi_adbc_init_func() {
+ 	return R_MakeExternalPtrFn((DL_FUNC)duckdb_adbc_init, R_NilValue, R_NilValue);
+ }
