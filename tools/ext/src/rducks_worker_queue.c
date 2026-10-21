@@ -340,7 +340,7 @@ static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *ru
 
 static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_udf_request_t *request,
                                        const char *timeout_msg, char *err_msg, size_t err_cap) {
-    unsigned int ticks = 0;
+    uint64_t pending_since_us;
     if (!runtime || !runtime->queue_initialized) {
         rducks_format_error_message(err_msg, err_cap, "Rducks concurrent runtime queue is not initialized");
         return 0;
@@ -362,6 +362,13 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     rducks_udf_record_queue_pending_add(request->meta);
 
     rducks_queue_lock(runtime);
+    pending_since_us = rducks_queue_now_us();
+    if (pending_since_us == 0U) {
+        rducks_queue_unlock(runtime);
+        rducks_udf_record_queue_pending_done(request->meta);
+        rducks_format_error_message(err_msg, err_cap, "Rducks could not read the monotonic queue clock");
+        return 0;
+    }
     rducks_queue_push_locked(runtime, request);
     runtime->queue_submitted++;
     runtime->queue_pending_current++;
@@ -390,14 +397,25 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                 return rducks_queue_interrupted_error(err_msg, err_cap);
             }
         }
-        if (request->state == RDUCKS_REQUEST_PENDING && ++ticks >= RDUCKS_QUEUE_TIMEOUT_TICKS) {
-            if (rducks_queue_remove_pending_locked(runtime, request)) {
-                runtime->queue_timeouts++;
+        if (request->state == RDUCKS_REQUEST_PENDING) {
+            uint64_t now_us = rducks_queue_now_us();
+            int clock_failed = now_us == 0U || now_us < pending_since_us;
+            /* Submissions, completions, and spurious wakes all signal this
+             * condition. Count elapsed time, not notifications. Only pending
+             * requests may leave: a running request still borrows the
+             * submitter's stack and must wait until DONE. */
+            if ((clock_failed || now_us - pending_since_us >= RDUCKS_QUEUE_PENDING_TIMEOUT_MS * 1000U) &&
+                rducks_queue_remove_pending_locked(runtime, request)) {
+                if (!clock_failed) runtime->queue_timeouts++;
                 rducks_queue_signal_all(runtime);
                 rducks_queue_unlock(runtime);
                 rducks_udf_record_queue_pending_done(request->meta);
-                rducks_format_error_message(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
-                         "Rducks timed out waiting for the recorded main R thread to drain a queued request");
+                if (clock_failed) {
+                    rducks_format_error_message(err_msg, err_cap, "Rducks could not read the monotonic queue clock");
+                } else {
+                    rducks_format_error_message(err_msg, err_cap, "%s", timeout_msg && timeout_msg[0] ? timeout_msg :
+                             "Rducks timed out waiting for the recorded main R thread to drain a queued request");
+                }
                 return 0;
             }
         }
