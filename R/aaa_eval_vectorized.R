@@ -238,7 +238,7 @@ rducks_vectorized_eval_prepared_chunk_direct <- function(fun, arg_types, return_
     length(eval_rows),
     exception_handling
   )
-  if (inherits(value, "rducks_return_null")) {
+  if (is.null(value) || inherits(value, "rducks_return_null")) {
     return(vector("list", n))
   }
   skipped <- if (length(eval_rows) == n) NULL else eval_rows
