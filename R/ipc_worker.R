@@ -75,7 +75,7 @@ rducks_ipc_fast_struct_wire_column <- function(type, columns, n) {
       list(valid = !.Call(RDUCKS_list_is_null, col), data = col)
     } else {
       storage <- rducks_native_scalar_to_storage(child, col)
-      list(valid = !is.na(storage), data = storage)
+      list(valid = rducks_fast_atomic_valid(storage), data = storage)
     }
   }
   row_null <- attr(columns, "rducks_row_null", exact = TRUE)
@@ -178,7 +178,7 @@ rducks_ipc_worker_eval_fast <- function(input_payload, n, fun, plan, null_handli
       full[eval_rows] <- storage
       storage <- full
     }
-    valid <- !is.na(storage)
+    valid <- rducks_fast_atomic_valid(storage)
   } else {
     rows <- .Call(RDUCKS_vectorized_fast_scalar_rows, plan$return_type, value, n_eval)
     if (is.null(rows)) {

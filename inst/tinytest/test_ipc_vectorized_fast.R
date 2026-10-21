@@ -77,6 +77,35 @@ local({
   rducks_register_scalar_udf(con, "ipcf_listed", function(x) as.list(x * 2), args = list(DOUBLE), returns = DOUBLE, mode = "vectorized")
   expect_true(q1(sprintf("SELECT bool_and(ipcf_listed(v) IS NOT DISTINCT FROM v * 2) FROM %s", src)))
 
+  # NaN is a floating value; only NA becomes SQL NULL. Compare both the atomic
+  # fast result and the generic list result so parity cannot preserve a shared bug.
+  floating_src <- "(VALUES (0::DOUBLE), (1.25::DOUBLE), ('NaN'::DOUBLE), (NULL::DOUBLE), ('Infinity'::DOUBLE), ('-Infinity'::DOUBLE)) t(v)"
+  for (sql_type in c("FLOAT", "DOUBLE")) {
+    type <- if (identical(sql_type, "FLOAT")) FLOAT else DOUBLE
+    fast_name <- paste0("ipcf_floating_", tolower(sql_type))
+    generic_name <- paste0(fast_name, "_listed")
+    rducks_register_scalar_udf(con, fast_name, function(x) x,
+      args = list(type), returns = type, mode = "vectorized", null_handling = "special")
+    rducks_register_scalar_udf(con, generic_name, function(x) as.list(x),
+      args = list(type), returns = type, mode = "vectorized", null_handling = "special")
+    for (name in c(fast_name, generic_name)) {
+      expect_true(q1(sprintf(
+        "SELECT bool_and(%s(v::%s) IS NOT DISTINCT FROM v::%s) FROM %s",
+        name, sql_type, sql_type, floating_src
+      )), info = name)
+    }
+  }
+
+  # Apply the same validity contract recursively to columnar STRUCT fields.
+  rducks_register_scalar_udf(con, "ipcf_floating_struct", function(x) list(x = x, nested = list(y = x)),
+    args = list(DOUBLE), returns = STRUCT(x = DOUBLE, nested = STRUCT(y = FLOAT)),
+    mode = "vectorized", null_handling = "special")
+  expect_true(q1(sprintf(paste(
+    "SELECT bool_and(r IS NOT NULL AND r.x IS NOT DISTINCT FROM v",
+    "AND r.nested.y IS NOT DISTINCT FROM v::FLOAT)",
+    "FROM (SELECT v, ipcf_floating_struct(v) AS r FROM %s) s"
+  ), floating_src)))
+
   # BLOB / GEOMETRY list results, NULL rows, classed list
   wkb_point <- function(x, y) c(as.raw(1L), as.raw(c(1L, 0L, 0L, 0L)), writeBin(c(x, y), raw(), size = 8L, endian = "little"))
   rducks_register_scalar_udf(con, "ipcf_blob", function(x) lapply(x, function(v) as.raw(c(0x01, 0x02))),
