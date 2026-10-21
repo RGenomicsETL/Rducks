@@ -10,9 +10,17 @@ rducks_duckdb_capi_header <- function(root = ".") {
   file.path(capi_root, tail(versions, 1L), "duckdb_extension.h")
 }
 
+# Headers before DuckDB 1.5.6 label API groups with "// Version <name>" comment
+# markers: "v1.2.0" for the stable surface and "unstable_*" for the unstable
+# groups. From 1.5.6 the header is banded instead: every entry sits under
+# "#if DUCKDB_API_VERSION_AT_LEAST(a, b, c)", and deprecated entries carry a
+# "DUCKDB_API_ALLOW_DEPRECATED" clause in that guard. Both formats map onto
+# abi_group: the marker name for the old format, "v<a>.<b>.<c>" or "deprecated"
+# for the banded format.
 rducks_read_duckdb_extension_api <- function(header = rducks_duckdb_capi_header()) {
   lines <- readLines(header, warn = FALSE)
   current_group <- "stable"
+  band_group <- NULL
   out <- list()
   n <- 0L
 
@@ -24,13 +32,34 @@ rducks_read_duckdb_extension_api <- function(header = rducks_duckdb_capi_header(
       next
     }
 
+    if (grepl("^#if[[:space:]]", line)) {
+      band_group <- NULL
+      if (grepl("DUCKDB_API_ALLOW_DEPRECATED", line, fixed = TRUE)) {
+        band_group <- "deprecated"
+      } else {
+        band_match <- regexec(
+          "DUCKDB_API_VERSION_AT_LEAST\\(([0-9]+),[[:space:]]*([0-9]+),[[:space:]]*([0-9]+)\\)",
+          line
+        )
+        band_parts <- regmatches(line, band_match)[[1L]]
+        if (length(band_parts)) {
+          band_group <- sprintf("v%s.%s.%s", band_parts[[2L]], band_parts[[3L]], band_parts[[4L]])
+        }
+      }
+      next
+    }
+    if (grepl("^#endif", line)) {
+      band_group <- NULL
+      next
+    }
+
     define_match <- regexec("^#define[[:space:]]+(duckdb_[A-Za-z0-9_]+)\\b", line)
     define_parts <- regmatches(line, define_match)[[1L]]
     if (length(define_parts)) {
       n <- n + 1L
       out[[n]] <- data.frame(
         function_name = define_parts[[2L]],
-        abi_group = current_group,
+        abi_group = if (is.null(band_group)) current_group else band_group,
         stringsAsFactors = FALSE
       )
     }
@@ -62,9 +91,22 @@ rducks_extension_source_files <- function(root = ".") {
   )
 }
 
+# Entries outside the v1.2.0 stable surface: the unstable_* groups of pre-1.5.6
+# headers, and for banded (1.5.6+) headers the deprecated entries plus every
+# band above v1.2.0. v1.2.0 is the stable surface the older headers exposed, so
+# the report stays comparable across header formats.
+rducks_api_group_outside_stable_baseline <- function(abi_group) {
+  if (startsWith(abi_group, "unstable") || identical(abi_group, "deprecated")) return(TRUE)
+  if (grepl("^v[0-9]+\\.[0-9]+\\.[0-9]+$", abi_group)) {
+    return(utils::compareVersion(sub("^v", "", abi_group), "1.2.0") > 0L)
+  }
+  FALSE
+}
+
 rducks_used_duckdb_unstable_api <- function(root = ".") {
   api <- rducks_read_duckdb_extension_api(rducks_duckdb_capi_header(root))
-  unstable <- api[startsWith(api$abi_group, "unstable"), , drop = FALSE]
+  outside <- vapply(api$abi_group, rducks_api_group_outside_stable_baseline, logical(1L), USE.NAMES = FALSE)
+  unstable <- api[outside, , drop = FALSE]
   if (!nrow(unstable)) return(unstable)
 
   out <- list()
@@ -120,7 +162,7 @@ rducks_used_duckdb_unstable_api_summary <- function(root = ".") {
 rducks_used_duckdb_unstable_api_markdown <- function(root = ".") {
   summary <- rducks_used_duckdb_unstable_api_summary(root)
   if (!nrow(summary)) {
-    return("No unstable DuckDB C extension API entries were detected.\n")
+    return("No DuckDB C extension API entries outside the v1.2.0 stable surface were detected.\n")
   }
 
   lines <- c(

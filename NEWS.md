@@ -1,5 +1,9 @@
 # Rducks (development version)
 
+* Added DuckDB v1.5.6 to the bundled `C_STRUCT_UNSTABLE` extension variants (now v1.5.0 through v1.5.6), so `rducks_enable()` works with CRAN duckdb 1.5.6 instead of failing with "no bundled extension for DuckDB v1.5.6". The 1.5.6 header replaces the `unstable_*` groups with per-release `DUCKDB_API_VERSION_AT_LEAST` bands; `tools/used_duckdb_unstable_api.R` now reads both formats and reports entries outside the v1.2.0 stable surface by band.
+
+* Vectorized scalar UDFs returning `BLOB` or `GEOMETRY` now validate the list-of-raw result in C instead of running the generic per-row return check, which made those results about 60x slower than numeric results (for example roughly 19 s per million rows for a `DOUBLE, DOUBLE -> GEOMETRY` point builder). A classed list such as `wk_wkb` is accepted as-is; `NULL` elements still map to SQL NULL and a non-raw element still fails.
+
 * Fixed Windows ARM64 extension metadata when the configure shell runs under x64 emulation by deriving the DuckDB platform from R's compiler target.
 
 * Fixed Windows ARM64 source builds with LLVM's MinGW linker by retaining `--exclude-all-symbols` without passing its unsupported `--exclude-libs` option. Vendored NNG symbols remain excluded from automatic DLL exports, and the build no longer emits an unused-function warning for a stale multiprocess backend helper.
