@@ -52,7 +52,8 @@ rducks_make_rc_bundle <- function(fun, spec, null_handling, exception_handling, 
     engine = engine,
     plan = plan,
     null_handling = null_handling,
-    exception_handling = exception_handling
+    exception_handling = exception_handling,
+    coalesce = isTRUE(spec$coalesce)
   )
 }
 

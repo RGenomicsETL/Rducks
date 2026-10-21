@@ -2948,14 +2948,16 @@ static int rducks_rc_vectorized_writeback_from_sexp_on_r_thread(rducks_r_scalar_
 /* Coalesced evaluation: several queued chunks of the same vectorized UDF are
  * materialized into one set of R argument vectors, the R function runs once,
  * and the result is sliced back into each chunk's owned result chunk. Only
- * static-signature UDFs whose inputs are plain scalars take this path; the
- * result may be any direct-supported shape. */
+ * explicitly opted-in static-signature UDFs whose inputs are plain scalars
+ * take this path; the result may be any direct-supported shape. Default queue
+ * draining preserves each request's original R call and error scope. */
 static int rducks_rc_batch_input_supported(const rducks_type_desc_t *desc) {
     return rducks_rc_atomic_result_supported(desc);
 }
 
 static int rducks_rc_batch_supported(rducks_r_scalar_meta_t *meta) {
-    if (!meta || meta->eval_mode != RDUCKS_EVAL_RCV || meta->dynamic_args || meta->arity == 0) return 0;
+    if (!meta || !meta->coalesce || meta->eval_mode != RDUCKS_EVAL_RCV ||
+        meta->exception_handling != RDUCKS_EXCEPTION_RETHROW || meta->dynamic_args || meta->arity == 0) return 0;
     if (!rducks_rc_owned_result_chunk_supported(meta)) return 0;
     for (size_t i = 0; i < meta->arity; i++) {
         if (!rducks_rc_batch_input_supported(meta->args[i])) return 0;
