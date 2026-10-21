@@ -181,6 +181,7 @@ typedef struct rducks_runtime_entry {
     uint64_t queue_main_drains;
     uint64_t queue_main_drain_batches;
     uint64_t queue_main_drain_max_batch;
+    uint64_t queue_worker_submits;
     atomic_uint_fast64_t queue_cancel_generation;
     atomic_uint_fast64_t queue_interrupt_checks;
     atomic_uint_fast64_t queue_interrupts;

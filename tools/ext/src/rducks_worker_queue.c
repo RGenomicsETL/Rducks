@@ -5,6 +5,14 @@
 #define RDUCKS_QUEUE_POLL_WAIT_US 100U
 #define RDUCKS_QUEUE_INTERRUPT_CHECK_US 250000U
 #define RDUCKS_QUEUE_DRAIN_MAX_REQUESTS 1000
+/* Coalescing: pending vectorized requests of the same UDF are evaluated with
+ * one R call, up to this many requests / rows per call. */
+#define RDUCKS_QUEUE_BATCH_MAX_REQUESTS 32
+#define RDUCKS_QUEUE_BATCH_MAX_ROWS 65536
+/* Idle window the recorded R thread keeps draining after its own request
+ * before returning to DuckDB (see rducks_queue_submit_scalar_via_worker_on_main). */
+#define RDUCKS_QUEUE_MAIN_LINGER_US 100U
+#define RDUCKS_QUEUE_LINGER_WAIT_US 10U
 #ifdef _WIN32
 #define RDUCKS_QUEUE_POLL_MAX_SPINS 5000U
 #else
@@ -457,6 +465,13 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
     request.input = input;
     request.output = output;
 
+    if (snapshot_input) {
+        /* Worker-thread submission (the main thread's helper passes 0): the
+         * main thread lingers after its own chunks only once workers exist. */
+        rducks_queue_lock(runtime);
+        runtime->queue_worker_submits++;
+        rducks_queue_unlock(runtime);
+    }
     if (snapshot_input && rducks_rc_direct_input_snapshot_supported(exec_meta)) {
         if (!rducks_rc_direct_input_snapshot_chunk(exec_meta, input, &owned_input, err_msg, err_cap)) {
             return 0;
@@ -529,6 +544,14 @@ static void *rducks_queue_scalar_worker(void *arg) {
 #endif
 }
 
+static int rducks_queue_workers_seen(rducks_runtime_entry_t *runtime) {
+    uint64_t n;
+    rducks_queue_lock(runtime);
+    n = runtime->queue_worker_submits;
+    rducks_queue_unlock(runtime);
+    return n > 0U;
+}
+
 static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t *runtime,
                                                          rducks_r_scalar_meta_t *meta,
                                                          rducks_r_scalar_local_state_t *local_state,
@@ -578,6 +601,26 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
         }
         spins++;
     }
+    /* The recorded R thread is the only drainer and duckdb-r blocks it inside
+     * DuckDB's Execute() as soon as this callback returns. A worker thread that
+     * submits its request just after that point waits until this thread gets
+     * another UDF chunk, which at the tail of a query may never happen. Linger
+     * briefly after our own request: keep draining while requests keep
+     * arriving, and give up once the queue has stayed empty for the linger
+     * window. */
+    if (!interrupted && rducks_queue_workers_seen(runtime)) {
+        uint64_t idle_since = rducks_queue_now_us();
+        for (;;) {
+            uint64_t now;
+            if (rducks_queue_drain_on_main(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS) > 0) {
+                idle_since = rducks_queue_now_us();
+                continue;
+            }
+            now = rducks_queue_now_us();
+            if (now - idle_since >= RDUCKS_QUEUE_MAIN_LINGER_US) break;
+            rducks_queue_wait_for_signal(runtime, RDUCKS_QUEUE_LINGER_WAIT_US);
+        }
+    }
 #ifdef _WIN32
     WaitForSingleObject(worker, INFINITE);
     CloseHandle(worker);
@@ -603,6 +646,82 @@ static int rducks_queue_submit_scalar_via_worker_on_main(rducks_runtime_entry_t 
     return state.ok;
 }
 
+/* A request can join a coalesced batch when it is a queued owned-result
+ * vectorized request of a static-signature UDF whose inputs the batch
+ * materializer handles. The effective metadata is then the registered metadata
+ * for every DuckDB thread, so requests from different threads are equivalent. */
+static int rducks_queue_request_batchable(const rducks_udf_request_t *request) {
+    return request && request->meta && request->execute == rducks_queue_execute_rc_scalar_to_chunk_on_main &&
+           !request->meta->dynamic_args && rducks_rc_batch_supported(request->meta);
+}
+
+/* Pop further pending requests compatible with `first` (same UDF metadata and
+ * execute path) into batch[], mirroring rducks_queue_pop_locked's state and
+ * counter updates. Returns the number appended. */
+static size_t rducks_queue_pop_batch_peers_locked(rducks_runtime_entry_t *runtime, rducks_udf_request_t *first,
+                                                  rducks_udf_request_t **batch, size_t max_requests,
+                                                  idx_t max_rows) {
+    rducks_udf_request_t *prev = NULL;
+    rducks_udf_request_t *cur = runtime->queue_head;
+    size_t appended = 0;
+    idx_t rows = duckdb_data_chunk_get_size(first->input);
+    while (cur && appended < max_requests) {
+        rducks_udf_request_t *next = cur->next;
+        idx_t n = 0;
+        if (cur->state == RDUCKS_REQUEST_PENDING && cur->meta == first->meta &&
+            cur->execute == first->execute && cur->input &&
+            (n = duckdb_data_chunk_get_size(cur->input)) <= max_rows - rows) {
+            if (prev) {
+                prev->next = next;
+            } else {
+                runtime->queue_head = next;
+            }
+            if (runtime->queue_tail == cur) runtime->queue_tail = prev;
+            cur->next = NULL;
+            cur->state = RDUCKS_REQUEST_RUNNING;
+            if (runtime->queue_pending_current > 0) runtime->queue_pending_current--;
+            runtime->queue_running_current++;
+            if (runtime->queue_running_current > runtime->queue_running_max) {
+                runtime->queue_running_max = runtime->queue_running_current;
+            }
+            batch[appended++] = cur;
+            rows += n;
+        } else {
+            prev = cur;
+        }
+        cur = next;
+    }
+    return appended;
+}
+
+static void rducks_queue_execute_batch_on_main(rducks_runtime_entry_t *runtime, rducks_udf_request_t **batch,
+                                               size_t count) {
+    duckdb_data_chunk inputs[RDUCKS_QUEUE_BATCH_MAX_REQUESTS];
+    duckdb_data_chunk chunks[RDUCKS_QUEUE_BATCH_MAX_REQUESTS];
+    char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
+    int ok;
+    err_msg[0] = '\0';
+    for (size_t k = 0; k < count; k++) {
+        inputs[k] = batch[k]->input;
+        chunks[k] = NULL;
+        if (batch[k]->rc_result_chunk) {
+            duckdb_destroy_data_chunk(&batch[k]->rc_result_chunk);
+            batch[k]->rc_result_chunk = NULL;
+        }
+    }
+    if (!rducks_is_main_thread(runtime)) {
+        rducks_format_error_message(err_msg, sizeof(err_msg), "Rducks queued batch reached a non-main thread");
+        ok = 0;
+    } else {
+        ok = rducks_rc_vectorized_execute_batch_to_owned_chunks(runtime, batch[0]->meta, inputs, chunks, count,
+                                                                err_msg, sizeof(err_msg));
+    }
+    for (size_t k = 0; k < count; k++) {
+        if (ok) batch[k]->rc_result_chunk = chunks[k];
+        rducks_queue_finish_request(runtime, batch[k], ok, err_msg);
+    }
+}
+
 static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requests,
                                    int allow_non_main_diagnostic) {
     int count = 0;
@@ -618,6 +737,21 @@ static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requ
         int ok;
         request = rducks_queue_pop_request(runtime, !is_main && allow_non_main_diagnostic);
         if (!request) break;
+        if (is_main && rducks_queue_request_batchable(request)) {
+            rducks_udf_request_t *batch[RDUCKS_QUEUE_BATCH_MAX_REQUESTS];
+            size_t n_batch = 1;
+            batch[0] = request;
+            rducks_queue_lock(runtime);
+            n_batch += rducks_queue_pop_batch_peers_locked(runtime, request, batch + 1,
+                                                           RDUCKS_QUEUE_BATCH_MAX_REQUESTS - 1,
+                                                           RDUCKS_QUEUE_BATCH_MAX_ROWS);
+            rducks_queue_unlock(runtime);
+            if (n_batch > 1) {
+                rducks_queue_execute_batch_on_main(runtime, batch, n_batch);
+                count += (int)n_batch;
+                continue;
+            }
+        }
         err_msg[0] = '\0';
         ok = rducks_queue_execute_on_main(request, err_msg, sizeof(err_msg));
         rducks_queue_finish_request(runtime, request, ok, err_msg);
