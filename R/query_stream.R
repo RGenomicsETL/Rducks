@@ -36,6 +36,22 @@ rducks_query_stream_parse_metadata <- function(metadata) {
   )
 }
 
+# The finalizer must not close over the stream-creation frame: that frame owns
+# the state environment and would otherwise retain the object being finalized.
+rducks_query_stream_finalize <- function(state) {
+  if (!isTRUE(state$closed)) {
+    try(.Call(RDUCKS_query_stream_call, state$runtime_token, "close", state$token), silent = TRUE)
+    state$closed <- TRUE
+    rducks_query_stream_take_native_batch(state$token)
+  }
+  invisible(NULL)
+}
+
+rducks_query_stream_driver_available <- function(con) {
+  token <- rducks_attached_runtime_token(con)
+  !is.na(token) && isTRUE(.Call(RDUCKS_query_stream_call, token, "driver_supported", ""))
+}
+
 #' Stream a DuckDB query as native data-frame batches
 #'
 #' Opens a native DuckDB streaming result through the Rducks extension and
@@ -43,14 +59,29 @@ rducks_query_stream_parse_metadata <- function(metadata) {
 #' `DBI::dbGetQuery()` result. Each batch is materialized directly from DuckDB
 #' vectors to R values on the recorded R thread. The stream uses the extension's
 #' database-scoped connection, so
-#' it cannot see caller-connection temporary tables or views.
+#' it cannot see caller-connection temporary tables or views, uncommitted
+#' transactions, or connection-local settings.
+#'
+#' With `rducks_execution_plan("inproc")`, one persistent native driver prepares,
+#' executes, fetches, and closes the query while the recorded R thread services
+#' scalar callbacks. Requests keep their original task identity and result
+#' destination; no source-row ordering is promised. R table and aggregate
+#' callbacks are unsupported in this managed mode and fail before off-thread R
+#' access. This mode requires a duckdb-r build exposing version 1 of its
+#' off-main R-source guard capability; ordinary builds without that capability
+#' fail with an explicit error. Serial and IPC plans retain their synchronous
+#' execution paths.
+#' Only one stream can be open for a database runtime at a time. Recursive
+#' stream operations, release, and plan changes during callbacks are rejected.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param sql A non-empty SQL query string.
 #' @return An object of class `rducks_query_stream` with `$next_batch()`
 #'   (returns the next data-frame batch, or `NULL` at end of stream),
 #'   `$close()`, `$schema` (column names and Rducks type tokens), and `$token`.
-#'   The stream closes on `$close()` or `rducks_release(con)`.
+#'   The stream closes at end of input, on `$close()`, on native query error, when its handle
+#'   is garbage-collected, or when `rducks_release()` drops the last runtime
+#'   anchor. Explicit `$close()` releases resources promptly after early exit.
 #' @examples
 #' \donttest{
 #' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
@@ -67,53 +98,70 @@ rducks_query_stream <- function(con, sql) {
   if (!is.character(sql) || length(sql) != 1L || is.na(sql) || !nzchar(sql)) {
     stop("sql must be a non-empty character scalar", call. = FALSE)
   }
-  token <- DBI::dbGetQuery(
-    con, sprintf("SELECT rducks_query_stream_open(%s) AS token", rducks_sql_string(sql))
-  )$token[[1L]]
-  metadata <- DBI::dbGetQuery(
-    con, sprintf("SELECT rducks_query_stream_metadata(%s) AS metadata", rducks_sql_string(token))
-  )$metadata[[1L]]
+  runtime_token <- rducks_attached_runtime_token(con)
+  if (is.na(runtime_token)) {
+    stop("rducks_query_stream() requires rducks_enable(con) first", call. = FALSE)
+  }
+  managed <- identical(rducks_native_execution_backend(con), "concurrent_inproc")
+  invoke <- function(operation, argument) {
+    if (managed) {
+      .Call(RDUCKS_query_stream_call, runtime_token, operation, argument)
+    } else {
+      # Synchronous plans keep duckdb-r's existing SQL interrupt boundary.
+      DBI::dbGetQuery(con, sprintf(
+        "SELECT rducks_query_stream_%s(%s) AS value", operation, rducks_sql_string(argument)
+      ))[[1L]][[1L]]
+    }
+  }
+  token <- NULL
+  ready <- FALSE
+  on.exit({
+    if (!ready && !is.null(token)) {
+      try(.Call(RDUCKS_query_stream_call, runtime_token, "close", token), silent = TRUE)
+    }
+  }, add = TRUE)
+  # Managed streams enter directly from R, outside duckdb-r's SQL execution
+  # interrupt handler, so the R pump can cancel the helper connection itself.
+  token <- invoke("open", sql)
+  metadata <- invoke("metadata", token)
   schema <- rducks_query_stream_parse_metadata(metadata)
+  state <- new.env(parent = emptyenv())
+  state$con <- con
+  state$runtime_token <- runtime_token
+  state$token <- token
+  state$closed <- FALSE
+  reg.finalizer(state, rducks_query_stream_finalize, onexit = TRUE)
 
-  closed <- FALSE
   finalize_batch <- function(batch) {
     cols <- batch$columns
     if (length(schema$names) == length(cols)) names(cols) <- schema$names
     structure(cols, class = "data.frame", row.names = .set_row_names(batch$n))
   }
-  next_batch <- function() {
-    if (closed) {
-      return(NULL)
-    }
-    has_batch <- DBI::dbGetQuery(
-      con, sprintf("SELECT rducks_query_stream_next(%s) AS has_batch", rducks_sql_string(token))
-    )$has_batch[[1L]]
-    if (!isTRUE(has_batch)) {
-      return(NULL)
-    }
-    batch <- rducks_query_stream_take_native_batch(token)
-    if (is.null(batch)) {
-      return(NULL)
-    }
-    finalize_batch(batch)
-  }
   close <- function() {
-    if (closed) {
-      return(invisible(NULL))
-    }
-    closed <<- TRUE
-    try(
-      DBI::dbGetQuery(con, sprintf("SELECT rducks_query_stream_close(%s) AS closed", rducks_sql_string(token))),
-      silent = TRUE
-    )
-    rducks_query_stream_take_native_batch(token)
+    if (isTRUE(state$closed)) return(invisible(NULL))
+    invoke("close", state$token)
+    # Keep the handle usable if native code rejects a recursive close.
+    state$closed <- TRUE
+    rducks_query_stream_take_native_batch(state$token)
     invisible(NULL)
   }
-
-  structure(
+  next_batch <- function() {
+    if (isTRUE(state$closed)) return(NULL)
+    has_batch <- invoke("next", state$token)
+    if (!isTRUE(has_batch)) {
+      close()
+      return(NULL)
+    }
+    batch <- rducks_query_stream_take_native_batch(state$token)
+    if (is.null(batch)) stop("Rducks query stream returned no native batch", call. = FALSE)
+    finalize_batch(batch)
+  }
+  stream <- structure(
     list(next_batch = next_batch, close = close, schema = schema, token = token),
     class = "rducks_query_stream"
   )
+  ready <- TRUE
+  stream
 }
 
 #' @export

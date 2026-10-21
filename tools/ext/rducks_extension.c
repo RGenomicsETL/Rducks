@@ -37,6 +37,7 @@
 #include <Rinternals.h>
 #include <R_ext/Arith.h>
 #include <R_ext/Utils.h>
+#include <R_ext/Rdynload.h>
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -129,6 +130,14 @@ typedef struct rducks_udf_request rducks_udf_request_t;
 typedef struct rducks_r_scalar_meta rducks_r_scalar_meta_t;
 typedef struct rducks_nng_client_pool rducks_nng_client_pool_t;
 typedef struct rducks_query_stream_entry rducks_query_stream_entry_t;
+typedef struct rducks_query_owner {
+    atomic_uint refs;
+    atomic_int stopping;
+    duckdb_connection connection;
+    idx_t connection_id;
+    /* Written only by the recorded R thread; retained until driver cleanup. */
+    char error[512];
+} rducks_query_owner_t;
 
 typedef struct rducks_type_desc {
     rducks_type_kind_t kind;
@@ -153,6 +162,9 @@ typedef struct rducks_runtime_entry {
     duckdb_connection connection;
     duckdb_connection query_stream_connection;
     int query_stream_connection_busy;
+    int query_stream_service_active;
+    rducks_query_stream_entry_t *query_stream_service_entry;
+    rducks_query_owner_t *preparing_query_owner;
     /* Canonical VARIANT type obtained from the runtime SQL binder. Unlike
      * duckdb_create_logical_type(41), this carries DuckDB's required physical
      * STRUCT children. A NULL handle means this runtime failed the dynamic
@@ -245,12 +257,14 @@ struct rducks_r_scalar_meta {
 
 typedef struct rducks_r_scalar_bind_state {
     rducks_runtime_entry_t *runtime;
+    rducks_query_owner_t *query_owner;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_bind_state_t;
 
 typedef struct rducks_r_scalar_local_state {
     rducks_runtime_entry_t *runtime;
+    rducks_query_owner_t *query_owner;
     size_t arity;
     rducks_type_desc_t **args;
 } rducks_r_scalar_local_state_t;
@@ -714,6 +728,8 @@ static int rducks_queue_self_test_cancel_after(rducks_runtime_entry_t *runtime, 
 /* Implementation modules are included into one translation unit because
  * DuckDB loads a single extension shared object built by configure.
  */
+static SEXP rducks_query_stream_bridge(SEXP runtime_token, SEXP operation, SEXP argument);
+static void rducks_query_stream_register_bridge(rducks_runtime_entry_t *runtime);
 #include "src/rducks_threads.c"
 #include "src/rducks_util.c"
 #include "src/rducks_types.c"

@@ -1,5 +1,36 @@
 /* Included by ../rducks_extension.c. */
 
+/* Bind and local states can outlive the R stream handle. Keep the cancellation
+ * owner independent of that handle and release it only after native users end. */
+static rducks_query_owner_t *rducks_query_owner_create(duckdb_connection connection) {
+    duckdb_client_context context = NULL;
+    rducks_query_owner_t *owner = (rducks_query_owner_t *)calloc(1, sizeof(*owner));
+    if (!owner) return NULL;
+    duckdb_connection_get_client_context(connection, &context);
+    if (!context) {
+        free(owner);
+        return NULL;
+    }
+    atomic_init(&owner->refs, 1U);
+    atomic_init(&owner->stopping, 0);
+    owner->connection = connection;
+    owner->connection_id = duckdb_client_context_get_connection_id(context);
+    duckdb_destroy_client_context(&context);
+    return owner;
+}
+
+static void rducks_query_owner_retain(rducks_query_owner_t *owner) {
+    if (owner) atomic_fetch_add_explicit(&owner->refs, 1U, memory_order_relaxed);
+}
+
+static void rducks_query_owner_release(rducks_query_owner_t *owner) {
+    if (owner && atomic_fetch_sub_explicit(&owner->refs, 1U, memory_order_acq_rel) == 1U) free(owner);
+}
+
+static int rducks_query_owner_stopping(rducks_query_owner_t *owner) {
+    return owner && atomic_load_explicit(&owner->stopping, memory_order_acquire);
+}
+
 static int rducks_is_main_thread(rducks_runtime_entry_t *runtime) {
     return rducks_is_recorded_main_thread(runtime);
 }
@@ -18,6 +49,13 @@ static int rducks_set_execution_backend(rducks_runtime_entry_t *runtime, const c
         rducks_format_error_message(err, err_cap, "Rducks runtime is not initialized for this DuckDB connection");
         return 0;
     }
+    rducks_runtime_lock();
+    if (runtime->query_stream_connection_busy) {
+        rducks_runtime_unlock();
+        rducks_format_error_message(err, err_cap, "close the active Rducks query stream before changing execution plans");
+        return 0;
+    }
+    rducks_runtime_unlock();
     if (!backend || !backend[0] || strcmp(backend, "single") == 0) {
         rducks_runtime_lock();
         runtime->execution_backend = RDUCKS_BACKEND_SINGLE;
@@ -615,6 +653,7 @@ static void rducks_r_scalar_bind_state_destroy(void *ptr) {
     rducks_r_scalar_bind_state_t *state = (rducks_r_scalar_bind_state_t *)ptr;
     if (!state) return;
     rducks_type_desc_array_destroy(state->args, state->arity);
+    rducks_query_owner_release(state->query_owner);
     free(state);
 }
 
@@ -625,10 +664,13 @@ static void *rducks_r_scalar_bind_state_copy(void *ptr) {
     dst = (rducks_r_scalar_bind_state_t *)rducks_calloc_array(1, sizeof(*dst));
     if (!dst) return NULL;
     dst->runtime = src->runtime;
+    dst->query_owner = src->query_owner;
+    rducks_query_owner_retain(dst->query_owner);
     dst->arity = src->arity;
     if (src->arity) {
         dst->args = rducks_type_desc_array_clone(src->args, src->arity);
         if (!dst->args) {
+            rducks_query_owner_release(dst->query_owner);
             free(dst);
             return NULL;
         }
@@ -640,6 +682,7 @@ static void rducks_r_scalar_local_state_destroy(void *ptr) {
     rducks_r_scalar_local_state_t *state = (rducks_r_scalar_local_state_t *)ptr;
     if (!state) return;
     rducks_type_desc_array_destroy(state->args, state->arity);
+    rducks_query_owner_release(state->query_owner);
     free(state);
 }
 
@@ -709,6 +752,27 @@ static void rducks_r_scalar_bind(duckdb_bind_info info) {
         return;
     }
     state->runtime = meta->runtime;
+    rducks_runtime_lock();
+    state->query_owner = meta->runtime->preparing_query_owner;
+    rducks_query_owner_retain(state->query_owner);
+    rducks_runtime_unlock();
+    if (state->query_owner) {
+        duckdb_client_context context = NULL;
+        duckdb_scalar_function_get_client_context(info, &context);
+        if (!context) {
+            rducks_r_scalar_bind_state_destroy(state);
+            duckdb_scalar_function_bind_set_error(info, "failed to identify the Rducks scalar bind connection");
+            return;
+        }
+        /* A bind callback can issue a query on another connection while the
+         * stream is preparing. Only the actual stream connection inherits its
+         * cancellation owner; the database-scoped runtime is not sufficient. */
+        if (duckdb_client_context_get_connection_id(context) != state->query_owner->connection_id) {
+            rducks_query_owner_release(state->query_owner);
+            state->query_owner = NULL;
+        }
+        duckdb_destroy_client_context(&context);
+    }
 
     if (meta->dynamic_args) {
         /* Both transports resolve the concrete argument types at bind. For the
@@ -754,7 +818,10 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
         return;
     }
     state->runtime = bind_state && bind_state->runtime ? bind_state->runtime : (meta ? meta->runtime : NULL);
+    state->query_owner = bind_state ? bind_state->query_owner : NULL;
+    rducks_query_owner_retain(state->query_owner);
     if (!state->runtime) {
+        rducks_query_owner_release(state->query_owner);
         free(state);
         duckdb_scalar_function_init_set_error(info, "Rducks scalar worker-local state is missing runtime state");
         return;
@@ -763,6 +830,7 @@ static void rducks_r_scalar_init(duckdb_init_info info) {
         state->arity = bind_state->arity;
         state->args = rducks_type_desc_array_clone(bind_state->args, bind_state->arity);
         if (!state->args) {
+            rducks_query_owner_release(state->query_owner);
             free(state);
             duckdb_scalar_function_init_set_error(info, "out of memory copying dynamic Rducks argument types");
             return;

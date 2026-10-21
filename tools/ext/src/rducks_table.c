@@ -911,12 +911,17 @@ static void rducks_r_table_bind(duckdb_bind_info info) {
         duckdb_bind_set_error(info, "Rducks R table function SQL argument count does not match the registered R function formals");
         return;
     }
-    if (!meta->runtime || !Rf_isFunction(meta->fun)) {
+    if (!meta->runtime) {
         duckdb_bind_set_error(info, "Rducks table state is invalid");
         return;
     }
     if (!rducks_allow_calling_thread_r_execution(meta->runtime, err, sizeof(err))) {
-        duckdb_bind_set_error(info, err[0] ? err : "Rducks table bind must run on the recorded R thread");
+        duckdb_bind_set_error(info,
+            "Rducks table bind must run on the recorded R thread; R table callbacks are unsupported in managed query streams");
+        return;
+    }
+    if (!Rf_isFunction(meta->fun)) {
+        duckdb_bind_set_error(info, "Rducks table state is invalid");
         return;
     }
     rducks_preserved_release_drain_on_main(meta->runtime);
@@ -1182,7 +1187,8 @@ static void rducks_r_table_function(duckdb_function_info info, duckdb_data_chunk
         return;
     }
     if (!rducks_allow_calling_thread_r_execution(meta->runtime, err, sizeof(err))) {
-        duckdb_function_set_error(info, err[0] ? err : "Rducks table scan must run on the recorded R thread");
+        duckdb_function_set_error(info,
+            "Rducks table scan must run on the recorded R thread; R table callbacks are unsupported in managed query streams");
         duckdb_data_chunk_set_size(output, 0);
         return;
     }

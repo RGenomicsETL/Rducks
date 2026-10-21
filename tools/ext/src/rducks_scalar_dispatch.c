@@ -72,6 +72,7 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
     rducks_r_scalar_meta_t effective_meta_storage;
     rducks_r_scalar_meta_t *exec_meta = meta;
     rducks_runtime_entry_t *runtime = rducks_runtime_from_function_info(info, meta);
+    int is_main;
     char err_msg[RDUCKS_ERROR_BUFFER_SIZE];
     err_msg[0] = '\0';
     memset(&effective_meta_storage, 0, sizeof(effective_meta_storage));
@@ -81,12 +82,13 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         duckdb_scalar_function_set_error(info, "Rducks scalar UDF is missing per-connection runtime state");
         return;
     }
+    is_main = rducks_is_main_thread(runtime);
 
     /* Wire (RIPC) UDFs marshal each chunk to a worker process. Encode/decode and
      * the NNG roundtrip are pure C, so this runs directly on the calling DuckDB
      * thread (off-main is fine and enables worker parallelism). */
     if (exec_meta && exec_meta->eval_mode == RDUCKS_EVAL_RIPC) {
-        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), rducks_is_main_thread(runtime) ? 0 : 1);
+        rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), is_main ? 0 : 1);
         if (!rducks_ripc_execute(runtime, exec_meta, input, output, err_msg, sizeof(err_msg))) {
             duckdb_scalar_function_set_error(info, err_msg[0] ? err_msg : "Rducks RIPC scalar UDF failed");
         }
@@ -99,7 +101,26 @@ static void rducks_r_scalar_udf(duckdb_function_info info, duckdb_data_chunk inp
         return;
     }
 
-    if (!rducks_is_main_thread(runtime)) {
+    /* The helper's bound/local states identify exactly the query being
+     * serviced. A callback may not recursively start unrelated in-process R
+     * SQL in this runtime and borrow the same R service loop. */
+    if (!local_state || !local_state->query_owner) {
+        int service_active;
+        rducks_runtime_lock();
+        service_active = runtime->query_stream_service_active;
+        rducks_runtime_unlock();
+        if (service_active) {
+            duckdb_scalar_function_set_error(info,
+                "recursive R scalar queries are unsupported while the managed query stream service is active");
+            return;
+        }
+    } else if (is_main) {
+        duckdb_scalar_function_set_error(info,
+            "recursive managed scalar execution on the R service thread is unsupported");
+        return;
+    }
+
+    if (!is_main) {
         if (rducks_concurrent_inproc_enabled(runtime)) {
             rducks_udf_record_dispatch(meta, duckdb_data_chunk_get_size(input), 1);
             if (!rducks_queue_submit_scalar(runtime, meta, local_state, input, output, err_msg, sizeof(err_msg))) {

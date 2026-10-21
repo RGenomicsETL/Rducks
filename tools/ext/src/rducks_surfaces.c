@@ -190,9 +190,76 @@ static bool rducks_register_udf_stat_surface(duckdb_connection con, rducks_runti
                                                          rducks_reset_udf_stats_scalar, true);
 }
 
+static void rducks_main_thread_bridge_register(void *data) {
+    rducks_query_stream_register_bridge((rducks_runtime_entry_t *)data);
+}
+
+static void rducks_main_thread_token_bind(duckdb_bind_info info) {
+    rducks_runtime_entry_t *runtime =
+        (rducks_runtime_entry_t *)duckdb_scalar_function_bind_get_extra_info(info);
+    duckdb_expression expression = NULL;
+    duckdb_client_context context = NULL;
+    duckdb_value value = NULL;
+    duckdb_error_data fold_error = NULL;
+    char *token = NULL;
+    const char *error = "Rducks main thread token must be a constant string";
+    int ok = 0;
+    if (!runtime || duckdb_scalar_function_bind_get_argument_count(info) != 1U) goto cleanup;
+    expression = duckdb_scalar_function_bind_get_argument(info, 0);
+    if (!expression || !duckdb_expression_is_foldable(expression)) goto cleanup;
+    duckdb_scalar_function_get_client_context(info, &context);
+    if (!context) goto cleanup;
+    fold_error = duckdb_expression_fold(context, expression, &value);
+    if (fold_error || !value) goto cleanup;
+    token = duckdb_get_varchar(value);
+    if (!token || !rducks_set_main_thread_token(runtime, token)) {
+        error = "invalid Rducks main thread token";
+        goto cleanup;
+    }
+    /* DBI prepares this constant-token handshake on the calling R thread.
+     * Its scalar execution can instead be scheduled on a native worker, even
+     * for one row. Register the R callable here, after checking the supplied
+     * thread identity, without changing the user's DuckDB thread settings. */
+    if (!rducks_is_recorded_main_thread(runtime)) {
+        error = "Rducks main thread token must be bound on the recorded R thread";
+        goto cleanup;
+    }
+    ok = 1;
+cleanup:
+    if (token) duckdb_free(token);
+    if (value) duckdb_destroy_value(&value);
+    if (fold_error) duckdb_destroy_error_data(&fold_error);
+    if (context) duckdb_destroy_client_context(&context);
+    if (expression) duckdb_destroy_expression(&expression);
+    if (!ok) {
+        duckdb_scalar_function_bind_set_error(info, error);
+        return;
+    }
+    /* Release all native bind temporaries before the R registration allocates. */
+    if (!R_ToplevelExec(rducks_main_thread_bridge_register, runtime)) {
+        duckdb_scalar_function_bind_set_error(info, "failed to register the Rducks query stream bridge");
+    }
+}
+
 static bool rducks_register_main_thread_token_surface(duckdb_connection con, rducks_runtime_entry_t *runtime) {
-    return rducks_register_unary_varchar_bool_surface(con, runtime, "rducks_set_main_thread_token",
-                                                      rducks_set_main_thread_token_scalar);
+    duckdb_scalar_function fn = duckdb_create_scalar_function();
+    duckdb_logical_type varchar_type = duckdb_create_logical_type(DUCKDB_TYPE_VARCHAR);
+    duckdb_logical_type bool_type = duckdb_create_logical_type(DUCKDB_TYPE_BOOLEAN);
+    duckdb_state rc = DuckDBError;
+    if (fn && varchar_type && bool_type) {
+        duckdb_scalar_function_set_name(fn, "rducks_set_main_thread_token");
+        duckdb_scalar_function_add_parameter(fn, varchar_type);
+        duckdb_scalar_function_set_return_type(fn, bool_type);
+        duckdb_scalar_function_set_volatile(fn);
+        duckdb_scalar_function_set_extra_info(fn, runtime, NULL);
+        duckdb_scalar_function_set_bind(fn, rducks_main_thread_token_bind);
+        duckdb_scalar_function_set_function(fn, rducks_set_main_thread_token_scalar);
+        rc = duckdb_register_scalar_function(con, fn);
+    }
+    if (fn) duckdb_destroy_scalar_function(&fn);
+    if (varchar_type) duckdb_destroy_logical_type(&varchar_type);
+    if (bool_type) duckdb_destroy_logical_type(&bool_type);
+    return rc == DuckDBSuccess;
 }
 
 static const char *rducks_execution_backend_name(rducks_runtime_entry_t *runtime) {
@@ -700,6 +767,16 @@ static bool rducks_query_stream_require_runtime(duckdb_function_info info, rduck
         duckdb_scalar_function_set_error(info, "Rducks runtime is not initialized for this connection");
         return false;
     }
+    if (rducks_query_stream_service_is_active(runtime)) {
+        duckdb_scalar_function_set_error(info,
+            "Rducks query stream service is already active; recursive operations are unsupported");
+        return false;
+    }
+    if (rducks_concurrent_inproc_enabled(runtime)) {
+        duckdb_scalar_function_set_error(info,
+            "managed inproc query streams require rducks_query_stream() through its native R entry point");
+        return false;
+    }
     return true;
 }
 
@@ -846,6 +923,7 @@ static void rducks_query_stream_close_scalar(duckdb_function_info info, duckdb_d
     for (idx_t i = 0; i < n; i++) {
         char *token;
         int closed = 0;
+        char err[RDUCKS_ERROR_BUFFER_SIZE] = {0};
         if (validity && !duckdb_validity_row_is_valid(validity, i)) {
             out[i] = false;
             continue;
@@ -855,7 +933,11 @@ static void rducks_query_stream_close_scalar(duckdb_function_info info, duckdb_d
             duckdb_scalar_function_set_error(info, "out of memory closing Rducks query stream");
             return;
         }
-        rducks_query_stream_close_native(runtime, token, &closed);
+        if (!rducks_query_stream_close_native(runtime, token, &closed, err, sizeof(err))) {
+            free(token);
+            duckdb_scalar_function_set_error(info, err[0] ? err : "failed to close Rducks query stream");
+            return;
+        }
         out[i] = closed ? true : false;
         free(token);
     }
@@ -946,6 +1028,11 @@ static int rducks_runtime_release_internal_connections(rducks_runtime_entry_t *r
         return 0;
     }
     if (!rducks_allow_calling_thread_r_execution(runtime, err, err_cap)) {
+        return 0;
+    }
+    if (rducks_query_stream_service_is_active(runtime)) {
+        rducks_format_error_message(err, err_cap,
+            "Rducks query stream service is already active; cannot release runtime connections");
         return 0;
     }
     rducks_preserved_release_drain_on_main(runtime);
@@ -1092,6 +1179,11 @@ static int rducks_runtime_refresh_connection(rducks_runtime_entry_t *runtime, du
     rducks_r_scalar_meta_t *detached_udfs = NULL;
     if (!runtime || !database) {
         rducks_format_error_message(err, err_cap, "Rducks runtime refresh is missing database state");
+        return 0;
+    }
+    if (rducks_query_stream_service_is_active(runtime)) {
+        rducks_format_error_message(err, err_cap,
+            "Rducks query stream service is already active; cannot refresh runtime connections");
         return 0;
     }
     if (duckdb_connect(database, &new_connection) == DuckDBError || !new_connection) {
