@@ -101,7 +101,15 @@ Unsupported combinations must fail. They must not silently switch:
 - `inproc_concurrent`: DuckDB may invoke callbacks from worker threads. Off-main
   callbacks queue synchronous requests to the recorded R thread. R API work and
   user R function evaluation remain serialized on that thread. This backs the
-  public `transport = "inproc"` plan.
+  public `transport = "inproc"` plan. When the R thread drains the queue it
+  coalesces pending chunks of the same static-signature vectorized UDF with
+  plain scalar inputs into one R call (up to 32 chunks / 65,536 rows); the R
+  function sees one longer vector and the result is sliced back per chunk.
+  Liveness caveat: the R thread drains only while it is inside a UDF callback
+  of its own (plus a short linger afterwards), because duckdb-r blocks it in
+  DuckDB's `Execute()` otherwise. A query whose UDF chunks all land on worker
+  threads (single-threaded sources such as `range()`, one-row-group tables)
+  can time out; use `threads = 1` or a parallel source for those.
 - `multiprocess_parallel`: chunk work is sent to persistent worker processes
   over the NNG provider (`ipc_nng_pool`). Backs the public `transport = "ipc"`
   plan for the supported wire types.

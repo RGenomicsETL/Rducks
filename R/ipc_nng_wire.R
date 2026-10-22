@@ -132,6 +132,12 @@ rducks_nng_wire_encode_request <- function(type, udf_id = "", row_count = 0, pay
 }
 
 rducks_nng_wire_decode_request <- function(buf) {
+  # Well-formed static-args frames are parsed natively (one allocation for the
+  # payload copy). The native decoder returns NULL for anything it does not
+  # fully accept, including the dynamic-args reserved flag, and the R decoder
+  # below then runs and reports its usual error.
+  fast <- .Call(RDUCKS_nng_wire_decode_request_fast, buf)
+  if (!is.null(fast)) return(fast)
   if (!is.raw(buf) || !rducks_nng_wire_check_magic(buf)) {
     stop("invalid Rducks NNG request frame", call. = FALSE)
   }
@@ -200,18 +206,7 @@ rducks_nng_wire_encode_response <- function(status = "ok", payload = raw(), erro
     stop("NNG wire response error must be a non-missing character scalar", call. = FALSE)
   }
   status_code <- if (identical(status, "ok")) 0L else 1L
-  err_raw <- charToRaw(enc2utf8(error %||% ""))
-  c(
-    rducks_nng_wire_magic,
-    rducks_nng_wire_u32(rducks_nng_wire_version),
-    rducks_nng_wire_u32(rducks_nng_wire_type_response),
-    rducks_nng_wire_u32(status_code),
-    rducks_nng_wire_u32(length(err_raw)),
-    rducks_nng_wire_u32(0L),
-    rducks_nng_wire_u64(length(payload)),
-    err_raw,
-    payload
-  )
+  .Call(RDUCKS_nng_wire_encode_response_fast, status_code, payload, error)
 }
 
 rducks_nng_wire_decode_response <- function(buf) {
