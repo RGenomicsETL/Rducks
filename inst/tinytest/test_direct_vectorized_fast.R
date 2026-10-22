@@ -94,10 +94,10 @@ local({
   reg("dvf_struct_extra", function(x) data.frame(x = x, y = x, z = x), list(DOUBLE), STRUCT(x = DOUBLE, y = DOUBLE))
   expect_true(q1("SELECT dvf_struct_extra(2.0) = {'x': 2.0, 'y': 2.0}"))
 
-  # concurrent in-process plan agrees with the single-thread result. The
-  # queued backend needs the main R thread to receive UDF chunks of its own to
-  # drain worker requests, so scan a materialized table with several row
-  # groups (a parallel source) rather than a single-threaded range() source.
+  # Concurrent value parity over several materialized row groups. Legacy DBI
+  # execution drains queued work only while the R thread has a callback of its
+  # own; a parallel source does not guarantee progress. Run this concurrency
+  # coverage in a subprocess with a timeout.
   DBI::dbExecute(con, "CREATE TABLE dvf_big AS SELECT i, CASE WHEN i % 3 = 0 THEN NULL ELSE i * 0.5 END AS v FROM range(600000) t(i)")
   rducks_set_execution_plan(con, rducks_execution_plan("inproc"), threads = 4L, external_threads = 1L)
   expect_true(q1("SELECT bool_and(dvf_point(v, v * 2) IS NOT DISTINCT FROM CASE WHEN v IS NULL THEN NULL ELSE {'x': v, 'y': v * 2} END) FROM dvf_big"))

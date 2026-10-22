@@ -61,7 +61,8 @@ rducks_evaluator_ref_remove <- function(handle) {
   invisible(NULL)
 }
 
-rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, dynamic_args = FALSE) {
+rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, dynamic_args = FALSE,
+                                               coalesce = FALSE) {
   rducks_assert_non_empty_character_scalar(name, "name")
   if (!is.function(fun)) {
     stop("fun must be a function", call. = FALSE)
@@ -78,6 +79,7 @@ rducks_scalar_udf_registration_spec <- function(name, fun, args, returns, mode, 
     return_type = return_type,
     dynamic_args = dynamic_args,
     mode = mode,
+    coalesce = coalesce,
     signature = if (dynamic_args) sprintf("%s(...) -> %s", name, return_sql) else rducks_duckdb_signature(name, arg_types, return_type)
   )
 }
@@ -98,6 +100,27 @@ rducks_assert_marshalling_supported <- function(spec) {
   invisible(NULL)
 }
 
+rducks_validate_coalescing <- function(coalesce, spec, plan, side_effects, exception_handling) {
+  if (!coalesce) return(invisible(NULL))
+  if (!identical(spec$mode, "vectorized") || !identical(plan$marshalling, "direct")) {
+    stop("coalesce = TRUE requires an in-process vectorized UDF", call. = FALSE)
+  }
+  if (isTRUE(spec$dynamic_args) || !length(spec$arg_types)) {
+    stop("coalesce = TRUE requires an explicit, non-empty argument signature", call. = FALSE)
+  }
+  if (side_effects) {
+    stop("coalesce = TRUE requires side_effects = FALSE", call. = FALSE)
+  }
+  if (!identical(exception_handling, "rethrow")) {
+    stop("coalesce = TRUE requires exception_handling = 'rethrow'", call. = FALSE)
+  }
+  tokens <- vapply(spec$arg_types, rducks_fast_atomic_token, character(1))
+  if (anyNA(tokens)) {
+    stop("coalesce = TRUE requires plain BOOLEAN, integer up to 32 bits, FLOAT, DOUBLE, or VARCHAR inputs", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Register an R-backed DuckDB scalar UDF
 #'
 #' Registers an R function as a DuckDB scalar SQL function using the loaded
@@ -106,6 +129,8 @@ rducks_assert_marshalling_supported <- function(spec) {
 #' evaluation mode for that scalar UDF, not a DuckDB function kind:
 #' `"scalar"` calls the R function once per logical row, while `"vectorized"`
 #' calls the R function once per DuckDB chunk with vector/list-column inputs.
+#' Original chunk boundaries are preserved unless `coalesce = TRUE` explicitly
+#' permits merging queued chunks into one R call.
 #'
 #' Registration requires `external_threads=1` plus `PRAGMA threads=1` so native
 #' registration and the default scalar evaluation path stay on the calling R
@@ -153,6 +178,17 @@ rducks_assert_marshalling_supported <- function(spec) {
 #' @param side_effects Logical scalar. Use `TRUE` for functions with randomness,
 #'   counters, I/O, mutation, or other side effects so DuckDB does not treat the
 #'   function as pure.
+#' @param coalesce Logical scalar, default `FALSE`. With `TRUE`, queued chunks
+#'   of this UDF may share one R call, up to 32 chunks or 65,536 rows. The caller
+#'   promises that evaluating concatenated inputs gives the concatenation of
+#'   the separately evaluated results, with the same NULL handling. Functions
+#'   such as `x - mean(x)`, `cumsum(x)`, or `seq_along(x)` do not satisfy this
+#'   promise. Coalescing requires an in-process vectorized UDF with an explicit
+#'   non-empty signature, plain BOOLEAN, integer up to 32 bits, FLOAT, DOUBLE,
+#'   or VARCHAR inputs, `side_effects = FALSE`, and
+#'   `exception_handling = "rethrow"`. Other return types supported by direct
+#'   marshalling remain available. The default keeps each original callback's
+#'   error scope, including `exception_handling = "return_null"`.
 #' @return Object of class `rducks_scalar_udf_registration` containing the
 #'   connection, normalized signature, and registration options. The scalar UDF
 #'   remains registered in DuckDB even if this object is discarded.
@@ -171,12 +207,16 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
                                        mode = "scalar",
                                        null_handling = c("default", "special"),
                                        exception_handling = c("rethrow", "return_null"),
-                                       side_effects = FALSE) {
+                                       side_effects = FALSE,
+                                       coalesce = FALSE) {
   mode <- rducks_match_mode(mode)
   null_handling <- match.arg(null_handling)
   exception_handling <- match.arg(exception_handling)
   if (!is.logical(side_effects) || length(side_effects) != 1L || is.na(side_effects)) {
     stop("side_effects must be TRUE or FALSE", call. = FALSE)
+  }
+  if (!is.logical(coalesce) || length(coalesce) != 1L || is.na(coalesce)) {
+    stop("coalesce must be TRUE or FALSE", call. = FALSE)
   }
   if (!inherits(con, "duckdb_connection")) {
     stop("con must be a duckdb_connection", call. = FALSE)
@@ -190,11 +230,13 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
     args = if (dynamic_args) NULL else args,
     returns = returns,
     mode = mode,
-    dynamic_args = dynamic_args
+    dynamic_args = dynamic_args,
+    coalesce = coalesce
   )
   plan <- rducks_current_execution_plan(con)
   rducks_assert_marshalling_supported(spec)
   rducks_validate_execution_plan_for_registration(plan, spec)
+  rducks_validate_coalescing(coalesce, spec, plan, side_effects, exception_handling)
   rducks_assert_single_thread(con)
   runtime_token <- rducks_attach_runtime_anchor(con)
   native_evaluator <- rducks_plan_native_evaluator_token(plan, spec$mode)
@@ -245,6 +287,7 @@ rducks_register_scalar_udf <- function(con, name, fun, args, returns,
       null_handling = null_handling,
       exception_handling = exception_handling,
       side_effects = side_effects,
+      coalesce = coalesce,
       execution_plan = plan,
       registered = TRUE
     ),
@@ -260,6 +303,9 @@ print.rducks_scalar_udf_registration <- function(x, ...) {
   cat("  registered:      ", if (isTRUE(x$registered)) "yes" else "no", "\n", sep = "")
   cat("  name:            ", x$spec$name, "\n", sep = "")
   cat("  evaluation_mode: ", x$spec$mode, "\n", sep = "")
+  if (identical(x$spec$mode, "vectorized")) {
+    cat("  coalesce:        ", if (isTRUE(x$coalesce)) "yes" else "no", "\n", sep = "")
+  }
   if (!is.null(x$execution_plan)) {
     cat("  plan:            ", x$execution_plan$plan_id, "\n", sep = "")
   }

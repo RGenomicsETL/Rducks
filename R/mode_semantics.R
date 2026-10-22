@@ -15,15 +15,15 @@ rducks_mode_semantics_rows <- list(
   vectorized = list(
     mode = "vectorized",
     status = "implemented",
-    call_granularity = "one R call per DuckDB chunk",
+    call_granularity = "one R call per DuckDB chunk by default; coalesce = TRUE permits merging queued chunks",
     input_shape = "one R vector/list-column per declared or dynamically bound argument",
     return_shape = "one R vector/list of values compatible with the declared return type",
     null_semantics = "default mode evaluates only rows with no top-level SQL NULL inputs and scatters SQL NULLs back; special mode passes all rows with scalar-shaped NA/NULL values",
-    length_semantics = "return length must equal the number of evaluated rows in the chunk",
-    error_semantics = "R function errors make all evaluated rows SQL NULL with exception_handling = 'return_null'; type-checking and marshalling errors abort the query",
+    length_semantics = "return length must equal the number of evaluated rows in the R call; NULL returns SQL NULL for all rows",
+    error_semantics = "R function errors make all evaluated rows in the original chunk SQL NULL with exception_handling = 'return_null'; coalescing requires 'rethrow'; type-checking and marshalling errors abort the query",
     threading = "direct vectorized work runs on the recorded main R thread; queued in-process calls are drained by that thread",
     copy_semantics = "DuckDB vectors are materialized directly to R vectors/list-columns",
-    notes = "batch/chunk call-shape used by the direct native backend; zero-argument vectorized UDFs are not exposed yet"
+    notes = "coalesce = TRUE requires a static direct signature with plain scalar inputs, no side effects, and results invariant to combining chunks; zero-argument vectorized UDFs are not exposed yet"
   )
 )
 
@@ -40,8 +40,12 @@ rducks_match_mode <- function(mode) {
 #' is distinct from DuckDB function kind (scalar, aggregate, or table) and from
 #' Rducks execution plans. `mode = "scalar"` calls the R function once for each
 #' DuckDB row. `mode = "vectorized"` calls the R function once per DuckDB chunk
-#' with one R vector/list-column per declared or dynamically bound argument.
-#' Vectorized mode is exposed for the direct native backend.
+#' by default, with one R vector/list-column per declared or dynamically bound
+#' argument. An in-process registration can explicitly permit merging queued
+#' chunks with `coalesce = TRUE` when its results are invariant to that change
+#' in call boundaries. See the registration function for the supported
+#' signatures and error policy. Vectorized mode is available with both the
+#' direct and IPC backends for their supported signatures.
 #'
 #' @param mode Optional character vector of scalar-UDF evaluation mode names.
 #'   When `NULL`, all known modes are returned.

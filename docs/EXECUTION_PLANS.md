@@ -17,7 +17,7 @@ These are scalar-UDF registration semantics and belong to
 `rducks_register_scalar_udf()`:
 
 - Rducks evaluation mode: `mode = "scalar"` for one R call per row, or
-  `mode = "vectorized"` for one R call per DuckDB chunk
+  `mode = "vectorized"` for one R call per DuckDB chunk by default
 - argument and return type descriptors
 - `null_handling`
 - `exception_handling`
@@ -101,15 +101,27 @@ Unsupported combinations must fail. They must not silently switch:
 - `inproc_concurrent`: DuckDB may invoke callbacks from worker threads. Off-main
   callbacks queue synchronous requests to the recorded R thread. R API work and
   user R function evaluation remain serialized on that thread. This backs the
-  public `transport = "inproc"` plan. When the R thread drains the queue it
-  coalesces pending chunks of the same static-signature vectorized UDF with
-  plain scalar inputs into one R call (up to 32 chunks / 65,536 rows); the R
-  function sees one longer vector and the result is sliced back per chunk.
+  public `transport = "inproc"` plan. Queue draining preserves each original
+  callback by default, including its input chunk and `return_null` error scope.
+  A registration may explicitly set `coalesce = TRUE` to merge eligible pending
+  chunks into one R call (up to 32 chunks / 65,536 rows), then slice the result
+  back to the original requests. This requires a static vectorized direct
+  signature with plain BOOLEAN, integer up to 32 bits, FLOAT, DOUBLE, or VARCHAR
+  inputs, `side_effects = FALSE`, and `exception_handling = "rethrow"`. The
+  caller promises that evaluating concatenated inputs yields the concatenation
+  of separately evaluated results with the same NULL handling. Chunk-dependent
+  functions such as `cumsum(x)`, `seq_along(x)`, or `x - mean(x)` do not satisfy
+  this promise. Request/task identity is retained; queue arrival does not
+  establish source row order. `rducks_explain_udf()` reports the registration's
+  coalescing option.
   Liveness caveat: the R thread drains only while it is inside a UDF callback
-  of its own (plus a short linger afterwards), because duckdb-r blocks it in
+  of its own (plus a short idle window afterwards), because duckdb-r blocks it in
   DuckDB's `Execute()` otherwise. A query whose UDF chunks all land on worker
-  threads (single-threaded sources such as `range()`, one-row-group tables)
-  can time out; use `threads = 1` or a parallel source for those.
+  threads, including small `range()` queries, one-row-group tables, and query
+  tails, can time out. A parallel source does not guarantee progress. Explicit
+  single-threaded execution avoids this queue starvation; the package does not
+  change the execution plan automatically. A structural fix must keep the R
+  thread available through execution, streaming fetch, and error cleanup.
 - `multiprocess_parallel`: chunk work is sent to persistent worker processes
   over the NNG provider (`ipc_nng_pool`). Backs the public `transport = "ipc"`
   plan for the supported wire types.

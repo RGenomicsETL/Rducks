@@ -213,6 +213,7 @@ struct rducks_r_scalar_meta {
     rducks_null_handling_t null_handling;
     rducks_exception_handling_t exception_handling;
     rducks_eval_mode_t eval_mode;
+    int coalesce;
     rducks_runtime_entry_t *runtime;
     char **ripc_endpoints;
     size_t ripc_endpoint_count;

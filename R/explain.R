@@ -32,6 +32,7 @@ rducks_store_registration <- function(registration) {
     null_handling = registration$null_handling,
     exception_handling = registration$exception_handling,
     side_effects = registration$side_effects,
+    coalesce = isTRUE(registration$coalesce),
     execution_plan = registration$execution_plan
   )
   assign(registration$spec$name, record, envir = env)
@@ -115,6 +116,7 @@ rducks_explain_udf_columns <- list(
   null_handling = character,
   exception_handling = character,
   side_effects = logical,
+  coalesce = logical,
   dispatch_chunks = numeric,
   dispatch_rows = numeric,
   direct_chunks = numeric,
@@ -173,6 +175,7 @@ rducks_explain_udf_row <- function(con, name) {
     null_handling = if (!is.null(record)) record$null_handling else NA_character_,
     exception_handling = if (!is.null(record)) record$exception_handling else NA_character_,
     side_effects = if (!is.null(record)) isTRUE(record$side_effects) else NA,
+    coalesce = if (!is.null(record)) isTRUE(record$coalesce) else NA,
     dispatch_chunks = rducks_counter_value(stats, "dispatch_chunks"),
     dispatch_rows = rducks_counter_value(stats, "dispatch_rows"),
     direct_chunks = rducks_counter_value(stats, "direct_chunks"),

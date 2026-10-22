@@ -11,6 +11,7 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     rducks_exception_handling_t exception_handling;
     rducks_eval_mode_t eval_mode;
     int dynamic_args = 0;
+    int coalesce = 0;
     rducks_r_scalar_meta_t *meta = NULL;
     duckdb_scalar_function fn = NULL;
     duckdb_logical_type return_logical_type = NULL;
@@ -32,6 +33,18 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
         ((eval_mode == RDUCKS_EVAL_RC || eval_mode == RDUCKS_EVAL_RCV) && !rducks_rc_bundle_valid(eval_ref))) {
         rducks_format_error_message(err, err_cap, "invalid Rducks scalar registration evaluator for eval_mode");
         return false;
+    }
+    {
+        /* Optional trailing bundle field: older bundles preserve chunk calls.
+         * Read once on the R thread; queue eligibility only inspects native state. */
+        SEXP option = rducks_named_list_get(eval_ref, "coalesce");
+        if (option != R_NilValue) {
+            if (TYPEOF(option) != LGLSXP || XLENGTH(option) != 1 || LOGICAL(option)[0] == NA_LOGICAL) {
+                rducks_format_error_message(err, err_cap, "coalesce must be TRUE or FALSE");
+                return false;
+            }
+            coalesce = LOGICAL(option)[0] == TRUE;
+        }
     }
     dynamic_args = args_spec && (strcmp(args_spec, "*") == 0 || strcmp(args_spec, "...") == 0);
     if (!dynamic_args && !rducks_parse_type_list(args_spec, &arg_descs, &arity, err, err_cap)) {
@@ -143,7 +156,17 @@ static bool rducks_register_r_scalar(rducks_runtime_entry_t *runtime, const char
     meta->null_handling = null_handling;
     meta->exception_handling = exception_handling;
     meta->eval_mode = eval_mode;
+    meta->coalesce = coalesce;
     meta->runtime = runtime;
+    if (coalesce && (side_effects || !rducks_rc_batch_supported(meta))) {
+        rducks_format_error_message(err, err_cap,
+            "coalesce = TRUE requires a static in-process vectorized UDF with plain scalar inputs, "
+            "side_effects = FALSE and exception_handling = 'rethrow'");
+        rducks_r_scalar_meta_destroy(meta);
+        duckdb_destroy_scalar_function(&fn);
+        duckdb_destroy_logical_type(&return_logical_type);
+        return false;
+    }
     if (eval_mode == RDUCKS_EVAL_RIPC && !rducks_ripc_configure_meta_on_main(runtime, meta, eval_ref, err, err_cap)) {
         rducks_r_scalar_meta_destroy(meta);
         duckdb_destroy_scalar_function(&fn);
