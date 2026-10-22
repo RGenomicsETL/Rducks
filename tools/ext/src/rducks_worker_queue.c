@@ -33,6 +33,7 @@ typedef int (*rducks_queue_execute_request_fn)(rducks_udf_request_t *request, ch
 struct rducks_udf_request {
     rducks_udf_request_t *next;
     rducks_runtime_entry_t *runtime;
+    rducks_query_owner_t *owner;
     rducks_queue_execute_request_fn execute;
     void *data;
     rducks_r_scalar_meta_t *meta;
@@ -93,6 +94,28 @@ static uint64_t rducks_queue_cancel_generation(rducks_runtime_entry_t *runtime) 
 
 static int rducks_queue_cancel_requested(rducks_runtime_entry_t *runtime, uint64_t generation) {
     return runtime && rducks_queue_cancel_generation(runtime) != generation;
+}
+
+static int rducks_queue_request_cancelled(rducks_runtime_entry_t *runtime,
+                                          rducks_udf_request_t *request) {
+    return request->owner ? rducks_query_owner_stopping(request->owner) :
+                            rducks_queue_cancel_requested(runtime, request->cancel_generation);
+}
+
+static void rducks_queue_stop_owner(rducks_runtime_entry_t *runtime, rducks_query_owner_t *owner) {
+    if (!owner) return;
+    atomic_store_explicit(&owner->stopping, 1, memory_order_release);
+    rducks_queue_signal_all_locked(runtime);
+    duckdb_interrupt(owner->connection);
+}
+
+static void rducks_queue_fail_owner(rducks_runtime_entry_t *runtime, rducks_query_owner_t *owner,
+                                    const char *error) {
+    if (owner && !owner->error[0]) {
+        rducks_copy_error_message(owner->error, sizeof(owner->error), error,
+                                  "Rducks managed query was cancelled");
+    }
+    rducks_queue_stop_owner(runtime, owner);
 }
 
 static void rducks_queue_cancel_request(rducks_runtime_entry_t *runtime) {
@@ -226,6 +249,7 @@ static int rducks_queue_remove_pending_locked(rducks_runtime_entry_t *runtime, r
 }
 
 static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *runtime, int allow_non_main_drain) {
+    rducks_udf_request_t *prev = NULL;
     rducks_udf_request_t *request = runtime->queue_head;
     while (request && request->state == RDUCKS_REQUEST_CANCELLED) {
         runtime->queue_head = request->next;
@@ -233,10 +257,19 @@ static rducks_udf_request_t *rducks_queue_pop_locked(rducks_runtime_entry_t *run
         request->next = NULL;
         request = runtime->queue_head;
     }
+    /* A managed query may have pending background tasks while its consumer is
+     * between fetches. Only its owner pump may evaluate those callbacks; a
+     * legacy DBI drain has neither the stream's active-service guard nor its
+     * unwind/close lifetime. */
+    while (request && request->owner) {
+        prev = request;
+        request = request->next;
+    }
     if (!request) return NULL;
     if (allow_non_main_drain && !request->allow_non_main_drain) return NULL;
-    runtime->queue_head = request->next;
-    if (!runtime->queue_head) runtime->queue_tail = NULL;
+    if (prev) prev->next = request->next;
+    else runtime->queue_head = request->next;
+    if (runtime->queue_tail == request) runtime->queue_tail = prev;
     request->next = NULL;
     request->state = RDUCKS_REQUEST_RUNNING;
     if (runtime->queue_pending_current > 0) runtime->queue_pending_current--;
@@ -318,6 +351,18 @@ static int rducks_queue_execute_rc_scalar_to_chunk_on_main(rducks_udf_request_t 
                                                   &request->rc_result_chunk, err_msg, err_cap);
 }
 
+typedef struct rducks_managed_request_call {
+    rducks_udf_request_t *request;
+    char *error;
+    size_t error_cap;
+    int ok;
+} rducks_managed_request_call_t;
+
+static void rducks_queue_managed_request_body(void *data) {
+    rducks_managed_request_call_t *call = (rducks_managed_request_call_t *)data;
+    call->ok = call->request->execute(call->request, call->error, call->error_cap);
+}
+
 static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err_msg, size_t err_cap) {
     if (!request || !request->runtime || !request->execute) {
         rducks_format_error_message(err_msg, err_cap, "Rducks queued request is missing execution state");
@@ -327,6 +372,22 @@ static int rducks_queue_execute_on_main(rducks_udf_request_t *request, char *err
         rducks_format_error_message(err_msg, err_cap, "Rducks queued request reached a non-main thread");
         return 0;
     }
+    if (request->owner) {
+        rducks_managed_request_call_t call = {request, err_msg, err_cap, 0};
+        if (rducks_query_owner_stopping(request->owner)) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks managed query was cancelled");
+            return 0;
+        }
+        /* A managed pump is entered directly from R. Catch interrupts as well
+         * as allocation errors so every RUNNING stack-backed request reaches
+         * DONE before an R unwind can leave the pump. */
+        if (!R_ToplevelExec(rducks_queue_managed_request_body, &call)) {
+            rducks_format_error_message(err_msg, err_cap, "Rducks managed R callback was interrupted");
+            call.ok = 0;
+        }
+        if (!call.ok) rducks_queue_fail_owner(request->runtime, request->owner, err_msg);
+        return call.ok;
+    }
     return request->execute(request, err_msg, err_cap);
 }
 
@@ -334,6 +395,32 @@ static rducks_udf_request_t *rducks_queue_pop_request(rducks_runtime_entry_t *ru
     rducks_udf_request_t *request;
     rducks_queue_lock(runtime);
     request = rducks_queue_pop_locked(runtime, allow_non_main_drain);
+    rducks_queue_unlock(runtime);
+    return request;
+}
+
+static rducks_udf_request_t *rducks_queue_pop_owner_request(rducks_runtime_entry_t *runtime,
+                                                           rducks_query_owner_t *owner) {
+    rducks_udf_request_t *prev = NULL;
+    rducks_udf_request_t *request;
+    rducks_queue_lock(runtime);
+    request = runtime->queue_head;
+    while (request && (request->owner != owner || request->state != RDUCKS_REQUEST_PENDING)) {
+        prev = request;
+        request = request->next;
+    }
+    if (request) {
+        if (prev) prev->next = request->next;
+        else runtime->queue_head = request->next;
+        if (runtime->queue_tail == request) runtime->queue_tail = prev;
+        request->next = NULL;
+        request->state = RDUCKS_REQUEST_RUNNING;
+        if (runtime->queue_pending_current > 0) runtime->queue_pending_current--;
+        runtime->queue_running_current++;
+        if (runtime->queue_running_current > runtime->queue_running_max) {
+            runtime->queue_running_max = runtime->queue_running_current;
+        }
+    }
     rducks_queue_unlock(runtime);
     return request;
 }
@@ -362,6 +449,12 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     rducks_udf_record_queue_pending_add(request->meta);
 
     rducks_queue_lock(runtime);
+    if (request->owner && rducks_query_owner_stopping(request->owner)) {
+        rducks_queue_unlock(runtime);
+        rducks_udf_record_queue_pending_done(request->meta);
+        rducks_format_error_message(err_msg, err_cap, "Rducks managed query was cancelled");
+        return 0;
+    }
     pending_since_us = rducks_queue_now_us();
     if (pending_since_us == 0U) {
         rducks_queue_unlock(runtime);
@@ -378,7 +471,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
     rducks_queue_signal_all(runtime);
 
     while (request->state != RDUCKS_REQUEST_DONE) {
-        if (rducks_queue_cancel_requested(runtime, request->cancel_generation) &&
+        if (rducks_queue_request_cancelled(runtime, request) &&
             request->state == RDUCKS_REQUEST_PENDING) {
             if (rducks_queue_remove_pending_locked(runtime, request)) {
                 rducks_queue_signal_all(runtime);
@@ -388,7 +481,7 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
             }
         }
         rducks_queue_wait_timed(runtime, RDUCKS_QUEUE_WAIT_MS);
-        if (rducks_queue_cancel_requested(runtime, request->cancel_generation) &&
+        if (rducks_queue_request_cancelled(runtime, request) &&
             request->state == RDUCKS_REQUEST_PENDING) {
             if (rducks_queue_remove_pending_locked(runtime, request)) {
                 rducks_queue_signal_all(runtime);
@@ -397,7 +490,10 @@ static int rducks_queue_submit_request(rducks_runtime_entry_t *runtime, rducks_u
                 return rducks_queue_interrupted_error(err_msg, err_cap);
             }
         }
-        if (request->state == RDUCKS_REQUEST_PENDING) {
+        /* Managed streams deliberately pause while R consumes a fetched
+         * batch. Their owner supplies cancellation and the next native entry
+         * resumes pumping; consumer think time is not queue starvation. */
+        if (request->state == RDUCKS_REQUEST_PENDING && !request->owner) {
             uint64_t now_us = rducks_queue_now_us();
             int clock_failed = now_us == 0U || now_us < pending_since_us;
             /* Submissions, completions, and spurious wakes all signal this
@@ -479,6 +575,7 @@ static int rducks_queue_submit_scalar_collect(rducks_runtime_entry_t *runtime, r
         request.cancel_generation = cancel_generation;
     }
     request.meta = meta;
+    request.owner = local_state ? local_state->query_owner : NULL;
     request.local_state = local_state;
     request.input = input;
     request.output = output;
@@ -687,6 +784,7 @@ static size_t rducks_queue_pop_batch_peers_locked(rducks_runtime_entry_t *runtim
         rducks_udf_request_t *next = cur->next;
         idx_t n = 0;
         if (cur->state == RDUCKS_REQUEST_PENDING && cur->meta == first->meta &&
+            cur->owner == first->owner && cur->cancel_generation == first->cancel_generation &&
             cur->execute == first->execute && cur->input &&
             (n = duckdb_data_chunk_get_size(cur->input)) <= max_rows - rows) {
             if (prev) {
@@ -712,6 +810,24 @@ static size_t rducks_queue_pop_batch_peers_locked(rducks_runtime_entry_t *runtim
     return appended;
 }
 
+typedef struct rducks_managed_batch_call {
+    rducks_runtime_entry_t *runtime;
+    rducks_r_scalar_meta_t *meta;
+    duckdb_data_chunk *inputs;
+    duckdb_data_chunk *chunks;
+    size_t count;
+    char *error;
+    size_t error_cap;
+    int ok;
+} rducks_managed_batch_call_t;
+
+static void rducks_queue_managed_batch_body(void *data) {
+    rducks_managed_batch_call_t *call = (rducks_managed_batch_call_t *)data;
+    call->ok = rducks_rc_vectorized_execute_batch_to_owned_chunks(
+        call->runtime, call->meta, call->inputs, call->chunks, call->count,
+        call->error, call->error_cap);
+}
+
 static void rducks_queue_execute_batch_on_main(rducks_runtime_entry_t *runtime, rducks_udf_request_t **batch,
                                                size_t count) {
     duckdb_data_chunk inputs[RDUCKS_QUEUE_BATCH_MAX_REQUESTS];
@@ -730,18 +846,34 @@ static void rducks_queue_execute_batch_on_main(rducks_runtime_entry_t *runtime, 
     if (!rducks_is_main_thread(runtime)) {
         rducks_format_error_message(err_msg, sizeof(err_msg), "Rducks queued batch reached a non-main thread");
         ok = 0;
+    } else if (batch[0]->owner) {
+        rducks_managed_batch_call_t call = {
+            runtime, batch[0]->meta, inputs, chunks, count, err_msg, sizeof(err_msg), 0
+        };
+        if (rducks_query_owner_stopping(batch[0]->owner)) {
+            rducks_format_error_message(err_msg, sizeof(err_msg), "Rducks managed query was cancelled");
+            ok = 0;
+        } else {
+            if (!R_ToplevelExec(rducks_queue_managed_batch_body, &call)) {
+                rducks_format_error_message(err_msg, sizeof(err_msg), "Rducks managed R callback was interrupted");
+                call.ok = 0;
+            }
+            ok = call.ok;
+            if (!ok) rducks_queue_fail_owner(runtime, batch[0]->owner, err_msg);
+        }
     } else {
         ok = rducks_rc_vectorized_execute_batch_to_owned_chunks(runtime, batch[0]->meta, inputs, chunks, count,
                                                                 err_msg, sizeof(err_msg));
     }
     for (size_t k = 0; k < count; k++) {
         if (ok) batch[k]->rc_result_chunk = chunks[k];
+        else if (chunks[k]) duckdb_destroy_data_chunk(&chunks[k]);
         rducks_queue_finish_request(runtime, batch[k], ok, err_msg);
     }
 }
 
 static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requests,
-                                   int allow_non_main_diagnostic) {
+                                   int allow_non_main_diagnostic, rducks_query_owner_t *owner) {
     int count = 0;
     int is_main;
     if (!runtime || !runtime->queue_initialized) return 0;
@@ -753,7 +885,8 @@ static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requ
         rducks_udf_request_t *request;
         char err_msg[RDUCKS_QUEUE_ERROR_SIZE];
         int ok;
-        request = rducks_queue_pop_request(runtime, !is_main && allow_non_main_diagnostic);
+        request = owner ? rducks_queue_pop_owner_request(runtime, owner) :
+                          rducks_queue_pop_request(runtime, !is_main && allow_non_main_diagnostic);
         if (!request) break;
         if (is_main && rducks_queue_request_batchable(request)) {
             rducks_udf_request_t *batch[RDUCKS_QUEUE_BATCH_MAX_REQUESTS];
@@ -791,11 +924,15 @@ static int rducks_queue_drain_impl(rducks_runtime_entry_t *runtime, int max_requ
 }
 
 static int rducks_queue_drain_on_main(rducks_runtime_entry_t *runtime, int max_requests) {
-    return rducks_queue_drain_impl(runtime, max_requests, 0);
+    return rducks_queue_drain_impl(runtime, max_requests, 0, NULL);
+}
+
+static int rducks_queue_drain_owner_on_main(rducks_runtime_entry_t *runtime, rducks_query_owner_t *owner) {
+    return owner ? rducks_queue_drain_impl(runtime, RDUCKS_QUEUE_DRAIN_MAX_REQUESTS, 0, owner) : 0;
 }
 
 static int rducks_queue_drain_self_test(rducks_runtime_entry_t *runtime, int max_requests) {
-    return rducks_queue_drain_impl(runtime, max_requests, 1);
+    return rducks_queue_drain_impl(runtime, max_requests, 1, NULL);
 }
 
 typedef struct rducks_queue_self_test_state {

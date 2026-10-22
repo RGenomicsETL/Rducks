@@ -1,0 +1,291 @@
+diff --git a/src/database.cpp b/src/database.cpp
+--- a/src/database.cpp
++++ b/src/database.cpp
+@@ -24,6 +24,7 @@
+ 	// Hard stop when poisoned: every DuckDB session starts here, so this single
+ 	// guard ensures no test or example can reach the C++ engine on CRAN.
+ 	DUCKDB_R_POISON_GUARD();
++	InitializeRApiThread();
+ 
+ 	const char *dbdirchar;
+ 
+@@ -85,6 +86,7 @@
+ 	DataFrameScanFunction scan_fun;
+ 	CreateTableFunctionInfo info(scan_fun);
+ 	Connection conn(*wrapper->db);
++	RegisterManagedStreamGuard(conn);
+ 	auto &context = *conn.context;
+ 	auto &catalog = Catalog::GetSystemCatalog(context);
+ 	context.transaction.BeginTransaction();
+diff --git a/src/include/rapi.hpp b/src/include/rapi.hpp
+--- a/src/include/rapi.hpp
++++ b/src/include/rapi.hpp
+@@ -107,6 +107,12 @@
+ [[noreturn]] void rapi_error_with_context(const std::string &context, const std::string &message);
+ [[noreturn]] void rapi_error_with_context(const std::string &context, const std::exception &e);
+ [[noreturn]] void rapi_error_with_context(const std::string &context, const duckdb::ErrorData &error_data);
++
++// Record R's thread before a database exposes callbacks to native clients.
++// A failed thread check throws a native exception without entering R.
++void InitializeRApiThread();
++void RequireRApiThread(const char *operation);
++void RegisterManagedStreamGuard(duckdb::Connection &connection);
+ 
+ namespace duckdb {
+ 
+diff --git a/src/register.cpp b/src/register.cpp
+--- a/src/register.cpp
++++ b/src/register.cpp
+@@ -72,6 +72,7 @@
+ 
+ unique_ptr<TableRef> duckdb::EnvironmentScanReplacement(ClientContext &context, ReplacementScanInput &input,
+                                                         optional_ptr<ReplacementScanData> data_p) {
++	RequireRApiThread("environment replacement scan");
+ 	auto &data = (ReplacementDataDBWrapper &)*data_p;
+ 	auto db_wrapper = data.wrapper;
+ 
+@@ -133,6 +134,7 @@
+ 	}
+ 
+ 	static unique_ptr<ArrowArrayStreamWrapper> Produce(uintptr_t factory_p, ArrowStreamParameters &parameters) {
++		RequireRApiThread("R Arrow stream production");
+ 		auto res = make_uniq<ArrowArrayStreamWrapper>();
+ 		auto factory = (RArrowTabularStreamFactory *)factory_p;
+ 		cpp11::sexp stream_ptr_sexp =
+@@ -157,7 +159,7 @@
+ 	}
+ 
+ 	static void GetSchema(uintptr_t factory_p, ArrowSchemaWrapper &schema) {
+-
++		RequireRApiThread("R Arrow schema binding");
+ 		auto res = make_uniq<ArrowArrayStreamWrapper>();
+ 		auto factory = (RArrowTabularStreamFactory *)factory_p;
+ 		cpp11::sexp schema_ptr_sexp =
+@@ -351,6 +353,7 @@
+ 	lock_guard<mutex> arrow_scans_lock(db_wrapper->lock);
+ 	const auto &arrow_scans = db_wrapper->arrow_scans;
+ 	for (auto e = arrow_scans.find(table_name); e != arrow_scans.end(); ++e) {
++		RequireRApiThread("Arrow replacement scan");
+ 		auto table_function = make_uniq<TableFunctionRef>();
+ 		vector<duckdb::unique_ptr<ParsedExpression>> children;
+ 		children.push_back(make_uniq<ConstantExpression>(Value::POINTER((uintptr_t)R_ExternalPtrAddr(e->second[0]))));
+diff --git a/src/scan.cpp b/src/scan.cpp
+--- a/src/scan.cpp
++++ b/src/scan.cpp
+@@ -602,6 +602,7 @@
+ 
+ static duckdb::unique_ptr<FunctionData> DataFrameScanBind(ClientContext &context, TableFunctionBindInput &input,
+                                                           vector<LogicalType> &return_types, vector<string> &names) {
++	RequireRApiThread("R data-frame binding");
+ 	data_frame df((SEXP)input.inputs[0].GetPointer());
+ 
+ 	auto integer64 = get_integer64_param(input.named_parameters);
+diff --git a/src/utils.cpp b/src/utils.cpp
+--- a/src/utils.cpp
++++ b/src/utils.cpp
+@@ -6,11 +6,205 @@
+ #include "rapi.hpp"
+ #include "typesr.hpp"
+ 
++#include <R_ext/Rdynload.h>
++#include "duckdb/execution/expression_executor_state.hpp"
++#include "duckdb/function/scalar_function.hpp"
++#include "duckdb/main/client_context.hpp"
++#include "duckdb/main/database.hpp"
++#include "duckdb/main/settings.hpp"
++#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
++#include <cstdint>
++#include <mutex>
++#include <memory>
++#include <limits>
++#include <unordered_map>
++#include <thread>
++
+ // Avoid clash with TRUE and FALSE macros in older rtools
+ #undef TRUE
+ #undef FALSE
+ 
+ using namespace duckdb;
++
++static std::once_flag r_api_thread_once;
++static std::thread::id r_api_thread;
++static std::atomic<bool> r_api_thread_initialized {false};
++
++// C-callable capability, uint32_t(void), registered after database startup.
++// Version 2 also supplies database-wide managed-stream scheduler leases.
++static uint32_t OffMainGuardVersion() {
++	return 2;
++}
++
++struct ManagedStreamGuardLease {
++	shared_ptr<DatabaseInstance> database;
++	case_insensitive_set_t previous_allowed_configs;
++	Value previous_lock;
++	bool previous_lock_is_set = false;
++	bool acquired = false;
++};
++
++static std::mutex managed_stream_guards_mutex;
++static std::unordered_map<uint64_t, std::unique_ptr<ManagedStreamGuardLease>> managed_stream_guards;
++static uint64_t next_managed_stream_guard_id = 1;
++
++// Reserve before executing acquisition SQL, so the caller retains a cleanup
++// handle even if the SQL result cannot be materialized. These two C-callables
++// never call R or allow a C++ exception to escape into an extension's C code.
++static uint64_t ManagedStreamGuardReserve() noexcept {
++	try {
++		std::lock_guard<std::mutex> guard(managed_stream_guards_mutex);
++		if (next_managed_stream_guard_id == std::numeric_limits<uint64_t>::max()) {
++			return 0;
++		}
++		auto lease = std::make_unique<ManagedStreamGuardLease>();
++		auto id = next_managed_stream_guard_id++;
++		managed_stream_guards.emplace(id, std::move(lease));
++		return id;
++	} catch (...) {
++		return 0;
++	}
++}
++
++static int ManagedStreamGuardValidate(uint64_t id) noexcept {
++	try {
++		std::lock_guard<std::mutex> guard(managed_stream_guards_mutex);
++		auto entry = managed_stream_guards.find(id);
++		return entry != managed_stream_guards.end() && entry->second->acquired ? 1 : 0;
++	} catch (...) {
++		return 0;
++	}
++}
++
++static int ManagedStreamGuardRelease(uint64_t id) noexcept {
++	std::unique_ptr<ManagedStreamGuardLease> released;
++	try {
++		std::lock_guard<std::mutex> guard(managed_stream_guards_mutex);
++		auto entry = managed_stream_guards.find(id);
++		if (entry == managed_stream_guards.end()) {
++			return 0;
++		}
++		auto &lease = *entry->second;
++		if (lease.acquired) {
++			auto &config = DBConfig::GetConfig(*lease.database);
++			// Acquisition allocated this generic setting slot already. Restoring
++			// a Boolean, clearing the slot, and swapping the saved set
++			// do not allocate. Never turn off a lock the user already enabled.
++			if (lease.previous_lock_is_set) {
++				config.SetOption(LockConfigurationSetting::SettingIndex, Value(lease.previous_lock.GetValue<bool>()));
++			} else {
++				config.ResetGenericOption(LockConfigurationSetting::SettingIndex);
++			}
++			config.options.allowed_configs.swap(lease.previous_allowed_configs);
++			lease.acquired = false;
++		}
++		released = std::move(entry->second);
++		managed_stream_guards.erase(entry);
++	} catch (...) {
++		// Keep the lease live on unexpected failure, rather than lose the
++		// caller's cleanup handle or throw through a C ABI boundary.
++		return 0;
++	}
++	// Drop the strong database reference outside the registry mutex.
++	return 1;
++}
++
++static bool ManagedStreamProtectedSetting(const string &name) {
++	auto option = DBConfig::GetOptionByName(name);
++	auto canonical_name = option ? string(option->name) : StringUtil::Lower(name);
++	return canonical_name == "threads" || canonical_name == "external_threads" ||
++	       canonical_name == "lock_configuration" || canonical_name == "allowed_configs";
++}
++
++static void ManagedStreamGuardAcquire(DataChunk &input, ExpressionState &state, Vector &result) {
++	if (input.size() != 1 || input.GetValue(0, 0).IsNull()) {
++		throw InvalidInputException("Managed stream guard acquisition requires exactly one reserved lease");
++	}
++	auto id = input.GetValue(0, 0).GetValue<uint64_t>();
++	auto &context = state.GetContext();
++	auto &config = DBConfig::GetConfig(context);
++	std::lock_guard<std::mutex> guard(managed_stream_guards_mutex);
++	auto entry = managed_stream_guards.find(id);
++	if (entry == managed_stream_guards.end() || entry->second->acquired) {
++		throw InvalidInputException("Managed stream scheduler guard reservation is invalid or already acquired");
++	}
++	for (auto &existing : managed_stream_guards) {
++		if (existing.second->acquired && existing.second->database.get() == context.db.get()) {
++			throw InvalidInputException("A managed stream scheduler guard is already active for this database");
++		}
++	}
++
++	auto &lease = *entry->second;
++	lease.previous_lock_is_set =
++	    config.TryGetCurrentUserSetting(LockConfigurationSetting::SettingIndex, lease.previous_lock);
++	bool was_locked = Settings::Get<LockConfigurationSetting>(config);
++	case_insensitive_set_t allowed_configs;
++	if (was_locked) {
++		// Preserve the user's security restriction; never widen an existing lock.
++		for (auto &name : config.options.allowed_configs) {
++			if (!ManagedStreamProtectedSetting(name)) {
++				allowed_configs.insert(name);
++			}
++		}
++	} else {
++		// Keep other currently registered settings usable. Newly loaded extension
++		// settings fail closed until the stream ends rather than weakening this guard.
++		for (auto &option : DBConfig::GetOptions()) {
++			if (!ManagedStreamProtectedSetting(option.name)) {
++				allowed_configs.insert(option.name);
++			}
++		}
++		for (auto &option : config.GetExtensionSettings()) {
++			if (!ManagedStreamProtectedSetting(option.first)) {
++				allowed_configs.insert(option.first);
++			}
++		}
++	}
++	lease.database = context.db;
++	// PhysicalSet and PhysicalReset consult CheckLock at execution, including
++	// cached statements and aliases on every connection in this database.
++	// Do every allocating operation before changing the configuration.
++	config.SetOption(LockConfigurationSetting::SettingIndex, Value(true));
++	config.options.allowed_configs.swap(allowed_configs);
++	lease.previous_allowed_configs.swap(allowed_configs);
++	lease.acquired = true;
++	result.SetVectorType(VectorType::CONSTANT_VECTOR);
++	*ConstantVector::GetData<uint64_t>(result) = id;
++}
++
++void RegisterManagedStreamGuard(Connection &connection) {
++	ScalarFunction function("duckdb_r_managed_stream_guard_acquire", {LogicalType::UBIGINT}, LogicalType::UBIGINT,
++	                        ManagedStreamGuardAcquire);
++	function.SetVolatile();
++	function.SetFallible();
++	function.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
++	CreateScalarFunctionInfo info(std::move(function));
++	connection.context->RegisterFunction(info);
++}
++
++void InitializeRApiThread() {
++	std::call_once(r_api_thread_once, [] {
++		r_api_thread = std::this_thread::get_id();
++		r_api_thread_initialized.store(true, std::memory_order_release);
++	});
++	RequireRApiThread("database startup");
++	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_off_main_guard_version",
++	                                reinterpret_cast<DL_FUNC>(OffMainGuardVersion));
++	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_managed_stream_guard_reserve",
++	                                reinterpret_cast<DL_FUNC>(ManagedStreamGuardReserve));
++	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_managed_stream_guard_release",
++	                                reinterpret_cast<DL_FUNC>(ManagedStreamGuardRelease));
++	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_managed_stream_guard_validate",
++	                                reinterpret_cast<DL_FUNC>(ManagedStreamGuardValidate));
++}
++
++void RequireRApiThread(const char *operation) {
++	if (!r_api_thread_initialized.load(std::memory_order_acquire) ||
++	    std::this_thread::get_id() != r_api_thread) {
++		throw InvalidInputException("%s requires R's recorded thread; R-backed inputs are unsupported in a native "
++		                            "query driver", operation);
++	}
++}
+ 
+ [[cpp11::register]] SEXP rapi_adbc_init_func() {
+ 	return R_MakeExternalPtrFn((DL_FUNC)duckdb_adbc_init, R_NilValue, R_NilValue);

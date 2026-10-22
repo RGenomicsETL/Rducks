@@ -68,6 +68,49 @@ remain serialized on the recorded R thread. Worker-side code may copy DuckDB
 vectors into owned native state, wait, and write DuckDB output after the R-thread
 phase has produced owned result data.
 
+### Managed query driver
+
+For concurrent in-process query streams, a persistent native helper owns all
+DuckDB preparation, execution, fetch and teardown operations. The public R
+stream calls a versioned C-callable bridge directly, outside duckdb-r's SQL
+interrupt handler. A constant-token bind handshake registers that bridge on
+the recorded R thread; scalar execution of the handshake remains native-only.
+The package never casts a duckdb-r external pointer or borrows its connection.
+
+Before starting the helper, capability version 2 reserves and acquires a native
+database-wide scheduler lease. It uses DuckDB's configuration-lock enforcement,
+not SQL text matching, to reject scheduler changes through raw DBI statements,
+prepared statements and sibling connections. A native acknowledgement verifies
+acquisition even if SQL name resolution is altered. The prior lock state and
+allowlist are restored only after the helper has joined; a reserved rollback
+handle also covers errors partway through startup. See the
+[companion contract](../tools/compat/README.md) for protected settings and limits.
+
+The R side pumps callbacks while each helper command is active. A bounded
+handoff transfers one fetched native chunk back for direct R materialization.
+A reference-counted query owner outlives any individual stream handle and is
+captured only by callbacks on the driver's actual native connection. Queue
+selection and cancellation use that owner; legacy DBI drains cannot consume
+managed requests. Coalesced callbacks retain each request's output destination
+and require the same owner and generation.
+
+Close first stops new submissions and interrupts the owned connection. Pending
+requests are rejected, running callbacks reach `DONE`, native resources are
+destroyed, and the helper joins before stream state is freed. R unwind cleanup
+destroys partial owned outputs and restores active callback/batch state. Runtime
+tokens include a generation, so a stale handle cannot operate on a newly opened
+runtime. Runtime entries remain inert after release for destructor safety.
+
+Off-thread preparation can encounter database-wide R-backed replacement scans,
+even on the extension's own connection. Managed startup therefore requires a
+versioned duckdb-r guard that rejects the audited R source/binding callbacks
+before they touch R on another thread. The narrow companion is documented in
+[`tools/compat/README.md`](../tools/compat/README.md). R table and aggregate
+callbacks fail in managed mode; scalar callbacks use the queue. Serial and IPC
+streams retain their synchronous paths. Ordinary DBI execution still has the
+callback-driven queue progress limitation described in
+[`EXECUTION_PLANS.md`](EXECUTION_PLANS.md).
+
 ## Ownership rules
 
 - Borrowed DuckDB vectors and data chunks are valid only during the scalar-UDF,
@@ -107,3 +150,10 @@ Rducks does not send stop requests to them during release. For file-backed
 DuckDB databases, releasing the last attachment also closes Rducks'
 extension-owned DuckDB connections while keeping the process-local runtime entry
 inert for catalog-destructor safety and stale address detection.
+
+The last runtime attachment also closes all query streams and joins managed
+helpers, including for in-memory databases that retain their catalog connection.
+A callback cannot recursively release its runtime, and an open stream prevents
+plan/scheduler reconfiguration through any attached or sibling connection.
+Call `rducks_release(con)` before disconnecting the DBI connection. After final
+file-backed release, use a new DBI connection before enabling that database again.

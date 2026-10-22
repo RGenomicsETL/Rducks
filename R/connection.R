@@ -80,6 +80,20 @@ rducks_connection_duckdb_version <- function(con) {
   rducks_normalize_duckdb_version(result$version[[1L]])
 }
 
+rducks_initialize_main_thread <- function(con) {
+  main_thread_token <- rducks_main_thread_token()
+  if (nzchar(main_thread_token)) {
+    ok <- DBI::dbGetQuery(
+      con,
+      sprintf("SELECT rducks_set_main_thread_token(%s) AS ok", rducks_sql_string(main_thread_token))
+    )$ok[[1L]]
+    if (!isTRUE(ok)) {
+      stop("failed to initialize Rducks main-thread guard", call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Enable Rducks on a DuckDB connection
 #'
 #' Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
@@ -106,6 +120,15 @@ rducks_enable <- function(con, extension_path = NULL,
                           threads = c("unchanged", "single")) {
   threads <- match.arg(threads)
   rducks_assert_duckdb_connection(con)
+  db_token <- rducks_attached_runtime_token(con)
+  if (is.na(db_token)) db_token <- rducks_runtime_token(con, required = FALSE)
+  if (!is.na(db_token)) {
+    # LOAD may have happened before the first R enable call. Its native
+    # runtime has a token but no R callable yet. This checked bind handshake
+    # changes no connection or scheduler settings; bootstrap before preflight.
+    rducks_initialize_main_thread(con)
+    .Call(RDUCKS_query_stream_call, db_token, "assert_configurable", "")
+  }
 
   if (is.null(extension_path)) {
     extension_path <- rducks_extension_path(rducks_connection_duckdb_version(con))
@@ -121,16 +144,7 @@ rducks_enable <- function(con, extension_path = NULL,
   # the type gates consult the cached value.
   rducks_cache_variant_runtime_support(con)
 
-  main_thread_token <- rducks_main_thread_token()
-  if (nzchar(main_thread_token)) {
-    ok <- DBI::dbGetQuery(
-      con,
-      sprintf("SELECT rducks_set_main_thread_token(%s) AS ok", rducks_sql_string(main_thread_token))
-    )$ok[[1L]]
-    if (!isTRUE(ok)) {
-      stop("failed to initialize Rducks main-thread guard", call. = FALSE)
-    }
-  }
+  rducks_initialize_main_thread(con)
 
   if (identical(threads, "single")) {
     rducks_configure_duckdb_threads(con, threads = 1L, external_threads = 1L)
@@ -246,6 +260,11 @@ rducks_release <- function(con) {
   rducks_assert_duckdb_connection(con)
   token <- rducks_existing_connection_token(con)
   db_token <- rducks_attached_runtime_token(con)
+  if (!is.na(db_token)) {
+    # A queued callback can re-enter R while a native stream command is using
+    # this runtime. Reject release before detaching anchors or closing pools.
+    .Call(RDUCKS_query_stream_call, db_token, "assert_idle", "")
+  }
   last_runtime_anchor <- FALSE
   if (!is.na(token) && !is.na(db_token)) {
     anchor_store <- .rducks_state$runtime_anchors
@@ -254,6 +273,11 @@ rducks_release <- function(con) {
       anchors <- ls(envir = anchor_env, all.names = TRUE)
       last_runtime_anchor <- identical(sort(anchors), token)
     }
+  }
+  if (isTRUE(last_runtime_anchor)) {
+    # In-memory runtimes retain their catalog connection. Streams still need
+    # cancellation and a joined driver before the final R anchor is detached.
+    .Call(RDUCKS_query_stream_call, db_token, "close_all", "")
   }
   # If the extension is still reachable, give native code a safe recorded-main-
   # thread drain point for preserved R objects queued by off-main DuckDB catalog
@@ -592,6 +616,11 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
                                       threads = NULL, external_threads = NULL) {
   rducks_assert_duckdb_connection(con)
+  db_token <- rducks_attached_runtime_token(con)
+  if (is.na(db_token)) db_token <- rducks_runtime_token(con, required = FALSE)
+  if (!is.na(db_token)) {
+    .Call(RDUCKS_query_stream_call, db_token, "assert_configurable", "")
+  }
   plan <- rducks_as_execution_plan(plan)
   rducks_assert_execution_plan_implemented(plan)
   threads <- rducks_validate_thread_count(threads, "threads")

@@ -83,9 +83,26 @@ SEXP RDUCKS_sexp_addr(SEXP x) {
     return Rf_mkString(buf);
 }
 
+/* Resolve the extension's versioned runtime token through R's supported
+ * native-callable registry. The package never inspects duckdb-r connection
+ * external pointers or borrows the caller's DuckDB connection. */
+SEXP RDUCKS_query_stream_call(SEXP runtime_token, SEXP operation, SEXP argument) {
+    typedef SEXP (*rducks_stream_bridge_fn)(SEXP, SEXP, SEXP);
+    rducks_stream_bridge_fn bridge;
+    const char *token;
+    if (TYPEOF(runtime_token) != STRSXP || XLENGTH(runtime_token) != 1 || STRING_ELT(runtime_token, 0) == NA_STRING) {
+        Rf_error("Rducks query stream requires an enabled runtime");
+    }
+    token = CHAR(STRING_ELT(runtime_token, 0));
+    if (strncmp(token, "rducks-runtime-", 15) != 0) Rf_error("invalid Rducks runtime token");
+    bridge = (rducks_stream_bridge_fn)R_GetCCallable("Rducks", token);
+    return bridge(runtime_token, operation, argument);
+}
+
 static const R_CallMethodDef CallEntries[] = {
     {"RDUCKS_sexp_addr", (DL_FUNC) &RDUCKS_sexp_addr, 1},
     {"RDUCKS_current_thread_token", (DL_FUNC) &RDUCKS_current_thread_token, 0},
+    {"RDUCKS_query_stream_call", (DL_FUNC) &RDUCKS_query_stream_call, 3},
     {"RDUCKS_decimal_string_add_small", (DL_FUNC) &RDUCKS_decimal_string_add_small, 2},
     {"RDUCKS_decimal_string_multiply_small", (DL_FUNC) &RDUCKS_decimal_string_multiply_small, 2},
     {"RDUCKS_decimal_string_from_unsigned_bytes", (DL_FUNC) &RDUCKS_decimal_string_from_unsigned_bytes, 1},

@@ -1,0 +1,2 @@
+# Unified patch context intentionally includes a leading space before tabs.
+tools/compat/*.patch -whitespace

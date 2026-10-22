@@ -37,7 +37,29 @@ are rejected.
 in DuckDB-sized batches as data frames. Each batch is materialized directly from
 DuckDB vectors to R values on the recorded R thread. The stream uses the
 extension's database-scoped connection, so it cannot see caller-connection
-temporary tables or views.
+temporary tables or views, uncommitted transactions, or connection-local
+settings.
+
+| Stream path | Execution and R callbacks | Requirements and limits |
+| --- | --- | --- |
+| Concurrent `inproc` | Persistent native helper prepares, executes, fetches and tears down; the recorded R thread services queued scalar callbacks and interrupts. | Requires duckdb-r off-main R-source and scheduler-lease capability v2 or newer. Native sources and queued Rducks scalar UDFs are supported. R-backed source binding, R table functions and R aggregates are rejected. Raw scheduler `SET`/`RESET`/`PRAGMA`, including aliases and sibling connections, are rejected until the stream closes. |
+| Serial / `ipc` | Existing synchronous native stream path. | No managed-helper capability requirement; the selected plan's existing restrictions apply. |
+| Ordinary DBI query | duckdb-r's synchronous query path. | Concurrent in-process callbacks still depend on callback-driven queue service and can starve when the R thread is blocked in native execution. |
+
+Only one stream can be open per database runtime. Managed fetching transfers at
+most one chunk at a time; this is a result-handoff bound, not a bound on DuckDB
+operator memory. The stream closes on EOF, native error, explicit close, handle
+garbage collection, or release of the last runtime anchor. Explicitly close it
+after early exit or errors in R-side batch processing. Cancellation is scoped to
+the stream's query owner; requests retain their original task identity and
+destination. Recursive stream/release calls and live-stream plan changes fail.
+
+The [pinned guard companion](../tools/compat/README.md) is tested with duckdb-r
+1.5.6 on Linux amd64; it is not an accepted upstream API. The installer and real
+SIGINT harness currently target Linux/POSIX. macOS/Windows managed execution
+and the optional Arrow integration test have not been verified in this change.
+Stock duckdb-r builds reject managed startup explicitly. See
+[`EXECUTION_PLANS.md`](EXECUTION_PLANS.md) for lifecycle and connection details.
 
 ## Type-family support
 
@@ -71,14 +93,14 @@ loaded runtime passes the native logical-type and vector-layout probe.
 | --- | --- | --- |
 | `null_handling` | `"default"`, `"special"` | Default skips rows with SQL NULL inputs when possible. Special passes the declared R-side missing shape. |
 | `exception_handling` | `"rethrow"`, `"return_null"` | User R errors become DuckDB errors or SQL NULLs according to policy. Type/marshalling bugs should still fail loudly. |
-| queued running cancellation | not supported | Once a same-process queued request is running, callback-owned state must remain live until writeback completes. |
+| queued running request lifetime | preserved through `DONE` | Cancellation may stop admission and interrupt a managed query, but cannot free a running callback's input/result state before evaluation and cleanup finish. |
 
 ## Scope and lifetime
 
 | Scope | Owns | Release behavior |
 | --- | --- | --- |
 | R process/package | recorded R-thread identity, provider factories, release queues, diagnostics | Process-global. Safe drain points release preserved objects on the R thread. |
-| DuckDB database runtime/catalog | SQL UDFs, evaluator handles, preserved closures, counters, frozen evaluator/marshalling metadata, runtime backend | Database-scoped and visible to sibling DBI connections. For file-backed databases, last-attachment release closes Rducks' extension-owned DuckDB connections but does not unregister catalog functions. |
+| DuckDB database runtime/catalog | SQL UDFs, evaluator handles, preserved closures, counters, frozen evaluator/marshalling metadata, runtime backend, query-stream owners | Database-scoped and visible to sibling DBI connections. Last-attachment release closes streams and joins managed helpers. For file-backed databases it also closes internal connections; reconnect before re-enabling. Catalog functions are not unregistered. |
 | DBI connection attachment | default plan for future registrations, finalizer bookkeeping, R-side registry view | `rducks_release(con)` clears this scope only. |
 
 ## Copy/borrow expectations

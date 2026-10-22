@@ -406,7 +406,7 @@ static void rducks_r_aggregate_update(duckdb_function_info info, duckdb_data_chu
     if (!rducks_is_main_thread(meta->runtime)) {
         duckdb_aggregate_function_set_error(
             info,
-            "Rducks aggregate UDF reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') before executing R-backed aggregates"
+            "Rducks aggregate UDF reached a non-calling DuckDB execution thread; R aggregate callbacks are unsupported in managed query streams; use rducks_enable(con, threads = 'single') for synchronous execution"
         );
         return;
     }
@@ -645,7 +645,7 @@ static void rducks_r_aggregate_combine(duckdb_function_info info, duckdb_aggrega
     if (!meta->runtime || !rducks_is_main_thread(meta->runtime)) {
         duckdb_aggregate_function_set_error(
             info,
-            "Rducks aggregate combine reached a non-calling DuckDB execution thread; R-backed aggregate combine is single-threaded in this release"
+            "Rducks aggregate combine reached a non-calling DuckDB execution thread; R aggregate callbacks are unsupported in managed query streams; aggregate combine must run on the recorded R thread"
         );
         return;
     }
@@ -833,7 +833,7 @@ static void rducks_r_aggregate_finalize(duckdb_function_info info, duckdb_aggreg
     if (!rducks_is_main_thread(meta->runtime)) {
         duckdb_aggregate_function_set_error(
             info,
-            "Rducks aggregate finalize reached a non-calling DuckDB execution thread; use rducks_enable(con, threads = 'single') before executing R-backed aggregates"
+            "Rducks aggregate finalize reached a non-calling DuckDB execution thread; R aggregate callbacks are unsupported in managed query streams; use rducks_enable(con, threads = 'single') for synchronous execution"
         );
         return;
     }
