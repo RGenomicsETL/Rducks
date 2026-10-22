@@ -28,7 +28,7 @@ library(Rducks)
 
 con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpaJRi8z/duckdb
+#> ℹ /tmp/RtmpiprNUj/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -159,9 +159,12 @@ can stay aligned with the implemented semantics.
 ``` r
 
 rducks_mode_semantics()[, c("mode", "call_granularity", "input_shape")]
-#>         mode            call_granularity
-#> 1     scalar          one R call per row
-#> 2 vectorized one R call per DuckDB chunk
+#>         mode
+#> 1     scalar
+#> 2 vectorized
+#>                                                                        call_granularity
+#> 1                                                                    one R call per row
+#> 2 one R call per DuckDB chunk by default; coalesce = TRUE permits merging queued chunks
 #>                                                               input_shape
 #> 1 one scalar/composite R value per declared or dynamically bound argument
 #> 2     one R vector/list-column per declared or dynamically bound argument

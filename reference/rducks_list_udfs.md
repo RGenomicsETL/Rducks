@@ -33,7 +33,7 @@ A data frame with one row per Rducks scalar UDF registered on `con`.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpR92ArX/duckdb
+#> ℹ /tmp/RtmpHWria6/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -54,12 +54,12 @@ rducks_list_udfs(db)
 #> 1 my_fn scalar direct+serial direct_serial      direct      serial
 #>   native_marshalling evaluator args returns r_side_record null_handling
 #> 1             direct        RC  i32     i32          TRUE       default
-#>   exception_handling side_effects dispatch_chunks dispatch_rows direct_chunks
-#> 1            rethrow        FALSE               0             0             0
-#>   queued_chunks queue_pending_current queue_pending_max sexp_chunks
-#> 1             0                     0                 0           0
-#>   direct_eval_chunks direct_input_snapshot_chunks
-#> 1                  0                            0
+#>   exception_handling side_effects coalesce dispatch_chunks dispatch_rows
+#> 1            rethrow        FALSE    FALSE               0             0
+#>   direct_chunks queued_chunks queue_pending_current queue_pending_max
+#> 1             0             0                     0                 0
+#>   sexp_chunks direct_eval_chunks direct_input_snapshot_chunks
+#> 1           0                  0                            0
 #>   direct_owned_result_chunk_chunks wire_chunks ripc_collect_batches
 #> 1                                0           0                    0
 #>   ripc_collect_requests ripc_collect_max_batch ripc_submit_wave_max

@@ -6,7 +6,9 @@ one SQL value for each logical input row. The `mode` argument is Rducks'
 evaluation mode for that scalar UDF, not a DuckDB function kind:
 `"scalar"` calls the R function once per logical row, while
 `"vectorized"` calls the R function once per DuckDB chunk with
-vector/list-column inputs.
+vector/list-column inputs. Original chunk boundaries are preserved
+unless `coalesce = TRUE` explicitly permits merging queued chunks into
+one R call.
 
 ## Usage
 
@@ -20,7 +22,8 @@ rducks_register_scalar_udf(
   mode = "scalar",
   null_handling = c("default", "special"),
   exception_handling = c("rethrow", "return_null"),
-  side_effects = FALSE
+  side_effects = FALSE,
+  coalesce = FALSE
 )
 ```
 
@@ -83,6 +86,21 @@ rducks_register_scalar_udf(
   I/O, mutation, or other side effects so DuckDB does not treat the
   function as pure.
 
+- coalesce:
+
+  Logical scalar, default `FALSE`. With `TRUE`, queued chunks of this
+  UDF may share one R call, up to 32 chunks or 65,536 rows. The caller
+  promises that evaluating concatenated inputs gives the concatenation
+  of the separately evaluated results, with the same NULL handling.
+  Functions such as `x - mean(x)`, `cumsum(x)`, or `seq_along(x)` do not
+  satisfy this promise. Coalescing requires an in-process vectorized UDF
+  with an explicit non-empty signature, plain BOOLEAN, integer up to 32
+  bits, FLOAT, DOUBLE, or VARCHAR inputs, `side_effects = FALSE`, and
+  `exception_handling = "rethrow"`. Other return types supported by
+  direct marshalling remain available. The default keeps each original
+  callback's error scope, including
+  `exception_handling = "return_null"`.
+
 ## Value
 
 Object of class `rducks_scalar_udf_registration` containing the
@@ -115,7 +133,7 @@ fully closed and reopened.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpR92ArX/duckdb
+#> ℹ /tmp/RtmpHWria6/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

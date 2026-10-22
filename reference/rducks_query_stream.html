@@ -4,12 +4,14 @@ returns the rows in DuckDB-sized batches as data frames, instead of an eager
 DBI::dbGetQuery() result. Each batch is materialized directly from DuckDB
 vectors to R values on the recorded R thread. The stream uses the extension's
 database-scoped connection, so
-it cannot see caller-connection temporary tables or views."><meta property="og:description" content="Opens a native DuckDB streaming result through the Rducks extension and
+it cannot see caller-connection temporary tables or views, uncommitted
+transactions, or connection-local settings."><meta property="og:description" content="Opens a native DuckDB streaming result through the Rducks extension and
 returns the rows in DuckDB-sized batches as data frames, instead of an eager
 DBI::dbGetQuery() result. Each batch is materialized directly from DuckDB
 vectors to R values on the recorded R thread. The stream uses the extension's
 database-scoped connection, so
-it cannot see caller-connection temporary tables or views."></head><body>
+it cannot see caller-connection temporary tables or views, uncommitted
+transactions, or connection-local settings."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -50,7 +52,8 @@ returns the rows in DuckDB-sized batches as data frames, instead of an eager
 <code><a href="https://dbi.r-dbi.org/reference/dbGetQuery.html" class="external-link">DBI::dbGetQuery()</a></code> result. Each batch is materialized directly from DuckDB
 vectors to R values on the recorded R thread. The stream uses the extension's
 database-scoped connection, so
-it cannot see caller-connection temporary tables or views.</p>
+it cannot see caller-connection temporary tables or views, uncommitted
+transactions, or connection-local settings.</p>
     </div>
 
     <div class="section level2">
@@ -75,7 +78,29 @@ it cannot see caller-connection temporary tables or views.</p>
     <p>An object of class <code>rducks_query_stream</code> with <code>$next_batch()</code>
 (returns the next data-frame batch, or <code>NULL</code> at end of stream),
 <code>$close()</code>, <code>$schema</code> (column names and Rducks type tokens), and <code>$token</code>.
-The stream closes on <code>$close()</code> or <code>rducks_release(con)</code>.</p>
+The stream closes at end of input, on <code>$close()</code>, on native query error, when its handle
+is garbage-collected, or when <code><a href="rducks_release.html">rducks_release()</a></code> drops the last runtime
+anchor. Explicit <code>$close()</code> releases resources promptly after early exit.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>With <code>rducks_execution_plan("inproc")</code>, one persistent native driver prepares,
+executes, fetches, and closes the query while the recorded R thread services
+scalar callbacks. Requests keep their original task identity and result
+destination; no source-row ordering is promised. R table and aggregate
+callbacks are unsupported in this managed mode and fail before off-thread R
+access. This mode requires a duckdb-r build exposing version 2 of its
+off-main R-source guard and scheduler-lease capability; ordinary builds
+without that capability fail with an explicit error. Serial and IPC plans
+retain their synchronous execution paths.
+Only one stream can be open for a database runtime at a time. Recursive
+stream operations, release, and plan changes during callbacks are rejected.
+While a managed stream is open, native configuration guards also reject
+direct SQL changes to <code>threads</code> (including aliases),
+<code>external_threads</code>, and the guard's configuration controls on every
+connection to the database. The original configuration restrictions are
+restored after the native driver has stopped. Close the stream before
+changing those settings.</p>
     </div>
 
     <div class="section level2">
@@ -83,7 +108,7 @@ The stream closes on <code>$close()</code> or <code>rducks_release(con)</code>.<
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> duckdb keeps downloaded extensions and secrets in a temporary directory:</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpR92ArX/duckdb</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpHWria6/duckdb</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> This is removed when the R session ends.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Secrets are lost.</span>

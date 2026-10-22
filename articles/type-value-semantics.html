@@ -91,7 +91,7 @@ does not rewrite an existing scalar UDF to a different transport.</p>
 <span></span>
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; duckdb keeps downloaded extensions and secrets in a temporary directory:</span></span>
-<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/RtmpaJRi8z/duckdb</span></span>
+<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/RtmpiprNUj/duckdb</span></span>
 <span><span class="co">#&gt; This is removed when the R session ends.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Secrets are lost.</span></span>
@@ -206,9 +206,12 @@ enough for ordinary SQL optimization.</p>
 documentation can stay aligned with the implemented semantics.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/rducks_mode_semantics.html">rducks_mode_semantics</a></span><span class="op">(</span><span class="op">)</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mode"</span>, <span class="st">"call_granularity"</span>, <span class="st">"input_shape"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;         mode            call_granularity</span></span>
-<span><span class="co">#&gt; 1     scalar          one R call per row</span></span>
-<span><span class="co">#&gt; 2 vectorized one R call per DuckDB chunk</span></span>
+<span><span class="co">#&gt;         mode</span></span>
+<span><span class="co">#&gt; 1     scalar</span></span>
+<span><span class="co">#&gt; 2 vectorized</span></span>
+<span><span class="co">#&gt;                                                                        call_granularity</span></span>
+<span><span class="co">#&gt; 1                                                                    one R call per row</span></span>
+<span><span class="co">#&gt; 2 one R call per DuckDB chunk by default; coalesce = TRUE permits merging queued chunks</span></span>
 <span><span class="co">#&gt;                                                               input_shape</span></span>
 <span><span class="co">#&gt; 1 one scalar/composite R value per declared or dynamically bound argument</span></span>
 <span><span class="co">#&gt; 2     one R vector/list-column per declared or dynamically bound argument</span></span>

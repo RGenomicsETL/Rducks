@@ -2,6 +2,65 @@
 
 ## Rducks (development version)
 
+- In-process vectorized UDFs now write plain scalar results (`BOOLEAN`,
+  8/16/32-bit integers, `FLOAT`, `DOUBLE`, `VARCHAR`) back from the
+  atomic R vector in bulk, and `STRUCT` results returned as a data frame
+  or named list of columns from those columns, instead of splitting
+  every result into per-row values. The row-by-row path remains for
+  other shapes. Per 2048-row chunk on the serial engine a
+  `DOUBLE -> DOUBLE` UDF went from 144 us to 88 us against DuckDB’s own
+  40 us, and a `STRUCT(x DOUBLE, y DOUBLE)` result went from about 170
+  ms (row-wise data frame subsetting) to the same order as a scalar.
+  Return `list(x = ..., y = ...)` rather than
+  [`data.frame()`](https://rdrr.io/r/base/data.frame.html) where speed
+  matters: [`data.frame()`](https://rdrr.io/r/base/data.frame.html)
+  alone costs about 75 us per chunk.
+
+- The queued in-process backend (`transport = "inproc"` with DuckDB
+  threads \> 1) now coalesces pending chunks of the same vectorized UDF
+  into one R call on the recorded R thread (up to 32 chunks / 65,536
+  rows) when the UDF has a static signature with plain scalar inputs.
+  The R function sees one longer vector; results, NULL handling, and
+  error policy are unchanged and byte-identical to per-chunk evaluation.
+  With 8 DuckDB threads a trivial `DOUBLE` UDF costs about 50 us per
+  chunk end to end (was ~117 us), and a 50M-row CSV -\> point job runs
+  in 6.3 s for `GEOMETRY` output (was 8.3 s) and 2.3 s for a
+  `STRUCT(x, y)` output (previously impractical).
+
+- `transport = "ipc"` workers extend the vectorized fast path to
+  `STRUCT` results whose fields are plain scalars, `BLOB`/`GEOMETRY`, or
+  such structs (columnar wire encoding; 50M-row CSV -\> `STRUCT(x, y)`
+  in 2.0 s with 8 workers).
+
+- Known limitation, pre-existing: under the queued in-process backend
+  only the recorded R thread can run R, and duckdb-r blocks that thread
+  inside DuckDB’s `Execute()` whenever it has no pipeline task of its
+  own. If every UDF chunk of a query lands on DuckDB worker threads (a
+  single-threaded source such as
+  [`range()`](https://rdrr.io/r/base/range.html), a table with one row
+  group, or the tail of a larger query), those threads wait for the 30 s
+  queue timeout and the query fails with “timed out waiting for the
+  recorded main R thread”. The R thread now lingers for up to 100 us
+  after each of its own chunks to pick up late submissions, which
+  removes the common tail case, but the small-source case remains. Use
+  `threads = 1` for such queries, or a parallel source (multi-row-group
+  table, CSV/Parquet scan).
+
+- `transport = "ipc"` workers now evaluate vectorized UDFs over plain
+  scalar wire types (`BOOLEAN`, the 8/16/32-bit integers, `FLOAT`,
+  `DOUBLE`, `VARCHAR` in; the same or `BLOB`/`GEOMETRY` out) on a fast
+  path: the quack wire specs are built once per registered UDF instead
+  of per chunk, decoded columns are passed to the R function directly,
+  and the atomic result (or the list-of-raw result) is encoded straight
+  to the wire without the per-row result list. The NNG request frame is
+  parsed and the response frame assembled in C. Dynamic-args,
+  scalar-mode, and other-type UDFs keep the generic path, and results
+  are byte-identical. Measured per 2048-row chunk: 1.26 ms -\> 69 us for
+  a `DOUBLE -> DOUBLE` UDF (no GC), 1.05 ms -\> 0.25 ms for a `wk` point
+  builder returning `GEOMETRY`; 8 workers go from ~3.5K to ~28K chunks/s
+  on a trivial UDF, and a 50M-row CSV -\> `GEOMETRY` job from 8.0 s to
+  2.7 s.
+
 - Added DuckDB v1.5.6 to the bundled `C_STRUCT_UNSTABLE` extension
   variants (now v1.5.0 through v1.5.6), so
   [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)

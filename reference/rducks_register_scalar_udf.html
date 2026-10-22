@@ -4,12 +4,16 @@ Rducks extension. In DuckDB terminology this is a scalar UDF: it returns one
 SQL value for each logical input row. The mode argument is Rducks'
 evaluation mode for that scalar UDF, not a DuckDB function kind:
 &quot;scalar&quot; calls the R function once per logical row, while &quot;vectorized&quot;
-calls the R function once per DuckDB chunk with vector/list-column inputs."><meta property="og:description" content="Registers an R function as a DuckDB scalar SQL function using the loaded
+calls the R function once per DuckDB chunk with vector/list-column inputs.
+Original chunk boundaries are preserved unless coalesce = TRUE explicitly
+permits merging queued chunks into one R call."><meta property="og:description" content="Registers an R function as a DuckDB scalar SQL function using the loaded
 Rducks extension. In DuckDB terminology this is a scalar UDF: it returns one
 SQL value for each logical input row. The mode argument is Rducks'
 evaluation mode for that scalar UDF, not a DuckDB function kind:
 &quot;scalar&quot; calls the R function once per logical row, while &quot;vectorized&quot;
-calls the R function once per DuckDB chunk with vector/list-column inputs."></head><body>
+calls the R function once per DuckDB chunk with vector/list-column inputs.
+Original chunk boundaries are preserved unless coalesce = TRUE explicitly
+permits merging queued chunks into one R call."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -50,7 +54,9 @@ Rducks extension. In DuckDB terminology this is a scalar UDF: it returns one
 SQL value for each logical input row. The <code>mode</code> argument is Rducks'
 evaluation mode for that scalar UDF, not a DuckDB function kind:
 <code>"scalar"</code> calls the R function once per logical row, while <code>"vectorized"</code>
-calls the R function once per DuckDB chunk with vector/list-column inputs.</p>
+calls the R function once per DuckDB chunk with vector/list-column inputs.
+Original chunk boundaries are preserved unless <code>coalesce = TRUE</code> explicitly
+permits merging queued chunks into one R call.</p>
     </div>
 
     <div class="section level2">
@@ -64,7 +70,8 @@ calls the R function once per DuckDB chunk with vector/list-column inputs.</p>
 <span>  mode <span class="op">=</span> <span class="st">"scalar"</span>,</span>
 <span>  null_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"default"</span>, <span class="st">"special"</span><span class="op">)</span>,</span>
 <span>  exception_handling <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rethrow"</span>, <span class="st">"return_null"</span><span class="op">)</span>,</span>
-<span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  side_effects <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  coalesce <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -128,6 +135,20 @@ the query.</p></dd>
 counters, I/O, mutation, or other side effects so DuckDB does not treat the
 function as pure.</p></dd>
 
+
+<dt id="arg-coalesce">coalesce<a class="anchor" aria-label="anchor" href="#arg-coalesce"></a></dt>
+<dd><p>Logical scalar, default <code>FALSE</code>. With <code>TRUE</code>, queued chunks
+of this UDF may share one R call, up to 32 chunks or 65,536 rows. The caller
+promises that evaluating concatenated inputs gives the concatenation of
+the separately evaluated results, with the same NULL handling. Functions
+such as <code>x - mean(x)</code>, <code>cumsum(x)</code>, or <code>seq_along(x)</code> do not satisfy this
+promise. Coalescing requires an in-process vectorized UDF with an explicit
+non-empty signature, plain BOOLEAN, integer up to 32 bits, FLOAT, DOUBLE,
+or VARCHAR inputs, <code>side_effects = FALSE</code>, and
+<code>exception_handling = "rethrow"</code>. Other return types supported by direct
+marshalling remain available. The default keeps each original callback's
+error scope, including <code>exception_handling = "return_null"</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -159,7 +180,7 @@ enabled and registered again after it is fully closed and reopened.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> duckdb keeps downloaded extensions and secrets in a temporary directory:</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpR92ArX/duckdb</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpHWria6/duckdb</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> This is removed when the R session ends.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Secrets are lost.</span>
