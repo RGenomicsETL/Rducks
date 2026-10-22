@@ -61,6 +61,12 @@ local({
 
   reg("dvf_null_on_error", function(x) stop("boom"), list(DOUBLE), DOUBLE, exception_handling = "return_null")
   expect_identical(q1("SELECT count(*) FROM (SELECT dvf_null_on_error(i * 1.0) AS r FROM range(3000) t(i)) WHERE r IS NULL"), q1("SELECT 3000::BIGINT"))
+  # An explicit NULL result has always meant SQL NULL for every evaluated row.
+  # Preserve that contract before the atomic fast path checks result length.
+  reg("dvf_null", function(x) NULL, list(DOUBLE), DOUBLE)
+  expect_true(q1(sprintf("SELECT bool_and(dvf_null(v) IS NULL) FROM %s", src)))
+  reg("dvf_null_special", function(x) NULL, list(DOUBLE), DOUBLE, null_handling = "special")
+  expect_true(q1(sprintf("SELECT bool_and(dvf_null_special(v) IS NULL) FROM %s", src)))
   reg("dvf_throw", function(x) stop("boom"), list(DOUBLE), DOUBLE)
   expect_error(q1("SELECT dvf_throw(i * 1.0) FROM range(10) t(i)"), pattern = "boom|marshal error")
 

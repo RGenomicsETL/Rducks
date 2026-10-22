@@ -109,6 +109,14 @@ rducks_fast_na_template <- function(token) {
   )
 }
 
+# For validated primitive storage, only NA is NULL; floating NaN stays valid.
+# Other double-backed fast types (UINTEGER) reject NaN during result validation.
+rducks_fast_atomic_valid <- function(storage) {
+  valid <- !is.na(storage)
+  if (is.double(storage)) valid <- valid | is.nan(storage)
+  valid
+}
+
 rducks_fast_atomic_token <- function(type) {
   if (!rducks_type_inherits(type, "rducks_scalar_type")) return(NA_character_)
   token <- rducks_type_token(type)
@@ -238,7 +246,7 @@ rducks_vectorized_eval_prepared_chunk_direct <- function(fun, arg_types, return_
     length(eval_rows),
     exception_handling
   )
-  if (inherits(value, "rducks_return_null")) {
+  if (is.null(value) || inherits(value, "rducks_return_null")) {
     return(vector("list", n))
   }
   skipped <- if (length(eval_rows) == n) NULL else eval_rows

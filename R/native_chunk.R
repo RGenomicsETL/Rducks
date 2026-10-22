@@ -60,6 +60,10 @@ rducks_native_scalar_nulls <- function(type, values) {
   if (rducks_type_inherits(type, c("rducks_i64_type", "rducks_u64_type", "rducks_hugeint_type", "rducks_uhugeint_type", "rducks_uuid_type"))) {
     return(!is.na(as.character(values)))
   }
+  if (rducks_type_inherits(type, c("rducks_f32_type", "rducks_f64_type"))) {
+    # R's is.na() includes NaN; DuckDB keeps NaN as a valid floating value.
+    return(rducks_fast_atomic_valid(values))
+  }
   !is.na(values)
 }
 

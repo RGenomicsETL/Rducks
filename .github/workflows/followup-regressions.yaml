@@ -1,0 +1,54 @@
+name: Follow-up regressions
+
+on:
+  pull_request:
+    branches: [main, 'followup/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise production queue synchronization
+        run: python3 test/native/queue_deadline.py
+
+  fast-paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RDUCKS_DEV_SURFACES: 'true'
+      RDUCKS_RUN_IPC_TESTS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::tinytest
+          needs: check
+      - name: Install Rducks for the active engine
+        shell: Rscript {0}
+        run: |
+          con <- DBI::dbConnect(duckdb::duckdb())
+          version <- DBI::dbGetQuery(con, 'SELECT version()')[[1L]][[1L]]
+          DBI::dbDisconnect(con, shutdown = TRUE)
+          Sys.setenv(RDUCKS_DUCKDB_VERSIONS = version)
+          status <- system2('R', c('CMD', 'INSTALL', '.'))
+          if (status != 0L) quit(status = status)
+      - name: Check direct, IPC, frame, and batching behavior
+        shell: Rscript {0}
+        run: |
+          files <- c('test_nng_wire_frame.R', 'test_direct_vectorized_fast.R',
+                     'test_ipc_vectorized_fast.R', 'test_direct_batching.R')
+          for (file in files) {
+            result <- tinytest::run_test_file(file.path('inst', 'tinytest', file))
+            print(summary(result))
+            if (!all(as.logical(result))) stop('Failed: ', file)
+          }

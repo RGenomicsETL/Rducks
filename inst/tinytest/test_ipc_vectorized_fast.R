@@ -77,6 +77,44 @@ local({
   rducks_register_scalar_udf(con, "ipcf_listed", function(x) as.list(x * 2), args = list(DOUBLE), returns = DOUBLE, mode = "vectorized")
   expect_true(q1(sprintf("SELECT bool_and(ipcf_listed(v) IS NOT DISTINCT FROM v * 2) FROM %s", src)))
 
+  # NaN is a floating value; only NA becomes SQL NULL. Compare both the atomic
+  # fast result and the generic list result so parity cannot preserve a shared bug.
+  floating_src <- "(VALUES (0::DOUBLE), (1.25::DOUBLE), ('NaN'::DOUBLE), (NULL::DOUBLE), ('Infinity'::DOUBLE), ('-Infinity'::DOUBLE)) t(v)"
+  for (null_handling in c("default", "special")) {
+    for (sql_type in c("FLOAT", "DOUBLE")) {
+      type <- if (identical(sql_type, "FLOAT")) FLOAT else DOUBLE
+      fast_name <- paste0("ipcf_floating_", tolower(sql_type), "_", null_handling)
+      generic_name <- paste0(fast_name, "_listed")
+      rducks_register_scalar_udf(con, fast_name, function(x) x,
+        args = list(type), returns = type, mode = "vectorized", null_handling = null_handling)
+      rducks_register_scalar_udf(con, generic_name, function(x) as.list(x),
+        args = list(type), returns = type, mode = "vectorized", null_handling = null_handling)
+      for (name in c(fast_name, generic_name)) {
+        expect_true(q1(sprintf(
+          "SELECT bool_and(%s(v::%s) IS NOT DISTINCT FROM v::%s) FROM %s",
+          name, sql_type, sql_type, floating_src
+        )), info = name)
+      }
+    }
+  }
+
+  # Parent SQL NULLs and child NA/NaN validity remain independent in nested
+  # columnar STRUCTs. Default handling skips only NULL, including in this shape.
+  for (null_handling in c("default", "special")) {
+    name <- paste0("ipcf_floating_struct_", null_handling)
+    rducks_register_scalar_udf(con, name, function(x) list(x = x, nested = list(y = x)),
+      args = list(DOUBLE), returns = STRUCT(x = DOUBLE, nested = STRUCT(y = FLOAT)),
+      mode = "vectorized", null_handling = null_handling)
+    expected <- "{'x': v, 'nested': {'y': v::FLOAT}}"
+    if (identical(null_handling, "default")) {
+      expected <- paste("CASE WHEN v IS NULL THEN NULL ELSE", expected, "END")
+    }
+    expect_true(q1(sprintf(
+      "SELECT bool_and(r IS NOT DISTINCT FROM %s) FROM (SELECT v, %s(v) AS r FROM %s) s",
+      expected, name, floating_src
+    )), info = name)
+  }
+
   # BLOB / GEOMETRY list results, NULL rows, classed list
   wkb_point <- function(x, y) c(as.raw(1L), as.raw(c(1L, 0L, 0L, 0L)), writeBin(c(x, y), raw(), size = 8L, endian = "little"))
   rducks_register_scalar_udf(con, "ipcf_blob", function(x) lapply(x, function(v) as.raw(c(0x01, 0x02))),
