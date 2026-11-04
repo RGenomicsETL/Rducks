@@ -2,11 +2,17 @@
 
 ## Why Rducks ships exact-version extensions
 
-Rducks calls entries from DuckDB’s unstable C extension API. DuckDB
-therefore loads Rducks through the `C_STRUCT_UNSTABLE` ABI, where an
-extension compiled for one DuckDB engine release must not be treated as
-compatible with another release, even when the relevant headers happen
-to look unchanged.
+Rducks calls DuckDB V1 C extension API entries that were unstable until
+C API v1.5.6. DuckDB 1.x therefore loads Rducks through the
+`C_STRUCT_UNSTABLE` ABI, where an extension compiled for one DuckDB
+engine release must not be treated as compatible with another release,
+even when the relevant headers happen to look unchanged.
+
+DuckDB 2.0 keeps those V1 entries in the stable C API v1.5.6 surface and
+reserves `C_STRUCT_UNSTABLE` for its separate V2 C API. Rducks remains a
+V1 extension, so its DuckDB 2.x artifacts use the stable `C_STRUCT` ABI
+pinned to C API v1.5.6. They are still compiled against each engine’s
+own headers and selected by exact engine version.
 
 Rducks addresses this at package installation rather than at first use.
 The source package vendors headers for a bounded set of DuckDB releases
@@ -22,6 +28,7 @@ header set. The current bundle contains:
 | `v1.5.4`              | yes               |
 | `v1.5.5`              | yes               |
 | `v1.5.6`              | yes               |
+| `v2.0.0`              | yes               |
 
 This table is generated directly from
 `tools/ext/duckdb_capi/versions.txt`, the same manifest consumed by the
@@ -53,7 +60,8 @@ rducks_extension_path()
 
 An explicit `extension_path` remains available for development and
 custom builds, but it does not make incompatible binaries safe. DuckDB
-validates the unstable ABI metadata when it loads the file.
+validates the ABI metadata recorded in the file’s footer when it loads
+the file.
 
 ## Unsupported versions
 

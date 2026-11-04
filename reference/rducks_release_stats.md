@@ -32,7 +32,7 @@ counters.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpHWria6/duckdb
+#> ℹ /tmp/RtmpK4QTFX/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -42,7 +42,7 @@ db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions =
 rducks_enable(db)
 rducks_release_stats(db)
 #>   queued released failed pending
-#> 1      0        3      0       0
+#> 1      0        4      0       0
 rducks_release(db)
 DBI::dbDisconnect(db)
 # }

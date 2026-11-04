@@ -83,7 +83,7 @@ deterministic cleanup matters</li>
 <span></span>
 <span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; duckdb keeps downloaded extensions and secrets in a temporary directory:</span></span>
-<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/Rtmp2uPEdI/duckdb</span></span>
+<span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> /tmp/RtmpRHMhdK/duckdb</span></span>
 <span><span class="co">#&gt; This is removed when the R session ends.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Secrets are lost.</span></span>
@@ -91,12 +91,11 @@ deterministic cleanup matters</li>
 <span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).</span></span>
 <span><span class="co">#&gt; <span style="color: #0000BB;">ℹ</span> See ?duckdb_storage for details and alternatives.</span></span>
 <span><span class="fu"><a href="../reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span></code></pre></div>
-<p>Rducks uses DuckDB’s unstable C extension ABI. The installed package
-contains exact-version extension variants for DuckDB v1.5.0 through
-v1.5.6, generated from the build manifest, and
-<code><a href="../reference/rducks_enable.html">rducks_enable()</a></code> loads only the variant matching
-<code>SELECT version()</code> on <code>con</code>. There is no fallback
-to another patch release; see <a href="duckdb-version-compatibility.html">DuckDB Version
+<p>Rducks loads a bundled extension for the target DuckDB engine. The
+installed package contains variants for DuckDB v1.5.0 through v2.0.0,
+generated from the build manifest, and <code><a href="../reference/rducks_enable.html">rducks_enable()</a></code>
+loads only the variant matching <code>SELECT version()</code> on
+<code>con</code>. There is no fallback to another patch release; see <a href="duckdb-version-compatibility.html">DuckDB Version
 Compatibility</a> for details.</p>
 <p><code>threads = "single"</code> is the safest registration setting.
 You can select a scalar-UDF execution plan

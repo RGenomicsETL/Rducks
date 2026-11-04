@@ -8,7 +8,7 @@ stay aligned with the actual implementation.
 ## Source and installed layout
 
 The R package installs one runtime extension artifact for each declared
-exact DuckDB engine release (currently v1.5.0 through v1.5.6, generated
+exact DuckDB engine release (currently v1.5.0 through v2.0.0, generated
 from the build manifest) and selects the matching version at runtime.
 The user-facing policy and diagnostics are covered in [DuckDB Version
 Compatibility](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.md):
@@ -29,7 +29,9 @@ tools/ext/third_party/*
 
 `configure` and `configure.win` build the extension variants from
 `tools/ext` and copy only the runtime artifacts into the installed
-package footprint. Because Rducks uses `C_STRUCT_UNSTABLE`,
+package footprint. DuckDB 1.x artifacts use `C_STRUCT_UNSTABLE`, and
+DuckDB 2.x artifacts use the stable V1 `C_STRUCT` ABI pinned to C API
+v1.5.6. Either way
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 queries the target connection and loads only an artifact for that exact
 DuckDB engine version.

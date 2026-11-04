@@ -2,6 +2,34 @@
 
 ## Rducks (development version)
 
+- Rducks now loads on DuckDB 2.0.0, the current CRAN duckdb, instead of
+  failing with “no bundled extension for DuckDB v2.0.0”
+  (<https://github.com/RGenomicsETL/Rducks/issues/25>). DuckDB 2.0
+  treats every `C_STRUCT_UNSTABLE` extension as an extension of its new
+  V2 C API (`duckdb_extension_v2.h`, entrypoint `rducks_init_c_api_v2`),
+  and it stabilized the V1 entries Rducks uses in C API v1.5.6. The
+  v2.0.0 artifact is therefore a stable V1 `C_STRUCT` build pinned to C
+  API v1.5.6, compiled against the vendored v2.0.0 headers; the v1.5.0
+  through v1.5.6 artifacts keep the exact-version `C_STRUCT_UNSTABLE`
+  ABI. `tools/duckdb_capi_abi.sh` makes this choice for both `configure`
+  and `configure.win`.
+  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
+  still selects an artifact by exact engine version, so a later 2.x
+  release fails before `LOAD` until it is added to the bundle. The
+  extension-version test now checks every artifact’s footer ABI and
+  version. With duckdb 2.0.0 and with duckdb 1.5.6 on Linux amd64, the
+  tinytest suite passes (293 checks, plus 108 in the four IPC files),
+  and so does the generated direct/quack marshalling matrix (16 cases).
+  The managed concurrent query stream still needs the duckdb-r 1.5.6
+  guard companion and fails closed on stock duckdb 2.0.0, as it does on
+  stock 1.5.6.
+
+- `tools/fetch_duckdb_headers.R` now records the true number of
+  prototype repairs. [`gregexpr()`](https://rdrr.io/r/base/grep.html)
+  reports no match as `-1` with attributes attached, so every repair had
+  been counted once even when the header was already correct. The DuckDB
+  v2.0.0 headers need no repair and are recorded as fetched.
+
 - In-process vectorized UDFs now write plain scalar results (`BOOLEAN`,
   8/16/32-bit integers, `FLOAT`, `DOUBLE`, `VARCHAR`) back from the
   atomic R vector in bulk, and `STRUCT` results returned as a data frame
