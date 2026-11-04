@@ -98,7 +98,9 @@ repair_fixed <- function(text, replacements) {
     old <- pair[[1L]]
     new <- pair[[2L]]
     matches <- gregexpr(old, text, fixed = TRUE)[[1L]]
-    n <- if (identical(matches, -1L)) 0L else length(matches)
+    # gregexpr() reports no match as -1 with match.length attributes attached,
+    # so compare positions rather than the whole object.
+    n <- sum(matches > 0L)
     counts[[nm]] <- n
     text <- gsub(old, new, text, fixed = TRUE)
   }

@@ -2,6 +2,7 @@
 ^\.github$
 ^\.claude$
 ^\.pi$
+^\.property$
 ^Rducks\.Rproj$
 ^.*\.Rproj$
 ^\.Rproj\.user$

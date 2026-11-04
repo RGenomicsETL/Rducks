@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r, include = FALSE, purl = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -23,17 +23,24 @@ source(file.path(version_support_root, "tools", "duckdb_version_support.R"))
 
 ## Why Rducks ships exact-version extensions
 
-Rducks calls entries from DuckDB's unstable C extension API. DuckDB therefore
-loads Rducks through the `C_STRUCT_UNSTABLE` ABI, where an extension compiled for
-one DuckDB engine release must not be treated as compatible with another
-release, even when the relevant headers happen to look unchanged.
+Rducks calls DuckDB V1 C extension API entries that were unstable until C API
+v1.5.6. DuckDB 1.x therefore loads Rducks through the `C_STRUCT_UNSTABLE` ABI,
+where an extension compiled for one DuckDB engine release must not be treated
+as compatible with another release, even when the relevant headers happen to
+look unchanged.
+
+DuckDB 2.0 keeps those V1 entries in the stable C API v1.5.6 surface and
+reserves `C_STRUCT_UNSTABLE` for its separate V2 C API. Rducks remains a V1
+extension, so its DuckDB 2.x artifacts use the stable `C_STRUCT` ABI pinned to
+C API v1.5.6. They are still compiled against each engine's own headers and
+selected by exact engine version.
 
 Rducks addresses this at package installation rather than at first use. The
 source package vendors headers for a bounded set of DuckDB releases and compiles
 one inexpensive Rducks extension variant against each header set. The current
 bundle contains:
 
-```{r duckdb-version-table, echo = FALSE, results = "asis", eval = TRUE}
+```{r duckdb-version-table, echo = FALSE, results = "asis", eval = TRUE, purl = FALSE}
 cat(rducks_duckdb_version_support_markdown(version_support_root))
 ```
 
@@ -62,7 +69,7 @@ rducks_extension_path()
 
 An explicit `extension_path` remains available for development and custom
 builds, but it does not make incompatible binaries safe. DuckDB validates the
-unstable ABI metadata when it loads the file.
+ABI metadata recorded in the file's footer when it loads the file.
 
 ## Unsupported versions
 

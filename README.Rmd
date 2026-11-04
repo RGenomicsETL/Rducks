@@ -68,9 +68,12 @@ probe; otherwise direct and `ipc` registrations fail closed.
 
 ## DuckDB version compatibility
 
-Rducks uses DuckDB's `C_STRUCT_UNSTABLE` extension ABI. The package therefore
-builds and installs a separate extension artifact for every supported exact
-DuckDB engine release instead of assuming patch releases are ABI-compatible.
+Rducks builds and installs a separate extension artifact for every supported
+exact DuckDB engine release instead of assuming releases are ABI-compatible.
+DuckDB 1.x artifacts use the exact-version `C_STRUCT_UNSTABLE` extension ABI.
+DuckDB 2.0 reserves `C_STRUCT_UNSTABLE` for its new V2 C API, so DuckDB 2.x
+artifacts use the stable V1 `C_STRUCT` ABI pinned to C API v1.5.6, the release
+that stabilized the entries Rducks needs.
 The current bundle covers `r duckdb_version_range`; that range is generated from
 the build manifest rather than maintained separately in the documentation.
 
@@ -573,6 +576,10 @@ calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing
 `mode = "vectorized"` for vectorized helpers; its marshalling comes from the
 current Rducks execution plan.
 
+This example requires a duckplyr release compatible with the selected DuckDB
+engine. duckplyr 1.2.1 does not support DuckDB 2.0.0; use DuckDB 1.5.6 for
+this example.
+
 ```{r duckplyr}
 demo_con <- DBI::dbConnect(
   duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
@@ -610,8 +617,7 @@ DBI::dbDisconnect(demo_con, shutdown = TRUE)
 ## Build notes
 
 The source and vendored native dependencies used by `configure` live under
-`tools/ext/`. Rducks uses DuckDB's exact-version unstable C ABI, so installation
-builds one artifact per release declared in
+`tools/ext/`. Installation builds one artifact per release declared in
 `tools/ext/duckdb_capi/versions.txt` (currently `r duckdb_version_range`), for
 example `inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
 At runtime,
@@ -626,10 +632,13 @@ DuckDB C API headers are vendored explicitly for every declared version.
 Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
 ```
 
-The extension builds against DuckDB's
-[C extension API](https://duckdb.org/docs/stable/clients/c/overview.html)
-with the `C_STRUCT_UNSTABLE` ABI because it uses entries outside the v1.2.0
-stable surface: scalar-function bind/init/state hooks, bind-time argument
+The extension builds against DuckDB's V1
+[C extension API](https://duckdb.org/docs/stable/clients/c/overview.html).
+DuckDB 1.x artifacts use the exact-version `C_STRUCT_UNSTABLE` ABI; DuckDB 2.x
+artifacts use the stable `C_STRUCT` ABI pinned to C API v1.5.6, because DuckDB 2
+loads `C_STRUCT_UNSTABLE` extensions only through the separate V2 C API
+(`tools/duckdb_capi_abi.sh` makes this choice). Either way Rducks needs entries
+outside the v1.2.0 stable surface: scalar-function bind/init/state hooks, bind-time argument
 inspection, selection-vector helpers, and the deprecated streaming-result
 functions. The table below lists those entries, grouped by the header's
 unstable group (DuckDB headers before 1.5.6) or by the API version band that

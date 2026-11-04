@@ -25,8 +25,19 @@
  * then enables direct and IPC marshalling. Older or layout-incompatible
  * runtimes remain fail-closed. */
 
-#if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
-#error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
+/* tools/duckdb_capi_abi.sh selects one of two V1 builds per DuckDB engine:
+ * the exact-version unstable struct for DuckDB 1.x, or the stable V1 struct
+ * for DuckDB 2.x, where C_STRUCT_UNSTABLE means the V2 API. A stable build
+ * must target at least v1.5.6, the release that stabilized the entries
+ * outside v1.2.0 that Rducks calls. */
+#if defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE)
+#if !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
+#error "an unstable Rducks build must also define DUCKDB_EXTENSION_API_UNSTABLE_VERSION"
+#endif
+#elif !defined(DUCKDB_API_VERSION_AT_LEAST)
+#error "a stable Rducks build needs a DuckDB header with C API version bands (v1.5.6 or later)"
+#elif !DUCKDB_API_VERSION_AT_LEAST(1, 5, 6)
+#error "a stable Rducks build must target the V1 C API at v1.5.6 or later"
 #endif
 
 #if defined(__GNUC__)

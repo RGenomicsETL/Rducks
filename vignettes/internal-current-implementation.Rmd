@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r, include = FALSE, purl = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -51,8 +51,10 @@ tools/ext/third_party/*
 
 `configure` and `configure.win` build the extension variants from `tools/ext`
 and copy only the runtime artifacts into the installed package footprint.
-Because Rducks uses `C_STRUCT_UNSTABLE`, `rducks_enable()` queries the target
-connection and loads only an artifact for that exact DuckDB engine version.
+DuckDB 1.x artifacts use `C_STRUCT_UNSTABLE`, and DuckDB 2.x artifacts use the
+stable V1 `C_STRUCT` ABI pinned to C API v1.5.6. Either way `rducks_enable()`
+queries the target connection and loads only an artifact for that exact DuckDB
+engine version.
 
 ## Package and extension split
 

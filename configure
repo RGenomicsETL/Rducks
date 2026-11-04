@@ -29,6 +29,12 @@ if [ ! -f "${SRC_FILE}" ]; then
   echo "ERROR: Rducks extension source not found at ${SRC_FILE}"
   exit 1
 fi
+DUCKDB_CAPI_ABI_SCRIPT="${THIS_DIR}/tools/duckdb_capi_abi.sh"
+if [ ! -f "${DUCKDB_CAPI_ABI_SCRIPT}" ]; then
+  echo "ERROR: DuckDB C API selection script not found at ${DUCKDB_CAPI_ABI_SCRIPT}"
+  exit 1
+fi
+. "${DUCKDB_CAPI_ABI_SCRIPT}"
 
 USE_UNSTABLE_C_API="${USE_UNSTABLE_C_API:-1}"
 RDUCKS_EXTENSION_ABI_TYPE="${RDUCKS_EXTENSION_ABI_TYPE:-C_STRUCT_UNSTABLE}"
@@ -238,7 +244,7 @@ fi
 
 echo "---------- Building Rducks DuckDB extensions ----------"
 echo "DuckDB unstable C API: ${USE_UNSTABLE_C_API}"
-echo "DuckDB extension metadata ABI type: ${ABI_TYPE}"
+echo "DuckDB 1.x extension metadata ABI type: ${ABI_TYPE}"
 echo "DuckDB versions: ${BUILD_DUCKDB_VERSIONS}"
 echo "WebAssembly build: ${WASM_BUILD}"
 echo "Vendored NNG support: 1"
@@ -248,11 +254,11 @@ for DUCKDB_VERSION in ${BUILD_DUCKDB_VERSIONS}; do
   VERSION_BUILD_DIR="${BUILD_DIR}/${DUCKDB_VERSION}"
   RAW_EXT_FILE="${VERSION_BUILD_DIR}/rducks.duckdb_extension.raw"
   FINAL_EXT_FILE="${VERSION_BUILD_DIR}/rducks.duckdb_extension"
-  UNSTABLE_CPPFLAGS="-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=${DUCKDB_VERSION} -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"${DUCKDB_VERSION}\""
-  CPPFLAGS="${BASE_CPPFLAGS} ${UNSTABLE_CPPFLAGS} -I${DUCKDB_CAPI_DIR}"
+  rducks_select_duckdb_capi "${DUCKDB_VERSION}"
+  CPPFLAGS="${BASE_CPPFLAGS} ${RDUCKS_CAPI_CPPFLAGS} -I${DUCKDB_CAPI_DIR}"
   mkdir -p "${VERSION_BUILD_DIR}"
 
-  echo "Building Rducks for DuckDB ${DUCKDB_VERSION}..."
+  echo "Building Rducks for DuckDB ${DUCKDB_VERSION} (${RDUCKS_CAPI_ABI_TYPE} ${RDUCKS_CAPI_FOOTER_VERSION})..."
   ${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} ${CONFIGURE_LDFLAGS} ${VENDOR_NNG_LINK_FLAGS} -o "${RAW_EXT_FILE}" \
     ${EXT_EXPORT_FLAGS} \
     "${SRC_FILE}" ${VENDOR_NNG_LIBS} ${R_LINK_FLAGS}
@@ -263,9 +269,9 @@ for DUCKDB_VERSION in ${BUILD_DUCKDB_VERSIONS}; do
     --out-file "${FINAL_EXT_FILE}" \
     --extension-name "rducks" \
     --duckdb-platform "${DUCKDB_PLATFORM}" \
-    --duckdb-version "${DUCKDB_VERSION}" \
+    --duckdb-version "${RDUCKS_CAPI_FOOTER_VERSION}" \
     --extension-version "${EXT_VERSION}" \
-    --abi-type "${ABI_TYPE}"
+    --abi-type "${RDUCKS_CAPI_ABI_TYPE}"
 
   rm -f "${RAW_EXT_FILE}"
   echo "Built ${FINAL_EXT_FILE}"

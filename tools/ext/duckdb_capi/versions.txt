@@ -1,8 +1,8 @@
-# Exact DuckDB engine releases supported by bundled C_STRUCT_UNSTABLE builds.
-# This rolling bundle spans the current duckdb-r line, three preceding patch
-# releases, and the next known patch release. Keep one vMAJOR.MINOR.PATCH per
-# line and vendor matching headers with tools/fetch_duckdb_headers.R before
-# adding a release here.
+# Exact DuckDB engine releases with a bundled Rducks extension build.
+# tools/duckdb_capi_abi.sh picks each build's ABI: the exact-version
+# C_STRUCT_UNSTABLE struct for DuckDB 1.x, and the stable V1 C_STRUCT pinned to
+# C API v1.5.6 for DuckDB 2.x. Keep one vMAJOR.MINOR.PATCH per line and vendor
+# matching headers with tools/fetch_duckdb_headers.R before adding a release.
 v1.5.0
 v1.5.1
 v1.5.2
@@ -10,3 +10,4 @@ v1.5.3
 v1.5.4
 v1.5.5
 v1.5.6
+v2.0.0

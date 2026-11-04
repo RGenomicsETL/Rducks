@@ -36,9 +36,16 @@ missing <- required[!nzchar(vapply(required, function(x) opts[[x]] %||% "", char
 if (length(missing)) {
   stop("missing required arguments: ", paste(missing, collapse = ", "), call. = FALSE)
 }
+# tools/duckdb_capi_abi.sh chooses the ABI per engine release. The version
+# field holds the engine version for C_STRUCT_UNSTABLE and the pinned V1 C API
+# version for C_STRUCT.
 abi_type <- opts[["abi-type"]] %||% "C_STRUCT_UNSTABLE"
-if (!identical(abi_type, "C_STRUCT_UNSTABLE")) {
-  stop("Rducks extension metadata ABI must be C_STRUCT_UNSTABLE, not ", abi_type, call. = FALSE)
+if (!abi_type %in% c("C_STRUCT_UNSTABLE", "C_STRUCT")) {
+  stop("Rducks extension metadata ABI must be C_STRUCT_UNSTABLE or C_STRUCT, not ", abi_type, call. = FALSE)
+}
+if (identical(abi_type, "C_STRUCT") && !grepl("^v1\\.[0-9]+\\.[0-9]+$", opts[["duckdb-version"]])) {
+  stop("a C_STRUCT footer must record a V1 C API version such as v1.5.6, not ",
+       opts[["duckdb-version"]], call. = FALSE)
 }
 out_tmp <- paste0(opts[["out-file"]], ".tmp")
 invisible(file.copy(opts[["library-file"]], out_tmp, overwrite = TRUE))

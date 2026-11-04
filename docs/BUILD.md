@@ -78,28 +78,32 @@ later source-package builds.
 
 ## DuckDB C extension ABI
 
-Rducks uses DuckDB C extension API entries that are outside DuckDB's stable C
-extension struct (scalar-function metadata and data-chunk/vector helpers).
-Configure therefore builds with the unstable C API enabled and the extension
-footer advertises an unstable C struct:
+Rducks uses DuckDB V1 C extension API entries outside the v1.2.0 stable
+struct (scalar-function metadata and data-chunk/vector helpers). DuckDB
+stabilized them in C API v1.5.6. `tools/duckdb_capi_abi.sh`, sourced by both
+`configure` and `configure.win`, chooses each variant's ABI from its engine
+version:
 
-```sh
-USE_UNSTABLE_C_API=1
-RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE
-```
+| Engine | Footer ABI | Footer version | Compile flags | Entrypoint |
+|:--|:--|:--|:--|:--|
+| DuckDB 1.x | `C_STRUCT_UNSTABLE` | the engine version | `-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.5.5 -DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"v1.5.5\"` | `rducks_init_c_api` |
+| DuckDB 2.x | `C_STRUCT` | `v1.5.6` | `-DDUCKDB_EXTENSION_API_VERSION_MAJOR=1 -DDUCKDB_EXTENSION_API_VERSION_MINOR=5 -DDUCKDB_EXTENSION_API_VERSION_PATCH=6` | `rducks_init_c_api` |
 
-Each variant defines its own pinned unstable DuckDB version, for example:
+DuckDB 1.x needs the exact unstable struct: the entries are unstable there, so
+DuckDB must validate the extension against the exact unstable struct version
+recorded in the matching vendored header metadata. A stable `C_STRUCT` footer
+is not a compatibility workaround for those engines.
 
-```sh
--DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.5.5
--DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"v1.5.5\"
-```
+DuckDB 2.0 treats every `C_STRUCT_UNSTABLE` extension as a V2 C API extension
+(`duckdb_extension_v2.h`, entrypoint `rducks_init_c_api_v2`); see `UsesCAPIV2()`
+in DuckDB v2.0.0 `src/main/extension/extension_load.cpp`. Rducks is a V1
+extension, so its 2.x variants target the stable V1 struct at C API v1.5.6.
+Each 2.x variant is still compiled against that engine's vendored headers and
+selected by exact engine version. The header compiles out entries newer than
+the pin, so using one fails at compile time.
 
-A stable `C_STRUCT` footer is not a compatibility workaround. If the extension
-calls unstable function-pointer slots, DuckDB must validate it against the exact
-unstable struct version recorded in the matching vendored header metadata.
-Compiling exact variants also avoids assuming that equal-looking headers imply
-ABI compatibility across future patch releases.
+`USE_UNSTABLE_C_API=1` and `RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE` remain
+the required configure settings and govern the 1.x variants.
 
 ## Inspecting unstable API use
 

@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r, include = FALSE, purl = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -46,8 +46,8 @@ con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 ```
 
-Rducks uses DuckDB's unstable C extension ABI. The installed package contains
-exact-version extension variants for DuckDB `r duckdb_version_range`, generated
+Rducks loads a bundled extension for the target DuckDB engine. The installed
+package contains variants for DuckDB `r duckdb_version_range`, generated
 from the build manifest, and `rducks_enable()` loads only the variant matching
 `SELECT version()` on `con`.
 There is no fallback to another patch release; see

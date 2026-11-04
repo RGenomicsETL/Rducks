@@ -12,6 +12,7 @@
 *.Rcheck
 .webr-local-artifacts/
 .pi/
+.property/
 build/
 .DS_Store
 inst/rducks_extension/build/
