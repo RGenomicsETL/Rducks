@@ -547,9 +547,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.349</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.882</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.880</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.420</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.885</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.878</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -630,7 +630,7 @@
 </tr>
 </tbody>
 </table>
-<p>See <code>docs/BUILD.md</code> for the build and ABI details.</p>
+<p>The generated direct/Quack CI matrix pins DuckDB to the newest bundled engine on R release and R 4.3. A separate R release job tests the latest available DuckDB and fails visibly if that engine is not bundled, without cancelling the pinned jobs. See <code>docs/BUILD.md</code> for the runtime policy, build, and ABI details.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>

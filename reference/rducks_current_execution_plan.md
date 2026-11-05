@@ -26,7 +26,7 @@ An object of class `rducks_execution_plan`.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpK4QTFX/duckdb
+#> ℹ /tmp/Rtmpun3R9a/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
