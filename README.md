@@ -631,9 +631,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.349
-#> 2          ipc (2 workers) 65961344       1.882
-#> 3   ipc + mori (2 workers) 65961344       1.880
+#> 1 inproc (single R thread) 65961344       3.420
+#> 2          ipc (2 workers) 65961344       1.885
+#> 3   ipc + mori (2 workers) 65961344       1.878
 ```
 
 ## duckplyr integration
@@ -729,7 +729,11 @@ when `README.Rmd` is rendered:
 | `deprecated` | `duckdb_pending_prepared_streaming`, `duckdb_result_get_chunk`, `duckdb_result_is_streaming`, `duckdb_row_count`, `duckdb_stream_fetch_chunk`, `duckdb_value_is_null`, `duckdb_value_uint64`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |     7 |
 | `v1.5.6`     | `duckdb_client_context_get_connection_id`, `duckdb_connection_get_client_context`, `duckdb_create_selection_vector`, `duckdb_destroy_client_context`, `duckdb_destroy_error_data`, `duckdb_destroy_expression`, `duckdb_destroy_selection_vector`, `duckdb_expression_fold`, `duckdb_expression_is_foldable`, `duckdb_expression_return_type`, `duckdb_get_time_ns`, `duckdb_scalar_function_bind_get_argument`, `duckdb_scalar_function_bind_get_argument_count`, `duckdb_scalar_function_bind_get_extra_info`, `duckdb_scalar_function_bind_set_error`, `duckdb_scalar_function_get_client_context`, `duckdb_scalar_function_get_state`, `duckdb_scalar_function_init_get_bind_data`, `duckdb_scalar_function_init_get_extra_info`, `duckdb_scalar_function_init_set_error`, `duckdb_scalar_function_init_set_state`, `duckdb_scalar_function_set_bind`, `duckdb_scalar_function_set_bind_data`, `duckdb_scalar_function_set_bind_data_copy`, `duckdb_scalar_function_set_init`, `duckdb_selection_vector_get_data_ptr`, `duckdb_value_to_string`, `duckdb_vector_copy_sel` |    28 |
 
-See `docs/BUILD.md` for the build and ABI details.
+The generated direct/Quack CI matrix pins DuckDB to the newest bundled
+engine on R release and R 4.3. A separate R release job tests the latest
+available DuckDB and fails visibly if that engine is not bundled,
+without cancelling the pinned jobs. See `docs/BUILD.md` for the runtime
+policy, build, and ABI details.
 
 ## References
 

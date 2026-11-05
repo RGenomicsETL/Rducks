@@ -76,6 +76,31 @@ included. `cleanup` and `cleanup.win` remove generated build artifacts from
 `inst/rducks_extension/build` without deleting the source tree required for
 later source-package builds.
 
+## Generated marshalling CI
+
+The generated direct/Quack matrix runs on R release and R 4.3 with the newest
+engine version declared in `tools/ext/duckdb_capi/versions.txt`.
+`rducks_ci_duckdb_package()` in `tools/duckdb_version_support.R` selects the
+matching exact R package version for `pak::pkg_install()`. The installed
+engine's `SELECT version()` result must equal the selected bundled version
+before the workflow builds Rducks and runs the matrix.
+
+A separate R release job installs the latest available DuckDB package. Its
+engine must also be declared in the manifest; an unbundled runtime fails the
+job before extension installation, with the runtime and bundled versions in
+the error. A declared latest runtime runs the full generated matrix. These
+failures remain visible, and `fail-fast: false` lets the two pinned jobs finish
+independently. Adding a vendored engine release advances the supported pin;
+there is no second version list in the workflow.
+
+Run the offline runtime-policy tests from the checkout root with:
+
+```sh
+Rscript -e 'stopifnot(tinytest::all_pass(
+  tinytest::run_test_file("tools/tests/test_ci_duckdb_runtime.R")
+))'
+```
+
 ## DuckDB C extension ABI
 
 Rducks uses DuckDB V1 C extension API entries outside the v1.2.0 stable

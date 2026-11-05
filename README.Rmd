@@ -652,7 +652,11 @@ source("tools/used_duckdb_unstable_api.R")
 cat(rducks_used_duckdb_unstable_api_markdown("."))
 ```
 
-See `docs/BUILD.md` for the build and ABI details.
+The generated direct/Quack CI matrix pins DuckDB to the newest bundled engine
+on R release and R 4.3. A separate R release job tests the latest available
+DuckDB and fails visibly if that engine is not bundled, without cancelling
+the pinned jobs. See `docs/BUILD.md` for the runtime policy, build, and ABI
+details.
 
 ## References
 

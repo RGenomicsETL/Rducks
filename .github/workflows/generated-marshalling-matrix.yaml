@@ -16,16 +16,26 @@ on:
 jobs:
   generated-marshalling-matrix:
     runs-on: ubuntu-latest
-    name: R ${{ matrix.r }} generated direct/quack matrix
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
-        r: ['release', '4.3']
+        include:
+          - r: release
+            runtime: supported
+            name: R release generated direct/quack matrix
+          - r: '4.3'
+            runtime: supported
+            name: R 4.3 generated direct/quack matrix
+          - r: release
+            runtime: latest
+            name: Latest DuckDB generated direct/quack matrix
     env:
       USE_UNSTABLE_C_API: "1"
       RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_MATRIX_MAX: ${{ github.event.inputs.max_cases || '0' }}
+      RDUCKS_CI_DUCKDB: ${{ matrix.runtime }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +53,32 @@ jobs:
         env:
           GITHUB_PAT: ${{ github.token }}
         run: |
-          install.packages(c("DBI", "duckdb", "mirai", "nanonext", "S7", "tinytest"))
+          install.packages(c("DBI", "mirai", "nanonext", "S7", "tinytest", "pak"))
+        shell: Rscript {0}
+
+      - name: Test DuckDB runtime policy
+        run: |
+          stopifnot(tinytest::all_pass(
+            tinytest::run_test_file("tools/tests/test_ci_duckdb_runtime.R")
+          ))
+        shell: Rscript {0}
+
+      - name: Install selected DuckDB runtime
+        env:
+          GITHUB_PAT: ${{ github.token }}
+        run: |
+          source("tools/duckdb_version_support.R")
+          pkg <- rducks_ci_duckdb_package(Sys.getenv("RDUCKS_CI_DUCKDB"))
+          pak::pkg_install(pkg, upgrade = TRUE, ask = FALSE)
+        shell: Rscript {0}
+
+      - name: Check DuckDB engine version
+        run: |
+          source("tools/duckdb_version_support.R")
+          con <- DBI::dbConnect(duckdb::duckdb())
+          version <- DBI::dbGetQuery(con, "SELECT version() AS version")$version[[1L]]
+          DBI::dbDisconnect(con, shutdown = TRUE)
+          rducks_check_ci_duckdb_runtime(version, Sys.getenv("RDUCKS_CI_DUCKDB"))
         shell: Rscript {0}
 
       - name: Install Rducks
