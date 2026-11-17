@@ -16,7 +16,7 @@ Description: R package and 'DuckDB' extension bridge for registering R
     direct native vector marshalling, and explicit execution discipline for safe
     interaction with R from 'DuckDB' execution. The inter-process worker
     transport uses vendored 'NNG' (nanomsg next generation).
-License: GPL (>= 3)
+License: LGPL (>= 2)
 Copyright: See inst/LICENSE.note for bundled third-party copyright and
     licensing details.
 SystemRequirements: cmake for building vendored NNG/Mbed TLS support

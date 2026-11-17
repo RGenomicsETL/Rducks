@@ -1,5 +1,5 @@
 /* Rducks DuckDB extension
- * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-License-Identifier: LGPL-2.0-or-later
  */
 #ifndef R_NO_REMAP
 #define R_NO_REMAP
