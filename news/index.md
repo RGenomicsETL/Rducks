@@ -2,6 +2,9 @@
 
 ## Rducks (development version)
 
+- Rducks is licensed under `LGPL (>= 2)`. The bundled NNG and Mbed TLS
+  sources keep their own licenses, listed in `inst/LICENSE.note`.
+
 - Rducks now loads on DuckDB 2.0.0, the current CRAN duckdb, instead of
   failing with “no bundled extension for DuckDB v2.0.0”
   (<https://github.com/RGenomicsETL/Rducks/issues/25>). DuckDB 2.0
