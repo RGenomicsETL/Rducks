@@ -101,7 +101,28 @@ rducks_initialize_main_thread <- function(con) {
 
 #' Enable Rducks on a DuckDB connection
 #'
-#' Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
+#' Loads the bundled Rducks DuckDB extension with DuckDB's signature checks
+#' enabled. Installation signs the extension with a key generated for that
+#' installation and keeps only the public key. `rducks_enable()` exposes the
+#' signed file as a local DuckDB extension repository below [tempdir()],
+#' registers the public key for that repository, and runs `INSTALL` and `LOAD`
+#' from it. This needs DuckDB 2.0.0 or later.
+#'
+#' The load changes the connection as follows:
+#' `allow_extension_repositories` moves from `'undecided'` to `'allowed'`
+#' (DuckDB cannot move it back while the database runs), and the repository
+#' record is removed after `LOAD`. `extension_directory` points to a directory
+#' below [tempdir()] during `INSTALL` and is then restored.
+#'
+#' DuckDB writes the repository record to `extension_repository_directory`,
+#' which it accepts only at startup. Open connections with
+#' \code{\link[=rducks_duckdb_config]{rducks_duckdb_config()}} to keep the
+#' record below [tempdir()]. On any other connection, such as the default
+#' connection of duckplyr, the record goes to `~/.duckdb/extension_repositories`
+#' until `LOAD` finishes, and `rducks_enable()` does this only with
+#' `home_registry = TRUE`.
+#'
+#' The registration-safe R UDF path
 #' requires R API work to happen on the recorded main R thread; pass
 #' `threads = "single"` to set `external_threads=1` and `PRAGMA threads=1`
 #' explicitly. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
@@ -109,24 +130,34 @@ rducks_initialize_main_thread <- function(con) {
 #' execution.
 #'
 #' @param con A `duckdb_connection`.
-#' @param extension_path Optional explicit extension path. `NULL` selects the
-#'   bundled artifact. The engine behind `con` must be at least the C API
-#'   version of the extension; see
+#' @param extension_path Optional explicit extension path. `NULL` loads the
+#'   bundled signed extension from its local repository. A path is loaded with
+#'   a plain `LOAD`, so DuckDB must accept its signature, or the connection
+#'   must allow unsigned extensions. The engine behind `con` must be at least
+#'   the C API version of the extension; see
 #'   \code{\link[=rducks_extension_capi_version]{rducks_extension_capi_version()}}.
 #' @param threads Either `"unchanged"` or `"single"`.
+#' @param home_registry `TRUE` to allow a repository record below
+#'   `~/.duckdb/extension_repositories` while the bundled extension loads, on a
+#'   connection that was not opened with
+#'   \code{\link[=rducks_duckdb_config]{rducks_duckdb_config()}}.
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
 #' }
 #' @export
 rducks_enable <- function(con, extension_path = NULL,
-                          threads = c("unchanged", "single")) {
+                          threads = c("unchanged", "single"),
+                          home_registry = FALSE) {
   threads <- match.arg(threads)
   rducks_assert_duckdb_connection(con)
+  if (!is.logical(home_registry) || length(home_registry) != 1L || is.na(home_registry)) {
+    stop("home_registry must be TRUE or FALSE", call. = FALSE)
+  }
   db_token <- rducks_attached_runtime_token(con)
   if (is.na(db_token)) db_token <- rducks_runtime_token(con, required = FALSE)
   if (!is.na(db_token)) {
@@ -138,16 +169,18 @@ rducks_enable <- function(con, extension_path = NULL,
   }
 
   if (is.null(extension_path)) {
-    extension_path <- rducks_extension_path()
+    bundled <- rducks_extension_path()
+    rducks_assert_engine_supports_extension(con, bundled)
+    rducks_load_from_repository(con, bundled, home_registry)
+  } else {
+    if (!is.character(extension_path) || length(extension_path) != 1L ||
+        is.na(extension_path) || !nzchar(extension_path)) {
+      stop("extension_path must be a non-empty character scalar or NULL", call. = FALSE)
+    }
+    extension_path <- normalizePath(extension_path, mustWork = TRUE)
+    rducks_assert_engine_supports_extension(con, extension_path)
+    DBI::dbExecute(con, sprintf("LOAD %s", rducks_sql_string(extension_path)))
   }
-  if (!is.character(extension_path) || length(extension_path) != 1L ||
-      is.na(extension_path) || !nzchar(extension_path)) {
-    stop("extension_path must be a non-empty character scalar or NULL", call. = FALSE)
-  }
-  extension_path <- normalizePath(extension_path, mustWork = TRUE)
-  rducks_assert_engine_supports_extension(con, extension_path)
-  path_sql <- rducks_sql_string(extension_path)
-  DBI::dbExecute(con, sprintf("LOAD %s", path_sql))
 
   # Record whether this DuckDB build + extension can carry VARIANT end-to-end;
   # the type gates consult the cached value.
@@ -198,7 +231,7 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_release(db)
@@ -221,7 +254,7 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_disable_inproc(db)
@@ -259,7 +292,7 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
@@ -343,7 +376,7 @@ rducks_detach <- function(con) {
 #' @return A one-row data frame with queue diagnostic columns.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_inproc_stats(db)
 #' rducks_release(db)
@@ -385,7 +418,7 @@ rducks_inproc_stats <- function(con) {
 #'   counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_release_stats(db)
 #' rducks_release(db)
@@ -426,7 +459,7 @@ rducks_release_stats <- function(con) {
 #' @return A one-row data frame with runtime registry and connection counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_runtime_stats(db)
 #' rducks_release(db)
@@ -473,7 +506,7 @@ rducks_runtime_stats <- function(con) {
 #' @examples
 #' \dontrun{
 #' # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_inproc_self_test(db, n = 10L)
 #' rducks_release(db)
@@ -615,7 +648,7 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_set_execution_plan(db, rducks_execution_plan("inproc"))
 #' rducks_release(db)
@@ -677,7 +710,7 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
 #'   or `"multiprocess_parallel"`.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db)
 #' rducks_native_execution_backend(db)
 #' rducks_release(db)

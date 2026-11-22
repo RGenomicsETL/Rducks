@@ -15,6 +15,7 @@ options(width = 80)
 library(Rducks)
 source("tools/used_duckdb_capi.R")
 duckdb_capi_version <- rducks_duckdb_capi_version(".")
+duckdb_min_version <- rducks_duckdb_min_version(".")
 ```
 
 # Rducks
@@ -65,18 +66,30 @@ currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`,
 `LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is enabled only when the
 loaded DuckDB runtime passes Rducks' dynamic logical-type and vector-layout
 probe; otherwise direct and `ipc` registrations fail closed.
-
 ## DuckDB version compatibility
 
-Rducks builds one extension per platform against DuckDB's stable C extension
-API, version `r duckdb_capi_version`. DuckDB loads such a `C_STRUCT` extension
-on every engine release that supports that API version, so Rducks requires
-duckdb `r sub("^v", "", duckdb_capi_version)` or later. The version is taken
-from the vendored headers when this README is rendered.
+Rducks needs duckdb `r duckdb_min_version` or later. Two versions apply:
 
-`rducks_enable()` reads the C API version from the extension's metadata footer
-(`rducks_extension_capi_version()`) and compares it with the engine version of
-the target connection. An older engine fails before `LOAD`. See the
+- The extension is built against DuckDB's stable C extension API, version
+  `r duckdb_capi_version`, with `C_STRUCT` metadata. DuckDB loads such an
+  extension on every engine release that supports that API version, so one
+  build per platform serves all of them.
+- `rducks_enable()` loads the extension from a signed local extension
+  repository. Extension repositories need DuckDB `r duckdb_min_version`, so
+  this sets the minimum version of the package.
+
+Installation signs the extension with a key generated for that installation and
+keeps only the public key. `rducks_enable()` exposes the signed file as an
+extension repository below `tempdir()`, registers the public key for it, and
+runs `INSTALL` and `LOAD` from it. DuckDB's signature checks stay enabled, so
+`allow_unsigned_extensions` is not needed. Open connections with
+`rducks_duckdb_config()` so that DuckDB keeps its repository record below
+`tempdir()`; on any other connection, `rducks_enable()` writes the record to
+`~/.duckdb/extension_repositories` only with `home_registry = TRUE`, and removes
+it after `LOAD`.
+
+The `backport/duckdb-1.5` branch keeps a release line for duckdb 1.5.6 that
+loads the extension with plain `LOAD` and `allow_unsigned_extensions`. See the
 [DuckDB version compatibility article](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html)
 for the installed layout, diagnostics, and maintainer update workflow.
 
@@ -87,7 +100,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- dbConnect(duckdb(config = rducks_duckdb_config()))
 rducks_enable(con, threads = "single")
 
 score_udf <- rducks_register_scalar_udf(
@@ -577,7 +590,7 @@ engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr 1.2.2 does.
 
 ```{r duckplyr}
 demo_con <- DBI::dbConnect(
-  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  duckdb::duckdb(config = rducks_duckdb_config()),
   dbdir = ":memory:"
 )
 Rducks::rducks_enable(demo_con, threads = "single")
@@ -616,9 +629,12 @@ The source and vendored native dependencies used by `configure` live under
 `inst/rducks_extension/build/rducks.duckdb_extension`, against the DuckDB C API
 headers vendored in `tools/ext/duckdb_capi/`. The `duckdb_ref` release recorded
 in `tools/ext/duckdb_capi/duckdb_headers.json` (currently
-`r duckdb_capi_version`) is the stable C API version of the build and the
-minimum DuckDB engine version. `cleanup` removes only generated artifacts, not
-the source tree needed by `R CMD build`. This package-bundled extension layout
+`r duckdb_capi_version`) is the stable C API version of the build. After the
+link, `tools/ext/sign/rducks_sign.c`, built from the vendored Mbed TLS sources,
+signs the artifact with a key generated for that installation and writes the
+public key to `inst/rducks_extension/build/rducks.pub`; the private key is not
+stored. `cleanup` removes only generated artifacts, not the source tree needed
+by `R CMD build`. This package-bundled extension layout
 follows precedents such as
 [Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
 
@@ -631,8 +647,8 @@ The extension uses DuckDB's
 without `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`. The table below lists the API
 entries that the extension calls, grouped by the API version band that first
 stabilized them; `deprecated` marks entries that need
-`DUCKDB_API_ALLOW_DEPRECATED`. The newest band sets the minimum engine version.
-It is generated from `tools/used_duckdb_capi.R` when `README.Rmd` is rendered:
+`DUCKDB_API_ALLOW_DEPRECATED`. The newest band sets the oldest engine that can
+load the extension. It is generated from `tools/used_duckdb_capi.R` when `README.Rmd` is rendered:
 
 ```{r capi-table, echo=FALSE, results='asis'}
 cat(rducks_used_duckdb_capi_markdown("."))

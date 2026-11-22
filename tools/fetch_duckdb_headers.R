@@ -8,7 +8,8 @@
 #
 # Unless --dest is supplied, the headers are written to tools/ext/duckdb_capi/.
 # The release recorded there as duckdb_ref is the stable C extension API
-# version that configure targets, and thus the minimum DuckDB engine version.
+# version that configure targets, and thus the oldest engine that can load
+# the extension. The package minimum is the duckdb requirement in DESCRIPTION.
 
 args <- commandArgs(trailingOnly = TRUE)
 

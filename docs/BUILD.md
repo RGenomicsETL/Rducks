@@ -50,23 +50,39 @@ checkout, use:
 Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.6
 ```
 
-The recorded `duckdb_ref` is the C API version of the build and the minimum
-DuckDB engine version. Keep the `duckdb` requirement in `DESCRIPTION` at the
-same release.
+The recorded `duckdb_ref` is the C API version of the build, the oldest engine
+that can load the extension. The package minimum is separate: it is the
+`duckdb` requirement in `DESCRIPTION` and `rducks_min_duckdb_version` in
+`R/extension_repository.R`, currently v2.0.0, the first release with extension
+repositories. The C API version must not be newer than the package minimum.
 
 ## Install-time build
 
-`configure` and `configure.win` compile sources from `tools/ext/` and write one
-build-tree payload:
+`configure` and `configure.win` compile sources from `tools/ext/` and write two
+build-tree files:
 
 ```text
 inst/rducks_extension/build/rducks.duckdb_extension
+inst/rducks_extension/build/rducks.pub
 ```
 
 The NNG/Mbed TLS static dependency is built during package installation and
 linked into the extension. After the link, `tools/append_extension_metadata.R`
 appends a DuckDB metadata footer with ABI type `C_STRUCT` and the C API version
-from `duckdb_headers.json`. `cleanup` and `cleanup.win` remove generated build
+from `duckdb_headers.json`.
+
+Configure then compiles `tools/ext/sign/rducks_sign.c` with the vendored Mbed
+TLS sources and the build configuration `tools/ext/sign/rducks_sign_config.h`,
+and runs it once. It generates an RSA-2048 key, signs the extension the way
+DuckDB verifies it (SHA-256 over each 1 MiB segment of everything except the
+trailing 256-byte signature, then SHA-256 over the segment digests, signed
+with PKCS#1 v1.5), verifies the signature, and writes the signed extension and
+the base64 DER public key `rducks.pub`. The private key exists only in memory
+while the signer runs, and configure deletes the signer afterwards. A cross
+build (WebAssembly) compiles the signer with the host compiler,
+`RDUCKS_HOST_CC` or `cc`.
+
+`cleanup` and `cleanup.win` remove generated build
 artifacts from `inst/rducks_extension/build` without deleting the source tree
 required for later source-package builds.
 

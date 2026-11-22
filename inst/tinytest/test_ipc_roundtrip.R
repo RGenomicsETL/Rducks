@@ -13,11 +13,10 @@ if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quie
 }
 
 local({
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(
-    allow_unsigned_extensions = "true",
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
-  )))
+  ))))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)

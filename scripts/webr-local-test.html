@@ -80,8 +80,12 @@
           duckdb_available <- requireNamespace('duckdb', quietly = TRUE) && requireNamespace('DBI', quietly = TRUE)
           if (!duckdb_available) {
             cat('DuckDB package unavailable in this webR runtime; extension smoke skipped\\n')
+          } else if (utils::packageVersion('duckdb') < '2.0.0') {
+            cat('webR serves duckdb ', format(utils::packageVersion('duckdb')),
+                '; Rducks loads its signed extension from an extension repository, which needs duckdb >= 2.0.0. ',
+                'Extension smoke skipped; the backport/duckdb-1.5 branch runs it on duckdb 1.5.6\\n', sep = '')
           } else {
-            con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = 'true')), dbdir = ':memory:')
+            con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()), dbdir = ':memory:')
             on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
             rducks_enable(con, threads = 'single')
             rducks_register_scalar_udf(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)

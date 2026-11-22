@@ -36,13 +36,15 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- dbConnect(duckdb(config = rducks_duckdb_config()))
 rducks_enable(con, threads = "single")
 ```
 
-Rducks builds its extension against DuckDB's stable C extension API, version
-`r duckdb_capi_version`, so it loads on DuckDB `r duckdb_capi_version` and
-later engines. `rducks_enable()` fails before `LOAD` on an older engine; see
+Rducks needs duckdb 2.0.0 or later. `rducks_enable()` loads the extension,
+built against DuckDB's stable C extension API `r duckdb_capi_version`, from a
+signed local extension repository, so DuckDB's signature checks stay enabled.
+`rducks_duckdb_config()` adds the two settings that let it do so without
+writing to the home directory; see
 [DuckDB Version Compatibility](duckdb-version-compatibility.html) for details.
 
 `threads = "single"` is the safest registration setting. You can select a

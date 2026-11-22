@@ -55,20 +55,32 @@ currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`,
 `LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is enabled only
 when the loaded DuckDB runtime passes Rducks’ dynamic logical-type and
 vector-layout probe; otherwise direct and `ipc` registrations fail
-closed.
+closed. \## DuckDB version compatibility
 
-## DuckDB version compatibility
+Rducks needs duckdb 2.0.0 or later. Two versions apply:
 
-Rducks builds one extension per platform against DuckDB’s stable C
-extension API, version v1.5.6. DuckDB loads such a `C_STRUCT` extension
-on every engine release that supports that API version, so Rducks
-requires duckdb 1.5.6 or later. The version is taken from the vendored
-headers when this README is rendered.
+- The extension is built against DuckDB’s stable C extension API,
+  version v1.5.6, with `C_STRUCT` metadata. DuckDB loads such an
+  extension on every engine release that supports that API version, so
+  one build per platform serves all of them.
+- `rducks_enable()` loads the extension from a signed local extension
+  repository. Extension repositories need DuckDB 2.0.0, so this sets the
+  minimum version of the package.
 
-`rducks_enable()` reads the C API version from the extension’s metadata
-footer (`rducks_extension_capi_version()`) and compares it with the
-engine version of the target connection. An older engine fails before
-`LOAD`. See the [DuckDB version compatibility
+Installation signs the extension with a key generated for that
+installation and keeps only the public key. `rducks_enable()` exposes
+the signed file as an extension repository below `tempdir()`, registers
+the public key for it, and runs `INSTALL` and `LOAD` from it. DuckDB’s
+signature checks stay enabled, so `allow_unsigned_extensions` is not
+needed. Open connections with `rducks_duckdb_config()` so that DuckDB
+keeps its repository record below `tempdir()`; on any other connection,
+`rducks_enable()` writes the record to
+`~/.duckdb/extension_repositories` only with `home_registry = TRUE`, and
+removes it after `LOAD`.
+
+The `backport/duckdb-1.5` branch keeps a release line for duckdb 1.5.6
+that loads the extension with plain `LOAD` and
+`allow_unsigned_extensions`. See the [DuckDB version compatibility
 article](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html)
 for the installed layout, diagnostics, and maintainer update workflow.
 
@@ -79,7 +91,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- dbConnect(duckdb(config = rducks_duckdb_config()))
 rducks_enable(con, threads = "single")
 
 score_udf <- rducks_register_scalar_udf(
@@ -433,7 +445,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            185         285
+#> 1 8e+06            184         285
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -627,9 +639,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.435
-#> 2          ipc (2 workers) 65961344       1.920
-#> 3   ipc + mori (2 workers) 65961344       1.929
+#> 1 inproc (single R thread) 65961344       3.413
+#> 2          ipc (2 workers) 65961344       1.914
+#> 3   ipc + mori (2 workers) 65961344       1.940
 ```
 
 ## duckplyr integration
@@ -646,7 +658,7 @@ DuckDB engine. duckplyr 1.2.1 does not support DuckDB 2.0.0; use DuckDB
 
 ``` r
 demo_con <- DBI::dbConnect(
-  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  duckdb::duckdb(config = rducks_duckdb_config()),
   dbdir = ":memory:"
 )
 Rducks::rducks_enable(demo_con, threads = "single")
@@ -692,10 +704,13 @@ under `tools/ext/`. Installation builds one artifact,
 DuckDB C API headers vendored in `tools/ext/duckdb_capi/`. The
 `duckdb_ref` release recorded in
 `tools/ext/duckdb_capi/duckdb_headers.json` (currently v1.5.6) is the
-stable C API version of the build and the minimum DuckDB engine version.
-`cleanup` removes only generated artifacts, not the source tree needed
-by `R CMD build`. This package-bundled extension layout follows
-precedents such as
+stable C API version of the build. After the link,
+`tools/ext/sign/rducks_sign.c`, built from the vendored Mbed TLS
+sources, signs the artifact with a key generated for that installation
+and writes the public key to `inst/rducks_extension/build/rducks.pub`;
+the private key is not stored. `cleanup` removes only generated
+artifacts, not the source tree needed by `R CMD build`. This
+package-bundled extension layout follows precedents such as
 [Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
 
 ``` sh
@@ -707,9 +722,9 @@ API](https://duckdb.org/docs/stable/clients/c/overview.html) without
 `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`. The table below lists the API
 entries that the extension calls, grouped by the API version band that
 first stabilized them; `deprecated` marks entries that need
-`DUCKDB_API_ALLOW_DEPRECATED`. The newest band sets the minimum engine
-version. It is generated from `tools/used_duckdb_capi.R` when
-`README.Rmd` is rendered:
+`DUCKDB_API_ALLOW_DEPRECATED`. The newest band sets the oldest engine
+that can load the extension. It is generated from
+`tools/used_duckdb_capi.R` when `README.Rmd` is rendered:
 
 | API band     | Count | Functions used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 |--------------|------:|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

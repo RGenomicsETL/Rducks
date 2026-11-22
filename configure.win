@@ -117,8 +117,18 @@ BASE_CPPFLAGS="${R_CPPFLAGS} ${R_INCLUDE_FLAGS} -DNDEBUG -DDUCKDB_EXTENSION_NAME
 # not support --exclude-libs; it is redundant once automatic exports are off.
 SHARED_FLAGS="-shared -Wl,--exclude-all-symbols"
 
+SIGN_DIR="${EXT_SRC_DIR}/sign"
+SIGN_BIN="${BUILD_DIR}/rducks_sign.exe"
+MBEDTLS_SIGN_SOURCES=""
+for mbedtls_source in aes asn1parse asn1write base64 bignum bignum_core constant_time ctr_drbg \
+  entropy entropy_poll md oid pk pk_wrap pkparse pkwrite platform_util rsa rsa_alt_helpers sha256; do
+  MBEDTLS_SIGN_SOURCES="${MBEDTLS_SIGN_SOURCES} ${VENDOR_MBEDTLS_DIR}/library/${mbedtls_source}.c"
+done
+
 RAW_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.raw"
+UNSIGNED_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension.unsigned"
 FINAL_EXT_FILE="${BUILD_DIR}/rducks.duckdb_extension"
+PUBLIC_KEY_FILE="${BUILD_DIR}/rducks.pub"
 CPPFLAGS="${BASE_CPPFLAGS} ${CAPI_CPPFLAGS} -I${DUCKDB_CAPI_DIR}"
 
 echo "---------- Building Rducks DuckDB extension (Windows) ----------"
@@ -131,13 +141,18 @@ ${CC} ${SHARED_FLAGS} ${CFLAGS} ${CPPFLAGS} ${R_LDFLAGS} -o "${RAW_EXT_FILE}" "$
 echo "Appending DuckDB extension metadata..."
 "${R_HOME}/bin/Rscript" "${THIS_DIR}/tools/append_extension_metadata.R" \
   --library-file "${RAW_EXT_FILE}" \
-  --out-file "${FINAL_EXT_FILE}" \
+  --out-file "${UNSIGNED_EXT_FILE}" \
   --extension-name "rducks" \
   --duckdb-platform "${DUCKDB_PLATFORM}" \
   --duckdb-version "${DUCKDB_CAPI_VERSION}" \
   --extension-version "${EXT_VERSION}" \
   --abi-type "C_STRUCT"
 
-rm -f "${RAW_EXT_FILE}"
+echo "Signing the extension with a key generated for this installation..."
+${CC} ${R_CFLAGS} -I"${SIGN_DIR}" -I"${VENDOR_MBEDTLS_DIR}/include" -I"${VENDOR_MBEDTLS_DIR}/library" \
+  '-DMBEDTLS_CONFIG_FILE="rducks_sign_config.h"' -o "${SIGN_BIN}" \
+  "${SIGN_DIR}/rducks_sign.c" ${MBEDTLS_SIGN_SOURCES} -lbcrypt
+"${SIGN_BIN}" "${UNSIGNED_EXT_FILE}" "${FINAL_EXT_FILE}" "${PUBLIC_KEY_FILE}"
+rm -f "${RAW_EXT_FILE}" "${UNSIGNED_EXT_FILE}" "${SIGN_BIN}"
 rm -rf "${VENDOR_BUILD_DIR}"
 echo "Built ${FINAL_EXT_FILE}"

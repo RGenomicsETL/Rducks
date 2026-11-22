@@ -1,13 +1,24 @@
-# Report the DuckDB C extension API that Rducks targets and the API entries
-# that its source code calls, grouped by the API version band of the vendored
-# header. Sourced by README.Rmd and the vignettes.
+# Report the DuckDB C extension API that Rducks targets, the minimum duckdb
+# version of the package, and the C API entries that the extension source
+# calls, grouped by the API version band of the vendored header. Sourced by
+# README.Rmd.
 
 rducks_duckdb_capi_dir <- function(root = ".") {
   file.path(root, "tools", "ext", "duckdb_capi")
 }
 
+# The minimum duckdb version declared in DESCRIPTION, for example "2.0.0".
+rducks_duckdb_min_version <- function(root = ".") {
+  imports <- read.dcf(file.path(root, "DESCRIPTION"), fields = "Imports")[1L, 1L]
+  version <- regmatches(imports, regexec("duckdb \\(>= ([0-9.]+)\\)", imports))[[1L]]
+  if (length(version) != 2L) {
+    stop("DESCRIPTION must import duckdb with a minimum version", call. = FALSE)
+  }
+  version[[2L]]
+}
+
 # The vendored header release is the stable C extension API version that
-# configure targets, and thus the minimum DuckDB engine version.
+# configure targets, and thus the oldest engine that can load the extension.
 rducks_duckdb_capi_version <- function(root = ".") {
   path <- file.path(rducks_duckdb_capi_dir(root), "duckdb_headers.json")
   lines <- readLines(path, warn = FALSE)

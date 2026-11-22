@@ -112,7 +112,7 @@ callbacks receive the declared type's R missing-value shape for NULL inputs.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 rducks_enable(db, threads = "single")
 rducks_register_aggregate(
   db, "my_sum",

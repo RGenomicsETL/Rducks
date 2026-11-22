@@ -33,7 +33,7 @@ input/result counters, use
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 rducks_enable(db)
 rducks_inproc_stats(db)
 rducks_release(db)

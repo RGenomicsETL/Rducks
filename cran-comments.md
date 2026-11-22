@@ -9,5 +9,14 @@
 ## Package size
 
 Rducks builds one DuckDB extension against DuckDB's stable C extension API
-v1.5.6. The same artifact loads on duckdb 1.5.6 and later, so the package does
-not need a release for each duckdb release.
+v1.5.6, so the package does not need a release for each duckdb release.
+
+## Extension signing and files
+
+Installation signs the extension with a key generated for that installation
+and keeps only the public key; the private key is never written to disk. At
+run time, `rducks_enable()` loads the extension from a local DuckDB extension
+repository below `tempdir()`, with DuckDB's signature checks enabled. Examples,
+tests and vignettes open connections with `rducks_duckdb_config()`, which keeps
+DuckDB's repository records below `tempdir()`. Rducks writes to `~/.duckdb`
+only when the user passes `home_registry = TRUE`.

@@ -90,7 +90,7 @@ rducks_query_stream_driver_available <- function(con) {
 #'   anchor. Explicit `$close()` releases resources promptly after early exit.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db, threads = "single")
 #' stream <- rducks_query_stream(db, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)")
 #' stream$next_batch()

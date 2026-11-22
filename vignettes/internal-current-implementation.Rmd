@@ -24,12 +24,14 @@ actual implementation.
 ## Source and installed layout
 
 The R package installs one runtime extension artifact, built against DuckDB's
-stable C extension API version `r duckdb_capi_version`. The user-facing policy
-and diagnostics are covered in
+stable C extension API version `r duckdb_capi_version` and signed at
+installation, and the public key of that signature. The user-facing policy and
+diagnostics are covered in
 [DuckDB Version Compatibility](duckdb-version-compatibility.html):
 
 ```text
 rducks_extension/build/rducks.duckdb_extension
+rducks_extension/build/rducks.pub
 ```
 
 The source and vendored dependency inputs live in the source checkout under
@@ -39,13 +41,15 @@ The source and vendored dependency inputs live in the source checkout under
 tools/ext/rducks_extension.c
 tools/ext/src/*.c
 tools/ext/duckdb_capi/*.h
+tools/ext/sign/*
 tools/ext/third_party/*
 ```
 
 `configure` and `configure.win` build the extension from `tools/ext` and copy
-only the runtime artifact into the installed package footprint. The artifact
-carries `C_STRUCT` metadata, and `rducks_enable()` checks that the target
-connection runs DuckDB `r duckdb_capi_version` or later before `LOAD`.
+only the runtime artifact and public key into the installed package footprint.
+The artifact carries `C_STRUCT` metadata. `rducks_enable()` exposes it as a
+local extension repository below `tempdir()` and runs `INSTALL` and `LOAD` from
+it (`R/extension_repository.R`).
 
 ## Package and extension split
 
