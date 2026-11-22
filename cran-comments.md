@@ -8,7 +8,6 @@
 
 ## Package size
 
-Rducks uses DuckDB's exact `C_STRUCT_UNSTABLE` extension ABI. The installed
-package contains six separately compiled extension artifacts for DuckDB v1.5.0
-through v1.5.6; the roughly 21 MB installed footprint is expected and is required to
-avoid unsafe ABI fallback between DuckDB releases.
+Rducks builds one DuckDB extension against DuckDB's stable C extension API
+v1.5.6. The same artifact loads on duckdb 1.5.6 and later, so the package does
+not need a release for each duckdb release.

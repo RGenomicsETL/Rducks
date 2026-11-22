@@ -13,88 +13,61 @@ knitr::opts_chunk$set(
   comment = "#>",
   eval = TRUE
 )
-version_support_root <- if (file.exists(file.path("tools", "duckdb_version_support.R"))) {
-  "."
-} else {
-  ".."
-}
-source(file.path(version_support_root, "tools", "duckdb_version_support.R"))
+library(Rducks)
+duckdb_capi_version <- rducks_extension_capi_version()
 ```
 
-## Why Rducks ships exact-version extensions
+## One extension for many DuckDB releases
 
-Rducks calls entries from DuckDB's unstable C extension API. DuckDB therefore
-loads Rducks through the `C_STRUCT_UNSTABLE` ABI, where an extension compiled for
-one DuckDB engine release must not be treated as compatible with another
-release, even when the relevant headers happen to look unchanged.
+Rducks builds its DuckDB extension against DuckDB's stable C extension API. The
+extension carries `C_STRUCT` metadata with the C API version that it targets,
+here `r duckdb_capi_version`. DuckDB loads such an extension on every engine
+release that supports that C API version. Each platform therefore needs only one
+Rducks extension, and Rducks requires duckdb `r sub("^v", "", duckdb_capi_version)`
+or later.
 
-Rducks addresses this at package installation rather than at first use. The
-source package vendors headers for a bounded set of DuckDB releases and compiles
-one inexpensive Rducks extension variant against each header set. The current
-bundle contains:
-
-```{r duckdb-version-table, echo = FALSE, results = "asis", eval = TRUE}
-cat(rducks_duckdb_version_support_markdown(version_support_root))
-```
-
-This table is generated directly from `tools/ext/duckdb_capi/versions.txt`, the
-same manifest consumed by the native build. The list is an explicit release
-policy, not an ABI compatibility claim for versions outside the table.
-
-## Runtime selection
-
-`rducks_enable(con)` asks the target connection for `SELECT version()`. It then
-loads only the artifact whose directory has that exact engine version:
+The installed package contains one artifact:
 
 ```text
-rducks_extension/build/<duckdb-version>/rducks.duckdb_extension
+rducks_extension/build/rducks.duckdb_extension
 ```
 
-The connection is authoritative. Selection does not assume that an installed R
-package version necessarily describes every DuckDB connection passed to Rducks.
-There is no nearest-version or same-minor fallback.
+```{r extension-info}
+basename(rducks_extension_path())
+rducks_extension_capi_version()
+```
 
-You can inspect the default artifact selected for the installed `duckdb` package:
+## Runtime check
+
+`rducks_enable(con)` reads the C API version from the metadata footer of the
+extension and compares it with `library_version` from `pragma_version()` on
+`con`. The connection is authoritative: the check does not assume that the
+installed `duckdb` R package describes every connection passed to Rducks. An
+older engine fails before `LOAD` with a message that names both versions.
+
+An explicit `extension_path` gets the same check. DuckDB also validates the
+metadata when it loads the file, and refuses an engine that does not support the
+C API version of the extension.
+
+To diagnose a failure, compare the two versions:
 
 ```r
-rducks_extension_path()
+DBI::dbGetQuery(con, "SELECT library_version FROM pragma_version()")
+rducks_extension_capi_version()
 ```
-
-An explicit `extension_path` remains available for development and custom
-builds, but it does not make incompatible binaries safe. DuckDB validates the
-unstable ABI metadata when it loads the file.
-
-## Unsupported versions
-
-If the target engine is outside the bundled set, `rducks_enable()` fails before
-`LOAD` and reports the versions available in the installed Rducks package. This
-is intentional: silently loading an artifact compiled for another unstable ABI
-could produce incorrect calls through DuckDB's function table.
-
-To diagnose a mismatch, compare the connection version and bundled path:
-
-```r
-DBI::dbGetQuery(con, "SELECT version() AS version")
-rducks_extension_path()
-```
-
-Install an Rducks release that bundles the exact engine version, or build a
-matching development variant. Downgrading or upgrading `duckdb` without also
-checking the Rducks support window can leave no compatible artifact.
 
 ## Maintainer workflow
 
-Supported versions are declared in
-`tools/ext/duckdb_capi/versions.txt`. Before adding a release, vendor its exact
-headers and provenance metadata:
+The DuckDB C API headers are vendored in `tools/ext/duckdb_capi/`. The
+`duckdb_ref` release recorded in `duckdb_headers.json` is the C API version
+that `configure` and `configure.win` target, and thus the minimum engine
+version. To move the minimum, vendor the headers of another release:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.6
 ```
 
-`configure` and `configure.win` validate every declared header set, build the
-vendored NNG dependency once, compile one Rducks extension per DuckDB version,
-and append matching DuckDB extension metadata to each artifact. Release builds
-must leave `RDUCKS_DUCKDB_VERSIONS` unset so the complete declared bundle is
-installed. See `docs/BUILD.md` in the source repository for the native build and
-ABI details.
+Then update the `duckdb` requirement in `DESCRIPTION` to the same release. The
+build fails if `DUCKDB_EXTENSION_API_VERSION_UNSTABLE` is defined, because an
+unstable build would tie the artifact to one exact engine release. See
+`docs/BUILD.md` in the source repository for the native build details.

@@ -1,36 +1,33 @@
 library(Rducks)
 
 local({
-  current <- getFromNamespace("rducks_installed_duckdb_version", "Rducks")()
   path <- rducks_extension_path()
-  build_root <- dirname(dirname(path))
-  bundled <- getFromNamespace("rducks_bundled_duckdb_versions", "Rducks")(build_root)
-
   expect_true(file.exists(path))
-  expect_identical(basename(dirname(path)), current)
-  selected <- trimws(Sys.getenv("RDUCKS_DUCKDB_VERSIONS", unset = ""))
-  expected <- if (nzchar(selected)) {
-    strsplit(selected, "\\s+")[[1L]]
-  } else {
-    paste0("v1.5.", 0:6)
-  }
-  expect_identical(bundled, expected)
-  expect_identical(rducks_extension_path(current), path)
-  expect_identical(rducks_extension_path(sub("^v", "", current)), path)
-  expect_error(
-    rducks_extension_path("v0.0.0"),
-    pattern = "no bundled extension for DuckDB v0.0.0"
-  )
-  expect_error(
-    rducks_extension_path("1.5.4.1"),
-    pattern = "must be an exact release"
-  )
+  expect_identical(basename(path), "rducks.duckdb_extension")
+  expect_identical(rducks_extension_capi_version(path), "v1.5.6")
+
+  bad <- tempfile(fileext = ".duckdb_extension")
+  on.exit(unlink(bad), add = TRUE)
+  writeBin(as.raw(seq_len(16L)), bad)
+  expect_error(rducks_extension_capi_version(bad), pattern = "too small")
+
+  footer <- readBin(path, "raw", n = file.size(path))
+  abi_field <- length(footer) - 512L + 3L * 32L + seq_len(32L)
+  footer[abi_field] <- c(charToRaw("C_STRUCT_UNSTABLE"), as.raw(rep(0L, 15L)))
+  writeBin(footer, bad)
+  expect_error(rducks_extension_capi_version(bad), pattern = "not a stable C API extension")
 
   con <- duckdb::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
-  connection_version <- getFromNamespace(
-    "rducks_connection_duckdb_version",
-    "Rducks"
-  )(con)
-  expect_identical(connection_version, current)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_true(getFromNamespace("rducks_assert_engine_supports_extension", "Rducks")(con, path))
+
+  future <- footer
+  future[abi_field] <- c(charToRaw("C_STRUCT"), as.raw(rep(0L, 24L)))
+  version_field <- length(future) - 512L + 5L * 32L + seq_len(32L)
+  future[version_field] <- c(charToRaw("v99.0.0"), as.raw(rep(0L, 25L)))
+  writeBin(future, bad)
+  expect_error(
+    getFromNamespace("rducks_assert_engine_supports_extension", "Rducks")(con, bad),
+    pattern = "needs DuckDB v99.0.0 or later"
+  )
 })

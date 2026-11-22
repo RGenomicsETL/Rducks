@@ -59,13 +59,13 @@ jobs:
       - name: R CMD build
         run: |
           echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
-          USE_UNSTABLE_C_API=1 RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE R CMD build .
+          R CMD build .
 
       - name: R CMD check --as-cran
         run: |
           echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
           PKG=$(ls -t Rducks_*.tar.gz | head -n1)
-          USE_UNSTABLE_C_API=1 RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE RDUCKS_DEV_SURFACES=true R CMD check --as-cran --no-manual "$PKG"
+          RDUCKS_DEV_SURFACES=true R CMD check --as-cran --no-manual "$PKG"
 
       - name: Upload check artifacts on failure
         if: failure()

@@ -6,12 +6,9 @@
 #endif
 #include "duckdb_extension.h"
 
-/* DuckDB exposed GEOMETRY and VARIANT in the C API after early 1.5 headers.
- * Keep their numeric ids isolated here so each exact-version build compiles
- * against its matching header while still recognizing the runtime type ids.
- * Do not use cast duckdb_type values in switch labels: older headers define
- * duckdb_type as an enum without values 40/41, and CRAN/CI compilers warn on
- * such case labels.
+/* Numeric ids of DuckDB's GEOMETRY and VARIANT types. Do not use cast
+ * duckdb_type values in switch labels: compilers warn on case labels outside
+ * the enum when a header lacks these values.
  */
 #define RDUCKS_DUCKDB_TYPE_GEOMETRY_ID 40
 #define RDUCKS_DUCKDB_TYPE_GEOMETRY ((duckdb_type)RDUCKS_DUCKDB_TYPE_GEOMETRY_ID)
@@ -25,8 +22,8 @@
  * then enables direct and IPC marshalling. Older or layout-incompatible
  * runtimes remain fail-closed. */
 
-#if !defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE) || !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
-#error "Rducks requires DuckDB's unstable C extension API; build with USE_UNSTABLE_C_API=1"
+#if defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE)
+#error "Rducks targets DuckDB's stable C extension API; do not define DUCKDB_EXTENSION_API_VERSION_UNSTABLE"
 #endif
 
 #if defined(__GNUC__)

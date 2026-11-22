@@ -1,14 +1,14 @@
 #!/usr/bin/env Rscript
-# Fetch and repair the exact DuckDB C API headers used by the Rducks extension.
+# Fetch and repair the DuckDB C API headers used by the Rducks extension.
 #
 # This is an explicit vendoring tool, not an install-time network step.
 # Usage:
-#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
-#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.5
+#   Rscript tools/fetch_duckdb_headers.R --ref v1.5.6
+#   Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.6
 #
-# Unless --dest is supplied, each exact version is written below
-# tools/ext/duckdb_capi/<ref>/. Keep tools/ext/duckdb_capi/versions.txt in sync
-# with the exact versions that configure should build.
+# Unless --dest is supplied, the headers are written to tools/ext/duckdb_capi/.
+# The release recorded there as duckdb_ref is the stable C extension API
+# version that configure targets, and thus the minimum DuckDB engine version.
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -38,15 +38,15 @@ if (!file.exists(file.path(repo_root, "DESCRIPTION"))) {
 }
 
 opts <- parse_args(args)
-ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.5")
+ref <- opts[["ref"]] %||% Sys.getenv("RDUCKS_DUCKDB_REF", unset = "v1.5.6")
 if (!grepl("^v[0-9]+\\.[0-9]+\\.[0-9]+$", ref)) {
-  stop("--ref must be an exact DuckDB release such as v1.5.5", call. = FALSE)
+  stop("--ref must be an exact DuckDB release such as v1.5.6", call. = FALSE)
 }
 dest_opt <- opts[["dest"]] %||% ""
 dest <- if (nzchar(dest_opt)) {
   dest_opt
 } else {
-  file.path(repo_root, "tools", "ext", "duckdb_capi", ref)
+  file.path(repo_root, "tools", "ext", "duckdb_capi")
 }
 source_repo <- opts[["repo"]] %||% ""
 

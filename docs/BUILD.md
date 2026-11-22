@@ -8,19 +8,18 @@ extension artifact is loaded by `rducks_enable()`.
 - `tools/ext/rducks_extension.c`
 - native sources under `tools/ext/src/`
 - the shared Quack core under `src/quack_core.c` and `src/quack_core.h`
-- exact-version vendored DuckDB C API headers under `tools/ext/duckdb_capi/v*/`
-- `tools/ext/duckdb_capi/versions.txt`, the supported engine-version manifest
+- vendored DuckDB C API headers under `tools/ext/duckdb_capi/`, with their
+  provenance in `tools/ext/duckdb_capi/duckdb_headers.json`
 - vendored NNG and Mbed TLS sources under `tools/ext/third_party/`
 - `tools/fetch_duckdb_headers.R`
 - `tools/append_extension_metadata.R`
 
 The source package keeps extension sources and vendored dependencies under
 `tools/ext/`. During installation, `configure` writes the generated extension
-artifacts under `inst/rducks_extension/build/<duckdb-version>/` in the build
-tree. The installed package contains one
-`rducks_extension/build/<duckdb-version>/rducks.duckdb_extension` artifact per
-supported exact DuckDB engine release; the source/vendor tree is not copied into
-the installed package.
+artifact to `inst/rducks_extension/build/rducks.duckdb_extension` in the build
+tree. The installed package contains only
+`rducks_extension/build/rducks.duckdb_extension`; the source/vendor tree is not
+copied into the installed package.
 
 ## Native dependency vendoring
 
@@ -32,82 +31,80 @@ Rscript tools/vendor_nng_mbedtls.R --force
 
 ## Header vendoring
 
-Refresh DuckDB headers explicitly, once for each release listed in
-`tools/ext/duckdb_capi/versions.txt`:
+Refresh the DuckDB headers explicitly:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.6
 ```
 
-The script writes to `tools/ext/duckdb_capi/<ref>/` and fetches:
+The script writes to `tools/ext/duckdb_capi/` and fetches:
 
 - `src/include/duckdb.h`
 - `src/include/duckdb_extension.h`
 
 It records the source ref, file hashes, and local prototype repairs in
-`tools/ext/duckdb_capi/<ref>/duckdb_headers.json`. For an already-cloned
-DuckDB checkout, use:
+`tools/ext/duckdb_capi/duckdb_headers.json`. For an already-cloned DuckDB
+checkout, use:
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.5
+Rscript tools/fetch_duckdb_headers.R --repo /path/to/duckdb --ref v1.5.6
 ```
+
+The recorded `duckdb_ref` is the C API version of the build and the minimum
+DuckDB engine version. Keep the `duckdb` requirement in `DESCRIPTION` at the
+same release.
 
 ## Install-time build
 
-`configure` and `configure.win` compile sources from `tools/ext/`
-and write one build-tree payload per declared exact engine version:
+`configure` and `configure.win` compile sources from `tools/ext/` and write one
+build-tree payload:
 
 ```text
-inst/rducks_extension/build/v1.5.5/rducks.duckdb_extension
+inst/rducks_extension/build/rducks.duckdb_extension
 ```
 
-The NNG/Mbed TLS static dependency is built once per package installation and
-linked into each extension variant. After each link,
-`tools/append_extension_metadata.R` appends a footer for that exact DuckDB
-version. At runtime, `rducks_enable()` queries `SELECT version()` on the target
-connection and selects only the exact matching bundled artifact. Unsupported
-versions fail before `LOAD`; Rducks never falls back to a differently versioned
-unstable ABI.
-
-For a deliberately reduced developer build, `RDUCKS_DUCKDB_VERSIONS` may be a
-whitespace-separated subset of versions declared in `versions.txt`. Release and
-binary-package builds should leave it unset so every declared variant is
-included. `cleanup` and `cleanup.win` remove generated build artifacts from
-`inst/rducks_extension/build` without deleting the source tree required for
-later source-package builds.
+The NNG/Mbed TLS static dependency is built during package installation and
+linked into the extension. After the link, `tools/append_extension_metadata.R`
+appends a DuckDB metadata footer with ABI type `C_STRUCT` and the C API version
+from `duckdb_headers.json`. `cleanup` and `cleanup.win` remove generated build
+artifacts from `inst/rducks_extension/build` without deleting the source tree
+required for later source-package builds.
 
 ## DuckDB C extension ABI
 
-Rducks uses DuckDB C extension API entries that are outside DuckDB's stable C
-extension struct (scalar-function metadata and data-chunk/vector helpers).
-Configure therefore builds with the unstable C API enabled and the extension
-footer advertises an unstable C struct:
+Rducks uses DuckDB's stable C extension API. Configure derives the API version
+from `duckdb_ref` and defines it for the extension header, for example:
 
 ```sh
-USE_UNSTABLE_C_API=1
-RDUCKS_EXTENSION_ABI_TYPE=C_STRUCT_UNSTABLE
+-DDUCKDB_EXTENSION_API_VERSION_MAJOR=1
+-DDUCKDB_EXTENSION_API_VERSION_MINOR=5
+-DDUCKDB_EXTENSION_API_VERSION_PATCH=6
 ```
 
-Each variant defines its own pinned unstable DuckDB version, for example:
+The header then exposes every API band up to that version. DuckDB loads a
+`C_STRUCT` extension on any engine whose stable C API includes the recorded
+version, so one artifact serves all such engine releases. `rducks_enable()`
+reads the version from the footer and fails before `LOAD` on an older engine.
 
-```sh
--DDUCKDB_EXTENSION_API_VERSION_UNSTABLE=v1.5.5
--DDUCKDB_EXTENSION_API_UNSTABLE_VERSION=\"v1.5.5\"
-```
+Configure and `tools/ext/rducks_extension.c` reject
+`DUCKDB_EXTENSION_API_VERSION_UNSTABLE`. An unstable build would need a
+`C_STRUCT_UNSTABLE` footer, which DuckDB loads only on the exact engine release
+that it was built for.
 
-A stable `C_STRUCT` footer is not a compatibility workaround. If the extension
-calls unstable function-pointer slots, DuckDB must validate it against the exact
-unstable struct version recorded in the matching vendored header metadata.
-Compiling exact variants also avoids assuming that equal-looking headers imply
-ABI compatibility across future patch releases.
+The streaming query path calls four entries that need
+`DUCKDB_API_ALLOW_DEPRECATED` (`duckdb_pending_prepared_streaming`,
+`duckdb_stream_fetch_chunk`, `duckdb_result_get_chunk`,
+`duckdb_result_is_streaming`). They are part of the stable struct, but they are
+the first candidates for removal in a later C API version.
 
-## Inspecting unstable API use
+## Inspecting C API use
 
 Run:
 
 ```sh
-Rscript -e 'source("tools/used_duckdb_unstable_api.R"); cat(rducks_used_duckdb_unstable_api_markdown("."))'
+Rscript -e 'source("tools/used_duckdb_capi.R"); cat(rducks_used_duckdb_capi_markdown("."))'
 ```
 
-Keep README and release notes aligned with this generated list rather than
-hand-writing optimistic ABI claims.
+The table groups the API entries that the extension calls by the version band
+that stabilized them. The newest band must not exceed `duckdb_ref`. Keep README
+and release notes aligned with this generated list.
