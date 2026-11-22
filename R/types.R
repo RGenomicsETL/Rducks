@@ -383,7 +383,7 @@ rducks_is_type <- function(x) {
     if (depth > 64L || !rducks_type_inherits(x, "rducks_type") || !inherits(x, "S7_object") || !is.list(x)) {
       return(FALSE)
     }
-    if (is.null(attr(x, "S7_class", exact = TRUE))) {
+    if (is.null(S7::S7_class(x))) {
       return(FALSE)
     }
     required <- c("token", "duckdb_sql", "kind", "children", "child_names", "size", "parameters")
