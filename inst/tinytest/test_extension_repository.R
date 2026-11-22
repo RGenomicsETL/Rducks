@@ -1,8 +1,15 @@
 library(Rducks)
 
 min_version <- getFromNamespace("rducks_min_duckdb_version", "Rducks")
+load_from_repository <- getFromNamespace("rducks_load_from_repository", "Rducks")
+version_dir <- getFromNamespace("rducks_repository_version_dir", "Rducks")
 imports <- utils::packageDescription("Rducks", fields = "Imports")
 expect_true(grepl(sprintf("duckdb \\(>= %s\\)", sub("^v", "", min_version)), imports))
+
+# DuckDB's GetVersionDirectoryName(): releases are versions without "-dev".
+expect_identical(version_dir("v2.0.0", "abc123"), "v2.0.0")
+expect_identical(version_dir("2.1.0-rc1", "abc123"), "v2.1.0-rc1")
+expect_identical(version_dir("v2.1.0-dev42", "abc123"), "abc123")
 
 local({
   config <- rducks_duckdb_config(list(threads = 1L, allow_extension_repositories = "forbidden"))
@@ -15,39 +22,55 @@ local({
   expect_true(length(key) == 1L && grepl("^[A-Za-z0-9+/]+=*$", key))
 })
 
+connect <- function(config = rducks_duckdb_config()) {
+  DBI::dbConnect(duckdb::duckdb(config = config, shared_home = FALSE))
+}
 setting <- function(con, name) {
   DBI::dbGetQuery(con, sprintf("SELECT current_setting('%s') AS v", name))$v[[1L]]
 }
 rducks_function_count <- function(con) {
   DBI::dbGetQuery(con, "SELECT count(*) AS n FROM duckdb_functions() WHERE function_name LIKE 'rducks_%'")$n
 }
+repositories <- function(con) {
+  DBI::dbGetQuery(con, "SELECT repository_name FROM duckdb_extension_repositories()")$repository_name
+}
+staged <- function() {
+  list.files(file.path(tempdir(), "rducks"), pattern = "^repository-")
+}
 
 # The signed extension loads with signature checks enabled and leaves no
-# repository record behind.
+# repository record or staged copy behind.
 local({
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_false(setting(con, "allow_unsigned_extensions"))
   extension_directory <- setting(con, "extension_directory")
-
-  repositories <- function() {
-    DBI::dbGetQuery(con, "SELECT repository_name FROM duckdb_extension_repositories()")$repository_name
-  }
-  builtin <- repositories()
+  builtin <- repositories(con)
 
   expect_silent(rducks_enable(con))
   expect_true(rducks_function_count(con) > 0)
   expect_identical(setting(con, "extension_directory"), extension_directory)
-  expect_identical(repositories(), builtin)
+  expect_identical(repositories(con), builtin)
   expect_identical(list.files(setting(con, "extension_repository_directory")), character())
+  expect_identical(staged(), character())
 
   rducks_enable(con)
   expect_true(rducks_function_count(con) > 0)
 })
 
+# An 'undecided' connection is moved to 'allowed'.
+local({
+  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "undecided")))
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_identical(setting(con, "allow_extension_repositories"), "undecided")
+  rducks_enable(con)
+  expect_identical(setting(con, "allow_extension_repositories"), "allowed")
+  expect_true(rducks_function_count(con) > 0)
+})
+
 # A connection without a startup repository directory needs home_registry.
 local({
-  con <- DBI::dbConnect(duckdb::duckdb())
+  con <- connect(list())
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_error(rducks_enable(con), pattern = "home_registry = TRUE")
   expect_identical(rducks_function_count(con), 0)
@@ -55,24 +78,33 @@ local({
 })
 
 local({
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
-    allow_extension_repositories = "forbidden"
-  ))))
+  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "forbidden")))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_error(rducks_enable(con), pattern = "forbids extension repositories")
 })
 
-# A tampered copy fails DuckDB's signature check.
+# Signature checks: through the repository, a copy of the bundled file loads
+# and a copy with one changed byte does not. A plain LOAD of the bundled file
+# fails because DuckDB does not trust the installation key outside the
+# repository.
 local({
   bundled <- rducks_extension_path()
-  tampered <- file.path(tempfile("rducks-tampered-"), "rducks.duckdb_extension")
-  dir.create(dirname(tampered))
-  on.exit(unlink(dirname(tampered), recursive = TRUE), add = TRUE)
+  dir <- tempfile("rducks-signature-")
+  dir.create(dir)
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+  good <- file.path(dir, "good.duckdb_extension")
+  tampered <- file.path(dir, "tampered.duckdb_extension")
   bytes <- readBin(bundled, "raw", n = file.size(bundled))
+  writeBin(bytes, good)
   bytes[[1000L]] <- xor(bytes[[1000L]], as.raw(1L))
   writeBin(bytes, tampered)
 
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
-  expect_error(rducks_enable(con, extension_path = tampered), pattern = "signature")
+  expect_error(load_from_repository(con, tampered, FALSE), pattern = "signature")
+  expect_identical(rducks_function_count(con), 0)
+  expect_error(rducks_enable(con, extension_path = bundled), pattern = "signature")
+  expect_true(load_from_repository(con, good, FALSE))
+  expect_true(rducks_function_count(con) > 0)
+  expect_identical(staged(), character())
 })

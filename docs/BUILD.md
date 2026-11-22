@@ -78,9 +78,11 @@ DuckDB verifies it (SHA-256 over each 1 MiB segment of everything except the
 trailing 256-byte signature, then SHA-256 over the segment digests, signed
 with PKCS#1 v1.5), verifies the signature, and writes the signed extension and
 the base64 DER public key `rducks.pub`. The private key exists only in memory
-while the signer runs, and configure deletes the signer afterwards. A cross
-build (WebAssembly) compiles the signer with the host compiler,
-`RDUCKS_HOST_CC` or `cc`.
+while the signer runs, and configure deletes the signer afterwards. The signer
+runs on the build machine: a cross build must set `RDUCKS_HOST_CC` to a host
+compiler, and a WebAssembly build uses `cc` when `RDUCKS_HOST_CC` is unset. The
+signer refuses input that does not end in the metadata footer with a zeroed
+signature placeholder.
 
 `cleanup` and `cleanup.win` remove generated build
 artifacts from `inst/rducks_extension/build` without deleting the source tree

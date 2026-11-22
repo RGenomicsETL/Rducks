@@ -61,13 +61,42 @@ static int read_file(const char *path, unsigned char **out, size_t *out_size) {
   return 0;
 }
 
+/* Write to <path>.tmp and rename, so a failed write leaves no partial file. */
 static int write_file(const char *path, const unsigned char *buf, size_t size) {
-  FILE *fp = fopen(path, "wb");
+  size_t path_len = strlen(path);
+  char *tmp = malloc(path_len + 5u);
+  FILE *fp;
   int ok;
-  if (!fp) return fail("cannot open output file", 0);
+  if (!tmp) return fail("out of memory", 0);
+  memcpy(tmp, path, path_len);
+  memcpy(tmp + path_len, ".tmp", 5u);
+  fp = fopen(tmp, "wb");
+  if (!fp) {
+    free(tmp);
+    return fail("cannot open output file", 0);
+  }
   ok = fwrite(buf, 1, size, fp) == size;
   ok = (fclose(fp) == 0) && ok;
+  remove(path);
+  ok = ok && rename(tmp, path) == 0;
+  if (!ok) remove(tmp);
+  free(tmp);
   return ok ? 0 : fail("cannot write output file", 0);
+}
+
+/* The unsigned input must end in tools/append_extension_metadata.R's footer:
+ * eight 32-byte fields, the first written being the metadata version "4"
+ * (stored last), followed by a zeroed 256-byte signature placeholder. */
+static int check_unsigned_footer(const unsigned char *buf, size_t size) {
+  const unsigned char *version_field = buf + size - RDUCKS_SIGNATURE_SIZE - 32u;
+  size_t i;
+  if (version_field[0] != '4' || version_field[1] != 0) {
+    return fail("input does not end in a DuckDB metadata footer", 0);
+  }
+  for (i = size - RDUCKS_SIGNATURE_SIZE; i < size; i++) {
+    if (buf[i] != 0) return fail("input already carries a signature", 0);
+  }
+  return 0;
 }
 
 /* DuckDB's two-level digest over buf[0, size). */
@@ -128,6 +157,7 @@ int main(int argc, char **argv) {
   mbedtls_pk_init(&pk);
 
   if (read_file(argv[1], &buf, &size) != 0) goto cleanup;
+  if (check_unsigned_footer(buf, size) != 0) goto cleanup;
   body_size = size - RDUCKS_SIGNATURE_SIZE;
   if (extension_digest(buf, body_size, digest) != 0) goto cleanup;
 
