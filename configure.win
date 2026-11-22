@@ -121,7 +121,7 @@ SIGN_DIR="${EXT_SRC_DIR}/sign"
 SIGN_BIN="${BUILD_DIR}/rducks_sign.exe"
 MBEDTLS_SIGN_SOURCES=""
 for mbedtls_source in aes asn1parse asn1write base64 bignum bignum_core constant_time ctr_drbg \
-  entropy entropy_poll md oid pk pk_wrap pkparse pkwrite platform_util rsa rsa_alt_helpers sha256; do
+  entropy entropy_poll md oid pk pk_wrap pkparse pkwrite platform platform_util rsa rsa_alt_helpers sha256; do
   MBEDTLS_SIGN_SOURCES="${MBEDTLS_SIGN_SOURCES} ${VENDOR_MBEDTLS_DIR}/library/${mbedtls_source}.c"
 done
 

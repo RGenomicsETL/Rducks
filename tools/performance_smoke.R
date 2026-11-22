@@ -22,10 +22,14 @@ thresholds <- c(
 )
 enforce_thresholds <- !tolower(Sys.getenv("RDUCKS_PERF_ENFORCE_THRESHOLDS", "true")) %in% c("0", "false", "no")
 
-con <- DBI::dbConnect(
-  duckdb::duckdb(config = rducks_duckdb_config()),
-  dbdir = ":memory:"
-)
+# CI also runs this script against an older Rducks baseline, which loads its
+# extension unsigned and has no rducks_duckdb_config().
+config <- if (exists("rducks_duckdb_config", envir = asNamespace("Rducks"), inherits = FALSE)) {
+  Rducks::rducks_duckdb_config()
+} else {
+  list(allow_unsigned_extensions = "true")
+}
+con <- DBI::dbConnect(duckdb::duckdb(config = config), dbdir = ":memory:")
 on.exit({
   try(Rducks::rducks_release(con), silent = TRUE)
   try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)

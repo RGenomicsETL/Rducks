@@ -19,6 +19,8 @@
 #define MBEDTLS_PK_PARSE_C
 #define MBEDTLS_PK_WRITE_C
 #define MBEDTLS_PKCS1_V15
+/* Mbed TLS requires the platform layer on Windows. */
+#define MBEDTLS_PLATFORM_C
 #define MBEDTLS_RSA_C
 #define MBEDTLS_SHA224_C
 #define MBEDTLS_SHA256_C

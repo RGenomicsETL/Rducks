@@ -56,6 +56,11 @@
       return result;
     }
 
+    async function captureText(shelter, code) {
+      const result = await capture(shelter, code);
+      return result.output.filter((item) => item.type === "stdout").map((item) => item.data).join("").trim();
+    }
+
     button.addEventListener("click", async () => {
       button.disabled = true;
       logNode.textContent = "";
@@ -69,31 +74,40 @@
 
         await capture(shelter, `options(webr_pkg_repos = c(RducksLocal = '${repo}', CRAN = 'https://repo.r-wasm.org/'))`);
         await capture(shelter, "webr::install('Rducks', repos = getOption('webr_pkg_repos'))");
-        await capture(shelter, `
-          library(Rducks)
-          stopifnot(identical(rducks_type_sql(INTEGER), 'INTEGER'))
-          stopifnot(isTRUE(rducks_is_type(STRUCT(x = INTEGER))))
-          stopifnot(NROW(rducks_mode_semantics()) >= 2L)
-          cat('Rducks package smoke: ok\\n')
+        // Rducks loads its signed extension from a DuckDB extension
+        // repository, which needs duckdb >= 2.0.0. While webR serves an older
+        // duckdb, Rducks cannot attach; the backport/duckdb-1.5 branch runs
+        // the full smoke on duckdb 1.5.6.
+        const duckdbVersion = await captureText(shelter, `
+          if (requireNamespace('duckdb', quietly = TRUE)) cat(format(utils::packageVersion('duckdb'))) else cat('none')
         `);
-        await capture(shelter, `
-          duckdb_available <- requireNamespace('duckdb', quietly = TRUE) && requireNamespace('DBI', quietly = TRUE)
-          if (!duckdb_available) {
-            cat('DuckDB package unavailable in this webR runtime; extension smoke skipped\\n')
-          } else if (utils::packageVersion('duckdb') < '2.0.0') {
-            cat('webR serves duckdb ', format(utils::packageVersion('duckdb')),
-                '; Rducks loads its signed extension from an extension repository, which needs duckdb >= 2.0.0. ',
-                'Extension smoke skipped; the backport/duckdb-1.5 branch runs it on duckdb 1.5.6\\n', sep = '')
-          } else {
-            con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()), dbdir = ':memory:')
-            on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
-            rducks_enable(con, threads = 'single')
-            rducks_register_scalar_udf(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
-            out <- DBI::dbGetQuery(con, 'SELECT r_webr_plus_one(41::INTEGER) AS x')
-            stopifnot(identical(out$x[[1]], 42L))
-            cat('DuckDB extension smoke: ok\\n')
-          }
-        `);
+        const duckdbTooOld = duckdbVersion !== 'none' &&
+          await captureText(shelter, `cat(utils::packageVersion('duckdb') < '2.0.0')`) === 'TRUE';
+        if (duckdbTooOld) {
+          log(`webR serves duckdb ${duckdbVersion}; Rducks needs duckdb >= 2.0.0. Smoke skipped.`);
+        } else {
+          await capture(shelter, `
+            library(Rducks)
+            stopifnot(identical(rducks_type_sql(INTEGER), 'INTEGER'))
+            stopifnot(isTRUE(rducks_is_type(STRUCT(x = INTEGER))))
+            stopifnot(NROW(rducks_mode_semantics()) >= 2L)
+            cat('Rducks package smoke: ok\\n')
+          `);
+          await capture(shelter, `
+            duckdb_available <- requireNamespace('duckdb', quietly = TRUE) && requireNamespace('DBI', quietly = TRUE)
+            if (!duckdb_available) {
+              cat('DuckDB package unavailable in this webR runtime; extension smoke skipped\\n')
+            } else {
+              con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()), dbdir = ':memory:')
+              on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+              rducks_enable(con, threads = 'single')
+              rducks_register_scalar_udf(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
+              out <- DBI::dbGetQuery(con, 'SELECT r_webr_plus_one(41::INTEGER) AS x')
+              stopifnot(identical(out$x[[1]], 42L))
+              cat('DuckDB extension smoke: ok\\n')
+            }
+          `);
+        }
         log("PASS");
       } catch (err) {
         log(`FAIL: ${err.message ?? String(err)}`);
