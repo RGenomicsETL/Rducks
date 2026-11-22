@@ -1,7 +1,8 @@
 diff --git a/src/database.cpp b/src/database.cpp
+index 0eb24f9..e59aba7 100644
 --- a/src/database.cpp
 +++ b/src/database.cpp
-@@ -24,6 +24,7 @@
+@@ -25,6 +25,7 @@ static bool CastRstringToVarchar(Vector &source, Vector &result, idx_t count, Ca
  	// Hard stop when poisoned: every DuckDB session starts here, so this single
  	// guard ensures no test or example can reach the C++ engine on CRAN.
  	DUCKDB_R_POISON_GUARD();
@@ -9,7 +10,7 @@ diff --git a/src/database.cpp b/src/database.cpp
  
  	const char *dbdirchar;
  
-@@ -85,6 +86,7 @@
+@@ -86,6 +87,7 @@ static bool CastRstringToVarchar(Vector &source, Vector &result, idx_t count, Ca
  	DataFrameScanFunction scan_fun;
  	CreateTableFunctionInfo info(scan_fun);
  	Connection conn(*wrapper->db);
@@ -18,25 +19,28 @@ diff --git a/src/database.cpp b/src/database.cpp
  	auto &catalog = Catalog::GetSystemCatalog(context);
  	context.transaction.BeginTransaction();
 diff --git a/src/include/rapi.hpp b/src/include/rapi.hpp
+index 87dfe2b..9429d38 100644
 --- a/src/include/rapi.hpp
 +++ b/src/include/rapi.hpp
-@@ -107,6 +107,12 @@
- [[noreturn]] void rapi_error_with_context(const std::string &context, const std::string &message);
+@@ -112,6 +112,13 @@ private:
  [[noreturn]] void rapi_error_with_context(const std::string &context, const std::exception &e);
  [[noreturn]] void rapi_error_with_context(const std::string &context, const duckdb::ErrorData &error_data);
-+
-+// Record R's thread before a database exposes callbacks to native clients.
+ 
++// Register the off-main guard C-callables for native query drivers.
 +// A failed thread check throws a native exception without entering R.
 +void InitializeRApiThread();
 +void RequireRApiThread(const char *operation);
 +void RegisterManagedStreamGuard(duckdb::Connection &connection);
- 
++bool ManagedStreamGuardActive(duckdb::DatabaseInstance &database);
++
  namespace duckdb {
  
+ typedef unordered_map<std::string, cpp11::list> arrow_scans_t;
 diff --git a/src/register.cpp b/src/register.cpp
+index e60a64c..9939b5b 100644
 --- a/src/register.cpp
 +++ b/src/register.cpp
-@@ -72,6 +72,7 @@
+@@ -85,6 +85,7 @@ using namespace duckdb;
  
  unique_ptr<TableRef> duckdb::EnvironmentScanReplacement(ClientContext &context, ReplacementScanInput &input,
                                                          optional_ptr<ReplacementScanData> data_p) {
@@ -44,46 +48,52 @@ diff --git a/src/register.cpp b/src/register.cpp
  	auto &data = (ReplacementDataDBWrapper &)*data_p;
  	auto db_wrapper = data.wrapper;
  
-@@ -133,6 +134,7 @@
+@@ -150,6 +151,7 @@ public:
  	}
  
- 	static unique_ptr<ArrowArrayStreamWrapper> Produce(uintptr_t factory_p, ArrowStreamParameters &parameters) {
+ 	unique_ptr<ArrowArrayStreamWrapper> ProduceStream(ArrowStreamParameters &parameters) override {
 +		RequireRApiThread("R Arrow stream production");
- 		auto res = make_uniq<ArrowArrayStreamWrapper>();
- 		auto factory = (RArrowTabularStreamFactory *)factory_p;
- 		cpp11::sexp stream_ptr_sexp =
-@@ -157,7 +159,7 @@
+ 		// Called from ArrowScanInitGlobal, under the client context lock.
+ 		RCallbackScope callback_scope;
+ 
+@@ -176,6 +178,7 @@ public:
  	}
  
- 	static void GetSchema(uintptr_t factory_p, ArrowSchemaWrapper &schema) {
--
+ 	void GetSchema(ArrowSchema &schema) override {
 +		RequireRApiThread("R Arrow schema binding");
- 		auto res = make_uniq<ArrowArrayStreamWrapper>();
- 		auto factory = (RArrowTabularStreamFactory *)factory_p;
- 		cpp11::sexp schema_ptr_sexp =
-@@ -351,6 +353,7 @@
+ 		RCallbackScope callback_scope;
+ 
+ 		cpp11::sexp schema_ptr_sexp = Rf_ScalarReal(static_cast<double>(reinterpret_cast<uintptr_t>(&schema)));
+@@ -507,6 +510,7 @@ unique_ptr<TableRef> duckdb::ArrowScanReplacement(ClientContext &context, Replac
  	lock_guard<mutex> arrow_scans_lock(db_wrapper->lock);
  	const auto &arrow_scans = db_wrapper->arrow_scans;
  	for (auto e = arrow_scans.find(table_name); e != arrow_scans.end(); ++e) {
 +		RequireRApiThread("Arrow replacement scan");
+ 		auto &factory = *reinterpret_cast<shared_ptr<RArrowTabularStreamFactory> *>(R_ExternalPtrAddr(e->second[0]));
  		auto table_function = make_uniq<TableFunctionRef>();
  		vector<duckdb::unique_ptr<ParsedExpression>> children;
- 		children.push_back(make_uniq<ConstantExpression>(Value::POINTER((uintptr_t)R_ExternalPtrAddr(e->second[0]))));
 diff --git a/src/scan.cpp b/src/scan.cpp
+index 96c9e7f..eb9c333 100644
 --- a/src/scan.cpp
 +++ b/src/scan.cpp
-@@ -602,6 +602,7 @@
+@@ -675,6 +675,12 @@ static duckdb::unique_ptr<FunctionData> DataFrameScanBind(ClientContext &context
+ 	// runs its class's code: a duckdb relation materializes, after evaluating
+ 	// `duckdb.materialize_callback` -- arbitrary R code, and with it pending finalizers.
+ 	RCallbackScope callback_scope;
++	// A native query driver runs this database's queries off R's thread. Its
++	// bind would still build cpp11 objects, so refuse it there.
++	if (!OnRThread() && ManagedStreamGuardActive(*context.db)) {
++		throw InvalidInputException("R data-frame binding requires R's recorded thread while a managed stream "
++		                            "drives this database");
++	}
  
- static duckdb::unique_ptr<FunctionData> DataFrameScanBind(ClientContext &context, TableFunctionBindInput &input,
-                                                           vector<LogicalType> &return_types, vector<string> &names) {
-+	RequireRApiThread("R data-frame binding");
  	data_frame df((SEXP)input.inputs[0].GetPointer());
  
- 	auto integer64 = get_integer64_param(input.named_parameters);
 diff --git a/src/utils.cpp b/src/utils.cpp
+index 76e6d45..ae39c57 100644
 --- a/src/utils.cpp
 +++ b/src/utils.cpp
-@@ -6,11 +6,205 @@
+@@ -6,6 +6,18 @@
  #include "rapi.hpp"
  #include "typesr.hpp"
  
@@ -95,22 +105,17 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +#include "duckdb/main/settings.hpp"
 +#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 +#include <cstdint>
-+#include <mutex>
-+#include <memory>
 +#include <limits>
++#include <memory>
++#include <mutex>
 +#include <unordered_map>
-+#include <thread>
-+
- // Avoid clash with TRUE and FALSE macros in older rtools
- #undef TRUE
- #undef FALSE
+ #include <thread>
  
- using namespace duckdb;
-+
-+static std::once_flag r_api_thread_once;
-+static std::thread::id r_api_thread;
-+static std::atomic<bool> r_api_thread_initialized {false};
-+
+ // Avoid clash with TRUE and FALSE macros in older rtools
+@@ -25,6 +37,189 @@ bool duckdb::OnRThread() {
+ 	return std::this_thread::get_id() == r_thread;
+ }
+ 
 +// C-callable capability, uint32_t(void), registered after database startup.
 +// Version 2 also supplies database-wide managed-stream scheduler leases.
 +static uint32_t OffMainGuardVersion() {
@@ -119,7 +124,7 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +
 +struct ManagedStreamGuardLease {
 +	shared_ptr<DatabaseInstance> database;
-+	case_insensitive_set_t previous_allowed_configs;
++	identifier_set_t previous_allowed_configs;
 +	Value previous_lock;
 +	bool previous_lock_is_set = false;
 +	bool acquired = false;
@@ -190,9 +195,9 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +	return 1;
 +}
 +
-+static bool ManagedStreamProtectedSetting(const string &name) {
++static bool ManagedStreamProtectedSetting(const Identifier &name) {
 +	auto option = DBConfig::GetOptionByName(name);
-+	auto canonical_name = option ? string(option->name) : StringUtil::Lower(name);
++	auto canonical_name = option ? string(option->name) : StringUtil::Lower(name.GetIdentifierName());
 +	return canonical_name == "threads" || canonical_name == "external_threads" ||
 +	       canonical_name == "lock_configuration" || canonical_name == "allowed_configs";
 +}
@@ -219,7 +224,7 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +	lease.previous_lock_is_set =
 +	    config.TryGetCurrentUserSetting(LockConfigurationSetting::SettingIndex, lease.previous_lock);
 +	bool was_locked = Settings::Get<LockConfigurationSetting>(config);
-+	case_insensitive_set_t allowed_configs;
++	identifier_set_t allowed_configs;
 +	if (was_locked) {
 +		// Preserve the user's security restriction; never widen an existing lock.
 +		for (auto &name : config.options.allowed_configs) {
@@ -231,8 +236,8 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +		// Keep other currently registered settings usable. Newly loaded extension
 +		// settings fail closed until the stream ends rather than weakening this guard.
 +		for (auto &option : DBConfig::GetOptions()) {
-+			if (!ManagedStreamProtectedSetting(option.name)) {
-+				allowed_configs.insert(option.name);
++			if (!ManagedStreamProtectedSetting(Identifier(option.name))) {
++				allowed_configs.insert(Identifier(option.name));
 +			}
 +		}
 +		for (auto &option : config.GetExtensionSettings()) {
@@ -263,11 +268,17 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +	connection.context->RegisterFunction(info);
 +}
 +
++bool ManagedStreamGuardActive(DatabaseInstance &database) {
++	std::lock_guard<std::mutex> guard(managed_stream_guards_mutex);
++	for (auto &existing : managed_stream_guards) {
++		if (existing.second->acquired && existing.second->database.get() == &database) {
++			return true;
++		}
++	}
++	return false;
++}
++
 +void InitializeRApiThread() {
-+	std::call_once(r_api_thread_once, [] {
-+		r_api_thread = std::this_thread::get_id();
-+		r_api_thread_initialized.store(true, std::memory_order_release);
-+	});
 +	RequireRApiThread("database startup");
 +	cpp11::safe[R_RegisterCCallable](DUCKDB_PACKAGE_NAME, "duckdb_r_off_main_guard_version",
 +	                                reinterpret_cast<DL_FUNC>(OffMainGuardVersion));
@@ -279,13 +290,15 @@ diff --git a/src/utils.cpp b/src/utils.cpp
 +	                                reinterpret_cast<DL_FUNC>(ManagedStreamGuardValidate));
 +}
 +
++// R's thread is the one RecordRThread() recorded when R loaded the package.
 +void RequireRApiThread(const char *operation) {
-+	if (!r_api_thread_initialized.load(std::memory_order_acquire) ||
-+	    std::this_thread::get_id() != r_api_thread) {
++	if (!OnRThread()) {
 +		throw InvalidInputException("%s requires R's recorded thread; R-backed inputs are unsupported in a native "
 +		                            "query driver", operation);
 +	}
 +}
- 
++
++
  [[cpp11::register]] SEXP rapi_adbc_init_func() {
  	return R_MakeExternalPtrFn((DL_FUNC)duckdb_adbc_init, R_NilValue, R_NilValue);
+ }

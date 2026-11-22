@@ -65,7 +65,7 @@ jobs:
         with:
           extra-packages: |
             any::tinytest
-            duckdb@1.5.6
+            duckdb@2.0.0
           needs: check
       - name: Record separate package and guarded libraries
         run: |
@@ -81,9 +81,9 @@ jobs:
           settings <- c(paths, RDUCKS_DEPENDENCY_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
           cat(paste0(names(settings), '=', settings, '\n'), sep = '',
               file = Sys.getenv('GITHUB_ENV'), append = TRUE)
-          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          stopifnot(as.character(packageVersion('duckdb')) == '2.0.0')
           RSCRIPT
-      - name: Build Rducks against stock DuckDB v1.5.6
+      - name: Build Rducks against stock DuckDB v2.0.0
         timeout-minutes: 10
         run: |
           set -euo pipefail
@@ -98,7 +98,7 @@ jobs:
           timeout --kill-after=10s 120s env -u R_LIBS \
             R_LIBS_USER="$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
             Rscript --vanilla - <<'RSCRIPT' 2>&1 | tee "$RDUCKS_MANAGED_LOGS/stock-capability.log"
-          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          stopifnot(as.character(packageVersion('duckdb')) == '2.0.0')
           result <- tinytest::run_test_file('inst/tinytest/test_query_stream_driver.R')
           print(summary(result))
           checks <- as.data.frame(result)$result
@@ -126,7 +126,7 @@ jobs:
               R_LIBS_USER="$RDUCKS_GUARDED_LIBRARY:$RDUCKS_PACKAGE_LIBRARY:$RDUCKS_DEPENDENCY_LIBS" \
               Rscript --vanilla - "$file" <<'RSCRIPT' 2>&1 | tee "$RDUCKS_MANAGED_LOGS/$file.log"
           file <- commandArgs(trailingOnly = TRUE)[[1L]]
-          stopifnot(as.character(packageVersion('duckdb')) == '1.5.6')
+          stopifnot(as.character(packageVersion('duckdb')) == '2.0.0')
           stopifnot(normalizePath(getNamespaceInfo(asNamespace('duckdb'), 'path')) ==
             normalizePath(file.path(Sys.getenv('RDUCKS_GUARDED_LIBRARY'), 'duckdb')))
           result <- tinytest::run_test_file(file.path('inst', 'tinytest', file))
