@@ -5,7 +5,7 @@ args <- commandArgs(trailingOnly = TRUE)
 stopifnot(length(args) == 2L)
 mode <- args[[1L]]
 ready_file <- args[[2L]]
-con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- DBI::dbConnect(duckdb::duckdb(config = Rducks::rducks_duckdb_config(), shared_home = FALSE))
 rducks_enable(con, threads = "single")
 rducks_enable_inproc(con, threads = 1L, external_threads = 1L)
 if (!Rducks:::rducks_query_stream_driver_available(con)) {

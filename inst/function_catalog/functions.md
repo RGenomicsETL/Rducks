@@ -7,14 +7,14 @@ Generated from `inst/function_catalog/functions.json` by
 
 - Kind: `R function`
 - Category: `connection`
-- Signature: `rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'))`
+- Signature: `rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'), home_registry = FALSE)`
 - Returns: `duckdb_connection (invisibly)`
 
-Load the exact-version bundled Rducks DuckDB extension and record the calling R thread for direct native UDF evaluation.
+Load the bundled signed Rducks DuckDB extension from a local extension repository, with DuckDB signature checks enabled, and record the calling R thread for direct native UDF evaluation.
 
 Notes:
 
-- The default path is selected from the DuckDB engine version reported by the connection; the bundled extensions link no Arrow or columnar interchange library.
+- Needs DuckDB 2.0.0 or later. Open connections with rducks_duckdb_config() to keep the repository record below tempdir(); other connections need home_registry = TRUE. The bundled extension links no Arrow or columnar interchange library.
 
 ## `rducks_execution_plan`
 

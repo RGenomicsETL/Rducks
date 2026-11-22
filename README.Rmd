@@ -13,8 +13,9 @@ knitr::opts_chunk$set(
 )
 options(width = 80)
 library(Rducks)
-source("tools/duckdb_version_support.R")
-duckdb_version_range <- rducks_duckdb_version_range(".")
+source("tools/used_duckdb_capi.R")
+duckdb_capi_version <- rducks_duckdb_capi_version(".")
+duckdb_min_version <- rducks_duckdb_min_version(".")
 ```
 
 # Rducks
@@ -65,22 +66,30 @@ currently marshals fixed-width scalars, `VARCHAR`/`BLOB`, `DECIMAL`, `INTERVAL`,
 `LIST`/`ARRAY`/`STRUCT` of supported types. `VARIANT` is enabled only when the
 loaded DuckDB runtime passes Rducks' dynamic logical-type and vector-layout
 probe; otherwise direct and `ipc` registrations fail closed.
-
 ## DuckDB version compatibility
 
-Rducks builds and installs a separate extension artifact for every supported
-exact DuckDB engine release instead of assuming releases are ABI-compatible.
-DuckDB 1.x artifacts use the exact-version `C_STRUCT_UNSTABLE` extension ABI.
-DuckDB 2.0 reserves `C_STRUCT_UNSTABLE` for its new V2 C API, so DuckDB 2.x
-artifacts use the stable V1 `C_STRUCT` ABI pinned to C API v1.5.6, the release
-that stabilized the entries Rducks needs.
-The current bundle covers `r duckdb_version_range`; that range is generated from
-the build manifest rather than maintained separately in the documentation.
+Rducks needs duckdb `r duckdb_min_version` or later. Two versions apply:
 
-`rducks_enable()` queries `SELECT version()` on the target connection and loads
-only the artifact for that exact version. It never falls back to a nearby
-version. An unsupported engine fails before `LOAD` and reports the bundled
-versions. See the
+- The extension is built against DuckDB's stable C extension API, version
+  `r duckdb_capi_version`, with `C_STRUCT` metadata. DuckDB loads such an
+  extension on every engine release that supports that API version, so one
+  build per platform serves all of them.
+- `rducks_enable()` loads the extension from a signed local extension
+  repository. Extension repositories need DuckDB `r duckdb_min_version`, so
+  this sets the minimum version of the package.
+
+Installation signs the extension with a key generated for that installation and
+keeps only the public key. `rducks_enable()` exposes the signed file as an
+extension repository below `tempdir()`, registers the public key for it, and
+runs `INSTALL` and `LOAD` from it. DuckDB's signature checks stay enabled, so
+`allow_unsigned_extensions` is not needed. Open connections with
+`rducks_duckdb_config()` so that DuckDB keeps its repository record below
+`tempdir()`; on any other connection, `rducks_enable()` writes the record to
+`~/.duckdb/extension_repositories` only with `home_registry = TRUE`, and removes
+it after `LOAD`.
+
+The `backport/duckdb-1.5` branch keeps a release line for duckdb 1.5.6 that
+loads the extension with plain `LOAD` and `allow_unsigned_extensions`. See the
 [DuckDB version compatibility article](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.html)
 for the installed layout, diagnostics, and maintainer update workflow.
 
@@ -91,7 +100,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- dbConnect(duckdb(config = rducks_duckdb_config()))
 rducks_enable(con, threads = "single")
 
 score_udf <- rducks_register_scalar_udf(
@@ -132,6 +141,51 @@ not unregister the SQL function. Registering the same SQL name/signature again
 replaces the callable implementation. Use `side_effects = TRUE` for functions
 with counters, randomness, I/O, mutation, sleeps, or other effects so DuckDB does
 not optimize them as pure expressions.
+
+## duckplyr: R functions inside `with()`
+
+`rducks_with_duckplyr()` and the `with.duckdb_connection()` method let ordinary R
+calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing
+`dd$...` calls. The bridge defaults to row-wise `mode = "scalar"` and can use
+`mode = "vectorized"` for vectorized helpers; its marshalling comes from the
+current Rducks execution plan.
+
+This example requires a duckplyr release compatible with the selected DuckDB
+engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr 1.2.2 does.
+
+```{r duckplyr}
+demo_con <- DBI::dbConnect(
+  duckdb::duckdb(config = rducks_duckdb_config()),
+  dbdir = ":memory:"
+)
+Rducks::rducks_enable(demo_con, threads = "single")
+DBI::dbWriteTable(demo_con, "scores", data.frame(
+  id = 1:3,
+  x = c(2, 21, 34),
+  label = c("low", "high", "high")
+))
+
+scores <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM scores",
+  con = demo_con,
+  prudence = "stingy"
+)
+local_score <- function(x, label) {
+  as.double(x + if (identical(label, "high")) 100 else 0)
+}
+
+with(
+  demo_con,
+  scores |>
+    dplyr::mutate(score = local_score(x, label)) |>
+    dplyr::select(id, score) |>
+    dplyr::collect(),
+  rducks_returns = list(local_score = DOUBLE)
+)
+
+Rducks::rducks_release(demo_con)
+DBI::dbDisconnect(demo_con, shutdown = TRUE)
+```
 
 ## Lifecycle
 
@@ -568,95 +622,42 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
 benchmark
 ```
 
-## duckplyr integration
-
-`rducks_with_duckplyr()` and the `with.duckdb_connection()` method let ordinary R
-calls inside duckplyr expressions resolve to Rducks scalar UDFs, without writing
-`dd$...` calls. The bridge defaults to row-wise `mode = "scalar"` and can use
-`mode = "vectorized"` for vectorized helpers; its marshalling comes from the
-current Rducks execution plan.
-
-This example requires a duckplyr release compatible with the selected DuckDB
-engine. duckplyr 1.2.1 does not support DuckDB 2.0.0; use DuckDB 1.5.6 for
-this example.
-
-```{r duckplyr}
-demo_con <- DBI::dbConnect(
-  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
-  dbdir = ":memory:"
-)
-Rducks::rducks_enable(demo_con, threads = "single")
-DBI::dbWriteTable(demo_con, "scores", data.frame(
-  id = 1:3,
-  x = c(2, 21, 34),
-  label = c("low", "high", "high")
-))
-
-scores <- duckplyr::read_sql_duckdb(
-  "SELECT * FROM scores",
-  con = demo_con,
-  prudence = "stingy"
-)
-local_score <- function(x, label) {
-  as.double(x + if (identical(label, "high")) 100 else 0)
-}
-
-with(
-  demo_con,
-  scores |>
-    dplyr::mutate(score = local_score(x, label)) |>
-    dplyr::select(id, score) |>
-    dplyr::collect(),
-  rducks_returns = list(local_score = DOUBLE)
-)
-
-Rducks::rducks_release(demo_con)
-DBI::dbDisconnect(demo_con, shutdown = TRUE)
-```
-
 ## Build notes
 
 The source and vendored native dependencies used by `configure` live under
-`tools/ext/`. Installation builds one artifact per release declared in
-`tools/ext/duckdb_capi/versions.txt` (currently `r duckdb_version_range`), for
-example `inst/rducks_extension/build/<duckdb-version>/rducks.duckdb_extension`.
-At runtime,
-`rducks_enable()` queries the target connection's engine version and loads only
-the exact matching artifact; an unsupported version fails without fallback.
-`cleanup` removes only generated artifacts, not the source tree needed by
-`R CMD build`. This package-bundled extension layout follows precedents such as
-[Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts). Matching
-DuckDB C API headers are vendored explicitly for every declared version.
+`tools/ext/`. Installation builds one artifact,
+`inst/rducks_extension/build/rducks.duckdb_extension`, against the DuckDB C API
+headers vendored in `tools/ext/duckdb_capi/`. The `duckdb_ref` release recorded
+in `tools/ext/duckdb_capi/duckdb_headers.json` (currently
+`r duckdb_capi_version`) is the stable C API version of the build. After the
+link, `tools/ext/sign/rducks_sign.c`, built from the vendored Mbed TLS sources,
+signs the artifact with a key generated for that installation and writes the
+public key to `inst/rducks_extension/build/rducks.pub`; the private key is not
+stored. `cleanup` removes only generated artifacts, not the source tree needed
+by `R CMD build`. This package-bundled extension layout
+follows precedents such as
+[Rduckhts](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts).
 
 ```sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.6
 ```
 
-The extension builds against DuckDB's V1
-[C extension API](https://duckdb.org/docs/stable/clients/c/overview.html).
-DuckDB 1.x artifacts use the exact-version `C_STRUCT_UNSTABLE` ABI; DuckDB 2.x
-artifacts use the stable `C_STRUCT` ABI pinned to C API v1.5.6, because DuckDB 2
-loads `C_STRUCT_UNSTABLE` extensions only through the separate V2 C API
-(`tools/duckdb_capi_abi.sh` makes this choice). Either way Rducks needs entries
-outside the v1.2.0 stable surface: scalar-function bind/init/state hooks, bind-time argument
-inspection, selection-vector helpers, and the deprecated streaming-result
-functions. The table below lists those entries, grouped by the header's
-unstable group (DuckDB headers before 1.5.6) or by the API version band that
-first stabilized them (1.5.6 headers, where `deprecated` marks entries that
-need `DUCKDB_API_ALLOW_DEPRECATED`). It is generated from
-`tools/used_duckdb_unstable_api.R` against the newest vendored header when
-`README.Rmd` is rendered:
+The extension uses DuckDB's
+[C extension API](https://duckdb.org/docs/stable/clients/c/overview.html)
+without `DUCKDB_EXTENSION_API_VERSION_UNSTABLE`. The table below lists the API
+entries that the extension calls, grouped by the API version band that first
+stabilized them; `deprecated` marks entries that need
+`DUCKDB_API_ALLOW_DEPRECATED`. The newest band sets the oldest engine that can
+load the extension. It is generated from `tools/used_duckdb_capi.R` when `README.Rmd` is rendered:
 
-```{r unstable-api-table, echo=FALSE, results='asis'}
-source("tools/used_duckdb_unstable_api.R")
-cat(rducks_used_duckdb_unstable_api_markdown("."))
+```{r capi-table, echo=FALSE, results='asis'}
+cat(rducks_used_duckdb_capi_markdown("."))
 ```
 
-The generated direct/Quack CI matrix pins DuckDB to the newest bundled engine
-on R release and R 4.3. A separate R release job tests the latest available
-DuckDB and fails visibly if that engine is not bundled, without cancelling
-the pinned jobs. See `docs/BUILD.md` for the runtime policy, build, and ABI
-details.
+The generated direct/Quack CI matrix pins duckdb to the minimum version in
+`DESCRIPTION` on R release and R 4.3. A separate R release job tests the latest
+available duckdb without cancelling the pinned jobs. See `docs/BUILD.md` for the
+runtime policy, build, and ABI details.
 
 ## References
 

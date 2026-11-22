@@ -3,10 +3,10 @@
     "name": "rducks_enable",
     "kind": "R function",
     "category": "connection",
-    "signature": "rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'))",
+    "signature": "rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'), home_registry = FALSE)",
     "returns": "duckdb_connection (invisibly)",
-    "description": "Load the exact-version bundled Rducks DuckDB extension and record the calling R thread for direct native UDF evaluation.",
-    "notes": ["The default path is selected from the DuckDB engine version reported by the connection; the bundled extensions link no Arrow or columnar interchange library."]
+    "description": "Load the bundled signed Rducks DuckDB extension from a local extension repository, with DuckDB signature checks enabled, and record the calling R thread for direct native UDF evaluation.",
+    "notes": ["Needs DuckDB 2.0.0 or later. Open connections with rducks_duckdb_config() to keep the repository record below tempdir(); other connections need home_registry = TRUE. The bundled extension links no Arrow or columnar interchange library."]
   },
   {
     "name": "rducks_execution_plan",

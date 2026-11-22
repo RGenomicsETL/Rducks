@@ -218,7 +218,7 @@ rducks_explain_udf_row <- function(con, name) {
 #' @return A one-row data frame with scalar-UDF registration metadata and native counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)
@@ -247,7 +247,7 @@ rducks_explain_udf <- function(con, name) {
 #' @return Invisibly `TRUE` on success.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)
@@ -287,7 +287,7 @@ rducks_reset_udf_counters <- function(con, name = NULL) {
 #' @return A data frame with one row per Rducks scalar UDF registered on `con`.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_fn", function(x) x + 1L,
 #'   args = list(INTEGER), returns = INTEGER)

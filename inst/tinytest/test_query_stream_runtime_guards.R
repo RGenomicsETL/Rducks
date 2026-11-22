@@ -5,7 +5,7 @@ local({
     exit_file("duckdb/DBI not available")
     return(invisible(NULL))
   }
-  drv <- duckdb::duckdb(config = list(allow_unsigned_extensions = "true", threads = "4"))
+  drv <- duckdb::duckdb(config = rducks_duckdb_config(list(threads = "4")))
   first <- DBI::dbConnect(drv)
   second <- DBI::dbConnect(drv)
   on.exit({
@@ -16,8 +16,10 @@ local({
   }, add = TRUE)
   # A caller may LOAD the extension before the first enable. That creates a
   # native runtime without an R bridge, with the scheduler still using workers.
-  DBI::dbExecute(first, paste("LOAD", DBI::dbQuoteString(first,
-    normalizePath(rducks_extension_path()))))
+  # The signed extension loads from its local repository, as rducks_enable()
+  # does, but without the R bootstrap that follows.
+  getFromNamespace("rducks_load_from_repository", "Rducks")(
+    first, rducks_extension_path(), home_registry = FALSE)
   rducks_enable(first, threads = "single")
   if (!getFromNamespace("rducks_query_stream_driver_available", "Rducks")(first)) {
     exit_file("duckdb-r off-main R-source guard capability is not available")
@@ -77,7 +79,7 @@ local({
     }, add = TRUE)
     connect_file <- function() {
       DBI::dbConnect(duckdb::duckdb(dbdir = path,
-        config = list(allow_unsigned_extensions = "true", threads = "4")))
+        config = rducks_duckdb_config(list(threads = "4"))))
     }
     driver_available <- getFromNamespace("rducks_query_stream_driver_available", "Rducks")
     for (cleanup in c("close", "gc")) {

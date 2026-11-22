@@ -5,7 +5,7 @@ local({
     exit_file("duckdb/DBI not available")
     return(invisible(NULL))
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
   on.exit({
     try(rducks_release(con), silent = TRUE)
     try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)

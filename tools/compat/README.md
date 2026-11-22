@@ -1,17 +1,20 @@
 # duckdb-r guard companion for managed streaming
 
 The managed `concurrent_inproc` query stream needs the capability supplied by
-[`duckdb-r-off-main-guards-v1.5.6.patch`](duckdb-r-off-main-guards-v1.5.6.patch).
-This is a reviewable companion patch against duckdb-r 1.5.6. It has not been
-published or accepted upstream. Rducks rejects managed stream startup when
+[`duckdb-r-off-main-guards-v2.0.0.patch`](duckdb-r-off-main-guards-v2.0.0.patch).
+This is a reviewable companion patch against duckdb-r 2.0.0, proposed upstream
+in [duckdb-r#3084](https://github.com/duckdb/duckdb-r/issues/3084) and not yet
+accepted. Rducks rejects managed stream startup when
 the capability is absent; ordinary serial and IPC execution remain available.
 
 ## Contract and scope
 
-The patch records R's thread during database startup. Before touching R, native
-callbacks reject calls from another thread with a DuckDB exception. The source guards
-cover environment replacement scans, matched Arrow replacement scans, R Arrow
-schema/stream factories, and R data-frame binding. These checks matter because
+duckdb-r 2.0.0 records R's thread when the package loads (`OnRThread()`). Before
+touching R, the patched native callbacks reject calls from another thread with a
+DuckDB exception. The source guards
+cover environment replacement scans, matched Arrow replacement scans and R Arrow
+schema/stream factories. R data-frame binding is refused off R's thread only
+while a managed stream holds the database lease. These checks matter because
 replacement scans belong to the database and are visible to the extension's
 native connection, including when the caller's temporary views are not.
 
@@ -70,21 +73,20 @@ temporary objects, transactions and session settings are not transparently
 shared. Ordinary DBI execution still needs upstream integration that retains
 the caller's connection/result and services R callbacks and interrupts throughout
 execution, fetch and teardown. The upstream
-[producer-thread plan](https://github.com/duckdb/duckdb-r/blob/v1.5.6/plan/PLAN-streaming-thread.md)
+[producer-thread plan](https://github.com/duckdb/duckdb-r/blob/v1.5.6/plan/PLAN-streaming-thread.md) (duckdb-r v1.5.6)
 separately defers asynchronous open/execute and a binding-complete barrier.
 
 ## Pinned sources
 
 The patch changes five source files, with no generated cpp11 changes. Its base is
-[duckdb-r v1.5.6](https://github.com/duckdb/duckdb-r/tree/f1f818b29aa8292f1623dae09b25264f93ad71c0),
-commit `f1f818b29aa8292f1623dae09b25264f93ad71c0`. The CRAN source and official
-library both embed DuckDB core commit `069cc9f9b5`.
+the CRAN duckdb 2.0.0 source package, built against the official DuckDB v2.0.0
+shared library; upstream configure checks that both embed the same core commit.
 
 | Input | SHA-256 |
 | --- | --- |
-| [duckdb_1.5.6.tar.gz](https://cran.r-project.org/src/contrib/duckdb_1.5.6.tar.gz) | `92a9b45b2994568d8d3f0173ecc3a085698f1241177719b79d7e3b4bcca5b0c9` |
-| [libduckdb-linux-amd64.zip](https://github.com/duckdb/duckdb/releases/download/v1.5.6/libduckdb-linux-amd64.zip) | `b845005f5132a7d8180057c35e14a7626632258782f871a90861b19c1c03841b` |
-| Companion patch | `2169fc562d0b48bf24f9c4da11c68288599da26319f9d6324d52552cfa9e6df9` |
+| [duckdb_2.0.0.tar.gz](https://cran.r-project.org/src/contrib/duckdb_2.0.0.tar.gz) | `23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741` |
+| [duckdb-shared-libs-linux-amd64.tar.gz](https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-shared-libs-linux-amd64.tar.gz) | `993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1` |
+| Companion patch | `965f9f257a8f43571abca32b65c4f80c88335df423a89cb73858e40f877153e1` |
 
 The installer falls back to the CRAN version archive when the current-source
 URL expires. Every downloaded file must match its pinned checksum.
@@ -92,8 +94,8 @@ URL expires. Every downloaded file must match its pinned checksum.
 ## Reproduce on Linux amd64
 
 Prerequisites are R 4.2 or newer with DBI installed, a C/C++17 build toolchain,
-`make`, `curl`, `git`, `tar`, `xz`, `unzip`, `sha256sum`, and `strings` (binutils).
-This recipe was exercised with R 4.3.3 on Linux amd64. The source patch does not
+`make`, `curl`, `git`, `tar`, `xz`, `sha256sum`, and `strings` (binutils).
+This recipe was exercised with R 4.6.2 on Linux amd64. The source patch does not
 depend on Linux APIs, but macOS and Windows have not been tested. The binary
 recipe intentionally accepts Linux amd64 only.
 
@@ -154,7 +156,8 @@ separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt
 
 `python3 test/native/run_scheduler_guard.py` uses the same library environment
 and runs fresh R processes with a 60-second deadline and forced kill/reap on
-failure. It first witnesses pending native callbacks, then tests raw and cached
+failure. It first witnesses R callbacks queued by native workers for the open stream (DuckDB
+2.0 does not produce a streaming result between fetches), then tests raw and cached
 prepared scheduler changes on both the original and sibling connections. Other
 cases cover callback reentrancy, pre-existing security restrictions, errors,
 GC/release restoration, and a user macro shadowing the acquisition function.

@@ -23,9 +23,6 @@ jobs:
   source-package:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      USE_UNSTABLE_C_API: "1"
-      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
     steps:
       - uses: actions/checkout@v4
 
@@ -63,8 +60,6 @@ jobs:
       UNIVERSE_NAME: rgenomicsetl
       MY_UNIVERSE: https://rgenomicsetl.r-universe.dev
       CRAN_VERSION: ""
-      USE_UNSTABLE_C_API: "1"
-      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
     steps:
       - uses: r-universe-org/actions/setup-r@v12
         with:

@@ -10,7 +10,7 @@ main <- function() {
   limit <- as.integer(Sys.getenv("RDUCKS_MATRIX_MAX", "0"))
   if (is.na(limit)) limit <- 0L
 
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)

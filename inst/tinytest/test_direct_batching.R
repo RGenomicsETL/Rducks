@@ -6,7 +6,7 @@ local({
   if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
     exit_file("duckdb/DBI not available")
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)

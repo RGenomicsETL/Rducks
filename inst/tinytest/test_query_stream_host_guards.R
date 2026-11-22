@@ -6,7 +6,7 @@ local({
     return(invisible(NULL))
   }
   drv <- duckdb::duckdb(environment_scan = TRUE,
-    config = list(allow_unsigned_extensions = "true"))
+    config = rducks_duckdb_config())
   con <- DBI::dbConnect(drv)
   on.exit({
     try(rducks_release(con), silent = TRUE)

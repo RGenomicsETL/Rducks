@@ -4,21 +4,57 @@
 \alias{rducks_enable}
 \title{Enable Rducks on a DuckDB connection}
 \usage{
-rducks_enable(con, extension_path = NULL, threads = c("unchanged", "single"))
+rducks_enable(
+  con,
+  extension_path = NULL,
+  threads = c("unchanged", "single"),
+  home_registry = FALSE
+)
 }
 \arguments{
 \item{con}{A \code{duckdb_connection}.}
 
-\item{extension_path}{Optional explicit extension path. \code{NULL} selects the
-bundled artifact matching the exact engine version reported by \code{con}.}
+\item{extension_path}{Optional explicit extension path. \code{NULL} loads the
+bundled signed extension from its local repository. A path is loaded with
+a plain \code{LOAD}, so DuckDB must accept its signature, or the connection
+must allow unsigned extensions. The engine behind \code{con} must be at least
+the C API version of the extension; see
+\code{\link[=rducks_extension_capi_version]{rducks_extension_capi_version()}}.}
 
 \item{threads}{Either \code{"unchanged"} or \code{"single"}.}
+
+\item{home_registry}{\code{TRUE} to allow a repository record below
+\verb{~/.duckdb/extension_repositories} while the bundled extension loads, on a
+connection that was not opened with
+\code{\link[=rducks_duckdb_config]{rducks_duckdb_config()}}.}
 }
 \value{
 \code{con}, invisibly.
 }
 \description{
-Loads the bundled Rducks DuckDB extension. The registration-safe R UDF path
+Loads the bundled Rducks DuckDB extension with DuckDB's signature checks
+enabled. Installation signs the extension with a key generated for that
+installation and keeps only the public key. \code{rducks_enable()} exposes the
+signed file as a local DuckDB extension repository below \code{\link[=tempdir]{tempdir()}},
+registers the public key for that repository, and runs \code{INSTALL} and \code{LOAD}
+from it. This needs DuckDB 2.0.0 or later.
+}
+\details{
+The load changes the connection as follows:
+\code{allow_extension_repositories} moves from \code{'undecided'} to \code{'allowed'}
+(DuckDB cannot move it back while the database runs), and the repository
+record is removed after \code{LOAD}. \code{extension_directory} points to a directory
+below \code{\link[=tempdir]{tempdir()}} during \code{INSTALL} and is then restored.
+
+DuckDB writes the repository record to \code{extension_repository_directory},
+which it accepts only at startup. Open connections with
+\code{\link[=rducks_duckdb_config]{rducks_duckdb_config()}} to keep the
+record below \code{\link[=tempdir]{tempdir()}}. On any other connection, such as the default
+connection of duckplyr, the record goes to \verb{~/.duckdb/extension_repositories}
+until \code{LOAD} finishes, and \code{rducks_enable()} does this only with
+\code{home_registry = TRUE}.
+
+The registration-safe R UDF path
 requires R API work to happen on the recorded main R thread; pass
 \code{threads = "single"} to set \code{external_threads=1} and \verb{PRAGMA threads=1}
 explicitly. Use \code{\link[=rducks_set_execution_plan]{rducks_set_execution_plan()}}
@@ -27,7 +63,7 @@ execution.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 rducks_enable(db)
 rducks_release(db)
 DBI::dbDisconnect(db)

@@ -8,9 +8,15 @@
 
 ## Package size
 
-Rducks bundles one separately compiled extension artifact per supported DuckDB
-engine release: eight artifacts of about 2.9 MB each, for DuckDB v1.5.0 through
-v1.5.6 (exact `C_STRUCT_UNSTABLE` ABI) and v2.0.0 (stable V1 `C_STRUCT` ABI
-pinned to C API v1.5.6). The roughly 25 MB installed footprint (measured on
-Ubuntu 24.04, R 4.3.3) is expected and avoids unsafe ABI fallback between
-DuckDB releases.
+Rducks builds one DuckDB extension against DuckDB's stable C extension API
+v1.5.6, so the package does not need a release for each duckdb release.
+
+## Extension signing and files
+
+Installation signs the extension with a key generated for that installation
+and keeps only the public key; the private key is never written to disk. At
+run time, `rducks_enable()` loads the extension from a local DuckDB extension
+repository below `tempdir()`, with DuckDB's signature checks enabled. Examples,
+tests and vignettes open connections with `rducks_duckdb_config()`, which keeps
+DuckDB's repository records below `tempdir()`. Rducks writes to `~/.duckdb`
+only when the user passes `home_registry = TRUE`.

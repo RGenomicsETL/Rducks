@@ -2,8 +2,8 @@ Rducks package code is licensed under the GNU Lesser General Public License,
 version 2 or later. The bundled components below keep their own licenses.
 
 Rducks bundles third-party native components as private source snapshots for
-building the DuckDB extension. During installation, only the compiled,
-exact-version extension artifacts are installed under `rducks_extension/build/`;
+building the DuckDB extension. During installation, only the compiled
+extension artifact is installed under `rducks_extension/build/`;
 the source snapshots stay in the source package under `tools/ext/` and are not
 copied into the installed package.
 

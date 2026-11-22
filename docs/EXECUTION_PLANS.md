@@ -170,7 +170,7 @@ native extensions that mutate engine internals directly.
 
 Managed startup requires duckdb-r's versioned off-main R-source guard capability.
 The pinned [companion patch and installer](../tools/compat/README.md) provide
-version 2 for duckdb-r 1.5.6. Stock builds and version-1 companions fail before
+version 2 for duckdb-r 2.0.0. Stock builds and version-1 companions fail before
 helper startup. Version 2 adds the native scheduler lease to the source guards.
 The guard rejects R-backed environment/Arrow replacement scans, Arrow factories,
 and R data-frame binding before they enter R from the helper. Rducks R table and

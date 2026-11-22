@@ -14,12 +14,12 @@ fi
 
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] ||
   fail 'This pinned binary recipe supports Linux amd64 only.'
-for command in R Rscript curl unzip tar xz git sha256sum strings make; do
+for command in R Rscript curl tar xz git sha256sum strings make; do
   command -v "$command" >/dev/null 2>&1 || fail "Missing build dependency: $command"
 done
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-patch_file="$script_dir/duckdb-r-off-main-guards-v1.5.6.patch"
+patch_file="$script_dir/duckdb-r-off-main-guards-v2.0.0.patch"
 mkdir -p -- "$1" "$2"
 output_library=$(CDPATH= cd -- "$1" && pwd)
 build_dir=$(CDPATH= cd -- "$2" && pwd)
@@ -33,31 +33,31 @@ esac
 [ -z "$(ls -A -- "$build_dir")" ] || fail 'The build directory must be empty.'
 Rscript --vanilla -e 'stopifnot(getRversion() >= "4.2.0", requireNamespace("DBI", quietly = TRUE))'
 
-source_sha=92a9b45b2994568d8d3f0173ecc3a085698f1241177719b79d7e3b4bcca5b0c9
-library_sha=b845005f5132a7d8180057c35e14a7626632258782f871a90861b19c1c03841b
-patch_sha=2169fc562d0b48bf24f9c4da11c68288599da26319f9d6324d52552cfa9e6df9
+source_sha=23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741
+library_sha=993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1
+patch_sha=965f9f257a8f43571abca32b65c4f80c88335df423a89cb73858e40f877153e1
 printf '%s  %s\n' "$patch_sha" "$patch_file" | sha256sum --check --status ||
   fail 'Companion patch checksum does not match this installer.'
 
-source_archive="$build_dir/duckdb_1.5.6.tar.gz"
-library_archive="$build_dir/libduckdb-linux-amd64.zip"
-printf '%s\n' 'Downloading pinned duckdb 1.5.6 source and official libduckdb.'
+source_archive="$build_dir/duckdb_2.0.0.tar.gz"
+library_archive="$build_dir/duckdb-shared-libs-linux-amd64.tar.gz"
+printf '%s\n' 'Downloading pinned duckdb 2.0.0 source and official libduckdb.'
 if ! curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-  https://cran.r-project.org/src/contrib/duckdb_1.5.6.tar.gz \
+  https://cran.r-project.org/src/contrib/duckdb_2.0.0.tar.gz \
   --output "$source_archive"; then
   curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    https://cran.r-project.org/src/contrib/Archive/duckdb/duckdb_1.5.6.tar.gz \
+    https://cran.r-project.org/src/contrib/Archive/duckdb/duckdb_2.0.0.tar.gz \
     --output "$source_archive"
 fi
 curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-  https://github.com/duckdb/duckdb/releases/download/v1.5.6/libduckdb-linux-amd64.zip \
+  https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-shared-libs-linux-amd64.tar.gz \
   --output "$library_archive"
 printf '%s  %s\n' "$source_sha" "$source_archive" "$library_sha" "$library_archive" |
   sha256sum --check || fail 'Downloaded archive checksum mismatch.'
 
 tar --no-same-owner -xzf "$source_archive" -C "$build_dir"
 mkdir -- "$build_dir/libduckdb"
-unzip -q "$library_archive" libduckdb.so -d "$build_dir/libduckdb"
+tar --no-same-owner -xzf "$library_archive" -C "$build_dir/libduckdb" libduckdb.so
 (
   cd -- "$build_dir/duckdb"
   # Do not discover an enclosing Rducks checkout when build_dir is inside it.
@@ -117,7 +117,7 @@ stopifnot(normalizePath(find.package("duckdb")) == normalizePath(file.path(args[
 local({
   con <- DBI::dbConnect(duckdb::duckdb(shared_home = FALSE))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
-  stopifnot(DBI::dbGetQuery(con, "SELECT version() AS version")$version == "v1.5.6")
+  stopifnot(DBI::dbGetQuery(con, "SELECT version() AS version")$version == "v2.0.0")
   stopifnot(DBI::dbGetQuery(con, "SELECT 42::INTEGER AS answer")$answer == 42L)
   dyn.load(file.path(args[[2L]], "guard_probe.so"))
   stopifnot(.Call("rducks_guard_probe_version") == 2L)
