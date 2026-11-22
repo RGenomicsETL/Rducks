@@ -19,8 +19,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     env:
-      USE_UNSTABLE_C_API: "1"
-      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
     steps:
       - uses: actions/checkout@v4

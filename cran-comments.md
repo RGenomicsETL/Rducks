@@ -8,9 +8,6 @@
 
 ## Package size
 
-Rducks bundles one separately compiled extension artifact per supported DuckDB
-engine release: eight artifacts of about 2.9 MB each, for DuckDB v1.5.0 through
-v1.5.6 (exact `C_STRUCT_UNSTABLE` ABI) and v2.0.0 (stable V1 `C_STRUCT` ABI
-pinned to C API v1.5.6). The roughly 25 MB installed footprint (measured on
-Ubuntu 24.04, R 4.3.3) is expected and avoids unsafe ABI fallback between
-DuckDB releases.
+Rducks builds one DuckDB extension against DuckDB's stable C extension API
+v1.5.6. The same artifact loads on duckdb 1.5.6 and later, so the package does
+not need a release for each duckdb release.

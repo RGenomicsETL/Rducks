@@ -10,7 +10,9 @@ rducks_enable(con, extension_path = NULL, threads = c("unchanged", "single"))
 \item{con}{A \code{duckdb_connection}.}
 
 \item{extension_path}{Optional explicit extension path. \code{NULL} selects the
-bundled artifact matching the exact engine version reported by \code{con}.}
+bundled artifact. The engine behind \code{con} must be at least the C API
+version of the extension; see
+\code{\link[=rducks_extension_capi_version]{rducks_extension_capi_version()}}.}
 
 \item{threads}{Either \code{"unchanged"} or \code{"single"}.}
 }

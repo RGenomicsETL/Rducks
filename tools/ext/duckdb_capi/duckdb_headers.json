@@ -1,10 +1,10 @@
 {
-  "duckdb_ref": "v1.5.2",
+  "duckdb_ref": "v1.5.6",
   "source": "https://github.com/duckdb/duckdb",
   "headers": {
     "duckdb.h": {
-      "path": "tools/ext/duckdb_capi/v1.5.2/duckdb.h",
-      "md5": "1fd3511d8068be4ed384e80c099a4dd6",
+      "path": "tools/ext/duckdb_capi/duckdb.h",
+      "md5": "201ccf4d4eb9dbb12f17b4bf081ddc67",
       "repairs": {
       "duckdb_create_instance_cache": 1,
       "duckdb_library_version": 1,
@@ -18,8 +18,8 @@
       }
     },
     "duckdb_extension.h": {
-      "path": "tools/ext/duckdb_capi/v1.5.2/duckdb_extension.h",
-      "md5": "ebb7a6ac14a48007db9757b933cf17a4",
+      "path": "tools/ext/duckdb_capi/duckdb_extension.h",
+      "md5": "7c3305b1ce9f72bcd7909391456a4b67",
       "repairs": {
       "duckdb_library_version": 1,
       "duckdb_config_count": 1,

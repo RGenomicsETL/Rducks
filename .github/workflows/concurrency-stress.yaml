@@ -19,8 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      USE_UNSTABLE_C_API: "1"
-      RDUCKS_EXTENSION_ABI_TYPE: C_STRUCT_UNSTABLE
       RDUCKS_DEV_SURFACES: "true"
       RDUCKS_STRESS_CONCURRENCY: "true"
       RDUCKS_TEST_DUCKDB_THREADS: ${{ github.event.inputs.duckdb_threads || '8' }}

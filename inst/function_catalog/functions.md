@@ -10,11 +10,11 @@ Generated from `inst/function_catalog/functions.json` by
 - Signature: `rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'))`
 - Returns: `duckdb_connection (invisibly)`
 
-Load the exact-version bundled Rducks DuckDB extension and record the calling R thread for direct native UDF evaluation.
+Load the bundled Rducks DuckDB extension (stable C API, checked against the engine version) and record the calling R thread for direct native UDF evaluation.
 
 Notes:
 
-- The default path is selected from the DuckDB engine version reported by the connection; the bundled extensions link no Arrow or columnar interchange library.
+- The default path is the single bundled extension; rducks_enable() fails before LOAD when the connection runs an engine older than the extension C API version. The bundled extension links no Arrow or columnar interchange library.
 
 ## `rducks_execution_plan`
 

@@ -4,8 +4,6 @@
 # https://cran.r-project.org/doc/manuals/r-release/R-exts.html#Writing-portable-packages
 PKGNAME := $(shell sed -n 's/Package: *\([^ ]*\)/\1/p' DESCRIPTION)
 PKGVERS := $(shell sed -n 's/Version: *\([^ ]*\)/\1/p' DESCRIPTION)
-USE_UNSTABLE_C_API ?= 1
-RDUCKS_EXTENSION_ABI_TYPE ?= C_STRUCT_UNSTABLE
 
 .PHONY: rd rdm catalog test install check build clean
 .PHONY: fuzz fuzz-asan fuzz-ubsan fuzz-clean
@@ -51,8 +49,6 @@ catalog:
 
 test: build
 	@tmpdir=$$(mktemp -d); \
-	USE_UNSTABLE_C_API=$(USE_UNSTABLE_C_API) \
-	RDUCKS_EXTENSION_ABI_TYPE=$(RDUCKS_EXTENSION_ABI_TYPE) \
 	R_LIBS_USER="$$tmpdir" \
 	R CMD INSTALL $(PKGNAME)_$(PKGVERS).tar.gz; \
 	res=$$?; \
@@ -64,8 +60,6 @@ test: build
 	exit $$res
 
 install: build
-	USE_UNSTABLE_C_API=$(USE_UNSTABLE_C_API) \
-	RDUCKS_EXTENSION_ABI_TYPE=$(RDUCKS_EXTENSION_ABI_TYPE) \
 	R CMD INSTALL $(PKGNAME)_$(PKGVERS).tar.gz
 
 build: rd catalog

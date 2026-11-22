@@ -5,8 +5,8 @@
     "category": "connection",
     "signature": "rducks_enable(con, extension_path = NULL, threads = c('unchanged', 'single'))",
     "returns": "duckdb_connection (invisibly)",
-    "description": "Load the exact-version bundled Rducks DuckDB extension and record the calling R thread for direct native UDF evaluation.",
-    "notes": ["The default path is selected from the DuckDB engine version reported by the connection; the bundled extensions link no Arrow or columnar interchange library."]
+    "description": "Load the bundled Rducks DuckDB extension (stable C API, checked against the engine version) and record the calling R thread for direct native UDF evaluation.",
+    "notes": ["The default path is the single bundled extension; rducks_enable() fails before LOAD when the connection runs an engine older than the extension C API version. The bundled extension links no Arrow or columnar interchange library."]
   },
   {
     "name": "rducks_execution_plan",

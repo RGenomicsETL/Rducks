@@ -13,13 +13,7 @@ knitr::opts_chunk$set(
   comment = "#>",
   eval = TRUE
 )
-version_support_root <- if (file.exists(file.path("tools", "duckdb_version_support.R"))) {
-  "."
-} else {
-  ".."
-}
-source(file.path(version_support_root, "tools", "duckdb_version_support.R"))
-duckdb_version_range <- rducks_duckdb_version_range(version_support_root)
+duckdb_capi_version <- Rducks::rducks_extension_capi_version()
 ```
 
 `Rducks` is an R package plus a DuckDB extension for registering R functions as
@@ -46,11 +40,9 @@ con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 ```
 
-Rducks loads a bundled extension for the target DuckDB engine. The installed
-package contains variants for DuckDB `r duckdb_version_range`, generated
-from the build manifest, and `rducks_enable()` loads only the variant matching
-`SELECT version()` on `con`.
-There is no fallback to another patch release; see
+Rducks builds its extension against DuckDB's stable C extension API, version
+`r duckdb_capi_version`, so it loads on DuckDB `r duckdb_capi_version` and
+later engines. `rducks_enable()` fails before `LOAD` on an older engine; see
 [DuckDB Version Compatibility](duckdb-version-compatibility.html) for details.
 
 `threads = "single"` is the safest registration setting. You can select a

@@ -6,12 +6,9 @@
 #endif
 #include "duckdb_extension.h"
 
-/* DuckDB exposed GEOMETRY and VARIANT in the C API after early 1.5 headers.
- * Keep their numeric ids isolated here so each exact-version build compiles
- * against its matching header while still recognizing the runtime type ids.
- * Do not use cast duckdb_type values in switch labels: older headers define
- * duckdb_type as an enum without values 40/41, and CRAN/CI compilers warn on
- * such case labels.
+/* Numeric ids of DuckDB's GEOMETRY and VARIANT types. Do not use cast
+ * duckdb_type values in switch labels: compilers warn on case labels outside
+ * the enum when a header lacks these values.
  */
 #define RDUCKS_DUCKDB_TYPE_GEOMETRY_ID 40
 #define RDUCKS_DUCKDB_TYPE_GEOMETRY ((duckdb_type)RDUCKS_DUCKDB_TYPE_GEOMETRY_ID)
@@ -25,19 +22,8 @@
  * then enables direct and IPC marshalling. Older or layout-incompatible
  * runtimes remain fail-closed. */
 
-/* tools/duckdb_capi_abi.sh selects one of two V1 builds per DuckDB engine:
- * the exact-version unstable struct for DuckDB 1.x, or the stable V1 struct
- * for DuckDB 2.x, where C_STRUCT_UNSTABLE means the V2 API. A stable build
- * must target at least v1.5.6, the release that stabilized the entries
- * outside v1.2.0 that Rducks calls. */
 #if defined(DUCKDB_EXTENSION_API_VERSION_UNSTABLE)
-#if !defined(DUCKDB_EXTENSION_API_UNSTABLE_VERSION)
-#error "an unstable Rducks build must also define DUCKDB_EXTENSION_API_UNSTABLE_VERSION"
-#endif
-#elif !defined(DUCKDB_API_VERSION_AT_LEAST)
-#error "a stable Rducks build needs a DuckDB header with C API version bands (v1.5.6 or later)"
-#elif !DUCKDB_API_VERSION_AT_LEAST(1, 5, 6)
-#error "a stable Rducks build must target the V1 C API at v1.5.6 or later"
+#error "Rducks targets DuckDB's stable C extension API; do not define DUCKDB_EXTENSION_API_VERSION_UNSTABLE"
 #endif
 
 #if defined(__GNUC__)
