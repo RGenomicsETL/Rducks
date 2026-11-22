@@ -2,7 +2,7 @@
 library(Rducks)
 mode <- commandArgs(trailingOnly = TRUE)[[1L]]
 say <- function(...) { cat(..., '\n'); flush.console() }
-drv <- duckdb::duckdb(config = list(allow_unsigned_extensions = 'true'), shared_home = FALSE)
+drv <- duckdb::duckdb(config = Rducks::rducks_duckdb_config(), shared_home = FALSE)
 con <- DBI::dbConnect(drv)
 sibling <- DBI::dbConnect(drv)
 rducks_enable(con, threads = 'single')
@@ -42,15 +42,18 @@ if (mode == 'pending') {
   DBI::dbExecute(con, 'SET preserve_insertion_order=false')
   before <- settings()
   stream <- rducks_query_stream(con, 'SELECT scheduler_identity(i) AS i FROM scheduler_input')
-  pending <- FALSE
+  # DuckDB 2.0 stops producing a streaming result between fetches, so no
+  # callback is pending while R runs the statements below. Witness instead
+  # that native workers queued R callbacks for this open stream.
+  queued <- FALSE
   for (attempt in seq_len(100L)) {
     stopifnot(nrow(stream$next_batch()) > 0L)
-    Sys.sleep(0.01)
-    pending <- rducks_inproc_stats(con)$pending_current > 0
-    if (pending) break
+    stats <- rducks_inproc_stats(con)
+    queued <- stats$pending_max > 1 && stats$submitted > 0
+    if (queued) break
   }
-  stopifnot(pending)
-  say('PENDING_CALLBACK_CONFIRMED')
+  stopifnot(queued)
+  say('QUEUED_CALLBACK_CONFIRMED')
   protected <- c('SET threads=1', 'SET worker_threads=1', 'SET external_threads=2',
     'PRAGMA threads=1', 'PRAGMA worker_threads=1', 'PRAGMA external_threads=2',
     'PRAGMA lock_configuration=false', "PRAGMA allowed_configs=['threads']", 'RESET threads', 'RESET worker_threads',

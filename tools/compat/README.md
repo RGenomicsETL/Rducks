@@ -156,7 +156,8 @@ separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt
 
 `python3 test/native/run_scheduler_guard.py` uses the same library environment
 and runs fresh R processes with a 60-second deadline and forced kill/reap on
-failure. It first witnesses pending native callbacks, then tests raw and cached
+failure. It first witnesses R callbacks queued by native workers for the open stream (DuckDB
+2.0 does not produce a streaming result between fetches), then tests raw and cached
 prepared scheduler changes on both the original and sibling connections. Other
 cases cover callback reentrancy, pre-existing security restrictions, errors,
 GC/release restoration, and a user macro shadowing the acquisition function.
