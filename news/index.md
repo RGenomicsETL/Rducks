@@ -9,23 +9,8 @@
   failing with “no bundled extension for DuckDB v2.0.0”
   (<https://github.com/RGenomicsETL/Rducks/issues/25>). DuckDB 2.0
   treats every `C_STRUCT_UNSTABLE` extension as an extension of its new
-  V2 C API (`duckdb_extension_v2.h`, entrypoint `rducks_init_c_api_v2`),
-  and it stabilized the V1 entries Rducks uses in C API v1.5.6. The
-  v2.0.0 artifact is therefore a stable V1 `C_STRUCT` build pinned to C
-  API v1.5.6, compiled against the vendored v2.0.0 headers; the v1.5.0
-  through v1.5.6 artifacts keep the exact-version `C_STRUCT_UNSTABLE`
-  ABI. `tools/duckdb_capi_abi.sh` makes this choice for both `configure`
-  and `configure.win`.
-  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-  still selects an artifact by exact engine version, so a later 2.x
-  release fails before `LOAD` until it is added to the bundle. The
-  extension-version test now checks every artifact’s footer ABI and
-  version. With duckdb 2.0.0 and with duckdb 1.5.6 on Linux amd64, the
-  tinytest suite passes (293 checks, plus 108 in the four IPC files),
-  and so does the generated direct/quack marshalling matrix (16 cases).
-  The managed concurrent query stream still needs the duckdb-r 1.5.6
-  guard companion and fails closed on stock duckdb 2.0.0, as it does on
-  stock 1.5.6.
+  V2 C API, so Rducks builds a stable V1 `C_STRUCT` extension pinned to
+  C API v1.5.6, the release that stabilized the V1 entries Rducks uses.
 
 - `tools/fetch_duckdb_headers.R` now records the true number of
   prototype repairs. [`gregexpr()`](https://rdrr.io/r/base/grep.html)
@@ -92,14 +77,34 @@
   on a trivial UDF, and a 50M-row CSV -\> `GEOMETRY` job from 8.0 s to
   2.7 s.
 
-- Added DuckDB v1.5.6 to the bundled `C_STRUCT_UNSTABLE` extension
-  variants (now v1.5.0 through v1.5.6), so
+- Rducks now builds one extension per platform against DuckDB’s stable C
+  extension API v1.5.6 (`C_STRUCT` ABI), so a duckdb release no longer
+  needs a matching Rducks release. Installation signs the extension with
+  a key generated for that installation (`tools/ext/sign/rducks_sign.c`,
+  vendored Mbed TLS) and keeps only the public key.
   [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-  works with CRAN duckdb 1.5.6 instead of failing with “no bundled
-  extension for DuckDB v1.5.6”. The 1.5.6 header replaces the
-  `unstable_*` groups with per-release `DUCKDB_API_VERSION_AT_LEAST`
-  bands; `tools/used_duckdb_unstable_api.R` now reads both formats and
-  reports entries outside the v1.2.0 stable surface by band.
+  loads the extension from a signed local extension repository below
+  [`tempdir()`](https://rdrr.io/r/base/tempfile.html), with DuckDB’s
+  signature checks enabled, so `allow_unsigned_extensions` is no longer
+  needed. Extension repositories need DuckDB 2.0.0, so Rducks now
+  requires duckdb \>= 2.0.0; the `backport/duckdb-1.5` branch keeps a
+  duckdb 1.5.6 release line. New
+  [`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md)
+  returns the connection settings that keep the repository record below
+  [`tempdir()`](https://rdrr.io/r/base/tempfile.html); on other
+  connections, such as the default connection of duckplyr,
+  `rducks_enable(home_registry = TRUE)` allows a temporary record in
+  `~/.duckdb`. New
+  [`rducks_extension_capi_version()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_capi_version.md)
+  reads the C API version from the extension footer, and
+  [`rducks_extension_path()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_path.md)
+  takes no version argument. `tools/used_duckdb_capi.R` reports the C
+  API entries used by version band.
+
+- [`rducks_is_type()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_type_objects.md)
+  accepts S7 1.0.0 objects: it looks up the S7 class with
+  [`S7::S7_class()`](https://rconsortium.github.io/S7/reference/S7_class.html)
+  instead of reading the attribute that S7 1.0.0 renamed.
 
 - Vectorized scalar UDFs returning `BLOB` or `GEOMETRY` now validate the
   list-of-raw result in C instead of running the generic per-row return
@@ -122,14 +127,6 @@
 - Added native Quack property tests with shrinking, coverage-guided
   fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested
   type metadata and bounds input-driven allocation more tightly.
-
-- Rducks now vendors and builds exact `C_STRUCT_UNSTABLE` extension
-  variants for DuckDB v1.5.0 through v1.5.5.
-  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-  queries the connection’s engine version and loads only the matching
-  artifact, so DuckDB package patch upgrades no longer try to load the
-  v1.5.2 build; unsupported versions fail explicitly without ABI
-  fallback.
 
 - `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs,
   matching `transport = "inproc"`. DuckDB resolves the concrete argument

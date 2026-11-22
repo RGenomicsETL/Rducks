@@ -28,6 +28,8 @@
   : Construct exact DuckDB DECIMAL values
 - [`rducks_disable_inproc()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_disable_inproc.md)
   : Disable in-process queued scalar-UDF execution
+- [`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md)
+  : DuckDB configuration for a connection that loads Rducks
 - [`rducks_duckdb_signature()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_signature.md)
   : Format a DuckDB scalar function signature
 - [`rducks_duckdb_types()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_types.md)
@@ -42,8 +44,10 @@
   : Define an Rducks execution plan
 - [`rducks_explain_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.md)
   : Explain a registered Rducks scalar UDF
+- [`rducks_extension_capi_version()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_capi_version.md)
+  : Read the DuckDB C API version of an Rducks extension
 - [`rducks_extension_path()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_path.md)
-  : Locate a version-matched Rducks DuckDB extension
+  : Locate the bundled Rducks DuckDB extension
 - [`rducks_hugeint()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_hugeint.md)
   : Construct exact DuckDB HUGEINT values
 - [`rducks_inproc_self_test()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_self_test.md)

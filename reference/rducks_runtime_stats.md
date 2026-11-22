@@ -36,9 +36,9 @@ A one-row data frame with runtime registry and connection counters.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpmaYBXi/duckdb
+#> ℹ /tmp/RtmpfEX6SN/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -48,9 +48,9 @@ db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions =
 rducks_enable(db)
 rducks_runtime_stats(db)
 #>   registry_entries active_entries stale_entries entries_created stale_aliases
-#> 1               16             16             0              16             0
+#> 1                1              1             0               1             0
 #>   connections_opened connections_closed connections_current
-#> 1                 32                  0                  32
+#> 1                  2                  0                   2
 #>   connection_open_failed queue_init_failed native_release_supported
 #> 1                      0                 0                     TRUE
 rducks_release(db)

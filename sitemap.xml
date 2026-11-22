@@ -22,6 +22,7 @@
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_current_execution_plan.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_decimal.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_disable_inproc.html</loc></url>
+<url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_signature.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_types.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.html</loc></url>
@@ -29,6 +30,7 @@
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_enum.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_explain_udf.html</loc></url>
+<url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_capi_version.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_extension_path.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_hugeint.html</loc></url>
 <url><loc>https://rgenomicsetl.github.io/Rducks/reference/rducks_inproc_self_test.html</loc></url>

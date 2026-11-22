@@ -7,14 +7,15 @@ stay aligned with the actual implementation.
 
 ## Source and installed layout
 
-The R package installs one runtime extension artifact for each declared
-exact DuckDB engine release (currently v1.5.0 through v2.0.0, generated
-from the build manifest) and selects the matching version at runtime.
-The user-facing policy and diagnostics are covered in [DuckDB Version
+The R package installs one runtime extension artifact, built against
+DuckDB’s stable C extension API version v1.5.6 and signed at
+installation, and the public key of that signature. The user-facing
+policy and diagnostics are covered in [DuckDB Version
 Compatibility](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.md):
 
 ``` text
-rducks_extension/build/v1.5.5/rducks.duckdb_extension
+rducks_extension/build/rducks.duckdb_extension
+rducks_extension/build/rducks.pub
 ```
 
 The source and vendored dependency inputs live in the source checkout
@@ -23,18 +24,18 @@ under `tools/ext`, not under `inst/rducks_extension`:
 ``` text
 tools/ext/rducks_extension.c
 tools/ext/src/*.c
-tools/ext/duckdb_capi/v*/*.h
+tools/ext/duckdb_capi/*.h
+tools/ext/sign/*
 tools/ext/third_party/*
 ```
 
-`configure` and `configure.win` build the extension variants from
-`tools/ext` and copy only the runtime artifacts into the installed
-package footprint. DuckDB 1.x artifacts use `C_STRUCT_UNSTABLE`, and
-DuckDB 2.x artifacts use the stable V1 `C_STRUCT` ABI pinned to C API
-v1.5.6. Either way
+`configure` and `configure.win` build the extension from `tools/ext` and
+copy only the runtime artifact and public key into the installed package
+footprint. The artifact carries `C_STRUCT` metadata.
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-queries the target connection and loads only an artifact for that exact
-DuckDB engine version.
+exposes it as a local extension repository below
+[`tempdir()`](https://rdrr.io/r/base/tempfile.html) and runs `INSTALL`
+and `LOAD` from it (`R/extension_repository.R`).
 
 ## Package and extension split
 

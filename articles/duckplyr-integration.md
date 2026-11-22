@@ -8,9 +8,30 @@ into.
 
 ## Setup
 
-Use a DuckDB connection with unsigned extension loading enabled and
-enable Rducks on that connection. `threads = "single"` is the
+Open a DuckDB connection with
+[`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md)
+and enable Rducks on that connection. `threads = "single"` is the
 recommended registration setting for R-backed functions.
+
+duckplyr prepares its own default connection: it loads the `rfuns`
+functions and creates the duckplyr macros. It does not prepare a
+connection passed as `con`, so under `prudence = "stingy"` some
+translations fail there, for example `x / y`, `is.na(y)` and
+[`n()`](https://dplyr.tidyverse.org/reference/context.html). The
+examples below use only translations that work on such a connection.
+
+To use Rducks on the default connection of duckplyr instead, pass
+`home_registry = TRUE`. That connection was opened without
+[`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md),
+so DuckDB keeps the Rducks repository record in
+`~/.duckdb/extension_repositories` until the extension is loaded.
+duckplyr exports no accessor for that connection; its internal
+`get_default_duckdb_connection()` returns it:
+
+``` r
+
+rducks_enable(duckplyr:::get_default_duckdb_connection(), home_registry = TRUE)
+```
 
 ``` r
 
@@ -23,11 +44,11 @@ suppressPackageStartupMessages({
 })
 
 con <- DBI::dbConnect(
-  duckdb::duckdb(config = list(allow_unsigned_extensions = "true")),
+  duckdb::duckdb(config = rducks_duckdb_config()),
   dbdir = ":memory:"
 )
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpUSsQWh/duckdb
+#> ℹ /tmp/Rtmp5UvuUa/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

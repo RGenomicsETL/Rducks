@@ -33,7 +33,7 @@ Integer-like numeric scalar: number of requests completed.
 ``` r
 if (FALSE) { # \dontrun{
 # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 rducks_enable(db)
 rducks_inproc_self_test(db, n = 10L)
 rducks_release(db)

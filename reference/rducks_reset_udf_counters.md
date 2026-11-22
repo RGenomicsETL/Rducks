@@ -32,9 +32,9 @@ Invisibly `TRUE` on success.
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = list(allow_unsigned_extensions = "true")))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpmaYBXi/duckdb
+#> ℹ /tmp/RtmpfEX6SN/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

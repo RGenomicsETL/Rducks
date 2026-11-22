@@ -1,103 +1,113 @@
 # DuckDB Version Compatibility
 
-## Why Rducks ships exact-version extensions
+## Two versions
 
-Rducks calls DuckDB V1 C extension API entries that were unstable until
-C API v1.5.6. DuckDB 1.x therefore loads Rducks through the
-`C_STRUCT_UNSTABLE` ABI, where an extension compiled for one DuckDB
-engine release must not be treated as compatible with another release,
-even when the relevant headers happen to look unchanged.
+Rducks needs duckdb 2.0.0 or later. Two versions apply:
 
-DuckDB 2.0 keeps those V1 entries in the stable C API v1.5.6 surface and
-reserves `C_STRUCT_UNSTABLE` for its separate V2 C API. Rducks remains a
-V1 extension, so its DuckDB 2.x artifacts use the stable `C_STRUCT` ABI
-pinned to C API v1.5.6. They are still compiled against each engine’s
-own headers and selected by exact engine version.
+- **C API version, v1.5.6.** Rducks builds its extension against
+  DuckDB’s stable C extension API, with `C_STRUCT` metadata. DuckDB
+  loads such an extension on every engine release that supports that API
+  version, so each platform needs only one build.
+- **Minimum engine version, v2.0.0.**
+  [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
+  loads the extension from a signed local extension repository.
+  Extension repositories need DuckDB v2.0.0.
 
-Rducks addresses this at package installation rather than at first use.
-The source package vendors headers for a bounded set of DuckDB releases
-and compiles one inexpensive Rducks extension variant against each
-header set. The current bundle contains:
-
-| DuckDB engine version | Bundled extension |
-|:----------------------|:------------------|
-| `v1.5.0`              | yes               |
-| `v1.5.1`              | yes               |
-| `v1.5.2`              | yes               |
-| `v1.5.3`              | yes               |
-| `v1.5.4`              | yes               |
-| `v1.5.5`              | yes               |
-| `v1.5.6`              | yes               |
-| `v2.0.0`              | yes               |
-
-This table is generated directly from
-`tools/ext/duckdb_capi/versions.txt`, the same manifest consumed by the
-native build. The list is an explicit release policy, not an ABI
-compatibility claim for versions outside the table.
-
-## Runtime selection
-
-`rducks_enable(con)` asks the target connection for `SELECT version()`.
-It then loads only the artifact whose directory has that exact engine
-version:
+The installed package contains one extension and its public key:
 
 ``` text
-rducks_extension/build/<duckdb-version>/rducks.duckdb_extension
+rducks_extension/build/rducks.duckdb_extension
+rducks_extension/build/rducks.pub
 ```
-
-The connection is authoritative. Selection does not assume that an
-installed R package version necessarily describes every DuckDB
-connection passed to Rducks. There is no nearest-version or same-minor
-fallback.
-
-You can inspect the default artifact selected for the installed `duckdb`
-package:
 
 ``` r
 
-rducks_extension_path()
+basename(rducks_extension_path())
+#> [1] "rducks.duckdb_extension"
+rducks_extension_capi_version()
+#> [1] "v1.5.6"
 ```
 
-An explicit `extension_path` remains available for development and
-custom builds, but it does not make incompatible binaries safe. DuckDB
-validates the ABI metadata recorded in the file’s footer when it loads
-the file.
+## Signed local repository
 
-## Unsupported versions
+Installation signs the extension with a key generated for that
+installation and keeps only the public key. Nothing else can be signed
+with that key after installation.
 
-If the target engine is outside the bundled set,
+`rducks_enable(con)` then:
+
+1.  checks that `con` runs DuckDB v2.0.0 or later and that the engine
+    supports the C API version of the extension;
+2.  copies the extension below
+    [`tempdir()`](https://rdrr.io/r/base/tempfile.html) in the
+    repository layout `<version>/<platform>/rducks.duckdb_extension`,
+    where `<version>` is the release tag of the engine, or its source id
+    for a development build;
+3.  sets `allow_extension_repositories` to `'allowed'` if it is
+    `'undecided'`, and registers the repository with the public key;
+4.  runs `INSTALL` and `LOAD` from the repository, with
+    `extension_directory` pointed below
+    [`tempdir()`](https://rdrr.io/r/base/tempfile.html) during
+    `INSTALL`;
+5.  restores `extension_directory` and removes the repository record.
+
+DuckDB’s signature checks stay enabled: `allow_unsigned_extensions` is
+not needed, and a modified file fails to load.
+
+DuckDB writes the repository record to `extension_repository_directory`,
+which it accepts only at startup. Open connections with
+[`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md)
+to keep the record below
+[`tempdir()`](https://rdrr.io/r/base/tempfile.html):
+
+``` r
+
+con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+rducks_enable(con)
+```
+
+On a connection opened without it, such as the default connection of
+duckplyr, the record goes to `~/.duckdb/extension_repositories` until
+`LOAD` finishes.
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-fails before `LOAD` and reports the versions available in the installed
-Rducks package. This is intentional: silently loading an artifact
-compiled for another unstable ABI could produce incorrect calls through
-DuckDB’s function table.
+does this only with `home_registry = TRUE`. A connection with
+`allow_extension_repositories = 'forbidden'` cannot load Rducks.
 
-To diagnose a mismatch, compare the connection version and bundled path:
+## Diagnostics
 
 ``` r
 
-DBI::dbGetQuery(con, "SELECT version() AS version")
-rducks_extension_path()
+DBI::dbGetQuery(con, "SELECT library_version, source_id FROM pragma_version()")
+DBI::dbGetQuery(con, "SELECT current_setting('allow_extension_repositories')")
+DBI::dbGetQuery(con, "SELECT current_setting('extension_repository_directory')")
+rducks_extension_capi_version()
 ```
 
-Install an Rducks release that bundles the exact engine version, or
-build a matching development variant. Downgrading or upgrading `duckdb`
-without also checking the Rducks support window can leave no compatible
-artifact.
+An explicit `extension_path` skips the repository and runs a plain
+`LOAD`, so DuckDB must accept the signature of that file or the
+connection must allow unsigned extensions.
+
+## DuckDB 1.5.6
+
+The `backport/duckdb-1.5` branch keeps a release line for duckdb 1.5.6.
+It builds the same stable C API extension, does not sign it, and loads
+it with a plain `LOAD`, so connections need `allow_unsigned_extensions`.
 
 ## Maintainer workflow
 
-Supported versions are declared in `tools/ext/duckdb_capi/versions.txt`.
-Before adding a release, vendor its exact headers and provenance
-metadata:
+The DuckDB C API headers are vendored in `tools/ext/duckdb_capi/`. The
+`duckdb_ref` release recorded in `duckdb_headers.json` is the C API
+version that `configure` and `configure.win` target. To change it,
+vendor the headers of another release:
 
 ``` sh
-Rscript tools/fetch_duckdb_headers.R --ref v1.5.5
+Rscript tools/fetch_duckdb_headers.R --ref v1.5.6
 ```
 
-`configure` and `configure.win` validate every declared header set,
-build the vendored NNG dependency once, compile one Rducks extension per
-DuckDB version, and append matching DuckDB extension metadata to each
-artifact. Release builds must leave `RDUCKS_DUCKDB_VERSIONS` unset so
-the complete declared bundle is installed. See `docs/BUILD.md` in the
-source repository for the native build and ABI details.
+The C API version must not be newer than the minimum engine version. The
+minimum engine version is `rducks_min_duckdb_version` in
+`R/extension_repository.R` and the `duckdb` requirement in
+`DESCRIPTION`; a test checks that they agree. The build fails if
+`DUCKDB_EXTENSION_API_VERSION_UNSTABLE` is defined, because an unstable
+build would tie the artifact to one exact engine release. See
+`docs/BUILD.md` in the source repository for the native build details.

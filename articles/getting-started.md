@@ -22,9 +22,9 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
+con <- dbConnect(duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpADzMOU/duckdb
+#> ℹ /tmp/RtmpUVtLpH/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -34,12 +34,14 @@ con <- dbConnect(duckdb(config = list(allow_unsigned_extensions = "true")))
 rducks_enable(con, threads = "single")
 ```
 
-Rducks loads a bundled extension for the target DuckDB engine. The
-installed package contains variants for DuckDB v1.5.0 through v2.0.0,
-generated from the build manifest, and
+Rducks needs duckdb 2.0.0 or later.
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
-loads only the variant matching `SELECT version()` on `con`. There is no
-fallback to another patch release; see [DuckDB Version
+loads the extension, built against DuckDB’s stable C extension API
+v1.5.6, from a signed local extension repository, so DuckDB’s signature
+checks stay enabled.
+[`rducks_duckdb_config()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_duckdb_config.md)
+adds the two settings that let it do so without writing to the home
+directory; see [DuckDB Version
 Compatibility](https://rgenomicsetl.github.io/Rducks/articles/duckdb-version-compatibility.md)
 for details.
 

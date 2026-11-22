@@ -19,10 +19,10 @@ dedicated stable C extension accessors.
   binder, dynamically probes every physical child with generic
   struct/list APIs, and fails closed when the runtime layout differs.
 - Acceptance: dedicated upstream accessors cover canonical type cloning
-  plus direct and IPC vector reads/writes without weakening
-  exact-version ABI or registration gates; retain the current
-  scalar/vectorized, nested, aggregate, dynamic-bind, NULL,
-  malformed-storage, and worker round-trip tests.
+  plus direct and IPC vector reads/writes without weakening the stable C
+  API build or registration gates; retain the current scalar/vectorized,
+  nested, aggregate, dynamic-bind, NULL, malformed-storage, and worker
+  round-trip tests.
 
 Improve batching beyond small waves for typical DuckDB physical scans.
 
