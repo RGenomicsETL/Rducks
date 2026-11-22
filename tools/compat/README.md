@@ -3,7 +3,8 @@
 The managed `concurrent_inproc` query stream needs the capability supplied by
 [`duckdb-r-off-main-guards-v2.0.0.patch`](duckdb-r-off-main-guards-v2.0.0.patch).
 This is a reviewable companion patch against duckdb-r 2.0.0, proposed upstream
-in duckdb-r ISSUE_PLACEHOLDER and not yet accepted. Rducks rejects managed stream startup when
+in [duckdb-r#3084](https://github.com/duckdb/duckdb-r/issues/3084) and not yet
+accepted. Rducks rejects managed stream startup when
 the capability is absent; ordinary serial and IPC execution remain available.
 
 ## Contract and scope

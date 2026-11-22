@@ -138,6 +138,58 @@ SQL name/signature again replaces the callable implementation. Use
 mutation, sleeps, or other effects so DuckDB does not optimize them as
 pure expressions.
 
+## duckplyr: R functions inside `with()`
+
+`rducks_with_duckplyr()` and the `with.duckdb_connection()` method let
+ordinary R calls inside duckplyr expressions resolve to Rducks scalar
+UDFs, without writing `dd$...` calls. The bridge defaults to row-wise
+`mode = "scalar"` and can use `mode = "vectorized"` for vectorized
+helpers; its marshalling comes from the current Rducks execution plan.
+
+This example requires a duckplyr release compatible with the selected
+DuckDB engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr
+1.2.2 does.
+
+``` r
+demo_con <- DBI::dbConnect(
+  duckdb::duckdb(config = rducks_duckdb_config()),
+  dbdir = ":memory:"
+)
+Rducks::rducks_enable(demo_con, threads = "single")
+DBI::dbWriteTable(demo_con, "scores", data.frame(
+  id = 1:3,
+  x = c(2, 21, 34),
+  label = c("low", "high", "high")
+))
+
+scores <- duckplyr::read_sql_duckdb(
+  "SELECT * FROM scores",
+  con = demo_con,
+  prudence = "stingy"
+)
+local_score <- function(x, label) {
+  as.double(x + if (identical(label, "high")) 100 else 0)
+}
+
+with(
+  demo_con,
+  scores |>
+    dplyr::mutate(score = local_score(x, label)) |>
+    dplyr::select(id, score) |>
+    dplyr::collect(),
+  rducks_returns = list(local_score = DOUBLE)
+)
+#> # A tibble: 3 × 2
+#>      id score
+#> * <int> <dbl>
+#> 1     1     2
+#> 2     2   121
+#> 3     3   134
+
+Rducks::rducks_release(demo_con)
+DBI::dbDisconnect(demo_con, shutdown = TRUE)
+```
+
 ## Lifecycle
 
 `rducks_release(con)` detaches connection-local Rducks state. For
@@ -445,7 +497,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            200         311
+#> 1 8e+06            250         312
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -639,61 +691,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.403
-#> 2          ipc (2 workers) 65961344       1.880
-#> 3   ipc + mori (2 workers) 65961344       1.898
-```
-
-## duckplyr integration
-
-`rducks_with_duckplyr()` and the `with.duckdb_connection()` method let
-ordinary R calls inside duckplyr expressions resolve to Rducks scalar
-UDFs, without writing `dd$...` calls. The bridge defaults to row-wise
-`mode = "scalar"` and can use `mode = "vectorized"` for vectorized
-helpers; its marshalling comes from the current Rducks execution plan.
-
-This example requires a duckplyr release compatible with the selected
-DuckDB engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr
-1.2.2 does.
-
-``` r
-demo_con <- DBI::dbConnect(
-  duckdb::duckdb(config = rducks_duckdb_config()),
-  dbdir = ":memory:"
-)
-Rducks::rducks_enable(demo_con, threads = "single")
-DBI::dbWriteTable(demo_con, "scores", data.frame(
-  id = 1:3,
-  x = c(2, 21, 34),
-  label = c("low", "high", "high")
-))
-
-scores <- duckplyr::read_sql_duckdb(
-  "SELECT * FROM scores",
-  con = demo_con,
-  prudence = "stingy"
-)
-local_score <- function(x, label) {
-  as.double(x + if (identical(label, "high")) 100 else 0)
-}
-
-with(
-  demo_con,
-  scores |>
-    dplyr::mutate(score = local_score(x, label)) |>
-    dplyr::select(id, score) |>
-    dplyr::collect(),
-  rducks_returns = list(local_score = DOUBLE)
-)
-#> # A tibble: 3 × 2
-#>      id score
-#> * <int> <dbl>
-#> 1     1     2
-#> 2     2   121
-#> 3     3   134
-
-Rducks::rducks_release(demo_con)
-DBI::dbDisconnect(demo_con, shutdown = TRUE)
+#> 1 inproc (single R thread) 65961344       3.436
+#> 2          ipc (2 workers) 65961344       1.921
+#> 3   ipc + mori (2 workers) 65961344       1.927
 ```
 
 ## Build notes
