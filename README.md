@@ -162,7 +162,7 @@ nested_type <- STRUCT(
 )
 
 rducks_is_type(nested_type)
-#> [1] FALSE
+#> [1] TRUE
 cat(strwrap(rducks_type_sql(nested_type), width = 70), sep = "\n")
 #> STRUCT(id INTEGER, label ENUM('low', 'high'), payload UNION(code
 #> INTEGER, note VARCHAR), values DECIMAL(10, 2)[])
@@ -433,7 +433,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            185         286
+#> 1 8e+06            185         285
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -627,9 +627,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.431
-#> 2          ipc (2 workers) 65961344       1.924
-#> 3   ipc + mori (2 workers) 65961344       1.926
+#> 1 inproc (single R thread) 65961344       3.435
+#> 2          ipc (2 workers) 65961344       1.920
+#> 3   ipc + mori (2 workers) 65961344       1.929
 ```
 
 ## duckplyr integration
