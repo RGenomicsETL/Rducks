@@ -41,8 +41,10 @@ from it. This needs DuckDB 2.0.0 or later.
 }
 \details{
 The load changes the connection as follows:
-\code{allow_extension_repositories} moves from \code{'undecided'} to \code{'allowed'}
-(DuckDB cannot move it back while the database runs), and the repository
+\code{allow_extension_repositories} moves from DuckDB's default (\code{'undecided'}
+in DuckDB 2.0.0, \code{'hosts'} from 2.0.1) to \code{'allowed'}, and DuckDB cannot
+move it back while the database runs. A connection set to \code{'hosts_only'} or
+\code{'forbidden'} cannot load Rducks. The repository
 record is removed after \code{LOAD}. \code{extension_directory} points to a directory
 below \code{\link[=tempdir]{tempdir()}} during \code{INSTALL} and is then restored.
 
