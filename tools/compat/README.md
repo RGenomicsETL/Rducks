@@ -39,18 +39,15 @@ count. It changes no database setting.
 Stock duckdb-r and companions below version 3 fail closed when a managed stream
 opens.
 
-The companion does not lock `threads` or any other setting. Changing the thread
-count joins every DuckDB worker, so a scalar UDF must not change `threads` or
-`external_threads` on its own database through SQL while a managed stream runs
-it: the worker that waits for the UDF can never be joined, and the R process
-hangs. Rducks' own entry points (`rducks_enable()`, `rducks_enable_inproc()`,
-`rducks_set_execution_plan()`) reject such a call. Between fetches no worker
-waits for R, and the thread count can change freely.
-
-The lease guards a real hang. Changing the thread count joins every DuckDB
-worker. A worker can still wait for R to run a scalar UDF between two fetches
-(observed with a `UNION ALL` stream at `threads = 2` on DuckDB 2.0.0), and R
-does not serve callbacks there, so an unguarded `SET threads` never returns.
+The companion does not lock `threads` or any other setting. Do not change
+`threads` or `external_threads` through SQL while a managed stream is open, on
+any connection to that database. Changing the thread count joins every DuckDB
+worker. A worker can wait for R to run a scalar UDF, also between two fetches
+(observed with a `UNION ALL` stream at `threads = 2` on DuckDB 2.0.0). R does
+not serve callbacks inside `SET`, so that worker can never be joined and the R
+process hangs without a way to interrupt it. Close the stream first. Rducks'
+own entry points (`rducks_enable()`, `rducks_enable_inproc()`,
+`rducks_set_execution_plan()`) reject the change while a stream is open.
 
 This capability means those R-backed binding paths fail before entering R from
 the managed helper. It does not marshal R-backed tables or Arrow callbacks to R,
@@ -73,7 +70,7 @@ shared library; upstream configure checks that both embed the same core commit.
 | --- | --- |
 | [duckdb_2.0.0.tar.gz](https://cran.r-project.org/src/contrib/duckdb_2.0.0.tar.gz) | `23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741` |
 | [duckdb-shared-libs-linux-amd64.tar.gz](https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-shared-libs-linux-amd64.tar.gz) | `993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1` |
-| Companion patch | `965f9f257a8f43571abca32b65c4f80c88335df423a89cb73858e40f877153e1` |
+| Companion patch | `f47f6845b0277e0339f01e9b77b5da3648115434319d8c1f7686ba5e69a4dc15` |
 
 The installer falls back to the CRAN version archive when the current-source
 URL expires. Every downloaded file must match its pinned checksum.
@@ -143,11 +140,11 @@ separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt
 
 `python3 test/native/run_managed_stream_configuration.py` uses the same library
 environment and runs fresh R processes with a 120-second deadline and forced
-kill/reap on failure. It changes `threads` between fetches of four query shapes
-and checks that no callback is pending at each change. Other cases check that
-open, failed, abandoned and released streams leave every setting as found, that
-a configuration lock set by the user is kept as is, and that Rducks' own
-configuration entry points reject calls from a stream callback.
+kill/reap on failure. It checks that open, failed, abandoned and released streams
+leave every setting as found, that a configuration lock set by the user is kept
+as is, that Rducks' own configuration entry points reject calls from a stream
+callback, and that the thread count can change after streams of four query
+shapes have closed.
 
 For the fail-closed case, run the lifecycle test again with only the ordinary
 duckdb library in a fresh process. It verifies that the capability is absent and

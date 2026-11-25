@@ -35,7 +35,7 @@ Rscript --vanilla -e 'stopifnot(getRversion() >= "4.2.0", requireNamespace("DBI"
 
 source_sha=23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741
 library_sha=993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1
-patch_sha=4bbc9b7756faf9e8998a484a43e33a210cf751ac01b4b1aaf25f4467a6497e8e
+patch_sha=f47f6845b0277e0339f01e9b77b5da3648115434319d8c1f7686ba5e69a4dc15
 printf '%s  %s\n' "$patch_sha" "$patch_file" | sha256sum --check --status ||
   fail 'Companion patch checksum does not match this installer.'
 

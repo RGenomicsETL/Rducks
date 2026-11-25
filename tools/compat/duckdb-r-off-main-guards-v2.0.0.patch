@@ -64,6 +64,24 @@ index e60a64c..b410b08 100644
  		auto &factory = *reinterpret_cast<shared_ptr<RArrowTabularStreamFactory> *>(R_ExternalPtrAddr(e->second[0]));
  		auto table_function = make_uniq<TableFunctionRef>();
  		vector<duckdb::unique_ptr<ParsedExpression>> children;
+diff --git a/src/scan.cpp b/src/scan.cpp
+index 96c9e7f..ff7af64 100644
+--- a/src/scan.cpp
++++ b/src/scan.cpp
+@@ -676,6 +676,13 @@ static duckdb::unique_ptr<FunctionData> DataFrameScanBind(ClientContext &context
+ 	// `duckdb.materialize_callback` -- arbitrary R code, and with it pending finalizers.
+ 	RCallbackScope callback_scope;
+ 
++	// A native query driver keeps R's thread live while this bind runs on its own
++	// thread; the cpp11 vectors built below would then race with R's allocator.
++	if (!OnRThread() && NativeDriverActive()) {
++		throw InvalidInputException("R data-frame binding requires R's recorded thread while a native query driver "
++		                            "is active");
++	}
++
+ 	data_frame df((SEXP)input.inputs[0].GetPointer());
+ 
+ 	auto integer64 = get_integer64_param(input.named_parameters);
 diff --git a/src/utils.cpp b/src/utils.cpp
 index 76e6d45..4e240a8 100644
 --- a/src/utils.cpp

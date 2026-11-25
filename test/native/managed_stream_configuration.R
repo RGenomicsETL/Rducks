@@ -1,6 +1,6 @@
 # Run only in a timeout-supervised fresh R process with a guarded duckdb-r.
 # A managed stream must leave the user's configuration alone, and the thread
-# count must be changeable between fetches.
+# count must be changeable once the stream has closed.
 library(Rducks)
 mode <- commandArgs(trailingOnly = TRUE)[[1L]]
 say <- function(...) { cat(..., '\n'); flush.console() }
@@ -30,14 +30,14 @@ zero_queue <- function() {
 }
 enable <- function(threads = 4L) rducks_enable_inproc(con, threads = threads, external_threads = 1L)
 
-if (mode == 'between') {
-  # Changing the thread count joins every DuckDB worker. That is safe only
-  # when no worker waits for R, which holds between fetches: the engine does
-  # not produce a streaming result while no fetch is running.
+if (mode == 'closed') {
+  # Changing the thread count joins every DuckDB worker, so it is safe only
+  # when no worker waits for R. A worker can wait between two fetches (the
+  # UNION ALL shape at two threads does), so the documented rule is to close
+  # the stream first. Closing must leave no worker waiting.
   rducks_register_scalar_udf(con, 'stream_identity', function(x) { Sys.sleep(0.003); x },
     args = INTEGER, returns = INTEGER, mode = 'vectorized', side_effects = TRUE)
   DBI::dbExecute(con, 'CREATE TABLE stream_input AS SELECT i::INTEGER AS i FROM range(4000000) t(i)')
-  enable(8L)
   DBI::dbExecute(con, 'SET preserve_insertion_order=false')
   shapes <- c(
     project = 'SELECT stream_identity(i) AS i FROM stream_input',
@@ -46,20 +46,20 @@ if (mode == 'between') {
     join = 'SELECT stream_identity(a.i) AS i FROM stream_input a JOIN (SELECT i FROM stream_input WHERE i < 200000) b USING (i)'
   )
   for (shape in names(shapes)) {
-    stream <- rducks_query_stream(con, shapes[[shape]])
-    stopifnot(!isTRUE(settings()$locked))
-    for (round in seq_len(24L)) {
-      stopifnot(nrow(stream$next_batch()) > 0L)
-      Sys.sleep(0.005)
+    for (stream_threads in c(2L, 8L)) {
+      enable(stream_threads)
+      stream <- rducks_query_stream(con, shapes[[shape]])
+      stopifnot(!isTRUE(settings()$locked))
+      for (round in seq_len(6L)) stopifnot(nrow(stream$next_batch()) > 0L)
+      stopifnot(rducks_inproc_stats(con)$submitted > 0)
+      stream$close()
       zero_queue()
-      target <- c(2L, 8L, 1L, 4L)[[round %% 4L + 1L]]
-      DBI::dbExecute(if (round %% 2L) con else sibling, sprintf('SET threads = %d', target))
-      stopifnot(settings()$threads == target)
+      for (target in c(4L, 1L, 8L, 2L)) {
+        DBI::dbExecute(if (target %% 4L) con else sibling, sprintf('SET threads = %d', target))
+        stopifnot(settings()$threads == target)
+      }
     }
-    stopifnot(rducks_inproc_stats(con)$submitted > 0)
-    stream$close()
-    zero_queue()
-    say('BETWEEN_FETCHES_OK', shape)
+    say('AFTER_CLOSE_OK', shape)
   }
 } else if (mode == 'untouched') {
   # Open, failed, abandoned and released streams leave every setting as found.

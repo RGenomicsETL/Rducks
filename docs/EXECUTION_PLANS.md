@@ -157,11 +157,13 @@ release from a callback are rejected, and so are plan and scheduler changes made
 through Rducks while a stream is open. Existing serial and IPC stream paths
 remain synchronous.
 
-A managed stream changes no DuckDB setting and locks none. `threads` and
-`external_threads` can change between fetches, when no worker waits for R.
-Changing the thread count joins every DuckDB worker, so a scalar UDF must not
-change them on its own database through SQL while a managed stream runs it: the
-worker that waits for that UDF can never be joined, and the R process hangs.
+A managed stream changes no DuckDB setting and locks none. Do not change
+`threads` or `external_threads` through SQL while a managed stream is open, on
+any connection to that database; close the stream first. Changing the thread
+count joins every DuckDB worker. A worker can wait for R to run a scalar UDF,
+also between two fetches, and R does not serve callbacks inside `SET`. That
+worker can then never be joined, and the R process hangs without a way to
+interrupt it.
 
 Managed startup requires duckdb-r's versioned off-main R-source guard capability.
 The pinned [companion patch and installer](../tools/compat/README.md) provide

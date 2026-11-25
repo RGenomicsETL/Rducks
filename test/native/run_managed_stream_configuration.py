@@ -6,7 +6,7 @@ import sys
 import tempfile
 
 root = Path(__file__).resolve().parent
-cases = sys.argv[1:] or ['between', 'untouched', 'prelocked', 'rducks-calls']
+cases = sys.argv[1:] or ['closed', 'untouched', 'prelocked', 'rducks-calls']
 for case in cases:
     with tempfile.TemporaryFile(mode='w+') as log:
         process = subprocess.Popen(['Rscript', '--vanilla', str(root / 'managed_stream_configuration.R'), case],

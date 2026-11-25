@@ -73,11 +73,11 @@ rducks_query_stream_driver_available <- function(con) {
 #' execution paths.
 #' Only one stream can be open for a database runtime at a time. Recursive
 #' stream operations, release, and plan changes during callbacks are rejected.
-#' A managed stream changes no DuckDB setting. \code{threads} and
-#' \code{external_threads} can change between calls to `$next_batch()`. A
-#' scalar UDF must not change them on its own database through SQL while a
-#' managed stream runs it: DuckDB then waits for the worker that waits for that
-#' UDF, and the R process hangs.
+#' A managed stream changes no DuckDB setting and locks none. Do not change
+#' \code{threads} or \code{external_threads} through SQL while a managed stream
+#' is open, on any connection to that database: DuckDB then waits for its
+#' workers, a worker can wait for R to run a scalar UDF, and the R process
+#' hangs without a way to interrupt it. Close the stream first.
 #'
 #' @param con A `duckdb_connection` with Rducks enabled.
 #' @param sql A non-empty SQL query string.
