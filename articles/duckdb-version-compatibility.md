@@ -43,8 +43,9 @@ with that key after installation.
     repository layout `<version>/<platform>/rducks.duckdb_extension`,
     where `<version>` is the release tag of the engine, or its source id
     for a development build;
-3.  sets `allow_extension_repositories` to `'allowed'` if it is
-    `'undecided'`, and registers the repository with the public key;
+3.  sets `allow_extension_repositories` to `'allowed'` if it has
+    DuckDB’s default (`'undecided'` in 2.0.0, `'hosts'` from 2.0.1), and
+    registers the repository with the public key;
 4.  runs `INSTALL` and `LOAD` from the repository, with
     `extension_directory` pointed below
     [`tempdir()`](https://rdrr.io/r/base/tempfile.html) during
@@ -71,7 +72,9 @@ duckplyr, the record goes to `~/.duckdb/extension_repositories` until
 `LOAD` finishes.
 [`rducks_enable()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_enable.md)
 does this only with `home_registry = TRUE`. A connection with
-`allow_extension_repositories = 'forbidden'` cannot load Rducks.
+`allow_extension_repositories` set to `'forbidden'` or `'hosts_only'`
+cannot load Rducks: DuckDB only tightens that setting while the database
+runs.
 
 ## Diagnostics
 

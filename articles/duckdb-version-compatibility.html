@@ -99,8 +99,9 @@ layout
 where <code>&lt;version&gt;</code> is the release tag of the engine, or
 its source id for a development build;</li>
 <li>sets <code>allow_extension_repositories</code> to
-<code>'allowed'</code> if it is <code>'undecided'</code>, and registers
-the repository with the public key;</li>
+<code>'allowed'</code> if it has DuckDB’s default
+(<code>'undecided'</code> in 2.0.0, <code>'hosts'</code> from 2.0.1),
+and registers the repository with the public key;</li>
 <li>runs <code>INSTALL</code> and <code>LOAD</code> from the repository,
 with <code>extension_directory</code> pointed below
 <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code> during <code>INSTALL</code>;</li>
@@ -122,8 +123,9 @@ duckplyr, the record goes to
 <code>~/.duckdb/extension_repositories</code> until <code>LOAD</code>
 finishes. <code><a href="../reference/rducks_enable.html">rducks_enable()</a></code> does this only with
 <code>home_registry = TRUE</code>. A connection with
-<code>allow_extension_repositories = 'forbidden'</code> cannot load
-Rducks.</p>
+<code>allow_extension_repositories</code> set to
+<code>'forbidden'</code> or <code>'hosts_only'</code> cannot load
+Rducks: DuckDB only tightens that setting while the database runs.</p>
 </div>
 <div class="section level2">
 <h2 id="diagnostics">Diagnostics<a class="anchor" aria-label="anchor" href="#diagnostics"></a>

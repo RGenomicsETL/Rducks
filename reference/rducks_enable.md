@@ -52,8 +52,10 @@ rducks_enable(
 ## Details
 
 The load changes the connection as follows:
-`allow_extension_repositories` moves from `'undecided'` to `'allowed'`
-(DuckDB cannot move it back while the database runs), and the repository
+`allow_extension_repositories` moves from DuckDB's default
+(`'undecided'` in DuckDB 2.0.0, `'hosts'` from 2.0.1) to `'allowed'`,
+and DuckDB cannot move it back while the database runs. A connection set
+to `'hosts_only'` or `'forbidden'` cannot load Rducks. The repository
 record is removed after `LOAD`. `extension_directory` points to a
 directory below [`tempdir()`](https://rdrr.io/r/base/tempfile.html)
 during `INSTALL` and is then restored.
@@ -80,7 +82,7 @@ in-process execution.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpfEX6SN/duckdb
+#> ℹ /tmp/RtmpFP9mht/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
