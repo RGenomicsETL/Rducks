@@ -58,11 +58,12 @@ local({
   expect_true(rducks_function_count(con) > 0)
 })
 
-# An 'undecided' connection is moved to 'allowed'.
+# A connection that keeps DuckDB's default access is moved to 'allowed'. The
+# default is 'undecided' in DuckDB 2.0.0 and 'hosts' from 2.0.1.
 local({
-  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "undecided")))
+  con <- connect(list(extension_repository_directory = tempfile("rducks-registry-")))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
-  expect_identical(setting(con, "allow_extension_repositories"), "undecided")
+  expect_true(setting(con, "allow_extension_repositories") %in% c("undecided", "hosts"))
   rducks_enable(con)
   expect_identical(setting(con, "allow_extension_repositories"), "allowed")
   expect_true(rducks_function_count(con) > 0)
@@ -80,7 +81,15 @@ local({
 local({
   con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "forbidden")))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
-  expect_error(rducks_enable(con), pattern = "forbids extension repositories")
+  expect_error(rducks_enable(con), pattern = "allow_extension_repositories = 'forbidden'")
+})
+
+# 'hosts_only' exists from DuckDB 2.0.1 and cannot be widened to 'allowed'.
+if (utils::packageVersion("duckdb") >= "2.0.1") local({
+  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "hosts_only")))
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_error(rducks_enable(con), pattern = "allow_extension_repositories = 'hosts_only'")
+  expect_identical(rducks_function_count(con), 0)
 })
 
 # Signature checks: through the repository, a copy of the bundled file loads

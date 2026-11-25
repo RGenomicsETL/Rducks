@@ -137,9 +137,14 @@ rducks_run_cleanup <- function(steps) {
 rducks_load_from_repository <- function(con, extension_path, home_registry) {
   rducks_assert_engine_has_repositories(con)
   access <- rducks_current_setting(con, "allow_extension_repositories")
-  if (identical(access, "forbidden")) {
+  # Rducks adds its repository by prefix, which DuckDB permits only under
+  # 'allowed'. The setting can only be tightened while the database runs:
+  # the default ('undecided' in DuckDB 2.0.0, 'hosts' from 2.0.1) can still
+  # move to 'allowed'; 'hosts_only' and 'forbidden' cannot.
+  if (access %in% c("forbidden", "hosts_only")) {
     stop(
-      "this connection forbids extension repositories (allow_extension_repositories = 'forbidden'), ",
+      "this connection does not allow a local extension repository ",
+      "(allow_extension_repositories = '", access, "'), ",
       "so Rducks cannot load its signed extension.",
       call. = FALSE
     )
@@ -152,7 +157,7 @@ rducks_load_from_repository <- function(con, extension_path, home_registry) {
       call. = FALSE
     )
   }
-  if (identical(access, "undecided")) {
+  if (!identical(access, "allowed")) {
     DBI::dbExecute(con, "SET allow_extension_repositories = 'allowed'")
   }
 
