@@ -546,9 +546,9 @@ static duckdb_logical_type rducks_probe_variant_logical_type(duckdb_connection c
         duckdb_destroy_result(&result);
         return NULL;
     }
-    /* result_get_chunk must not be mixed with legacy result column accessors;
+    /* Chunk fetching must not be mixed with legacy result column accessors;
      * obtain the owned canonical logical type directly from its real vector. */
-    query_chunk = duckdb_result_get_chunk(result, 0);
+    query_chunk = duckdb_fetch_chunk(result);
     if (!query_chunk || duckdb_data_chunk_get_size(query_chunk) != 1) goto fail;
     vector = duckdb_data_chunk_get_vector(query_chunk, 0);
     type = vector ? duckdb_vector_get_column_type(vector) : NULL;
