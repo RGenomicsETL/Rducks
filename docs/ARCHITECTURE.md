@@ -77,14 +77,10 @@ interrupt handler. A constant-token bind handshake registers that bridge on
 the recorded R thread; scalar execution of the handshake remains native-only.
 The package never casts a duckdb-r external pointer or borrows its connection.
 
-Before starting the helper, capability version 2 reserves and acquires a native
-database-wide scheduler lease. It uses DuckDB's configuration-lock enforcement,
-not SQL text matching, to reject scheduler changes through raw DBI statements,
-prepared statements and sibling connections. A native acknowledgement verifies
-acquisition even if SQL name resolution is altered. The prior lock state and
-allowlist are restored only after the helper has joined; a reserved rollback
-handle also covers errors partway through startup. See the
-[companion contract](../tools/compat/README.md) for protected settings and limits.
+Before starting the helper, Rducks tells duckdb-r that a native thread will run
+queries while R's thread stays live, and withdraws that marker after the helper
+has joined. The marker changes no database setting. See the
+[companion contract](../tools/compat/README.md) for the guards and limits.
 
 The R side pumps callbacks while each helper command is active. A bounded
 handoff transfers one fetched native chunk back for direct R materialization.

@@ -153,27 +153,21 @@ an error while processing or assembling a returned R batch. R operations that
 do not cooperate with interrupts cannot be forcibly preempted safely.
 
 Only one stream may be open per database runtime. Recursive stream calls and
-release from a callback are rejected; plan and scheduler changes are rejected
-while a stream is open, including through a sibling DBI connection. Existing
-serial and IPC stream paths remain synchronous.
+release from a callback are rejected, and so are plan and scheduler changes made
+through Rducks while a stream is open. Existing serial and IPC stream paths
+remain synchronous.
 
-The scheduler guard is an execution-time database configuration lease, not SQL
-text screening. It rejects direct `SET`, `RESET` and `PRAGMA` changes to `threads`
-(including `worker_threads`), `external_threads`, `lock_configuration` and
-`allowed_configs`, including cached prepared statements. The lease preserves a
-pre-existing configuration lock and its allowlist without widening either. For
-an initially unlocked database, other already registered settings remain
-configurable; settings added by newly loaded extensions fail closed until the
-stream ends. The original lock value/presence and allowlist are restored only
-after the helper is joined. This does not intercept arbitrary third-party
-native extensions that mutate engine internals directly.
+A managed stream changes no DuckDB setting and locks none. `threads` and
+`external_threads` can change between fetches, when no worker waits for R.
+Changing the thread count joins every DuckDB worker, so a scalar UDF must not
+change them on its own database through SQL while a managed stream runs it: the
+worker that waits for that UDF can never be joined, and the R process hangs.
 
 Managed startup requires duckdb-r's versioned off-main R-source guard capability.
 The pinned [companion patch and installer](../tools/compat/README.md) provide
-version 2 for duckdb-r 2.0.0. Stock builds and version-1 companions fail before
-helper startup. Version 2 adds the native scheduler lease to the source guards.
-The guard rejects R-backed environment/Arrow replacement scans, Arrow factories,
-and R data-frame binding before they enter R from the helper. Rducks R table and
+version 3 for duckdb-r 2.0.0. Stock builds and older companions fail before
+helper startup. The guard rejects R-backed environment/Arrow replacement scans,
+Arrow factories, and R data-frame binding before they enter R from the helper. Rducks R table and
 aggregate callbacks are also unsupported in this mode. Native sources and the
 queued Rducks scalar-UDF path are supported.
 
