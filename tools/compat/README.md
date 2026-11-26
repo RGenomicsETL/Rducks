@@ -11,64 +11,43 @@ the capability is absent; ordinary serial and IPC execution remain available.
 
 duckdb-r 2.0.0 records R's thread when the package loads (`OnRThread()`). Before
 touching R, the patched native callbacks reject calls from another thread with a
-DuckDB exception. The source guards
-cover environment replacement scans, matched Arrow replacement scans and R Arrow
-schema/stream factories. R data-frame binding is refused off R's thread only
-while a managed stream holds the database lease. These checks matter because
-replacement scans belong to the database and are visible to the extension's
-native connection, including when the caller's temporary views are not.
+DuckDB exception. The source guards cover environment replacement scans, matched
+Arrow replacement scans and R Arrow schema/stream factories. These checks matter
+because replacement scans belong to the database and are visible to the
+extension's native connection, including when the caller's temporary views are
+not.
 
-Version 2 adds a database-wide scheduler lease. Stock duckdb-r and the earlier
-version-1 companion fail closed when opening managed streams. After startup,
-the package registers this native capability:
+After database startup, the package registers three native C-callables. They are
+internal integration endpoints, not user-facing APIs, and none of them enters R:
 
 ```c
 /* R_GetCCallable("duckdb", "duckdb_r_off_main_guard_version") */
 typedef uint32_t (*duckdb_r_off_main_guard_version_fn)(void);
-/* Returns 2 for this patch. */
+/* Returns 3 for this patch. */
+
+/* R_GetCCallable("duckdb", "duckdb_r_native_driver_enter") */
+/* R_GetCCallable("duckdb", "duckdb_r_native_driver_exit") */
+typedef void (*duckdb_r_native_driver_mark_fn)(void);
 ```
 
-The companion also registers three native-only C-callables and one native SQL
-scalar (these are internal integration endpoints, not user-facing APIs):
+Rducks calls `enter` before it starts the helper thread of a managed stream and
+`exit` after it has joined that thread. Between the two, duckdb-r refuses R
+data-frame binding off R's thread: that bind builds cpp11 vectors, which would
+race with R's allocator while R's thread is live. The marker is a process-wide
+count. It changes no database setting.
 
-```c
-/* R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_reserve") */
-typedef uint64_t (*duckdb_r_managed_stream_guard_reserve_fn)(void);
-/* R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_release") */
-typedef int (*duckdb_r_managed_stream_guard_release_fn)(uint64_t lease_id);
-/* R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_validate") */
-typedef int (*duckdb_r_managed_stream_guard_validate_fn)(uint64_t lease_id);
-```
+Stock duckdb-r and companions below version 3 fail closed when a managed stream
+opens.
 
-Reserve returns an opaque nonzero identifier, or zero on allocation failure.
-Rducks stores it before executing
-`SELECT system.main.duckdb_r_managed_stream_guard_acquire(id::UBIGINT)` on the actual native
-stream connection. Acquisition identifies the database through DuckDB's native
-expression context, not a borrowed R connection or private pointer cast. Only
-one lease may be acquired per database. Release restores an acquired lease or
-cleans up an unused reservation; it returns one on success and never throws
-through the C ABI. Validation verifies the reservation really became an acquired
-native lease, rather than trusting only the SQL result; the system-qualified
-function also avoids user-macro shadowing. All endpoints and acquisition avoid R APIs.
-
-The lease uses DuckDB's `lock_configuration`/`allowed_configs` enforcement in
-`PhysicalSet` and `PhysicalReset`, so direct DBI `SET`, `RESET`, `PRAGMA`, cached
-prepared statements, aliases and sibling connections share the same protection.
-It blocks `threads`, `external_threads`, `lock_configuration` and
-`allowed_configs`. For an already locked database it only narrows the existing
-allowlist; otherwise unrelated currently registered settings remain usable.
-Settings introduced by extensions loaded during the stream fail closed until
-close. The prior lock value/presence and exact allowlist are restored after the
-query helper is joined, including startup errors, query failures, cancellation,
-explicit close, garbage collection and last-anchor release. Reserving first
-keeps that rollback possible even if acquisition SQL or result allocation fails.
-The lease does not intercept arbitrary native extensions that modify engine
-internals without SQL setting enforcement.
-
-The lease guards a real hang. Changing the thread count joins every DuckDB
-worker. A worker can still wait for R to run a scalar UDF between two fetches
-(observed with a `UNION ALL` stream at `threads = 2` on DuckDB 2.0.0), and R
-does not serve callbacks there, so an unguarded `SET threads` never returns.
+The companion does not lock `threads` or any other setting. Do not change
+`threads` or `external_threads` through SQL while a managed stream is open, on
+any connection to that database. Changing the thread count joins every DuckDB
+worker. A worker can wait for R to run a scalar UDF, also between two fetches
+(observed with a `UNION ALL` stream at `threads = 2` on DuckDB 2.0.0). R does
+not serve callbacks inside `SET`, so that worker can never be joined and the R
+process hangs without a way to interrupt it. Close the stream first. Rducks'
+own entry points (`rducks_enable()`, `rducks_enable_inproc()`,
+`rducks_set_execution_plan()`) reject the change while a stream is open.
 
 This capability means those R-backed binding paths fail before entering R from
 the managed helper. It does not marshal R-backed tables or Arrow callbacks to R,
@@ -91,7 +70,7 @@ shared library; upstream configure checks that both embed the same core commit.
 | --- | --- |
 | [duckdb_2.0.0.tar.gz](https://cran.r-project.org/src/contrib/duckdb_2.0.0.tar.gz) | `23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741` |
 | [duckdb-shared-libs-linux-amd64.tar.gz](https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-shared-libs-linux-amd64.tar.gz) | `993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1` |
-| Companion patch | `965f9f257a8f43571abca32b65c4f80c88335df423a89cb73858e40f877153e1` |
+| Companion patch | `f47f6845b0277e0339f01e9b77b5da3648115434319d8c1f7686ba5e69a4dc15` |
 
 The installer falls back to the CRAN version archive when the current-source
 URL expires. Every downloaded file must match its pinned checksum.
@@ -153,19 +132,19 @@ R_LIBS_USER="$rducks_library:$guarded_library:$ordinary_library" \
 R data-frame view rejection, main-thread access, and reuse after failed binding.
 It also covers registered Arrow input when the optional Arrow package is
 installed. `test_query_stream_runtime_guards.R` checks bootstrap after manual
-extension loading, configuration guards for a second connection, final-anchor
+extension loading, configuration checks for a second connection, final-anchor
 release, and file-backed shutdown followed by stale-handle close/GC and reopen.
 The lifecycle test covers scalar queue execution, error/reentrancy,
 early close, garbage collection and reuse. The native SIGINT harness provides
 separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt.py`.
 
-`python3 test/native/run_scheduler_guard.py` uses the same library environment
-and runs fresh R processes with a 60-second deadline and forced kill/reap on
-failure. It first witnesses R callbacks queued by native workers for the open stream, then
-tests raw and cached
-prepared scheduler changes on both the original and sibling connections. Other
-cases cover callback reentrancy, pre-existing security restrictions, errors,
-GC/release restoration, and a user macro shadowing the acquisition function.
+`python3 test/native/run_managed_stream_configuration.py` uses the same library
+environment and runs fresh R processes with a 120-second deadline and forced
+kill/reap on failure. It checks that open, failed, abandoned and released streams
+leave every setting as found, that a configuration lock set by the user is kept
+as is, that Rducks' own configuration entry points reject calls from a stream
+callback, and that the thread count can change after streams of four query
+shapes have closed.
 
 For the fail-closed case, run the lifecycle test again with only the ordinary
 duckdb library in a fresh process. It verifies that the capability is absent and

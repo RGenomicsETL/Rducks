@@ -35,7 +35,7 @@ Rscript --vanilla -e 'stopifnot(getRversion() >= "4.2.0", requireNamespace("DBI"
 
 source_sha=23db64ca8054c7984dba06958ae9d530579cb7430831ac4f503f33a44f013741
 library_sha=993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1
-patch_sha=965f9f257a8f43571abca32b65c4f80c88335df423a89cb73858e40f877153e1
+patch_sha=f47f6845b0277e0339f01e9b77b5da3648115434319d8c1f7686ba5e69a4dc15
 printf '%s  %s\n' "$patch_sha" "$patch_file" | sha256sum --check --status ||
   fail 'Companion patch checksum does not match this installer.'
 
@@ -93,16 +93,13 @@ SEXP rducks_guard_probe_version(void) {
     version_fn version = (version_fn) R_GetCCallable("duckdb", "duckdb_r_off_main_guard_version");
     return Rf_ScalarInteger((int) version());
 }
-SEXP rducks_guard_probe_lease(void) {
-    typedef uint64_t (*reserve_fn)(void);
-    typedef int (*lease_fn)(uint64_t);
-    reserve_fn reserve = (reserve_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_reserve");
-    lease_fn validate = (lease_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_validate");
-    lease_fn release = (lease_fn) R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_release");
-    uint64_t id = reserve();
-    int ok = id != 0 && validate(id) == 0;
-    if (id) ok = release(id) == 1 && validate(id) == 0 && ok;
-    return Rf_ScalarLogical(ok);
+SEXP rducks_guard_probe_marker(void) {
+    typedef void (*mark_fn)(void);
+    mark_fn enter = (mark_fn) R_GetCCallable("duckdb", "duckdb_r_native_driver_enter");
+    mark_fn leave = (mark_fn) R_GetCCallable("duckdb", "duckdb_r_native_driver_exit");
+    enter();
+    leave();
+    return Rf_ScalarLogical(1);
 }
 C
 if ! R CMD SHLIB -o "$build_dir/guard_probe.so" "$build_dir/guard_probe.c" \
@@ -120,8 +117,8 @@ local({
   stopifnot(DBI::dbGetQuery(con, "SELECT version() AS version")$version == "v2.0.0")
   stopifnot(DBI::dbGetQuery(con, "SELECT 42::INTEGER AS answer")$answer == 42L)
   dyn.load(file.path(args[[2L]], "guard_probe.so"))
-  stopifnot(.Call("rducks_guard_probe_version") == 2L)
-  stopifnot(.Call("rducks_guard_probe_lease"))
+  stopifnot(.Call("rducks_guard_probe_version") == 3L)
+  stopifnot(.Call("rducks_guard_probe_marker"))
 })
 R
 printf 'Guarded duckdb installed in %s\n' "$output_library"

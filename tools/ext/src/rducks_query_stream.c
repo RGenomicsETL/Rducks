@@ -7,9 +7,7 @@ typedef enum rducks_query_stream_command {
     RDUCKS_STREAM_COMMAND_CLOSE
 } rducks_query_stream_command_t;
 
-typedef uint64_t (*rducks_scheduler_guard_reserve_fn)(void);
-typedef int (*rducks_scheduler_guard_release_fn)(uint64_t);
-typedef int (*rducks_scheduler_guard_validate_fn)(uint64_t);
+typedef void (*rducks_native_driver_mark_fn)(void);
 
 struct rducks_query_stream_entry {
     char *token;
@@ -21,8 +19,8 @@ struct rducks_query_stream_entry {
     int busy;
     int managed;
     rducks_query_owner_t *owner;
-    uint64_t scheduler_guard;
-    rducks_scheduler_guard_release_fn scheduler_guard_release;
+    /* duckdb-r's exit marker, set once this entry announced its native driver. */
+    rducks_native_driver_mark_fn native_driver_exit;
     char *sql;
     duckdb_prepared_statement statement;
     duckdb_pending_result pending;
@@ -49,42 +47,15 @@ struct rducks_query_stream_entry {
     struct rducks_query_stream_entry *next;
 };
 
-/* The companion owns the native lease and decodes the actual connection in
- * its SQL function. Rducks never inspects duckdb-r's external-pointer layout.
- * Reserve before SQL so a query failure cannot lose the rollback handle. */
-static int rducks_query_stream_acquire_scheduler_guard(rducks_query_stream_entry_t *entry,
-                                                       char *err_msg, size_t err_cap) {
-    rducks_scheduler_guard_reserve_fn reserve = (rducks_scheduler_guard_reserve_fn)
-        R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_reserve");
-    rducks_scheduler_guard_validate_fn validate = (rducks_scheduler_guard_validate_fn)
-        R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_validate");
-    duckdb_result result;
-    char sql[160];
-    int ok = 0;
-    entry->scheduler_guard_release = (rducks_scheduler_guard_release_fn)
-        R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_release");
-    entry->scheduler_guard = reserve();
-    if (!entry->scheduler_guard) {
-        rducks_format_error_message(err_msg, err_cap, "failed to reserve the managed query scheduler guard");
-        return 0;
-    }
-    memset(&result, 0, sizeof(result));
-    snprintf(sql, sizeof(sql), "SELECT system.main.duckdb_r_managed_stream_guard_acquire(%llu::UBIGINT)",
-             (unsigned long long)entry->scheduler_guard);
-    if (duckdb_query(entry->connection, sql, &result) == DuckDBError) {
-        rducks_copy_error_message(err_msg, err_cap, duckdb_result_error(&result),
-                                  "failed to acquire the managed query scheduler guard");
-    } else if (duckdb_column_count(&result) != 1U || duckdb_row_count(&result) != 1U ||
-               duckdb_column_type(&result, 0) != DUCKDB_TYPE_UBIGINT ||
-               duckdb_value_is_null(&result, 0, 0) ||
-               duckdb_value_uint64(&result, 0, 0) != entry->scheduler_guard ||
-               !validate(entry->scheduler_guard)) {
-        rducks_format_error_message(err_msg, err_cap, "invalid managed query scheduler guard acknowledgement");
-    } else {
-        ok = 1;
-    }
-    duckdb_destroy_result(&result);
-    return ok;
+/* Tell duckdb-r that a native thread runs queries while R's thread stays live,
+ * so its data-frame bind refuses that thread. The marker is a process-wide
+ * count; it changes no database setting. Called on the R thread. */
+static void rducks_query_stream_mark_native_driver(rducks_query_stream_entry_t *entry) {
+    rducks_native_driver_mark_fn enter = (rducks_native_driver_mark_fn)
+        R_GetCCallable("duckdb", "duckdb_r_native_driver_enter");
+    entry->native_driver_exit = (rducks_native_driver_mark_fn)
+        R_GetCCallable("duckdb", "duckdb_r_native_driver_exit");
+    enter();
 }
 
 /* The helper is native-only. Prepare can execute constant scalar expressions;
@@ -284,16 +255,14 @@ static void rducks_query_stream_release_preserved(rducks_runtime_entry_t *runtim
     }
 }
 
-static int rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry) {
-    int guard_released = 1;
-    if (!entry) return 1;
+static void rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry) {
+    if (!entry) return;
     if (entry->driver_started) rducks_query_stream_driver_stop(entry);
     else rducks_query_stream_engine_close(entry);
-    /* The worker join is the scheduler lock's release boundary: no callback
-     * can still be waiting for R when a sibling SET/RESET is admitted again. */
-    if (entry->scheduler_guard) {
-        guard_released = entry->scheduler_guard_release(entry->scheduler_guard);
-        entry->scheduler_guard = 0U;
+    /* The helper is joined: no native thread of this entry runs queries now. */
+    if (entry->native_driver_exit) {
+        entry->native_driver_exit();
+        entry->native_driver_exit = NULL;
     }
     rducks_runtime_lock();
     if (entry->runtime->query_stream_service_entry == entry) entry->runtime->query_stream_service_entry = NULL;
@@ -326,7 +295,6 @@ static int rducks_query_stream_entry_destroy(rducks_query_stream_entry_t *entry)
     free(entry->token);
     memset(entry, 0, sizeof(*entry));
     free(entry);
-    return guard_released;
 }
 
 static rducks_query_stream_entry_t *rducks_query_stream_find_locked(rducks_runtime_entry_t *runtime,
@@ -508,7 +476,7 @@ static int rducks_query_stream_open_native(rducks_runtime_entry_t *runtime, cons
         goto error;
     }
     if (entry->managed) {
-        if (!rducks_query_stream_acquire_scheduler_guard(entry, err_msg, err_cap)) goto error;
+        rducks_query_stream_mark_native_driver(entry);
         entry->owner = rducks_query_owner_create(entry->connection);
         if (!entry->owner) {
             rducks_format_error_message(err_msg, err_cap, "failed to allocate Rducks query cancellation owner");
@@ -549,11 +517,7 @@ error:
         entry->next = NULL;
         rducks_runtime_unlock();
     }
-    if (!rducks_query_stream_entry_destroy(entry)) {
-        rducks_format_error_message(err_msg, err_cap,
-                                    "failed to release the managed query scheduler guard; database remains locked");
-        return 0;
-    }
+    rducks_query_stream_entry_destroy(entry);
     return 0;
 }
 
@@ -577,24 +541,18 @@ static int rducks_query_stream_close_native(rducks_runtime_entry_t *runtime, con
     }
     rducks_runtime_unlock();
     if (!entry) return 1;
-    if (!rducks_query_stream_entry_destroy(entry)) {
-        rducks_format_error_message(err_msg, err_cap,
-                                    "failed to release the managed query scheduler guard; database remains locked");
-        return 0;
-    }
+    rducks_query_stream_entry_destroy(entry);
     if (closed_out) *closed_out = 1;
     return 1;
 }
 
-static int rducks_query_stream_destroy_detached_list(rducks_query_stream_entry_t *entry) {
-    int ok = 1;
+static void rducks_query_stream_destroy_detached_list(rducks_query_stream_entry_t *entry) {
     while (entry) {
         rducks_query_stream_entry_t *next = entry->next;
         entry->next = NULL;
-        if (!rducks_query_stream_entry_destroy(entry)) ok = 0;
+        rducks_query_stream_entry_destroy(entry);
         entry = next;
     }
-    return ok;
 }
 
 static int rducks_query_stream_schema_native(rducks_runtime_entry_t *runtime, const char *token,
@@ -750,12 +708,11 @@ static SEXP rducks_query_stream_guard_version_body(void *data) {
     uint32_t *version = (uint32_t *)data;
     rducks_off_main_guard_version_fn read_version = (rducks_off_main_guard_version_fn)
         R_GetCCallable("duckdb", "duckdb_r_off_main_guard_version");
-    /* A v1 companion only protects R-backed sources. Do not start a helper
-     * without all native lease endpoints supplied by capability v2. */
-    if (read_version() < 2U) return R_NilValue;
-    (void)R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_reserve");
-    (void)R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_release");
-    (void)R_GetCCallable("duckdb", "duckdb_r_managed_stream_guard_validate");
+    /* Capability 3 supplies the off-thread guards on duckdb-r's R-backed scans
+     * and the native driver marker. Do not start a helper without both. */
+    if (read_version() < 3U) return R_NilValue;
+    (void)R_GetCCallable("duckdb", "duckdb_r_native_driver_enter");
+    (void)R_GetCCallable("duckdb", "duckdb_r_native_driver_exit");
     *version = read_version();
     return R_NilValue;
 }
@@ -770,7 +727,7 @@ static int rducks_query_stream_driver_supported(void) {
     uint32_t version = 0U;
     (void)R_tryCatchError(rducks_query_stream_guard_version_body, &version,
                           rducks_query_stream_guard_version_missing, &version);
-    return version >= 2U;
+    return version >= 3U;
 }
 
 static SEXP rducks_query_stream_bridge_body(void *data) {
@@ -794,9 +751,7 @@ static SEXP rducks_query_stream_bridge_body(void *data) {
         entries = runtime->query_streams;
         runtime->query_streams = NULL;
         rducks_runtime_unlock();
-        if (!rducks_query_stream_destroy_detached_list(entries)) {
-            Rf_error("failed to release the managed query scheduler guard; database remains locked");
-        }
+        rducks_query_stream_destroy_detached_list(entries);
         return Rf_ScalarLogical(1);
     }
     if ((strcmp(call->operation, "open") == 0 || strcmp(call->operation, "next") == 0) &&
@@ -809,7 +764,7 @@ static SEXP rducks_query_stream_bridge_body(void *data) {
          * before preparing arbitrary SQL on the helper; source promises or
          * SQL-text screening cannot establish this thread-safety boundary. */
         if (!rducks_query_stream_driver_supported()) {
-            Rf_error("managed inproc query streams require duckdb-r off-main R-source guards and scheduler leases (capability version 2)");
+            Rf_error("managed inproc query streams require duckdb-r off-main R-source guards (capability version 3)");
         }
         if (!rducks_query_stream_open_native(runtime, call->argument, &token, error, sizeof(error))) {
             Rf_error("%s", error);
