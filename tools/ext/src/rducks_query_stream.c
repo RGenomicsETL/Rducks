@@ -130,7 +130,7 @@ static int rducks_query_stream_engine_execute(rducks_query_stream_entry_t *entry
 static int rducks_query_stream_engine_fetch(rducks_query_stream_entry_t *entry) {
     const char *msg;
     if (entry->owner && rducks_query_owner_stopping(entry->owner)) return 0;
-    entry->chunk = duckdb_stream_fetch_chunk(entry->result);
+    entry->chunk = duckdb_fetch_chunk(entry->result);
     if (entry->chunk && duckdb_data_chunk_get_size(entry->chunk) > 0) return 1;
     if (entry->chunk) duckdb_destroy_data_chunk(&entry->chunk);
     msg = duckdb_result_error(&entry->result);

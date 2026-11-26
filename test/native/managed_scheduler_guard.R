@@ -42,9 +42,9 @@ if (mode == 'pending') {
   DBI::dbExecute(con, 'SET preserve_insertion_order=false')
   before <- settings()
   stream <- rducks_query_stream(con, 'SELECT scheduler_identity(i) AS i FROM scheduler_input')
-  # DuckDB 2.0 stops producing a streaming result between fetches, so no
-  # callback is pending while R runs the statements below. Witness instead
-  # that native workers queued R callbacks for this open stream.
+  # Whether a callback stays pending between fetches depends on the query
+  # and the thread count. Witness that native workers queued R callbacks for
+  # this open stream; the rejections below hold in both states.
   queued <- FALSE
   for (attempt in seq_len(100L)) {
     stopifnot(nrow(stream$next_batch()) > 0L)

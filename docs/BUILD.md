@@ -130,11 +130,12 @@ Configure and `tools/ext/rducks_extension.c` reject
 `C_STRUCT_UNSTABLE` footer, which DuckDB loads only on the exact engine release
 that it was built for.
 
-The streaming query path calls four entries that need
-`DUCKDB_API_ALLOW_DEPRECATED` (`duckdb_pending_prepared_streaming`,
-`duckdb_stream_fetch_chunk`, `duckdb_result_get_chunk`,
-`duckdb_result_is_streaming`). They are part of the stable struct, but they are
-the first candidates for removal in a later C API version.
+The streaming query path calls two entries that need
+`DUCKDB_API_ALLOW_DEPRECATED`: `duckdb_pending_prepared_streaming`, which has no
+other stable V1 form, and `duckdb_result_is_streaming`, which verifies that
+DuckDB returned a streaming result. They are part of the stable struct, but they
+are the first candidates for removal in a later C API version. Chunks are
+fetched with `duckdb_fetch_chunk`.
 
 ## Inspecting C API use
 

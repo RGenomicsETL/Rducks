@@ -65,6 +65,11 @@ keeps that rollback possible even if acquisition SQL or result allocation fails.
 The lease does not intercept arbitrary native extensions that modify engine
 internals without SQL setting enforcement.
 
+The lease guards a real hang. Changing the thread count joins every DuckDB
+worker. A worker can still wait for R to run a scalar UDF between two fetches
+(observed with a `UNION ALL` stream at `threads = 2` on DuckDB 2.0.0), and R
+does not serve callbacks there, so an unguarded `SET threads` never returns.
+
 This capability means those R-backed binding paths fail before entering R from
 the managed helper. It does not marshal R-backed tables or Arrow callbacks to R,
 make arbitrary R extensions safe on workers, or expose a borrowed connection.
@@ -156,8 +161,8 @@ separate interrupt/cleanup checks; see `test/native/run_managed_stream_interrupt
 
 `python3 test/native/run_scheduler_guard.py` uses the same library environment
 and runs fresh R processes with a 60-second deadline and forced kill/reap on
-failure. It first witnesses R callbacks queued by native workers for the open stream (DuckDB
-2.0 does not produce a streaming result between fetches), then tests raw and cached
+failure. It first witnesses R callbacks queued by native workers for the open stream, then
+tests raw and cached
 prepared scheduler changes on both the original and sibling connections. Other
 cases cover callback reentrancy, pre-existing security restrictions, errors,
 GC/release restoration, and a user macro shadowing the acquisition function.
