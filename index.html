@@ -400,7 +400,7 @@
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>rows <span class="op">=</span> <span class="va">rows</span>, rss_at_open_mb <span class="op">=</span> <span class="va">rss_at_open</span>, peak_rss_mb <span class="op">=</span> <span class="va">peak</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    rows rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1 8e+06            250         312</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 8e+06            250         309</span></span></code></pre></div>
 <p>The same streaming holds over arbitrary scans, including external table-function extensions. The chunk below streams a 15 GB BAM through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling; resident memory stays a few hundred MB no matter how many reads are pulled. It runs only when the BAM is present locally.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"LOAD './duckhts.duckdb_extension'"</span><span class="op">)</span>   <span class="co"># locally built duckhts</span></span>
@@ -593,9 +593,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.436</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.921</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.927</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.441</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.930</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.924</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -688,6 +688,11 @@
 </td>
 </tr>
 <tr>
+<td><code>v1.0.0</code></td>
+<td align="right">1</td>
+<td><code>duckdb_fetch_chunk</code></td>
+</tr>
+<tr>
 <td><code>v1.1.0</code></td>
 <td align="right">46</td>
 <td>
@@ -710,9 +715,9 @@
 </tr>
 <tr>
 <td><code>deprecated</code></td>
-<td align="right">7</td>
+<td align="right">5</td>
 <td>
-<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_get_chunk</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_row_count</code>, <code>duckdb_stream_fetch_chunk</code>, <code>duckdb_value_is_null</code>, <code>duckdb_value_uint64</code>
+<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_row_count</code>, <code>duckdb_value_is_null</code>, <code>duckdb_value_uint64</code>
 </td>
 </tr>
 </tbody>

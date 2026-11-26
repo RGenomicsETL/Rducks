@@ -34,7 +34,7 @@ A named list for the `config` argument of
 # \donttest{
 db <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpFP9mht/duckdb
+#> ℹ /tmp/Rtmp1gorHK/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
