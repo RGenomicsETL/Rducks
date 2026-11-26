@@ -44,17 +44,16 @@ thread services scalar callbacks. Requests keep their original task
 identity and result destination; no source-row ordering is promised. R
 table and aggregate callbacks are unsupported in this managed mode and
 fail before off-thread R access. This mode requires a duckdb-r build
-exposing version 2 of its off-main R-source guard and scheduler-lease
-capability; ordinary builds without that capability fail with an
-explicit error. Serial and IPC plans retain their synchronous execution
-paths. Only one stream can be open for a database runtime at a time.
-Recursive stream operations, release, and plan changes during callbacks
-are rejected. While a managed stream is open, native configuration
-guards also reject direct SQL changes to `threads` (including aliases),
-`external_threads`, and the guard's configuration controls on every
-connection to the database. The original configuration restrictions are
-restored after the native driver has stopped. Close the stream before
-changing those settings.
+exposing version 3 of its off-main R-source guard capability; ordinary
+builds without that capability fail with an explicit error. Serial and
+IPC plans retain their synchronous execution paths. Only one stream can
+be open for a database runtime at a time. Recursive stream operations,
+release, and plan changes during callbacks are rejected. A managed
+stream changes no DuckDB setting and locks none. Do not change `threads`
+or `external_threads` through SQL while a managed stream is open, on any
+connection to that database: DuckDB then waits for its workers, a worker
+can wait for R to run a scalar UDF, and the R process hangs without a
+way to interrupt it. Close the stream first.
 
 ## Examples
 
@@ -62,7 +61,7 @@ changing those settings.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/Rtmp1gorHK/duckdb
+#> ℹ /tmp/RtmpurIQiz/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

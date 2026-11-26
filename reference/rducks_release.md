@@ -51,7 +51,7 @@ connection-local plan changes.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/Rtmp1gorHK/duckdb
+#> ℹ /tmp/RtmpurIQiz/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
