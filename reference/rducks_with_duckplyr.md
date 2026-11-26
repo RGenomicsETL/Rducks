@@ -107,3 +107,41 @@ before evaluating the duckplyr expression. Use explicit `args` in
 [`rducks_register_scalar_udf()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_scalar_udf.md)
 when you need Rducks' declared composite, exotic, or special-NULL input
 semantics.
+
+## Examples
+
+``` r
+# \donttest{
+if (requireNamespace("duckplyr", quietly = TRUE)) {
+  library(dplyr)
+  db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
+  rducks_enable(db, threads = "single")
+  DBI::dbWriteTable(db, "scores", data.frame(x = c(1, 2, 3)))
+  scores <- duckplyr::read_sql_duckdb("SELECT * FROM scores", con = db, prudence = "stingy")
+  plus_one <- function(x) as.double(x + 1)
+  rducks_with_duckplyr(
+    db,
+    scores |> mutate(y = plus_one(x)) |> collect(),
+    returns = list(plus_one = DOUBLE)
+  )
+  rducks_release(db)
+  DBI::dbDisconnect(db)
+}
+#> 
+#> Attaching package: ‘dplyr’
+#> The following objects are masked from ‘package:stats’:
+#> 
+#>     filter, lag
+#> The following objects are masked from ‘package:base’:
+#> 
+#>     intersect, setdiff, setequal, union
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpPMckDH/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
+# }
+```

@@ -38,3 +38,15 @@ rducks_type_parameters(x, ...)
 `rducks_type_sql()` returns the DuckDB SQL spelling;
 `rducks_type_kind()` returns the descriptor kind; child and parameter
 helpers return descriptor metadata.
+
+## Examples
+
+``` r
+int <- INTEGER
+rducks_type_token(int)
+#> [1] "i32"
+rducks_type_sql(int)
+#> [1] "INTEGER"
+rducks_type_kind(int)
+#> [1] "scalar"
+```

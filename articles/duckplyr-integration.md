@@ -44,11 +44,11 @@ suppressPackageStartupMessages({
 })
 
 con <- DBI::dbConnect(
-  duckdb::duckdb(config = rducks_duckdb_config()),
+  duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))),
   dbdir = ":memory:"
 )
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpL1km6z/duckdb
+#> ℹ /tmp/RtmpLU47cB/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

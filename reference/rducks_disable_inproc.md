@@ -32,9 +32,9 @@ rducks_disable_inproc(con, threads = NULL, external_threads = NULL)
 
 ``` r
 # \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpurIQiz/duckdb
+#> ℹ /tmp/RtmpPMckDH/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

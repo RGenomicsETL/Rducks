@@ -63,7 +63,7 @@ to keep the record below
 
 ``` r
 
-con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(con)
 ```
 

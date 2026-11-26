@@ -51,7 +51,7 @@
 </h1></div>
 <p><a href="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://rgenomicsetl.r-universe.dev/Rducks" class="external-link"><img src="https://rgenomicsetl.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed <a href="https://duckdb.org/docs/stable/extensions/overview" class="external-link">DuckDB C extension</a>. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks. It is built around explicit type descriptors, direct DuckDB-vector marshalling, and a strict rule that R object work runs on the recorded R thread.</p>
-<p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, and execution plan. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Two execution transports are available: in-process (<code>transport = "inproc"</code>) and worker-process (<code>transport = "ipc"</code>, native <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> request/reply, default local workers launched by <a href="https://mirai.r-lib.org/" class="external-link">mirai</a>, optional <a href="https://shikokuchuo.net/mori/" class="external-link">mori</a> sharing for selected globals). Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>.</p>
+<p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, and execution plan. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Two execution transports are available: in-process (<code>transport = "inproc"</code>) and worker-process (<code>transport = "ipc"</code>, native <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> request/reply, default local workers launched by <a href="https://mirai.r-lib.org/" class="external-link">mirai</a>, optional <a href="https://CRAN.R-project.org/package=mori" class="external-link">mori</a> sharing for selected globals). Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>.</p>
 <div class="section level2">
 <h2 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
 </h2>
@@ -75,7 +75,7 @@
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://r.duckdb.org/" class="external-link">duckdb</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/RGenomicsETL/Rducks" class="external-link">Rducks</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="reference/rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="reference/rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>threads <span class="op">=</span> <span class="st">"2"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">score_udf</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf</a></span><span class="op">(</span></span>
@@ -116,7 +116,7 @@
 <p>This example requires a duckplyr release compatible with the selected DuckDB engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr 1.2.2 does.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">demo_con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span></span>
-<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="reference/rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="reference/rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>threads <span class="op">=</span> <span class="st">"2"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  dbdir <span class="op">=</span> <span class="st">":memory:"</span></span>
 <span><span class="op">)</span></span>
 <span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">demo_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
@@ -400,15 +400,24 @@
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>rows <span class="op">=</span> <span class="va">rows</span>, rss_at_open_mb <span class="op">=</span> <span class="va">rss_at_open</span>, peak_rss_mb <span class="op">=</span> <span class="va">peak</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    rows rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1 8e+06            250         309</span></span></code></pre></div>
-<p>The same streaming holds over arbitrary scans, including external table-function extensions. The chunk below streams a 15 GB BAM through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling; resident memory stays a few hundred MB no matter how many reads are pulled. It runs only when the BAM is present locally.</p>
+<span><span class="co">#&gt; 1 8e+06            259         340</span></span></code></pre></div>
+<p>The same streaming holds over arbitrary scans, including external table-function extensions and remote files. The chunk below streams a 16 GB BAM of the 1000 Genomes Project over HTTPS through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling. Nothing is downloaded to disk, and resident memory stays a few hundred MB no matter how many reads are pulled. The chunk runs when a locally built duckhts extension is present; that build is unsigned, so the connection allows unsigned extensions.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"LOAD './duckhts.duckdb_extension'"</span><span class="op">)</span>   <span class="co"># locally built duckhts</span></span>
+<code class="sourceCode R"><span><span class="va">bam_url</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span></span>
+<span>  <span class="st">"https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/NA12878/alignment/"</span>,</span>
+<span>  <span class="st">"NA12878.mapped.ILLUMINA.bwa.CEU.low_coverage.20121211.bam"</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">bam_con</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="reference/rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>  threads <span class="op">=</span> <span class="st">"2"</span>, allow_unsigned_extensions <span class="op">=</span> <span class="st">"true"</span></span>
+<span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/rducks_enable.html">rducks_enable</a></span><span class="op">(</span><span class="va">bam_con</span>, threads <span class="op">=</span> <span class="st">"single"</span><span class="op">)</span></span>
+<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbExecute.html" class="external-link">dbExecute</a></span><span class="op">(</span><span class="va">bam_con</span>, <span class="st">"LOAD './duckhts.duckdb_extension'"</span><span class="op">)</span>   <span class="co"># locally built duckhts</span></span>
+<span><span class="co">#&gt; [1] 0</span></span>
 <span></span>
 <span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/rducks_query_stream.html">rducks_query_stream</a></span><span class="op">(</span></span>
-<span>  <span class="va">con</span>,</span>
-<span>  <span class="st">"SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL</span></span>
-<span><span class="st">     FROM read_bam('NA12878.low_coverage.bam')"</span>   <span class="co"># 15 GB on disk</span></span>
+<span>  <span class="va">bam_con</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL</span></span>
+<span><span class="st">             FROM read_bam('%s')"</span>, <span class="va">bam_url</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="va">bam_open</span> <span class="op">&lt;-</span> <span class="fu">rss_mb</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="va">reads</span> <span class="op">&lt;-</span> <span class="fl">0</span></span>
@@ -421,12 +430,20 @@
 <span>  <span class="va">peak</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">peak</span>, <span class="fu">rss_mb</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">batch</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"QNAME"</span>, <span class="st">"FLAG"</span>, <span class="st">"RNAME"</span>, <span class="st">"POS"</span>, <span class="st">"MAPQ"</span><span class="op">)</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;             QNAME FLAG RNAME     POS MAPQ</span></span>
+<span><span class="co">#&gt; 1 SRR622461.72266 1187     1 3206766   60</span></span>
+<span><span class="co">#&gt; 2 SRR622461.72258   83     1 3206784   60</span></span>
+<span><span class="co">#&gt; 3 SRR622461.72267  163     1 3206792   60</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  bam_gb <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size</a></span><span class="op">(</span><span class="st">"NA12878.low_coverage.bam"</span><span class="op">)</span> <span class="op">/</span> <span class="fl">1024</span><span class="op">^</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span>,</span>
 <span>  reads_streamed <span class="op">=</span> <span class="va">reads</span>,</span>
 <span>  rss_at_open_mb <span class="op">=</span> <span class="va">bam_open</span>,</span>
 <span>  peak_rss_mb <span class="op">=</span> <span class="va">peak</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;   reads_streamed rss_at_open_mb peak_rss_mb</span></span>
+<span><span class="co">#&gt; 1         143360            360         413</span></span>
+<span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">bam_con</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">bam_con</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="execution-plans">Execution plans<a class="anchor" aria-label="anchor" href="#execution-plans"></a>
@@ -512,7 +529,7 @@
 <div class="section level3">
 <h3 id="when-worker-process-execution-wins">When worker-process execution wins<a class="anchor" aria-label="anchor" href="#when-worker-process-execution-wins"></a>
 </h3>
-<p><code>inproc</code> runs every R callback on the single recorded R thread, so an expensive per-chunk UDF serializes even while DuckDB scans in parallel. <code>transport = "ipc"</code> fans those chunks out to worker R processes, so the per-chunk cost overlaps once it is worth the marshalling. The benchmark registers the same sleeping vectorized UDF on three plans and runs each against one large parallel CSV scan. The UDF closes over a random R lookup vector; the third plan ships that global to the workers through <a href="https://shikokuchuo.net/mori/" class="external-link">mori</a> shared memory (<code>ipc_globals_share = "mori"</code>). Timings are illustrative and machine-dependent.</p>
+<p><code>inproc</code> runs every R callback on the single recorded R thread, so an expensive per-chunk UDF serializes even while DuckDB scans in parallel. <code>transport = "ipc"</code> fans those chunks out to worker R processes, so the per-chunk cost overlaps once it is worth the marshalling. The benchmark registers the same sleeping vectorized UDF on three plans and runs each against one large parallel CSV scan. The UDF closes over a random R lookup vector; the third plan ships that global to the workers through <a href="https://CRAN.R-project.org/package=mori" class="external-link">mori</a> shared memory (<code>ipc_globals_share = "mori"</code>). Timings are illustrative and machine-dependent.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">lookup</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample.int</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fl">1000L</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
@@ -593,9 +610,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.441</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.930</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.924</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.342</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.867</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.911</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -635,9 +652,9 @@
 </tr>
 <tr>
 <td><code>v0.2.9</code></td>
-<td align="right">3</td>
+<td align="right">2</td>
 <td>
-<code>duckdb_column_count</code>, <code>duckdb_column_type</code>, <code>duckdb_result_error</code>
+<code>duckdb_column_count</code>, <code>duckdb_result_error</code>
 </td>
 </tr>
 <tr>
@@ -715,9 +732,9 @@
 </tr>
 <tr>
 <td><code>deprecated</code></td>
-<td align="right">5</td>
+<td align="right">2</td>
 <td>
-<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_is_streaming</code>, <code>duckdb_row_count</code>, <code>duckdb_value_is_null</code>, <code>duckdb_value_uint64</code>
+<code>duckdb_pending_prepared_streaming</code>, <code>duckdb_result_is_streaming</code>
 </td>
 </tr>
 </tbody>
@@ -732,7 +749,7 @@
 <li><a href="https://duckdb.org/docs/stable/clients/c/overview.html" class="external-link">DuckDB C extension API notes</a></li>
 <li><a href="https://nng.nanomsg.org/" class="external-link">NNG C library</a></li>
 <li><a href="https://mirai.r-lib.org/" class="external-link">nanonext and mirai</a></li>
-<li><a href="https://shikokuchuo.net/mori/" class="external-link">mori shared objects for R</a></li>
+<li><a href="https://CRAN.R-project.org/package=mori" class="external-link">mori shared objects for R</a></li>
 <li><a href="https://github.com/duckdb/duckdb-quack" class="external-link">DuckDB Quack extension</a></li>
 <li><a href="https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts" class="external-link">Rduckhts bundled-extension precedent</a></li>
 </ul>

@@ -42,3 +42,34 @@ rducks_register_table(con, name, fun, chunk_size = 1024L)
 Object of class `rducks_table_registration` containing the connection
 and normalized table signature. The table function remains registered in
 DuckDB even if this object is discarded.
+
+## Examples
+
+``` r
+# \donttest{
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
+#> duckdb keeps downloaded extensions and secrets in a temporary directory:
+#> ℹ /tmp/RtmpPMckDH/duckdb
+#> This is removed when the R session ends.
+#> • Extensions are re-downloaded each session.
+#> • Secrets are lost.
+#> ℹ Run duckdb(shared_home = TRUE) (or create ~/.duckdb) to keep them (suitable for most users).
+#> ℹ Run duckdb(shared_home = FALSE) to accept the temporary directory (and silence this message).
+#> ℹ See ?duckdb_storage for details and alternatives.
+rducks_enable(db, threads = "single")
+rducks_register_table(db, "my_numbers", function(n) {
+  data.frame(i = seq_len(n), square = seq_len(n)^2)
+})
+#> <rducks_table_registration>
+#>   registered: yes
+#>   name:       my_numbers
+#>   signature:  my_numbers(ANY) -> TABLE(<bind-time schema>)
+DBI::dbGetQuery(db, "SELECT * FROM my_numbers(3)")
+#>   i square
+#> 1 1      1
+#> 2 2      4
+#> 3 3      9
+rducks_release(db)
+DBI::dbDisconnect(db)
+# }
+```
