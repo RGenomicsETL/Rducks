@@ -150,5 +150,5 @@ rducks_argument_type_mapping(list(
 
 ```{r cleanup, include=FALSE}
 rducks_release(con)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 ```

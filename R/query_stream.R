@@ -95,7 +95,7 @@ rducks_query_stream_driver_available <- function(con) {
 #' stream$next_batch()
 #' stream$close()
 #' rducks_release(db)
-#' DBI::dbDisconnect(db, shutdown = TRUE)
+#' DBI::dbDisconnect(db)
 #' }
 #' @export
 rducks_query_stream <- function(con, sql) {

@@ -184,7 +184,7 @@ stream$close()
 
 ```{r release}
 rducks_release(con)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 ```
 
 `rducks_release()` detaches the connection-local Rducks view and, when this is

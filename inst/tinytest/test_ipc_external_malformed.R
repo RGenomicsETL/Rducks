@@ -57,7 +57,7 @@ run_external_malformed <- function(make_result, register, query, expect_pattern,
   expect_true(ready, info = paste0("fake ipc endpoint ready: ", info))
 
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
-  on.exit(try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)
+  on.exit(try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   plan <- rducks_execution_plan("ipc", ipc_endpoints = ep, ipc_timeout = 20)
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
@@ -133,7 +133,7 @@ run_external_malformed(
 # fail-closed before registration.
 variant_supported <- local({
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
   rducks_enable(con, threads = "single")
   isTRUE(DBI::dbGetQuery(con, "SELECT rducks_variant_supported() AS ok")$ok[[1L]])
 })

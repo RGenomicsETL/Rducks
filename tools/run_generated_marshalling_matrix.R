@@ -11,7 +11,7 @@ main <- function() {
   if (is.na(limit)) limit <- 0L
 
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
   rducks_set_execution_plan(

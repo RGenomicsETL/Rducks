@@ -193,5 +193,5 @@ before `DBI::dbDisconnect(con)`.
 
 ```{r cleanup, include=FALSE}
 rducks_release(con)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 ```

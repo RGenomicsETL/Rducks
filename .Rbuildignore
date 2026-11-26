@@ -6,7 +6,6 @@
 ^Rducks\.Rproj$
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^build$
 ^docs/.*\.dot$
 ^Makefile$
 ^README\.Rmd$

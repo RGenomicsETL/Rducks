@@ -65,7 +65,7 @@ jobs:
         run: |
           echo "R_LIBS_USER=/root/R-libs" >> ~/.Renviron
           PKG=$(ls -t Rducks_*.tar.gz | head -n1)
-          RDUCKS_DEV_SURFACES=true R CMD check --as-cran --no-manual "$PKG"
+          NOT_CRAN=true RDUCKS_DEV_SURFACES=true R CMD check --as-cran --no-manual "$PKG"
 
       - name: Upload check artifacts on failure
         if: failure()

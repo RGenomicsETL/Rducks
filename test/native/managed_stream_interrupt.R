@@ -9,7 +9,7 @@ con <- DBI::dbConnect(duckdb::duckdb(config = Rducks::rducks_duckdb_config(), sh
 rducks_enable(con, threads = "single")
 rducks_enable_inproc(con, threads = 1L, external_threads = 1L)
 if (!Rducks:::rducks_query_stream_driver_available(con)) {
-  stop("interrupt integration test requires duckdb-r off-main guard capability v2")
+  stop("interrupt integration test requires duckdb-r off-main guard capability v3")
 }
 ready <- function() writeLines("ready", ready_file)
 stream <- NULL
@@ -68,5 +68,5 @@ reused$close()
 stats <- rducks_inproc_stats(con)
 stopifnot(stats$pending_current == 0, stats$running_current == 0, stats$timeouts == 0)
 rducks_release(con)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 cat("PASS managed stream interrupt:", mode, "\n")

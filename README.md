@@ -187,7 +187,7 @@ with(
 #> 3     3   134
 
 Rducks::rducks_release(demo_con)
-DBI::dbDisconnect(demo_con, shutdown = TRUE)
+DBI::dbDisconnect(demo_con)
 ```
 
 ## Lifecycle
@@ -497,7 +497,7 @@ repeat {
 stream$close()
 data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 #>    rows rss_at_open_mb peak_rss_mb
-#> 1 8e+06            259         340
+#> 1 8e+06            264         340
 ```
 
 The same streaming holds over arbitrary scans, including external
@@ -539,17 +539,17 @@ repeat {
 }
 stream$close()
 head(batch[, c("QNAME", "FLAG", "RNAME", "POS", "MAPQ")], 3)
-#>             QNAME FLAG RNAME     POS MAPQ
-#> 1 SRR622461.72266 1187     1 3206766   60
-#> 2 SRR622461.72258   83     1 3206784   60
-#> 3 SRR622461.72267  163     1 3206792   60
+#>              QNAME FLAG RNAME     POS MAPQ
+#> 1 SRR622461.180594  163     1 7729368   60
+#> 2 SRR622461.180596   99     1 7729399   60
+#> 3 SRR622461.180595   99     1 7729418   60
 data.frame(
   reads_streamed = reads,
   rss_at_open_mb = bam_open,
   peak_rss_mb = peak
 )
 #>   reads_streamed rss_at_open_mb peak_rss_mb
-#> 1         143360            360         413
+#> 1         358400            354         410
 rducks_release(bam_con)
 dbDisconnect(bam_con)
 ```
@@ -711,9 +711,9 @@ rducks_set_execution_plan(con, rducks_execution_plan("inproc"),
                           threads = 1L, external_threads = 1L)
 benchmark
 #>                      label    total elapsed_sec
-#> 1 inproc (single R thread) 65961344       3.342
-#> 2          ipc (2 workers) 65961344       1.867
-#> 3   ipc + mori (2 workers) 65961344       1.911
+#> 1 inproc (single R thread) 65961344       3.356
+#> 2          ipc (2 workers) 65961344       1.907
+#> 3   ipc + mori (2 workers) 65961344       1.879
 ```
 
 ## Build notes

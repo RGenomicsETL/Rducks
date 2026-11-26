@@ -99,7 +99,7 @@
               cat('DuckDB package unavailable in this webR runtime; extension smoke skipped\\n')
             } else {
               con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()), dbdir = ':memory:')
-              on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+              on.exit(DBI::dbDisconnect(con), add = TRUE)
               rducks_enable(con, threads = 'single')
               rducks_register_scalar_udf(con, 'r_webr_plus_one', function(x) x + 1L, INTEGER, INTEGER)
               out <- DBI::dbGetQuery(con, 'SELECT r_webr_plus_one(41::INTEGER) AS x')

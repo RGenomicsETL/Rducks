@@ -57,6 +57,7 @@ jobs:
         r-version: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.r_version) || '["release","devel"]') }}
     name: Windows ${{ matrix.r-version }}
     env:
+      NOT_CRAN: "true"
       UNIVERSE_NAME: rgenomicsetl
       MY_UNIVERSE: https://rgenomicsetl.r-universe.dev
       CRAN_VERSION: ""

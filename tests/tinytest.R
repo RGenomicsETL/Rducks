@@ -6,9 +6,10 @@ Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 }
 library(Rducks)
 if (requireNamespace("tinytest", quietly = TRUE)) {
-  # A development version (four components) also runs the tests that need
-  # more than two threads; a release version, as on CRAN, does not.
-  at_home <- length(unclass(utils::packageVersion("Rducks"))[[1L]]) == 4L
+  # A development version (four components), or NOT_CRAN=true, also runs the
+  # tests that need more than two threads; a release version on CRAN does not.
+  at_home <- length(unclass(utils::packageVersion("Rducks"))[[1L]]) == 4L ||
+    identical(Sys.getenv("NOT_CRAN"), "true")
   # duckdb 2.0.1 can wait forever when R code runs under a query and a
   # connection is finalized there (duckdb/duckdb-r#3086). A release version
   # skips the tests that open a DuckDB connection with exactly that version.

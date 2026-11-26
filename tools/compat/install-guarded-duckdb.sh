@@ -113,7 +113,7 @@ args <- commandArgs(trailingOnly = TRUE)
 stopifnot(normalizePath(find.package("duckdb")) == normalizePath(file.path(args[[1L]], "duckdb")))
 local({
   con <- DBI::dbConnect(duckdb::duckdb(shared_home = FALSE))
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(con))
   stopifnot(DBI::dbGetQuery(con, "SELECT version() AS version")$version == "v2.0.0")
   stopifnot(DBI::dbGetQuery(con, "SELECT 42::INTEGER AS answer")$answer == 42L)
   dyn.load(file.path(args[[2L]], "guard_probe.so"))

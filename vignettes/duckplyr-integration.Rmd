@@ -244,5 +244,5 @@ pattern in your own helper.
 
 ```{r cleanup}
 rducks_release(con)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 ```
