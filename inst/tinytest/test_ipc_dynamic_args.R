@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # Dynamic (omitted-args) scalar UDFs on the worker-process (ipc) transport.
 # DuckDB resolves the concrete argument types per call site at bind; the native
 # bind carries those resolved types to the worker in the RDT1 dynamic payload, so

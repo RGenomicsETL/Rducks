@@ -32,3 +32,11 @@ after running `R CMD check --as-cran` on the final build. Two NOTEs are known:
 * Examples, tests and vignettes that run by default use at most two DuckDB
   threads. A test that needs more concurrency runs only under
   `tinytest::at_home()`.
+
+## Tests skipped with duckdb 2.0.1
+
+duckdb 2.0.1 can wait forever when R code runs under a query and a connection
+is finalized there (https://github.com/duckdb/duckdb-r/issues/3086). With
+exactly that duckdb version, the tests that open a DuckDB connection are
+skipped. The codec, type and wire-contract tests still run, and the examples
+and vignettes run in full.

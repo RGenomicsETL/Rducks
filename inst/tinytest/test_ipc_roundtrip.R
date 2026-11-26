@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # Worker-process (ipc) roundtrip over the Quack wire codec. Spawns mirai daemons,
 # so it is gated behind RDUCKS_RUN_IPC_TESTS to keep the default check/CRAN run
 # free of worker-process orchestration. The gate must stay at file top level:

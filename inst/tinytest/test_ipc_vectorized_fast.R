@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # Worker-process fast path for vectorized UDFs over plain scalar wire types:
 # semantics must match the generic path (NULL handling, error policy, result
 # validation, BLOB/GEOMETRY list results). Spawns mirai daemons, so it is gated
