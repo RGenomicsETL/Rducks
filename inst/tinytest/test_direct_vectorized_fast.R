@@ -99,7 +99,9 @@ local({
   # own; a parallel source does not guarantee progress. Run this concurrency
   # coverage in a subprocess with a timeout.
   DBI::dbExecute(con, "CREATE TABLE dvf_big AS SELECT i, CASE WHEN i % 3 = 0 THEN NULL ELSE i * 0.5 END AS v FROM range(600000) t(i)")
-  rducks_set_execution_plan(con, rducks_execution_plan("inproc"), threads = 2L, external_threads = 1L)
+  # Concurrent requests need more DuckDB threads than CRAN allows.
+  concurrent_threads <- if (tinytest::at_home()) 4L else 1L
+  rducks_set_execution_plan(con, rducks_execution_plan("inproc"), threads = concurrent_threads, external_threads = 1L)
   expect_true(q1("SELECT bool_and(dvf_point(v, v * 2) IS NOT DISTINCT FROM CASE WHEN v IS NULL THEN NULL ELSE {'x': v, 'y': v * 2} END) FROM dvf_big"))
   expect_true(q1("SELECT bool_and(dvf_dbl(v) IS NOT DISTINCT FROM v * 2) FROM dvf_big"))
   rducks_set_execution_plan(con, rducks_execution_plan("inproc"), threads = 1L, external_threads = 1L)

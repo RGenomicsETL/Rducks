@@ -102,8 +102,9 @@ local({
   call_lengths <- integer()
   fused_lengths <- integer()
 
-  # Fusing pending chunks needs more concurrent DuckDB threads than CRAN allows.
-  concurrent_threads <- if (tinytest::at_home()) 8L else 2L
+  # Concurrent requests, and so fusion of pending chunks, need more DuckDB
+  # threads than CRAN allows. Elsewhere the same queries run on R's thread only.
+  concurrent_threads <- if (tinytest::at_home()) 8L else 1L
   rducks_set_execution_plan(con, plan, threads = concurrent_threads, external_threads = 1L)
   on.exit(try(rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L), silent = TRUE), add = TRUE)
   concurrent <- list(
