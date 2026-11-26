@@ -12,6 +12,7 @@ local({
     exit_file("duckdb/DBI not available")
   }
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
+    threads = "2",
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
   ))))

@@ -36,7 +36,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = rducks_duckdb_config()))
+con <- dbConnect(duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(con, threads = "single")
 ```
 

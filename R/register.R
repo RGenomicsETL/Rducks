@@ -194,7 +194,7 @@ rducks_validate_coalescing <- function(coalesce, spec, plan, side_effects, excep
 #'   remains registered in DuckDB even if this object is discarded.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db, threads = "single")
 #' rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
 #'   args = list(INTEGER), returns = INTEGER)
@@ -562,6 +562,17 @@ rducks_table_result_as_data_frame <- function(result) {
 #' @return Object of class `rducks_table_registration` containing the
 #'   connection and normalized table signature. The table function remains
 #'   registered in DuckDB even if this object is discarded.
+#' @examples
+#' \donttest{
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
+#' rducks_enable(db, threads = "single")
+#' rducks_register_table(db, "my_numbers", function(n) {
+#'   data.frame(i = seq_len(n), square = seq_len(n)^2)
+#' })
+#' DBI::dbGetQuery(db, "SELECT * FROM my_numbers(3)")
+#' rducks_release(db)
+#' DBI::dbDisconnect(db)
+#' }
 #' @export
 rducks_register_table <- function(con, name, fun, chunk_size = 1024L) {
   if (!inherits(con, "duckdb_connection")) {
@@ -718,7 +729,7 @@ rducks_aggregate_registration_spec <- function(name, update, finalize, args, ret
 #'   registered in DuckDB even if this object is discarded.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db, threads = "single")
 #' rducks_register_aggregate(
 #'   db, "my_sum",

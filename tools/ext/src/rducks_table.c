@@ -116,28 +116,60 @@ static void rducks_r_table_state_destroy(void *ptr) {
     free(state);
 }
 
-static void rducks_r_table_set_r_error(SEXP err_obj, const char *fallback, char *err, size_t err_cap) {
+typedef struct rducks_r_table_eval_context {
+    SEXP call;
+    SEXP result;
+    int failed;
+    char message[RDUCKS_ERROR_BUFFER_SIZE];
+} rducks_r_table_eval_context_t;
+
+static SEXP rducks_r_table_eval_body(void *data) {
+    rducks_r_table_eval_context_t *ctx = (rducks_r_table_eval_context_t *)data;
+    return Rf_eval(ctx->call, R_GlobalEnv);
+}
+
+static SEXP rducks_r_table_eval_error(SEXP condition, void *data) {
+    rducks_r_table_eval_context_t *ctx = (rducks_r_table_eval_context_t *)data;
     int r_err = 0;
-    if (!err || err_cap == 0) return;
-    rducks_format_error_message(err, err_cap, "%s", fallback ? fallback : "Rducks table R function or marshal error");
-    const char *cur_error = R_curErrorBuf();
-    if (cur_error && cur_error[0]) {
-        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error", cur_error);
-        return;
-    }
-    if (!err_obj || err_obj == R_NilValue) return;
-    if (TYPEOF(err_obj) == STRSXP && XLENGTH(err_obj) > 0 && STRING_ELT(err_obj, 0) != NA_STRING) {
-        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
-                 CHAR(STRING_ELT(err_obj, 0)));
-        return;
-    }
-    SEXP call = PROTECT(Rf_lang2(Rf_install("conditionMessage"), err_obj));
+    ctx->failed = 1;
+    ctx->message[0] = '\0';
+    SEXP fun = PROTECT(Rf_findFun(Rf_install("conditionMessage"), R_BaseEnv));
+    SEXP call = PROTECT(Rf_lang2(fun, condition));
     SEXP msg = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
     if (!r_err && TYPEOF(msg) == STRSXP && XLENGTH(msg) > 0 && STRING_ELT(msg, 0) != NA_STRING) {
-        rducks_format_error_message(err, err_cap, "%s: %s", fallback ? fallback : "Rducks table R function or marshal error",
-                 CHAR(STRING_ELT(msg, 0)));
+        rducks_format_error_message(ctx->message, sizeof(ctx->message), "%s", CHAR(STRING_ELT(msg, 0)));
     }
-    UNPROTECT(2);
+    UNPROTECT(3);
+    return R_NilValue;
+}
+
+static void rducks_r_table_eval_toplevel(void *data) {
+    rducks_r_table_eval_context_t *ctx = (rducks_r_table_eval_context_t *)data;
+    ctx->result = R_tryCatchError(rducks_r_table_eval_body, ctx, rducks_r_table_eval_error, ctx);
+}
+
+/* Evaluates call in the global environment. On an R error, sets *failed and
+ * formats "<fallback>: <condition message>" into err. These calls run inside
+ * DuckDB table-function callbacks: R_tryCatchError() supplies the condition
+ * message, and R_ToplevelExec() stops an interrupt or any other jump that is
+ * not an error before it crosses DuckDB's frames. The caller protects the
+ * result at once. */
+static SEXP rducks_r_table_eval(SEXP call, int *failed, const char *fallback, char *err, size_t err_cap) {
+    rducks_r_table_eval_context_t ctx;
+    const char *prefix = fallback ? fallback : "Rducks table R function or marshal error";
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.call = call;
+    ctx.result = R_NilValue;
+    if (!R_ToplevelExec(rducks_r_table_eval_toplevel, &ctx)) {
+        ctx.failed = 1;
+        ctx.result = R_NilValue;
+    }
+    *failed = ctx.failed;
+    if (ctx.failed && err && err_cap > 0) {
+        if (ctx.message[0]) rducks_format_error_message(err, err_cap, "%s: %s", prefix, ctx.message);
+        else rducks_format_error_message(err, err_cap, "%s", prefix);
+    }
+    return ctx.result;
 }
 
 static SEXP rducks_r_table_posixct(double seconds) {
@@ -676,10 +708,9 @@ static int rducks_r_table_call_namespace_fun1(const char *fun_name, SEXP arg, SE
     protect_count++;
     SEXP call = PROTECT(Rf_lang2(fun, arg));
     protect_count++;
-    SEXP result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
+    SEXP result = PROTECT(rducks_r_table_eval(call, &r_err, fallback, err, err_cap));
     protect_count++;
     if (r_err) {
-        rducks_r_table_set_r_error(result, fallback, err, err_cap);
         UNPROTECT(protect_count);
         return 0;
     }
@@ -947,9 +978,13 @@ static void rducks_r_table_bind(duckdb_bind_info info) {
         duckdb_destroy_value(&value);
     }
 
-    result = PROTECT(rducks_rc_call_user(meta->fun, args, &r_err));
+    {
+        SEXP user_call = PROTECT(Rf_lcons(meta->fun, args));
+        result = rducks_r_table_eval(user_call, &r_err, "Rducks table R function or marshal error", err, sizeof(err));
+        UNPROTECT(1);
+    }
+    PROTECT(result);
     if (r_err) {
-        rducks_r_table_set_r_error(result, "Rducks table R function or marshal error", err, sizeof(err));
         duckdb_bind_set_error(info, err[0] ? err : "Rducks table R function failed");
         UNPROTECT(2);
         return;
@@ -1036,10 +1071,9 @@ static int rducks_r_table_stream_next_array_xptr(rducks_r_table_state_t *state,
     protect_count++;
     call = PROTECT(Rf_lang3(fun, bind->result, n_arg));
     protect_count++;
-    result = PROTECT(R_tryEvalSilent(call, R_GlobalEnv, &r_err));
+    result = PROTECT(rducks_r_table_eval(call, &r_err, "Rducks table stream next_batch error", err, err_cap));
     protect_count++;
     if (r_err) {
-        rducks_r_table_set_r_error(result, "Rducks table stream next_batch error", err, err_cap);
         UNPROTECT(protect_count);
         return 0;
     }

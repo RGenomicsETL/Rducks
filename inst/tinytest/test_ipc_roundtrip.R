@@ -14,6 +14,7 @@ if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quie
 
 local({
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
+    threads = "2",
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
   ))))
@@ -174,7 +175,7 @@ local({
                              returns = UNION(a = INTEGER, b = VARCHAR))
 
   # Bump DuckDB threads for concurrent off-main execution -> NNG worker roundtrip.
-  rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+  rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 2L)
 
   geom_mismatch <- DBI::dbGetQuery(con, paste0(
     "SELECT count(*) c FROM (SELECT i::INTEGER j FROM range(4000) t(i)) s ",

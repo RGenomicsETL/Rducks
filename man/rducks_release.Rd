@@ -39,7 +39,7 @@ registrations or connection-local plan changes.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_release(db)
 DBI::dbDisconnect(db)

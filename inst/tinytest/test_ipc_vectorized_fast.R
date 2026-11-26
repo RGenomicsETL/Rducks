@@ -14,6 +14,7 @@ if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quie
 
 local({
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
+    threads = "2",
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
   ))))
@@ -127,7 +128,7 @@ local({
   expect_error(q1("SELECT ipcf_blob_bad(i * 1.0) FROM range(10) t(i)"), pattern = "not compatible with BLOB")
 
   # DuckDB concurrency across both workers still agrees with the single-thread result
-  rducks_set_execution_plan(con, plan, threads = 4L, external_threads = 1L)
+  rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 1L)
   expect_true(q1(sprintf("SELECT bool_and(ipcf_dbl(v) IS NOT DISTINCT FROM v * 2) FROM %s", src)))
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
 })
@@ -136,6 +137,7 @@ local({
 # NULL fields, nested structs, and a blob field; must match the generic path.
 local({
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(
+    threads = "2",
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
   ))))

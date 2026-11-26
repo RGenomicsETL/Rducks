@@ -45,7 +45,7 @@ suppressPackageStartupMessages({
 })
 
 con <- DBI::dbConnect(
-  duckdb::duckdb(config = rducks_duckdb_config()),
+  duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))),
   dbdir = ":memory:"
 )
 on.exit({

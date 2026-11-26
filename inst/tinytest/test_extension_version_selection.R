@@ -17,7 +17,7 @@ local({
   writeBin(footer, bad)
   expect_error(rducks_extension_capi_version(bad), pattern = "not a stable C API extension")
 
-  con <- duckdb::dbConnect(duckdb::duckdb())
+  con <- duckdb::dbConnect(duckdb::duckdb(config = list(threads = "2"), shared_home = FALSE))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_true(getFromNamespace("rducks_assert_engine_supports_extension", "Rducks")(con, path))
 

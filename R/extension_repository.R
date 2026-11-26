@@ -26,7 +26,7 @@ rducks_min_duckdb_version <- "v2.0.0"
 #' @return A named list for the `config` argument of [duckdb::duckdb()].
 #' @examples
 #' \donttest{
-#' db <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)

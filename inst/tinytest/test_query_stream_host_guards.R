@@ -6,7 +6,7 @@ local({
     return(invisible(NULL))
   }
   drv <- duckdb::duckdb(environment_scan = TRUE,
-    config = rducks_duckdb_config())
+    config = rducks_duckdb_config(list(threads = "2")))
   con <- DBI::dbConnect(drv)
   on.exit({
     try(rducks_release(con), silent = TRUE)

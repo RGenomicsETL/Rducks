@@ -24,7 +24,7 @@ startup, so pass the result to \code{\link[duckdb:duckdb]{duckdb::duckdb()}}.
 }
 \examples{
 \donttest{
-db <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_release(db)
 DBI::dbDisconnect(db)

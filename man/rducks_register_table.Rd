@@ -34,3 +34,15 @@ scan-time batches. Column types are inferred from the returned columns, and the
 extension fills DuckDB output vectors directly from the R columns, with no
 wire serialization for the in-process scan.
 }
+\examples{
+\donttest{
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
+rducks_enable(db, threads = "single")
+rducks_register_table(db, "my_numbers", function(n) {
+  data.frame(i = seq_len(n), square = seq_len(n)^2)
+})
+DBI::dbGetQuery(db, "SELECT * FROM my_numbers(3)")
+rducks_release(db)
+DBI::dbDisconnect(db)
+}
+}

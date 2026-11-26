@@ -38,7 +38,7 @@ one R call per DuckDB chunk. Two execution transports are available:
 in-process (`transport = "inproc"`) and worker-process (`transport = "ipc"`,
 native [NNG](https://nng.nanomsg.org/) request/reply, default local workers
 launched by [mirai](https://mirai.r-lib.org/), optional
-[mori](https://shikokuchuo.net/mori/) sharing for selected globals). Aggregates
+[mori](https://CRAN.R-project.org/package=mori) sharing for selected globals). Aggregates
 use `rducks_register_aggregate()`.
 
 ## How it works
@@ -100,7 +100,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = rducks_duckdb_config()))
+con <- dbConnect(duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(con, threads = "single")
 
 score_udf <- rducks_register_scalar_udf(
@@ -155,7 +155,7 @@ engine: duckplyr 1.2.1 does not support DuckDB 2.0.0, duckplyr 1.2.2 does.
 
 ```{r duckplyr}
 demo_con <- DBI::dbConnect(
-  duckdb::duckdb(config = rducks_duckdb_config()),
+  duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))),
   dbdir = ":memory:"
 )
 Rducks::rducks_enable(demo_con, threads = "single")
@@ -452,18 +452,29 @@ data.frame(rows = rows, rss_at_open_mb = rss_at_open, peak_rss_mb = peak)
 ```
 
 The same streaming holds over arbitrary scans, including external table-function
-extensions. The chunk below streams a 15 GB BAM through a `read_bam()` scanner
-(the [duckhts](https://github.com/RGenomicsETL/duckhts) extension), capped at ~30
-seconds of pulling; resident memory stays a few hundred MB no matter how many
-reads are pulled. It runs only when the BAM is present locally.
+extensions and remote files. The chunk below streams a 16 GB BAM of the 1000
+Genomes Project over HTTPS through a `read_bam()` scanner (the
+[duckhts](https://github.com/RGenomicsETL/duckhts) extension), capped at ~30
+seconds of pulling. Nothing is downloaded to disk, and resident memory stays a
+few hundred MB no matter how many reads are pulled. The chunk runs when a
+locally built duckhts extension is present; that build is unsigned, so the
+connection allows unsigned extensions.
 
-```{r bam-stream, eval = file.exists("NA12878.low_coverage.bam")}
-DBI::dbExecute(con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
+```{r bam-stream, eval = file.exists("duckhts.duckdb_extension")}
+bam_url <- paste0(
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/NA12878/alignment/",
+  "NA12878.mapped.ILLUMINA.bwa.CEU.low_coverage.20121211.bam"
+)
+bam_con <- dbConnect(duckdb(config = rducks_duckdb_config(list(
+  threads = "2", allow_unsigned_extensions = "true"
+))))
+rducks_enable(bam_con, threads = "single")
+DBI::dbExecute(bam_con, "LOAD './duckhts.duckdb_extension'")   # locally built duckhts
 
 stream <- rducks_query_stream(
-  con,
-  "SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
-     FROM read_bam('NA12878.low_coverage.bam')"   # 15 GB on disk
+  bam_con,
+  sprintf("SELECT QNAME, FLAG, RNAME, POS, MAPQ, CIGAR, SEQ, QUAL
+             FROM read_bam('%s')", bam_url)
 )
 bam_open <- rss_mb()
 reads <- 0
@@ -476,12 +487,14 @@ repeat {
   peak <- max(peak, rss_mb())
 }
 stream$close()
+head(batch[, c("QNAME", "FLAG", "RNAME", "POS", "MAPQ")], 3)
 data.frame(
-  bam_gb = round(file.size("NA12878.low_coverage.bam") / 1024^3, 1),
   reads_streamed = reads,
   rss_at_open_mb = bam_open,
   peak_rss_mb = peak
 )
+rducks_release(bam_con)
+dbDisconnect(bam_con)
 ```
 
 ## Execution plans
@@ -538,7 +551,7 @@ fans those chunks out to worker R processes, so the per-chunk cost overlaps once
 it is worth the marshalling. The benchmark registers the same sleeping
 vectorized UDF on three plans and runs each against one large parallel CSV scan.
 The UDF closes over a random R lookup vector; the third plan ships that global to
-the workers through [mori](https://shikokuchuo.net/mori/) shared memory
+the workers through [mori](https://CRAN.R-project.org/package=mori) shared memory
 (`ipc_globals_share = "mori"`). Timings are illustrative and machine-dependent.
 
 ```{r execution-plan-benchmark}
@@ -665,7 +678,7 @@ runtime policy, build, and ABI details.
 - [DuckDB C extension API notes](https://duckdb.org/docs/stable/clients/c/overview.html)
 - [NNG C library](https://nng.nanomsg.org/)
 - [nanonext and mirai](https://mirai.r-lib.org/)
-- [mori shared objects for R](https://shikokuchuo.net/mori/)
+- [mori shared objects for R](https://CRAN.R-project.org/package=mori)
 - [DuckDB Quack extension](https://github.com/duckdb/duckdb-quack)
 - [Rduckhts bundled-extension precedent](https://github.com/RGenomicsETL/duckhts/tree/main/r/Rduckhts)
 

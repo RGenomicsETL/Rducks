@@ -40,3 +40,9 @@ These generic helpers expose the formal DuckDB type descriptor carried by
 \code{rducks_type} descriptors such as \code{INTEGER}, \code{INTEGER[]}, \code{STRUCT(...)},
 \code{DECIMAL(...)}, \code{ENUM(...)}, and \code{UNION(...)}.
 }
+\examples{
+int <- INTEGER
+rducks_type_token(int)
+rducks_type_sql(int)
+rducks_type_kind(int)
+}

@@ -6,7 +6,7 @@ local({
   if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
     exit_file("duckdb/DBI not available")
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
@@ -102,7 +102,9 @@ local({
   call_lengths <- integer()
   fused_lengths <- integer()
 
-  rducks_set_execution_plan(con, plan, threads = 8L, external_threads = 1L)
+  # Fusing pending chunks needs more concurrent DuckDB threads than CRAN allows.
+  concurrent_threads <- if (tinytest::at_home()) 8L else 2L
+  rducks_set_execution_plan(con, plan, threads = concurrent_threads, external_threads = 1L)
   on.exit(try(rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L), silent = TRUE), add = TRUE)
   concurrent <- list(
     dbl = DBI::dbGetQuery(con, "SELECT i, bt_dbl(v) AS r FROM src ORDER BY i"),
@@ -120,7 +122,7 @@ local({
   expect_true(q1("SELECT max(bt_sequence(v)) FROM src") <= 2048L)
   # Explicit fusion covers multiple original vectors and returns every row.
   expect_true(length(fused_lengths) > 0L)
-  expect_true(max(fused_lengths) > 2048L, info = sprintf("max fused call length %d", max(fused_lengths)))
+  if (tinytest::at_home()) expect_true(max(fused_lengths) > 2048L, info = sprintf("max fused call length %d", max(fused_lengths)))
   expect_true(max(fused_lengths) <= 65536L)
   expect_identical(sum(fused_lengths), q1("SELECT count(v)::INTEGER FROM src"))
   # Only the original callback containing the sentinel fails under return_null.

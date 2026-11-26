@@ -22,12 +22,15 @@ UDF. This diagnostic SQL surface is dev/test-only; set
 \code{RDUCKS_DEV_SURFACES=true} before \code{rducks_enable()} if you need it.
 }
 \examples{
-\dontrun{
-# Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+\donttest{
+# The diagnostic needs RDUCKS_DEV_SURFACES=true before rducks_enable().
+old <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA)
+Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_inproc_self_test(db, n = 10L)
 rducks_release(db)
 DBI::dbDisconnect(db)
+if (is.na(old)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old)
 }
 }

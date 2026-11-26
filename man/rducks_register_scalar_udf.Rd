@@ -103,7 +103,7 @@ enabled and registered again after it is fully closed and reopened.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db, threads = "single")
 rducks_register_scalar_udf(db, "my_double", function(x) x * 2L,
   args = list(INTEGER), returns = INTEGER)

@@ -71,6 +71,12 @@ linked into the extension. After the link, `tools/append_extension_metadata.R`
 appends a DuckDB metadata footer with ABI type `C_STRUCT` and the C API version
 from `duckdb_headers.json`.
 
+The vendored NNG/Mbed TLS build runs at most two parallel jobs, which keeps
+installation within CRAN's two-core limit. Set `RDUCKS_BUILD_JOBS` to a positive
+integer to change this for a local build, for example
+`RDUCKS_BUILD_JOBS=8 R CMD INSTALL .`. `configure` and `configure.win` stop with
+an error for any other value.
+
 Configure then compiles `tools/ext/sign/rducks_sign.c` with the vendored Mbed
 TLS sources and the build configuration `tools/ext/sign/rducks_sign_config.h`,
 and runs it once. It generates an RSA-2048 key, signs the extension the way
