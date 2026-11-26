@@ -28,7 +28,7 @@ library(Rducks)
 
 con <- dbConnect(duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/Rtmpomr0UT/duckdb
+#> ℹ /tmp/RtmpIQ2KtK/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

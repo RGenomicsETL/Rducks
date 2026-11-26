@@ -136,7 +136,7 @@ if (requireNamespace("duckplyr", quietly = TRUE)) {
 #> 
 #>     intersect, setdiff, setequal, union
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpPMckDH/duckdb
+#> ℹ /tmp/RtmpC1M7PW/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

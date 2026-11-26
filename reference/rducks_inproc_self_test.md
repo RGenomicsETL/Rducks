@@ -37,7 +37,7 @@ old <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA)
 Sys.setenv(RDUCKS_DEV_SURFACES = "true")
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpPMckDH/duckdb
+#> ℹ /tmp/RtmpC1M7PW/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
