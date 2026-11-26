@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # Native-path defenses against a malformed/buggy external ipc endpoint. Fake NNG
 # workers return results whose embedded indices are out of range (a union tag
 # past the member count, an enum code past the dictionary, and a VARIANT byte

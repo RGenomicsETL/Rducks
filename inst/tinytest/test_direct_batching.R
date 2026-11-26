@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # The default queue preserves original R calls. Only an explicitly opted-in,
 # partition-invariant UDF may fuse pending chunks into one larger call.
 local({

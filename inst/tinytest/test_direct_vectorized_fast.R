@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # In-process (direct) vectorized fast result shapes: plain scalar results are
 # written back from the atomic vector and STRUCT results from columns, with the
 # same NULL handling, error policy, and validation as the per-row path.

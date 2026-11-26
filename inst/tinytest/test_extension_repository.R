@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 min_version <- getFromNamespace("rducks_min_duckdb_version", "Rducks")
 load_from_repository <- getFromNamespace("rducks_load_from_repository", "Rducks")
 version_dir <- getFromNamespace("rducks_repository_version_dir", "Rducks")

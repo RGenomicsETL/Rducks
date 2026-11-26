@@ -1,5 +1,9 @@
 library(Rducks)
 
+if (identical(Sys.getenv("RDUCKS_SKIP_DUCKDB_TESTS"), "true")) {
+  exit_file("duckdb 2.0.1 can hang when R code runs under a query (duckdb/duckdb-r#3086)")
+}
+
 # VARIANT support is conditional on the loaded DuckDB build. The extension
 # obtains a canonical VARIANT type from the SQL binder, validates its complete
 # physical layout, and proves that a data chunk exposes every nested vector via
