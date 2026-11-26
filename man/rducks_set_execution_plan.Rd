@@ -39,7 +39,7 @@ metadata.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_set_execution_plan(db, rducks_execution_plan("inproc"))
 rducks_release(db)

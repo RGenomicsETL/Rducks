@@ -4,7 +4,7 @@ local({
   if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
     exit_file("duckdb/DBI not available")
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
@@ -46,4 +46,22 @@ local({
   )
   total <- DBI::dbGetQuery(con, "SELECT sum(i) AS total FROM r_stream(5)")$total
   expect_equal(as.numeric(total), sum(1:5))
+
+  # R errors surface with the condition message of the failed call.
+  rducks_register_table(con, "r_bind_error", function(n) stop("bind boom"))
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM r_bind_error(1)"),
+    pattern = "Rducks table R function or marshal error: bind boom"
+  )
+  rducks_register_table(
+    con, "r_stream_error",
+    function(n) rducks_table_stream(
+      data.frame(i = integer()),
+      next_batch = function(k) stop("stream boom")
+    )
+  )
+  expect_error(
+    DBI::dbGetQuery(con, "SELECT * FROM r_stream_error(1)"),
+    pattern = "Rducks table stream next_batch error: stream boom"
+  )
 })

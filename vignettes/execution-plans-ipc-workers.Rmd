@@ -40,7 +40,7 @@ library(DBI)
 library(duckdb)
 library(Rducks)
 
-con <- dbConnect(duckdb(config = rducks_duckdb_config()))
+con <- dbConnect(duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(con, threads = "single")
 ```
 
@@ -146,7 +146,7 @@ type metadata, NULL/error policy, packages, and selected globals. If
 `ipc_endpoints` is supplied, those endpoints are caller-owned worker processes;
 Rducks connects to them but does not stop them. Set `ipc_globals_share = "mori"`
 to pass large selected globals to the workers through
-[mori](https://shikokuchuo.net/mori/) shared memory instead of serializing them.
+[mori](https://CRAN.R-project.org/package=mori) shared memory instead of serializing them.
 
 ## Inspect workers
 

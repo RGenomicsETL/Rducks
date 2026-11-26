@@ -82,3 +82,22 @@ before evaluating the duckplyr expression. Use explicit \code{args} in
 when you need Rducks' declared composite, exotic, or special-NULL input
 semantics.
 }
+\examples{
+\donttest{
+if (requireNamespace("duckplyr", quietly = TRUE)) {
+  library(dplyr)
+  db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
+  rducks_enable(db, threads = "single")
+  DBI::dbWriteTable(db, "scores", data.frame(x = c(1, 2, 3)))
+  scores <- duckplyr::read_sql_duckdb("SELECT * FROM scores", con = db, prudence = "stingy")
+  plus_one <- function(x) as.double(x + 1)
+  rducks_with_duckplyr(
+    db,
+    scores |> mutate(y = plus_one(x)) |> collect(),
+    returns = list(plus_one = DOUBLE)
+  )
+  rducks_release(db)
+  DBI::dbDisconnect(db)
+}
+}
+}

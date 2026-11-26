@@ -5,7 +5,7 @@ local({
     exit_file("duckdb/DBI not available")
     return(invisible(NULL))
   }
-  drv <- duckdb::duckdb(config = rducks_duckdb_config(list(threads = "4")))
+  drv <- duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2")))
   first <- DBI::dbConnect(drv)
   second <- DBI::dbConnect(drv)
   on.exit({
@@ -79,7 +79,7 @@ local({
     }, add = TRUE)
     connect_file <- function() {
       DBI::dbConnect(duckdb::duckdb(dbdir = path,
-        config = rducks_duckdb_config(list(threads = "4"))))
+        config = rducks_duckdb_config(list(threads = "2"))))
     }
     driver_available <- getFromNamespace("rducks_query_stream_driver_available", "Rducks")
     for (cleanup in c("close", "gc")) {

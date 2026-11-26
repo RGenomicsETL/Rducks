@@ -5,7 +5,7 @@ local({
     exit_file("duckdb/DBI not available")
     return(invisible(NULL))
   }
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
   on.exit({
     try(rducks_release(con), silent = TRUE)
     try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
@@ -17,7 +17,7 @@ local({
   rducks_register_aggregate(con, "driver_r_aggregate",
     update = function(state, x) if (is.null(state)) x else state + x,
     finalize = function(state) state, args = INTEGER, returns = INTEGER)
-  rducks_enable_inproc(con, threads = 4L, external_threads = 1L)
+  rducks_enable_inproc(con, threads = 2L, external_threads = 1L)
 
   if (!Rducks:::rducks_query_stream_driver_available(con)) {
     expect_error(rducks_query_stream(con, "SELECT 1 AS i"),
@@ -58,7 +58,7 @@ local({
   }
   register_scalar <- function(...) {
     DBI::dbExecute(con, "PRAGMA threads=1")
-    on.exit(DBI::dbExecute(con, "PRAGMA threads=4"), add = TRUE)
+    on.exit(DBI::dbExecute(con, "PRAGMA threads=2"), add = TRUE)
     rducks_register_scalar_udf(con, ...)
   }
 

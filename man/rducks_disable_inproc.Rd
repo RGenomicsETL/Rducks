@@ -23,7 +23,7 @@ Optionally updates DuckDB thread settings at the same time.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_enable_inproc(db)
 rducks_disable_inproc(db)

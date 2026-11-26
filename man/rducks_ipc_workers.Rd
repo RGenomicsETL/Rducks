@@ -27,7 +27,7 @@ endpoints are shown as external providers.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_ipc_workers(db)
 rducks_release(db)

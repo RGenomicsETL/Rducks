@@ -565,7 +565,7 @@ rducks_store_connection_plan <- function(con, plan) {
 #' @return An object of class `rducks_execution_plan`.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_current_execution_plan(db)
 #' rducks_release(db)

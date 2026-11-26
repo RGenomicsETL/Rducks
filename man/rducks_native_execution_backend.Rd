@@ -21,7 +21,7 @@ connection.
 }
 \examples{
 \donttest{
-db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(db)
 rducks_native_execution_backend(db)
 rducks_release(db)

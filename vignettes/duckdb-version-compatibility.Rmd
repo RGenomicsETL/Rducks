@@ -71,7 +71,7 @@ it accepts only at startup. Open connections with `rducks_duckdb_config()` to
 keep the record below `tempdir()`:
 
 ```r
-con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 rducks_enable(con)
 ```
 

@@ -277,6 +277,11 @@ rducks_type_prop <- function(x, name) {
 #'   `rducks_type_sql()` returns the DuckDB SQL spelling;
 #'   `rducks_type_kind()` returns the descriptor kind; child and parameter
 #'   helpers return descriptor metadata.
+#' @examples
+#' int <- INTEGER
+#' rducks_type_token(int)
+#' rducks_type_sql(int)
+#' rducks_type_kind(int)
 #' @export
 rducks_type_token <- S7::new_generic(
   "rducks_type_token",

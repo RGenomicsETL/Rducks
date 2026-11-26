@@ -22,7 +22,7 @@ local({
   expect_true(length(key) == 1L && grepl("^[A-Za-z0-9+/]+=*$", key))
 })
 
-connect <- function(config = rducks_duckdb_config()) {
+connect <- function(config = rducks_duckdb_config(list(threads = "2"))) {
   DBI::dbConnect(duckdb::duckdb(config = config, shared_home = FALSE))
 }
 setting <- function(con, name) {
@@ -79,14 +79,14 @@ local({
 })
 
 local({
-  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "forbidden")))
+  con <- connect(rducks_duckdb_config(list(threads = "2", allow_extension_repositories = "forbidden")))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_error(rducks_enable(con), pattern = "allow_extension_repositories = 'forbidden'")
 })
 
 # 'hosts_only' exists from DuckDB 2.0.1 and cannot be widened to 'allowed'.
 if (utils::packageVersion("duckdb") >= "2.0.1") local({
-  con <- connect(rducks_duckdb_config(list(allow_extension_repositories = "hosts_only")))
+  con <- connect(rducks_duckdb_config(list(threads = "2", allow_extension_repositories = "hosts_only")))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   expect_error(rducks_enable(con), pattern = "allow_extension_repositories = 'hosts_only'")
   expect_identical(rducks_function_count(con), 0)

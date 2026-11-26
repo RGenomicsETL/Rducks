@@ -146,7 +146,7 @@ rducks_initialize_main_thread <- function(con) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
@@ -233,7 +233,7 @@ rducks_set_inproc_state <- function(con, concurrency, threads = NULL, external_t
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_release(db)
@@ -256,7 +256,7 @@ rducks_enable_inproc <- function(con, threads = NULL, external_threads = NULL) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_enable_inproc(db)
 #' rducks_disable_inproc(db)
@@ -294,7 +294,7 @@ rducks_disable_inproc <- function(con, threads = NULL, external_threads = NULL) 
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
@@ -378,7 +378,7 @@ rducks_detach <- function(con) {
 #' @return A one-row data frame with queue diagnostic columns.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_inproc_stats(db)
 #' rducks_release(db)
@@ -420,7 +420,7 @@ rducks_inproc_stats <- function(con) {
 #'   counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_release_stats(db)
 #' rducks_release(db)
@@ -461,7 +461,7 @@ rducks_release_stats <- function(con) {
 #' @return A one-row data frame with runtime registry and connection counters.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_runtime_stats(db)
 #' rducks_release(db)
@@ -506,13 +506,16 @@ rducks_runtime_stats <- function(con) {
 #' @param n Number of queue round trips to run.
 #' @return Integer-like numeric scalar: number of requests completed.
 #' @examples
-#' \dontrun{
-#' # Requires RDUCKS_DEV_SURFACES=true set before rducks_enable()
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' \donttest{
+#' # The diagnostic needs RDUCKS_DEV_SURFACES=true before rducks_enable().
+#' old <- Sys.getenv("RDUCKS_DEV_SURFACES", unset = NA)
+#' Sys.setenv(RDUCKS_DEV_SURFACES = "true")
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_inproc_self_test(db, n = 10L)
 #' rducks_release(db)
 #' DBI::dbDisconnect(db)
+#' if (is.na(old)) Sys.unsetenv("RDUCKS_DEV_SURFACES") else Sys.setenv(RDUCKS_DEV_SURFACES = old)
 #' }
 #' @export
 rducks_inproc_self_test <- function(con, n = 1000L) {
@@ -650,7 +653,7 @@ rducks_restore_duckdb_threads <- function(con, threads, external_threads) {
 #' @return `con`, invisibly.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_set_execution_plan(db, rducks_execution_plan("inproc"))
 #' rducks_release(db)
@@ -712,7 +715,7 @@ rducks_set_execution_plan <- function(con, plan = rducks_execution_plan(),
 #'   or `"multiprocess_parallel"`.
 #' @examples
 #' \donttest{
-#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+#' db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #' rducks_enable(db)
 #' rducks_native_execution_backend(db)
 #' rducks_release(db)

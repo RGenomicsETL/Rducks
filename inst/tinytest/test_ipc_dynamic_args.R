@@ -14,7 +14,7 @@ if (!requireNamespace("duckdb", quietly = TRUE) || !requireNamespace("DBI", quie
 }
 
 local({
-  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config()))
+  con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
@@ -29,7 +29,7 @@ local({
   expect_true(isTRUE(reg$spec$dynamic_args), info = "registered as a dynamic (omitted-args) UDF")
 
   # Raise DuckDB threads so callbacks fan out to the worker pool.
-  rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+  rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 2L)
 
   # Same UDF, different concrete argument type at each call site -> the worker
   # materializes each under the bind-resolved type.
@@ -52,7 +52,7 @@ local({
   # A two-argument dynamic UDF, resolved per call site.
   rducks_set_execution_plan(con, plan, threads = 1L, external_threads = 1L)
   rducks_register_scalar_udf(con, "r_dyn_concat", function(a, b) paste(a, b, sep = "|"), returns = VARCHAR)
-  rducks_set_execution_plan(con, plan, threads = 3L, external_threads = 2L)
+  rducks_set_execution_plan(con, plan, threads = 2L, external_threads = 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT r_dyn_concat(7::INTEGER, 'x'::VARCHAR) AS v")$v, "7|x",
                info = "two-argument dynamic ipc UDF with mixed concrete types")
 })
