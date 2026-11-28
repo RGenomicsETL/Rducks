@@ -18,7 +18,7 @@ duckdb_capi_version <- rducks_duckdb_capi_version(".")
 duckdb_min_version <- rducks_duckdb_min_version(".")
 ```
 
-# Rducks
+# Rducks <img src="man/figures/logo.png" align="right" height="138" alt="Rducks hex sticker" />
 
 [![R-CMD-check](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml)
 [![R-universe](https://rgenomicsetl.r-universe.dev/badges/Rducks)](https://rgenomicsetl.r-universe.dev/Rducks)

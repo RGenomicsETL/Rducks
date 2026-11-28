@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit README.Rmd. -->
 
-# Rducks
+# Rducks <img src="man/figures/logo.png" align="right" height="138" alt="Rducks hex sticker" />
 
 [![R-CMD-check](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml)
 [![R-universe](https://rgenomicsetl.r-universe.dev/badges/Rducks)](https://rgenomicsetl.r-universe.dev/Rducks)
