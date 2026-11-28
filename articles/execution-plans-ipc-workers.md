@@ -31,7 +31,7 @@ library(Rducks)
 
 con <- dbConnect(duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmphBbwHj/duckdb
+#> ℹ /tmp/RtmpHPaOLy/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -179,7 +179,7 @@ if (isTRUE(ipc_available)) {
 #>             runtime backend transport worker started task_state ping
 #>  rducks-runtime-1-1   mirai       tcp    1/1    TRUE    running   ok
 #>               endpoint
-#>  tcp://127.0.0.1:29523
+#>  tcp://127.0.0.1:26918
 ```
 
 The result is an R-side provider view: runtime token, provider key,

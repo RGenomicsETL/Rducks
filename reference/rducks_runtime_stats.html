@@ -25,7 +25,7 @@ connections_current and native_release_supported are derived R-side
 summary fields. For file-backed databases, Rducks closes extension-owned
 DuckDB connections when the last Rducks attachment to a runtime is released;
 the process-local runtime entry itself is retained as inert metadata so
-catalog destructors and stale database-address detection remain safe."></head><body>
+catalog destructors and stale database-address detection remain safe."><meta property="og:image" content="https://rgenomicsetl.github.io/Rducks/logo.svg"></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -54,8 +54,7 @@ catalog destructors and stale database-address detection remain safe."></head><b
 </nav><div class="container template-reference-topic">
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-
-      <h1>Inspect native runtime registry counters</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Inspect native runtime registry counters</h1>
       <small class="dont-index">Source: <a href="https://github.com/RGenomicsETL/Rducks/blob/main/R/connection.R" class="external-link"><code>R/connection.R</code></a></small>
       <div class="d-none name"><code>rducks_runtime_stats.Rd</code></div>
     </div>
@@ -100,7 +99,7 @@ catalog destructors and stale database-address detection remain safe.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>threads <span class="op">=</span> <span class="st">"2"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> duckdb keeps downloaded extensions and secrets in a temporary directory:</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpNxox63/duckdb</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/Rtmp2YexSo/duckdb</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> This is removed when the R session ends.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Secrets are lost.</span>

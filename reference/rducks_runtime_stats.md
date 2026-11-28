@@ -38,7 +38,7 @@ A one-row data frame with runtime registry and connection counters.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpNxox63/duckdb
+#> ℹ /tmp/Rtmp2YexSo/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

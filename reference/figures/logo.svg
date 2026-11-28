@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 518 600" width="518" height="600">
+<defs><radialGradient id="bg" cx=".5" cy=".45" r=".6"><stop offset="0" stop-color="#1f2a66"/><stop offset="1" stop-color="#121735"/></radialGradient></defs>
+<polygon points="259,8 512,154 512,446 259,592 6,446 6,154" fill="url(#bg)"/>
+<line x1="145" y1="198" x2="145" y2="262" stroke="#fff000" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="265" y1="198" x2="265" y2="262" stroke="#fff000" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="385" y1="198" x2="385" y2="262" stroke="#fff000" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="145" y1="352" x2="190.6" y2="386" stroke="#6fe0d8" stroke-width="3.5" stroke-dasharray="2 7" opacity=".7" stroke-linecap="round"/>
+<line x1="265" y1="352" x2="262.6" y2="386" stroke="#6fe0d8" stroke-width="3.5" stroke-dasharray="2 7" opacity=".7" stroke-linecap="round"/>
+<line x1="385" y1="352" x2="334.6" y2="386" stroke="#6fe0d8" stroke-width="3.5" stroke-dasharray="2 7" opacity=".7" stroke-linecap="round"/>
+<rect x="92" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="107.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">1</text>
+<rect x="128" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="143.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">2</text>
+<rect x="164" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="179.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">3</text>
+<rect x="212" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="227.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">4</text>
+<rect x="248" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="263.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">5</text>
+<rect x="284" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="299.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">6</text>
+<rect x="332" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="347.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">7</text>
+<rect x="368" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="383.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">8</text>
+<rect x="404" y="150" width="31" height="38" rx="6" fill="#fff000"/><text x="419.5" y="177" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">9</text>
+<rect x="175" y="296" width="36" height="24" rx="12" fill="#ff8a1f"/><circle cx="145" cy="308" r="42" fill="#fff000" stroke="#141a3d" stroke-width="6"/><text x="142" y="324" font-family="DejaVu Sans Mono" font-weight="bold" font-size="46" text-anchor="middle" fill="#141a3d">R</text>
+<rect x="295" y="296" width="36" height="24" rx="12" fill="#ff8a1f"/><circle cx="265" cy="308" r="42" fill="#fff000" stroke="#141a3d" stroke-width="6"/><text x="262" y="324" font-family="DejaVu Sans Mono" font-weight="bold" font-size="46" text-anchor="middle" fill="#141a3d">R</text>
+<rect x="415" y="296" width="36" height="24" rx="12" fill="#ff8a1f"/><circle cx="385" cy="308" r="42" fill="#fff000" stroke="#141a3d" stroke-width="6"/><text x="382" y="324" font-family="DejaVu Sans Mono" font-weight="bold" font-size="46" text-anchor="middle" fill="#141a3d">R</text>
+<rect x="94" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="109.5" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">1</text>
+<rect x="131.2" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="146.7" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">4</text>
+<rect x="168.4" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="183.9" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="21" text-anchor="middle" fill="#141a3d">9</text>
+<rect x="205.6" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="221.1" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">16</text>
+<rect x="242.8" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="258.3" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">25</text>
+<rect x="280" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="295.5" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">36</text>
+<rect x="317.2" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="332.7" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">49</text>
+<rect x="354.4" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="369.9" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">64</text>
+<rect x="391.6" y="392" width="31" height="38" rx="6" fill="#6fe0d8"/><text x="407.1" y="419" font-family="DejaVu Sans Mono" font-weight="bold" font-size="16" text-anchor="middle" fill="#141a3d">81</text>
+<text x="259" y="498" font-family="DejaVu Sans Mono" font-weight="bold" font-size="66" text-anchor="middle"><tspan fill="#ffffff">R</tspan><tspan fill="#fff000">ducks</tspan></text>
+<polygon points="259,8 512,154 512,446 259,592 6,446 6,154" fill="none" stroke="#fff000" stroke-width="14" stroke-linejoin="round"/>
+</svg>
+

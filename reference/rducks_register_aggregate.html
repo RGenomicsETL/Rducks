@@ -9,7 +9,7 @@ object, not a serialized raw vector. Rducks stores a preserved reference to
 the state object inside the native DuckDB aggregate state and passes that same
 object back to later R callbacks. Returning NULL means &quot;empty/no state&quot;;
 use a wrapper such as list(value = NULL) if NULL itself must be
-represented as a non-empty state."></head><body>
+represented as a non-empty state."><meta property="og:image" content="https://rgenomicsetl.github.io/Rducks/logo.svg"></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -38,8 +38,7 @@ represented as a non-empty state."></head><body>
 </nav><div class="container template-reference-topic">
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-
-      <h1>Register an R aggregate function in DuckDB</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Register an R aggregate function in DuckDB</h1>
       <small class="dont-index">Source: <a href="https://github.com/RGenomicsETL/Rducks/blob/main/R/register.R" class="external-link"><code>R/register.R</code></a></small>
       <div class="d-none name"><code>rducks_register_aggregate.Rd</code></div>
     </div>
@@ -189,7 +188,7 @@ callbacks receive the declared type's R missing-value shape for NULL inputs.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu">dbConnect</span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>config <span class="op">=</span> <span class="fu"><a href="rducks_duckdb_config.html">rducks_duckdb_config</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>threads <span class="op">=</span> <span class="st">"2"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> duckdb keeps downloaded extensions and secrets in a temporary directory:</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/RtmpNxox63/duckdb</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">ℹ</span> /tmp/Rtmp2YexSo/duckdb</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> This is removed when the R session ends.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Extensions are re-downloaded each session.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Secrets are lost.</span>

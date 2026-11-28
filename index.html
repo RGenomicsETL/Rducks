@@ -12,6 +12,7 @@
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Register R User-Defined Functions in DuckDB">
 <meta name="description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions (UDFs). The package is designed around a loaded DuckDB extension, declarative type descriptors, direct native vector marshalling, and explicit execution discipline for safe interaction with R from DuckDB execution. The inter-process worker transport uses vendored NNG (nanomsg next generation).">
 <meta property="og:description" content="R package and DuckDB extension bridge for registering R functions as DuckDB user-defined functions (UDFs). The package is designed around a loaded DuckDB extension, declarative type descriptors, direct native vector marshalling, and explicit execution discipline for safe interaction with R from DuckDB execution. The inter-process worker transport uses vendored NNG (nanomsg next generation).">
+<meta property="og:image" content="https://rgenomicsetl.github.io/Rducks/logo.svg">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -47,8 +48,10 @@
 </nav><div class="container template-home">
 <div class="row">
   <main id="main" class="col-md-9"><div class="section level1">
-<div class="page-header"><h1 id="rducks">Rducks<a class="anchor" aria-label="anchor" href="#rducks"></a>
-</h1></div>
+<div class="page-header">
+<img src="logo.svg" class="logo" alt=""><h1 id="rducks-">Rducks <a class="anchor" aria-label="anchor" href="#rducks-"></a>
+</h1>
+</div>
 <p><a href="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/RGenomicsETL/Rducks/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://rgenomicsetl.r-universe.dev/Rducks" class="external-link"><img src="https://rgenomicsetl.r-universe.dev/badges/Rducks" alt="R-universe"></a> <a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></p>
 <p>Rducks registers R functions as DuckDB SQL functions using a package-managed <a href="https://duckdb.org/docs/stable/extensions/overview" class="external-link">DuckDB C extension</a>. The extension records the DuckDB database instance at load time and keeps extension-owned connections for native registration callbacks. It is built around explicit type descriptors, direct DuckDB-vector marshalling, and a strict rule that R object work runs on the recorded R thread.</p>
 <p>Rducks is organized around DuckDB function kind, scalar-UDF evaluation mode, and execution plan. Scalar UDFs are registered with <code><a href="reference/rducks_register_scalar_udf.html">rducks_register_scalar_udf()</a></code> and choose <code>mode = "scalar"</code> for one R call per row or <code>mode = "vectorized"</code> for one R call per DuckDB chunk. Two execution transports are available: in-process (<code>transport = "inproc"</code>) and worker-process (<code>transport = "ipc"</code>, native <a href="https://nng.nanomsg.org/" class="external-link">NNG</a> request/reply, default local workers launched by <a href="https://mirai.r-lib.org/" class="external-link">mirai</a>, optional <a href="https://CRAN.R-project.org/package=mori" class="external-link">mori</a> sharing for selected globals). Aggregates use <code><a href="reference/rducks_register_aggregate.html">rducks_register_aggregate()</a></code>.</p>
