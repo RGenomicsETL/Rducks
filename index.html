@@ -21,7 +21,7 @@
 
     <a class="navbar-brand me-2" href="index.html">Rducks</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.2</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -151,7 +151,7 @@
 <span><span class="co">#&gt; 3     3   134</span></span>
 <span></span>
 <span><span class="fu">Rducks</span><span class="fu">::</span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">demo_con</span><span class="op">)</span></span>
-<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span>, shutdown <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">demo_con</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="lifecycle">Lifecycle<a class="anchor" aria-label="anchor" href="#lifecycle"></a>
@@ -400,7 +400,7 @@
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>rows <span class="op">=</span> <span class="va">rows</span>, rss_at_open_mb <span class="op">=</span> <span class="va">rss_at_open</span>, peak_rss_mb <span class="op">=</span> <span class="va">peak</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    rows rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1 8e+06            259         340</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 8e+06            264         340</span></span></code></pre></div>
 <p>The same streaming holds over arbitrary scans, including external table-function extensions and remote files. The chunk below streams a 16 GB BAM of the 1000 Genomes Project over HTTPS through a <code>read_bam()</code> scanner (the <a href="https://github.com/RGenomicsETL/duckhts" class="external-link">duckhts</a> extension), capped at ~30 seconds of pulling. Nothing is downloaded to disk, and resident memory stays a few hundred MB no matter how many reads are pulled. The chunk runs when a locally built duckhts extension is present; that build is unsigned, so the connection allows unsigned extensions.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bam_url</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span></span>
@@ -431,17 +431,17 @@
 <span><span class="op">}</span></span>
 <span><span class="va">stream</span><span class="op">$</span><span class="fu">close</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">batch</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"QNAME"</span>, <span class="st">"FLAG"</span>, <span class="st">"RNAME"</span>, <span class="st">"POS"</span>, <span class="st">"MAPQ"</span><span class="op">)</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;             QNAME FLAG RNAME     POS MAPQ</span></span>
-<span><span class="co">#&gt; 1 SRR622461.72266 1187     1 3206766   60</span></span>
-<span><span class="co">#&gt; 2 SRR622461.72258   83     1 3206784   60</span></span>
-<span><span class="co">#&gt; 3 SRR622461.72267  163     1 3206792   60</span></span>
+<span><span class="co">#&gt;              QNAME FLAG RNAME     POS MAPQ</span></span>
+<span><span class="co">#&gt; 1 SRR622461.180594  163     1 7729368   60</span></span>
+<span><span class="co">#&gt; 2 SRR622461.180596   99     1 7729399   60</span></span>
+<span><span class="co">#&gt; 3 SRR622461.180595   99     1 7729418   60</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  reads_streamed <span class="op">=</span> <span class="va">reads</span>,</span>
 <span>  rss_at_open_mb <span class="op">=</span> <span class="va">bam_open</span>,</span>
 <span>  peak_rss_mb <span class="op">=</span> <span class="va">peak</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;   reads_streamed rss_at_open_mb peak_rss_mb</span></span>
-<span><span class="co">#&gt; 1         143360            360         413</span></span>
+<span><span class="co">#&gt; 1         358400            354         410</span></span>
 <span><span class="fu"><a href="reference/rducks_release.html">rducks_release</a></span><span class="op">(</span><span class="va">bam_con</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">bam_con</span><span class="op">)</span></span></code></pre></div>
 </div>
@@ -610,9 +610,9 @@
 <span>                          threads <span class="op">=</span> <span class="fl">1L</span>, external_threads <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
 <span><span class="va">benchmark</span></span>
 <span><span class="co">#&gt;                      label    total elapsed_sec</span></span>
-<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.342</span></span>
-<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.867</span></span>
-<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.911</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 inproc (single R thread) 65961344       3.356</span></span>
+<span><span class="co">#&gt; 2          ipc (2 workers) 65961344       1.907</span></span>
+<span><span class="co">#&gt; 3   ipc + mori (2 workers) 65961344       1.879</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">

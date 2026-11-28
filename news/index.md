@@ -1,12 +1,12 @@
 # Changelog
 
-## Rducks (development version)
+## Rducks 0.1.2
 
 - Rducks is licensed under `LGPL (>= 2)`. The bundled NNG and Mbed TLS
   sources keep their own licenses, listed in `inst/LICENSE.note`.
 
-- Rducks now loads on DuckDB 2.0.0, the current CRAN duckdb, instead of
-  failing with “no bundled extension for DuckDB v2.0.0”
+- Rducks now loads on DuckDB 2.0.0 and 2.0.1 instead of failing with “no
+  bundled extension for DuckDB v2.0.0”
   (<https://github.com/RGenomicsETL/Rducks/issues/25>). DuckDB 2.0
   treats every `C_STRUCT_UNSTABLE` extension as an extension of its new
   V2 C API, so Rducks builds a stable V1 `C_STRUCT` extension pinned to
@@ -106,6 +106,21 @@
   [`S7::S7_class()`](https://rconsortium.github.io/S7/reference/S7_class.html)
   instead of reading the attribute that S7 1.0.0 renamed.
 
+- Managed query streams change no DuckDB setting. Do not change
+  `threads` or `external_threads` through SQL while a managed stream is
+  open; close the stream first.
+
+- Table functions report the message of the R condition and no longer
+  use `R_curErrorBuf()`, which is not part of R’s API.
+
+- Installation builds the bundled NNG and Mbed TLS with two jobs;
+  `RDUCKS_BUILD_JOBS` changes this.
+
+- With duckdb 2.0.1, R can wait forever when R code runs under a query
+  and a connection is finalized there
+  (<https://github.com/duckdb/duckdb-r/issues/3086>). This is a duckdb
+  issue; Rducks has no protection against it.
+
 - Vectorized scalar UDFs returning `BLOB` or `GEOMETRY` now validate the
   list-of-raw result in C instead of running the generic per-row return
   check, which made those results about 60x slower than numeric results
@@ -142,6 +157,47 @@
   binder, verifies its full physical vector layout with a real
   data-chunk probe, and fails closed on runtimes whose layout is
   unavailable or incompatible.
+
+- BREAKING:
+  [`rducks_execution_plan()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_execution_plan.md)
+  now takes `transport = c("inproc", "ipc")`; the
+  `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
+
+- `transport = "ipc"` (worker-process execution) is restored over the
+  Quack wire codec: the extension encodes each input chunk to wire bytes
+  in pure C, ships it to a worker R process over NNG, and decodes the
+  wire-encoded result back into DuckDB. Worker-process types cover
+  fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT,
+  GEOMETRY, MAP, UNION, runtime-probed VARIANT, and LIST/ARRAY/STRUCT of
+  supported types.
+
+- nanoarrow is removed from Imports/LinkingTo; the vendored
+  nanoarrow/flatcc trees are deleted from the extension.
+
+- The worker-process data plane uses the Rducks Quack wire codec (DuckDB
+  BinarySerializer DataChunk subset) with self-describing payloads.
+
+- [`rducks_with_duckplyr()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_with_duckplyr.md)
+  (duckplyr bridge) and
+  [`rducks_register_table()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_register_table.md)
+  (table functions, finite and streaming) are restored on the direct
+  DuckDB-vector path. In-process table scans fill DuckDB output vectors
+  directly from the returned R columns, with no wire serialization.
+
+- [`rducks_query_stream()`](https://rgenomicsetl.github.io/Rducks/reference/rducks_query_stream.md)
+  is restored on the direct path: native DuckDB streaming results are
+  materialized to data-frame batches directly from DuckDB vectors.
+
+- Internal: queued/concurrent scalar-UDF results are now written through
+  an owned `duckdb_data_chunk` for every supported return type.
+
+- Internal: dropped the unused per-call `connection_id` capture,
+  removing four DuckDB client-context entries from the unstable C API
+  surface (no behavior change).
+
+- The Arrow-era vignettes are removed; the README covers current usage,
+  including an `inproc`-vs-`ipc` worker-process benchmark (with optional
+  mori global sharing).
 
 ## Rducks 0.1.1
 

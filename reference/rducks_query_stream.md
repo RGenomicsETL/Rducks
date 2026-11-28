@@ -61,7 +61,7 @@ way to interrupt it. Close the stream first.
 # \donttest{
 db <- duckdb::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpC1M7PW/duckdb
+#> ℹ /tmp/RtmpNxox63/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.
@@ -79,6 +79,6 @@ stream$next_batch()
 #> 5 5
 stream$close()
 rducks_release(db)
-DBI::dbDisconnect(db, shutdown = TRUE)
+DBI::dbDisconnect(db)
 # }
 ```
