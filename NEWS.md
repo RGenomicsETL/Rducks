@@ -1,8 +1,8 @@
-# Rducks (development version)
+# Rducks 0.1.2
 
 * Rducks is licensed under `LGPL (>= 2)`. The bundled NNG and Mbed TLS sources keep their own licenses, listed in `inst/LICENSE.note`.
 
-* Rducks now loads on DuckDB 2.0.0, the current CRAN duckdb, instead of failing with "no bundled extension for DuckDB v2.0.0" (https://github.com/RGenomicsETL/Rducks/issues/25). DuckDB 2.0 treats every `C_STRUCT_UNSTABLE` extension as an extension of its new V2 C API, so Rducks builds a stable V1 `C_STRUCT` extension pinned to C API v1.5.6, the release that stabilized the V1 entries Rducks uses.
+* Rducks now loads on DuckDB 2.0.0 and 2.0.1 instead of failing with "no bundled extension for DuckDB v2.0.0" (https://github.com/RGenomicsETL/Rducks/issues/25). DuckDB 2.0 treats every `C_STRUCT_UNSTABLE` extension as an extension of its new V2 C API, so Rducks builds a stable V1 `C_STRUCT` extension pinned to C API v1.5.6, the release that stabilized the V1 entries Rducks uses.
 
 * `tools/fetch_duckdb_headers.R` now records the true number of prototype repairs. `gregexpr()` reports no match as `-1` with attributes attached, so every repair had been counted once even when the header was already correct. The DuckDB v2.0.0 headers need no repair and are recorded as fetched.
 
@@ -19,6 +19,14 @@
 * Rducks now builds one extension per platform against DuckDB's stable C extension API v1.5.6 (`C_STRUCT` ABI), so a duckdb release no longer needs a matching Rducks release. Installation signs the extension with a key generated for that installation (`tools/ext/sign/rducks_sign.c`, vendored Mbed TLS) and keeps only the public key. `rducks_enable()` loads the extension from a signed local extension repository below `tempdir()`, with DuckDB's signature checks enabled, so `allow_unsigned_extensions` is no longer needed. Extension repositories need DuckDB 2.0.0, so Rducks now requires duckdb >= 2.0.0; the `backport/duckdb-1.5` branch keeps a duckdb 1.5.6 release line. New `rducks_duckdb_config()` returns the connection settings that keep the repository record below `tempdir()`; on other connections, such as the default connection of duckplyr, `rducks_enable(home_registry = TRUE)` allows a temporary record in `~/.duckdb`. New `rducks_extension_capi_version()` reads the C API version from the extension footer, and `rducks_extension_path()` takes no version argument. `tools/used_duckdb_capi.R` reports the C API entries used by version band.
 * `rducks_is_type()` accepts S7 1.0.0 objects: it looks up the S7 class with `S7::S7_class()` instead of reading the attribute that S7 1.0.0 renamed.
 
+* Managed query streams change no DuckDB setting. Do not change `threads` or `external_threads` through SQL while a managed stream is open; close the stream first.
+
+* Table functions report the message of the R condition and no longer use `R_curErrorBuf()`, which is not part of R's API.
+
+* Installation builds the bundled NNG and Mbed TLS with two jobs; `RDUCKS_BUILD_JOBS` changes this.
+
+* With duckdb 2.0.1, R can wait forever when R code runs under a query and a connection is finalized there (https://github.com/duckdb/duckdb-r/issues/3086). This is a duckdb issue; Rducks has no protection against it.
+
 * Vectorized scalar UDFs returning `BLOB` or `GEOMETRY` now validate the list-of-raw result in C instead of running the generic per-row return check, which made those results about 60x slower than numeric results (for example roughly 19 s per million rows for a `DOUBLE, DOUBLE -> GEOMETRY` point builder). A classed list such as `wk_wkb` is accepted as-is; `NULL` elements still map to SQL NULL and a non-raw element still fails.
 
 * Fixed Windows ARM64 extension metadata when the configure shell runs under x64 emulation by deriving the DuckDB platform from R's compiler target.
@@ -27,8 +35,6 @@
 * Added native Quack property tests with shrinking, coverage-guided fuzzing, and ASan/UBSan CI. The decoder now rejects incomplete nested type metadata and bounds input-driven allocation more tightly.
 * `transport = "ipc"` now supports dynamic (omitted-`args`) scalar UDFs, matching `transport = "inproc"`. DuckDB resolves the concrete argument types per call site at bind; the native bind carries those resolved types to the worker in an `RDT1` dynamic payload (concrete arg tokens + the Quack chunk), so one registration serves call sites with different argument types. A type the wire codec cannot encode fails cleanly at the first chunk encode.
 * `VARIANT` now works in direct scalar/vectorized UDFs, nested descriptors, aggregates, dynamic binds, and the Quack/NNG `ipc` path. Rducks obtains a canonical VARIANT logical type from the runtime SQL binder, verifies its full physical vector layout with a real data-chunk probe, and fails closed on runtimes whose layout is unavailable or incompatible.
-
-# Rducks (development): Arrow removal
 
 * BREAKING: `rducks_execution_plan()` now takes `transport = c("inproc", "ipc")`; the `arrow_r`/`arrow_c`/`arrow_ipc` x concurrency axis is gone.
 * `transport = "ipc"` (worker-process execution) is restored over the Quack wire codec: the extension encodes each input chunk to wire bytes in pure C, ships it to a worker R process over NNG, and decodes the wire-encoded result back into DuckDB. Worker-process types cover fixed-width scalars, VARCHAR/BLOB, DECIMAL, INTERVAL, ENUM, BIT, GEOMETRY, MAP, UNION, runtime-probed VARIANT, and LIST/ARRAY/STRUCT of supported types.

@@ -14,7 +14,7 @@ local({
   con <- DBI::dbConnect(drv)
   on.exit({
     try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+    try(DBI::dbDisconnect(con), silent = TRUE)
   }, add = TRUE)
   rducks_enable(con, threads = "single")
   if (!getFromNamespace("rducks_query_stream_driver_available", "Rducks")(con)) {

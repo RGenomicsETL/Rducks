@@ -75,7 +75,7 @@ jobs:
           source("tools/duckdb_version_support.R")
           con <- DBI::dbConnect(duckdb::duckdb())
           version <- DBI::dbGetQuery(con, "SELECT version() AS version")$version[[1L]]
-          DBI::dbDisconnect(con, shutdown = TRUE)
+          DBI::dbDisconnect(con)
           rducks_check_ci_duckdb_runtime(version, Sys.getenv("RDUCKS_CI_DUCKDB"))
         shell: Rscript {0}
 

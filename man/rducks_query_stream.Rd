@@ -54,6 +54,6 @@ stream <- rducks_query_stream(db, "SELECT i::INTEGER AS i FROM range(1, 6) t(i)"
 stream$next_batch()
 stream$close()
 rducks_release(db)
-DBI::dbDisconnect(db, shutdown = TRUE)
+DBI::dbDisconnect(db)
 }
 }

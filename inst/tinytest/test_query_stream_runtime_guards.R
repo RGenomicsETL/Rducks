@@ -16,7 +16,7 @@ local({
     try(rducks_release(second), silent = TRUE)
     try(rducks_release(first), silent = TRUE)
     try(DBI::dbDisconnect(second), silent = TRUE)
-    try(DBI::dbDisconnect(first, shutdown = TRUE), silent = TRUE)
+    try(DBI::dbDisconnect(first), silent = TRUE)
   }, add = TRUE)
   # A caller may LOAD the extension before the first enable. That creates a
   # native runtime without an R bridge, with the scheduler still using workers.
@@ -77,7 +77,7 @@ local({
     on.exit({
       if (!is.null(file_con)) {
         try(rducks_release(file_con), silent = TRUE)
-        try(DBI::dbDisconnect(file_con, shutdown = TRUE), silent = TRUE)
+        try(DBI::dbDisconnect(file_con), silent = TRUE)
       }
       unlink(c(path, paste0(path, ".wal")))
     }, add = TRUE)
@@ -96,7 +96,7 @@ local({
         "SELECT i::INTEGER AS i FROM range(1, 500001) t(i)")
       expect_true(nrow(stale$next_batch()) > 0L)
       rducks_release(file_con)
-      DBI::dbDisconnect(file_con, shutdown = TRUE)
+      DBI::dbDisconnect(file_con)
       file_con <- NULL
       if (identical(cleanup, "close")) expect_equal(stale$close(), NULL)
       rm(stale)
@@ -111,7 +111,7 @@ local({
       expect_equal(reopened$next_batch()$answer, 42L)
       reopened$close()
       rducks_release(file_con)
-      DBI::dbDisconnect(file_con, shutdown = TRUE)
+      DBI::dbDisconnect(file_con)
       file_con <- NULL
     }
   })

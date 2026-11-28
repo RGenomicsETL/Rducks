@@ -22,7 +22,7 @@ local({
     autoload_known_extensions = "false",
     autoinstall_known_extensions = "false"
   ))))
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
   rducks_enable(con, threads = "single")
   on.exit(rducks_release(con), add = TRUE)
 

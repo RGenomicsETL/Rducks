@@ -138,5 +138,5 @@ if (mode == 'closed') {
 
 try(rducks_release(con), silent = TRUE)
 DBI::dbDisconnect(sibling)
-DBI::dbDisconnect(con, shutdown = TRUE)
+DBI::dbDisconnect(con)
 say('PASS managed stream configuration:', mode)

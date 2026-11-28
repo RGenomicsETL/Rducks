@@ -184,7 +184,7 @@ with(
 )
 
 Rducks::rducks_release(demo_con)
-DBI::dbDisconnect(demo_con, shutdown = TRUE)
+DBI::dbDisconnect(demo_con)
 ```
 
 ## Lifecycle
@@ -684,5 +684,5 @@ runtime policy, build, and ABI details.
 
 ```{r cleanup, include=FALSE}
 rducks_release(con)
-dbDisconnect(con, shutdown = TRUE)
+dbDisconnect(con)
 ```

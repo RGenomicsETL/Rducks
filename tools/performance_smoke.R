@@ -32,7 +32,7 @@ config <- if (exists("rducks_duckdb_config", envir = asNamespace("Rducks"), inhe
 con <- DBI::dbConnect(duckdb::duckdb(config = config), dbdir = ":memory:")
 on.exit({
   try(Rducks::rducks_release(con), silent = TRUE)
-  try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+  try(DBI::dbDisconnect(con), silent = TRUE)
 }, add = TRUE)
 
 Rducks::rducks_enable(con, threads = "single")

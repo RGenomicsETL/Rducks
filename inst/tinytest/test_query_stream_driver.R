@@ -12,7 +12,7 @@ local({
   con <- DBI::dbConnect(duckdb::duckdb(config = rducks_duckdb_config(list(threads = "2"))))
   on.exit({
     try(rducks_release(con), silent = TRUE)
-    try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE)
+    try(DBI::dbDisconnect(con), silent = TRUE)
   }, add = TRUE)
   rducks_enable(con, threads = "single")
   # These callbacks must be rejected before any off-thread R access in the
